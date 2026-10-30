@@ -52,15 +52,15 @@ def session_inspect_workbook(directory: str, revision: int) -> dict[str, Any]:
 
 
 @server.tool()
-def search_cells(file: str, query: str) -> dict[str, Any]:
-    """Search saved XLSX worksheet text and formulas; check scan and text completeness."""
-    return spreadsheet.search_cells(file, query)
+def search_cells(file: str, query: str, sheet: str | None = None, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search XLSX text and formulas. Continue with next_offset and snapshot_sha256, keeping query and sheet unchanged."""
+    return spreadsheet.search_cells(file, query, sheet, offset, snapshot_sha256)
 
 
 @server.tool()
-def session_search_cells(directory: str, revision: int, query: str) -> dict[str, Any]:
-    """Search worksheet text and formulas in an exact saved XLSX revision."""
-    return session.search_cells(directory, revision, query)
+def session_search_cells(directory: str, revision: int, query: str, sheet: str | None = None, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search an exact XLSX revision; continue with next_offset and snapshot_sha256, keeping query and sheet unchanged."""
+    return session.search_cells(directory, revision, query, sheet, offset, snapshot_sha256)
 
 
 @server.tool()

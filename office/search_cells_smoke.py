@@ -16,15 +16,27 @@ with tempfile.TemporaryDirectory() as tmp:
     for i in range(1, 203): hidden.cell(i, 1, 'needle')
     book.save(source)
     result = spreadsheet.search_cells(source, 'needle')
-    assert result['complete'] and result['match_count'] == 204 and result['matches_truncated']
+    assert not result['complete'] and result['match_count'] == 200 and result['matches_truncated'] and result['stop_reason'] == 'match_limit'
     assert result['matches'][0]['kind'] == 'formula' and result['matches'][1]['cell'] == 'XFD1048576'
     assert result['matches'][2]['sheet_state'] == 'hidden'
+    rest = spreadsheet.search_cells(source, 'needle', offset=result['next_offset'], snapshot_sha256=result['snapshot_sha256'])
+    assert rest['scan_complete'] and rest['match_count'] == 4 and rest['next_offset'] is None
+    hidden_only = spreadsheet.search_cells(source, 'needle', sheet='Hidden')
+    assert hidden_only['matches'][0]['sheet'] == 'Hidden' and hidden_only['match_count'] == 200
+    try: spreadsheet.search_cells(source, 'needle', offset=1)
+    except ValueError: pass
+    else: raise AssertionError('continuation without snapshot hash accepted')
+    try: spreadsheet.search_cells(source, 'needle', offset=1, snapshot_sha256='0' * 64)
+    except ValueError: pass
+    else: raise AssertionError('changed snapshot accepted')
     assert spreadsheet.search_cells(source, 'Needle')['match_count'] == 0
     draft = root / 'draft'; session.start(draft, source=source)
     assert session.search_cells(draft, 0, 'distant')['matches'][0]['cell'] == 'XFD1048576'
     cli = Path(__file__).with_name('open_office_use.py')
     output = subprocess.run([sys.executable, str(cli), 'session', 'search-cells', str(draft), '--revision', '0', '--query', 'distant'], capture_output=True, text=True, check=True)
     assert json.loads(output.stdout)['revision'] == 0
+    output = subprocess.run([sys.executable, str(cli), 'search-cells', str(source), '--query', 'needle', '--sheet', 'Hidden', '--offset', str(hidden_only['next_offset']), '--snapshot-sha256', hidden_only['snapshot_sha256']], capture_output=True, text=True, check=True)
+    assert [item['cell'] for item in json.loads(output.stdout)['matches']] == ['A201', 'A202']
     shared = root / 'shared.xlsx'; writer = xlsxwriter.Workbook(str(shared)); writer.add_worksheet().write('A1', '共享文本'); writer.close()
     shared_result = spreadsheet.search_cells(shared, '共享')
     assert shared_result['matches'][0]['cell'] == 'A1' and not shared_result['complete'] and shared_result['unverified_text_cells'] == 1
@@ -33,6 +45,8 @@ with tempfile.TemporaryDirectory() as tmp:
     page.append(['needle']); big.save(large)
     limited = spreadsheet.search_cells(large, 'needle')
     assert limited['stored_cells_scanned'] == 100000 and not limited['scan_complete'] and not limited['matches']
+    continued = spreadsheet.search_cells(large, 'needle', offset=limited['next_offset'], snapshot_sha256=limited['snapshot_sha256'])
+    assert continued['scan_complete'] and continued['matches'][0]['cell'] == 'A100001'
     for query in ('', 'a' * 201, '\x00'):
         try: spreadsheet.search_cells(source, query)
         except ValueError: pass

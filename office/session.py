@@ -198,9 +198,9 @@ def inspect_workbook(directory, revision):
     return {'revision': revision, **spreadsheet.inspect_workbook(source)}
 
 
-def search_cells(directory, revision, query):
+def search_cells(directory, revision, query, sheet=None, offset=0, snapshot_sha256=None):
     state = info(directory); source = revision_file(state, revision)
-    return {'revision': revision, **spreadsheet.search_cells(source, query)}
+    return {'revision': revision, **spreadsheet.search_cells(source, query, sheet, offset, snapshot_sha256)}
 
 
 def scan_chart_caches(directory, revision):

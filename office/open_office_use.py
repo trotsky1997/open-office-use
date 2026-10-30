@@ -200,6 +200,7 @@ def main():
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
     cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
     search = commands.add_parser('search-cells'); search.add_argument('file'); search.add_argument('--query', required=True)
+    search.add_argument('--sheet'); search.add_argument('--offset', type=int, default=0); search.add_argument('--snapshot-sha256')
     formula_scan = commands.add_parser('scan-formulas'); formula_scan.add_argument('file')
     chart_scan = commands.add_parser('scan-chart-caches'); chart_scan.add_argument('file')
     calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
@@ -235,6 +236,7 @@ def main():
     session_chart_sync = sub.add_parser('sync-chart-cache'); session_chart_sync.add_argument('directory'); session_chart_sync.add_argument('--base', type=int, required=True); session_chart_sync.add_argument('--part', required=True); session_chart_sync.add_argument('--reference', type=int, required=True); session_chart_sync.add_argument('--allow-formula-caches', action='store_true')
     session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     session_search = sub.add_parser('search-cells'); session_search.add_argument('directory'); session_search.add_argument('--revision', type=int, required=True); session_search.add_argument('--query', required=True)
+    session_search.add_argument('--sheet'); session_search.add_argument('--offset', type=int, default=0); session_search.add_argument('--snapshot-sha256')
     restore = sub.add_parser('restore'); restore.add_argument('directory'); restore.add_argument('--base', type=int, required=True); restore.add_argument('--revision', type=int, required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
     watcher = commands.add_parser('watch'); watcher.add_argument('directory'); watcher.add_argument('--port', type=int, default=0)
@@ -310,7 +312,7 @@ def main():
             elif args.action == 'inspect-workbook':
                 result = session.inspect_workbook(args.directory, args.revision)
             elif args.action == 'search-cells':
-                result = session.search_cells(args.directory, args.revision, args.query)
+                result = session.search_cells(args.directory, args.revision, args.query, args.sheet, args.offset, args.snapshot_sha256)
             elif args.action == 'restore':
                 result = session.restore(args.directory, args.base, args.revision)
             elif args.action == 'apply':
@@ -358,7 +360,7 @@ def main():
         elif args.command == 'cells':
             result = spreadsheet.read_range(args.file, args.sheet, args.cell_range)
         elif args.command == 'search-cells':
-            result = spreadsheet.search_cells(args.file, args.query)
+            result = spreadsheet.search_cells(args.file, args.query, args.sheet, args.offset, args.snapshot_sha256)
         elif args.command == 'scan-formulas':
             result = spreadsheet.scan_formulas(args.file)
         elif args.command == 'scan-chart-caches':

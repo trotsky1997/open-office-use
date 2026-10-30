@@ -1,5 +1,6 @@
 """Bounded worksheet inspection and explicit LibreOffice recalculation."""
 import os
+import hashlib
 import re
 import json
 import shutil
@@ -184,16 +185,26 @@ FORMULA_SCAN_MAX_CELLS = 1000000
 FORMULA_SCAN_MAX_ISSUES = 200
 
 
-def search_cells(file, query):
+def search_cells(file, query, sheet=None, offset=0, snapshot_sha256=None):
     """Search stored worksheet text and formula text in a saved XLSX snapshot."""
     if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
         raise ValueError('Search text must contain 1 to 200 characters without control characters')
+    if sheet is not None and (not isinstance(sheet, str) or not sheet): raise ValueError('Sheet name must be nonempty text')
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0: raise ValueError('Offset must be a nonnegative integer')
+    if offset and snapshot_sha256 is None: raise ValueError('Continuing a search requires the prior snapshot SHA-256')
+    if snapshot_sha256 is not None and (not isinstance(snapshot_sha256, str) or not re.fullmatch(r'[0-9a-f]{64}', snapshot_sha256)):
+        raise ValueError('Invalid snapshot SHA-256')
     source = Path(file).resolve(strict=True)
     if source.suffix.lower() != '.xlsx': raise ValueError('Cell search requires an XLSX file')
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
     with tempfile.TemporaryDirectory(prefix='office-cell-search-') as tmp:
         snapshot = Path(tmp) / 'workbook.xlsx'; shutil.copyfile(source, snapshot)
         if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+        digest = hashlib.sha256()
+        with snapshot.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
+        digest = digest.hexdigest()
+        if snapshot_sha256 is not None and digest != snapshot_sha256: raise ValueError('Workbook snapshot changed; restart the search')
         try:
             with zipfile.ZipFile(snapshot) as archive:
                 entries = archive.infolist(); names = [entry.filename for entry in entries]
@@ -203,8 +214,12 @@ def search_cells(file, query):
                 try:
                     sheets = [(s.title, s.sheet_state, s._worksheet_path, s._shared_strings) for s in workbook.worksheets]
                     chartsheets = len(workbook.sheetnames) - len(sheets)
+                    total_worksheets = len(sheets)
+                    if sheet is not None:
+                        sheets = [s for s in sheets if s[0] == sheet]
+                        if not sheets: raise ValueError('Worksheet not found')
                     matches, scanned, unverified, scanned_sheets = [], 0, 0, []
-                    complete = True; match_count = 0
+                    complete = True; skipped = 0; stop_reason = None
                     ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
                     for name, state, path, strings in sheets:
                         if path not in names: raise ValueError(f'Cannot locate worksheet XML: {name}')
@@ -219,7 +234,10 @@ def search_cells(file, query):
                                         sheet_data = element
                                     stack.append(tag); continue
                                 if stack[-3:] == ['sheetData', 'row', 'c']:
-                                    if scanned >= 100000: complete = False; break
+                                    if skipped < offset:
+                                        skipped += 1; element.clear(); stack.pop(); continue
+                                    if scanned >= 100000 or len(matches) >= 200:
+                                        complete = False; stop_reason = 'match_limit' if len(matches) >= 200 else 'cell_limit'; break
                                     scanned += 1; children = {child.tag: child for child in element}
                                     formula, value, inline = children.get(ns + 'f'), children.get(ns + 'v'), children.get(ns + 'is')
                                     kind, text, uncertain = None, None, False
@@ -240,11 +258,9 @@ def search_cells(file, query):
                                     if text is not None and (re.search(r'_x[0-9a-fA-F]{4}_', text) or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', element.get('r', ''))): uncertain = True
                                     if uncertain: unverified += 1
                                     if text is not None and query in text:
-                                        match_count += 1
-                                        if len(matches) < 200:
-                                            index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
-                                            matches.append({'sheet': name, 'sheet_state': state, 'cell': element.get('r'), 'kind': kind,
-                                                            'excerpt': text[start:end], 'excerpt_start': start, 'text_length': len(text), 'text_complete': not uncertain})
+                                        index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
+                                        matches.append({'sheet': name, 'sheet_state': state, 'cell': element.get('r'), 'kind': kind,
+                                                        'excerpt': text[start:end], 'excerpt_start': start, 'text_length': len(text), 'text_complete': not uncertain})
                                     element.clear()
                                 elif stack[-2:] == ['sheetData', 'row']:
                                     element.clear()
@@ -253,12 +269,16 @@ def search_cells(file, query):
                             if sheet_data is None: raise ValueError(f'Worksheet has no sheet data: {name}')
                         scanned_sheets.append({'sheet': name, 'complete': complete})
                         if not complete: break
-                    return {'query': query, 'case_sensitive': True, 'matches': matches, 'match_count': match_count,
-                            'matches_truncated': match_count > len(matches), 'stored_cells_scanned': scanned,
-                            'sheets': scanned_sheets, 'total_worksheets': len(sheets), 'chartsheets_omitted': chartsheets,
-                            'complete': complete and unverified == 0, 'scan_complete': complete, 'unverified_text_cells': unverified,
+                    if skipped < offset: raise ValueError('Search offset exceeds the selected worksheets')
+                    return {'query': query, 'sheet': sheet, 'case_sensitive': True, 'snapshot_sha256': digest,
+                            'offset': offset, 'cells_skipped': skipped, 'next_offset': offset + scanned if not complete else None,
+                            'stop_reason': stop_reason, 'matches': matches, 'match_count': len(matches),
+                            'matches_truncated': stop_reason == 'match_limit', 'stored_cells_scanned': scanned,
+                            'sheets': scanned_sheets, 'total_worksheets': total_worksheets, 'chartsheets_omitted': chartsheets,
+                            'complete': complete and offset == 0 and unverified == 0, 'scan_complete': complete, 'unverified_text_cells': unverified,
                             'limits': {'stored_cells': 100000, 'matches': 200},
-                            'notes': ['Search covers stored text and formula text, not calculated values or chart content.',
+                            'notes': ['Counts and completeness apply to this page; continue with the same query and sheet.',
+                                      'Search covers stored text and formula text, not calculated values or chart content.',
                                       'Shared strings, shared formula followers and Excel escape sequences may be unverified.']}
                 finally: workbook.close()
         except (zipfile.BadZipFile, ET.ParseError) as exc:
