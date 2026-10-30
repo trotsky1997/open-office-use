@@ -231,6 +231,9 @@ try {
  await tab.playwright.locator('#css-radio').check();assert.equal(await tab.playwright.locator('#css-radio').isChecked(),true);await assert.rejects(tab.playwright.locator('#css-radio').uncheck({timeoutMs:0}),/radio cannot be unchecked/);await assert.rejects(tab.playwright.locator('#css-mixed').isChecked(),/binary checked state/);
  const cssSwitch=tab.playwright.locator('#css-switch');await cssSwitch.check();assert.equal(await cssSwitch.isChecked(),true);await cssSwitch.uncheck();assert.equal(await cssSwitch.isChecked(),false);
  await tab.evaluate(`(()=>{const e=document.querySelector('#css-host').shadowRoot.querySelector('#css-check');e.onclick=()=>{e.checked=false;window.cssRejectedClicks=(window.cssRejectedClicks||0)+1}})()`);await assert.rejects(check.check({timeoutMs:0}),/did not retain/);assert.equal(await tab.evaluate('window.cssRejectedClicks'),1);
+ await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const s=document.createElement('select');s.id='css-select';s.innerHTML='<option value="a">Alpha</option><option value="b">Beta</option>';r.append(s)})()`);
+ assert.deepEqual(await tab.playwright.locator('#css-host').locator('#css-select').selectOption({label:'Beta'}),['b']);
+ await tab.evaluate(`(()=>{const s=document.querySelector('#css-host').shadowRoot.querySelector('#css-select');s.add(new Option('Beta','b'))})()`);await assert.rejects(tab.playwright.locator('#css-select').selectOption('b',{timeoutMs:0}),/ambiguous/);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const input=document.createElement('input');input.id='css-input';input.onkeydown=e=>window.cssKey={key:e.key,trusted:e.isTrusted};r.append(input)})()`);
  assert.throws(()=>tab.playwright.locator('#css-input').press(undefined),/Invalid key/);
  await tab.playwright.locator('#css-input').press('Enter');assert.deepEqual(await tab.evaluate('window.cssKey'),{key:'Enter',trusted:true});
@@ -449,6 +452,11 @@ try {
  }
  const temporalValues=await tab.observe({includeFrames:true,includeValues:true});assert.equal(temporalValues.nodes.find(node=>node.name==='Cross date').value,'2026-12-31');
  assert.deepEqual(temporalValues.nodes.filter(node=>node.frameId===cross.frameId && node.role==='spinbutton').map(node=>node.name),['Cross amount']);
+ const cssColour=crossFrame.locator('select[onchange*="cross-select"]');assert.deepEqual(await cssColour.selectOption({label:'Blue'}),['blue']);await new Promise(r=>setTimeout(r,40));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-select',values:['blue'],trusted:false});
+ const cssMulti=crossFrame.locator('select[multiple]');assert.deepEqual(await cssMulti.selectOption(['red',{label:'Green'}]),['red','green']);assert.deepEqual(await cssMulti.selectOption([]),[]);
+ await assert.rejects(cssColour.selectOption('blocked',{timeoutMs:0}),/unavailable/);await assert.rejects(cssColour.selectOption(['red','blue'],{timeoutMs:0}),/multiple select/);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const s=document.querySelector('select[onchange*="cross-select"]');s.addEventListener('change',()=>{s.value='blue';window.cssSelectChanges=(window.cssSelectChanges||0)+1},{once:true})})()`},{sessionId:crossSession});
+ await assert.rejects(cssColour.selectOption('red',{timeoutMs:0}),/did not retain/);assert.equal((await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.cssSelectChanges',returnByValue:true},{sessionId:crossSession})).result.value,1);
  const colour=tab.playwright.getByLabel('Cross colour',{exact:true});assert.deepEqual(await colour.selectOption({label:'Blue'}),['blue']);await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-select',values:['blue'],trusted:false});
  assert.equal((await tab.observe({includeFrames:true,includeValues:true})).nodes.find(node=>node.name==='Cross colour').value,'Blue');

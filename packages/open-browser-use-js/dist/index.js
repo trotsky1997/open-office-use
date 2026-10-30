@@ -5,6 +5,16 @@ import { types } from "node:util";
 import { isAbsolute } from "node:path";
 const headerBytes = 4;
 const defaultNavigationTimeoutMs = 10_000;
+function selectSpecs(values) {
+    return (Array.isArray(values) ? values : [values]).map(value => {
+        if (typeof value === "string")
+            return { value, label: value, either: true };
+        if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key => !["value", "label"].includes(key)) ||
+            (value.value === undefined && value.label === undefined) || (value.value !== undefined && typeof value.value !== "string") || (value.label !== undefined && typeof value.label !== "string"))
+            throw new Error("Invalid select option");
+        return { ...value, either: false };
+    });
+}
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 class RetryablePreflightError extends Error {
 }
@@ -934,7 +944,7 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
-    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked) {
+    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked, selection) {
         if (key !== undefined)
             this.parseKey(key);
         const frame = snapshot.frame;
@@ -1012,6 +1022,52 @@ export class OpenBrowserUseTab {
                     return;
                 if (!checked && current.radio)
                     throw new Error("A selected radio cannot be unchecked directly");
+            }
+            if (selection !== undefined) {
+                const inspected = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: selection }], functionDeclaration: `function(specs) {
+          if (!(this instanceof HTMLSelectElement) || !this.isConnected || this.matches(':disabled') || this.getAttribute('aria-disabled')==='true') return {status:'not-select'};
+          if (!this.multiple && specs.length>1) return {status:'multiple'};
+          const options=Array.from(this.options),chosen=[];
+          for(const spec of specs) {
+            const hits=options.map((option,index)=>({option,index})).filter(({option})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));
+            if(!hits.length)return {status:'missing'};
+            if(hits.length>1 || chosen.some(item=>item.index===hits[0].index))return {status:'ambiguous'};
+            chosen.push({index:hits[0].index,value:hits[0].option.value,label:hits[0].option.label});
+          }
+          return {status:'ok',chosen};
+        }` }, { sessionId });
+                const found = isObject(inspected) && isObject(inspected.result) ? inspected.result.value : null;
+                if (!isObject(found) || typeof found.status !== "string")
+                    throw new Error("Invalid select options result");
+                if (found.status === 'missing')
+                    throw new RetryablePreflightError("Requested select option is unavailable");
+                if (found.status === 'ambiguous')
+                    throw new Error("Requested select option is ambiguous");
+                if (found.status === 'multiple')
+                    throw new Error("Multiple options require a multiple select");
+                if (found.status !== 'ok' || !Array.isArray(found.chosen))
+                    throw new Error("Target is not an enabled native select");
+                const latest = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+                if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids))
+                    throw new RetryablePreflightError("Selector target changed; observe again");
+                this.#observation = undefined;
+                inputIssued = true;
+                const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: found.chosen }, { value: selection }], functionDeclaration: `function(chosen,specs) {
+          if (!(this instanceof HTMLSelectElement) || !this.isConnected || this.matches(':disabled') || this.getAttribute('aria-disabled')==='true' || (!this.multiple && chosen.length>1)) return null;
+          for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return null;
+          const options=Array.from(this.options);
+          for(let i=0;i<specs.length;i++) {const spec=specs[i],hits=options.map((option,index)=>({option,index})).filter(({option})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));if(hits.length!==1 || hits[0].index!==chosen[i]?.index)return null;}
+          if(chosen.some(item=>{const o=options[item.index];return !o || o.value!==item.value || o.label!==item.label || o.disabled || (o.parentElement instanceof HTMLOptGroupElement && o.parentElement.disabled)}))return null;
+          if(!this.multiple && !chosen.length)this.selectedIndex=-1;
+          else {const indices=new Set(chosen.map(item=>item.index));for(let i=0;i<options.length;i++)options[i].selected=indices.has(i);}
+          this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));
+          return this.isConnected ? Array.from(this.selectedOptions,option=>option.value) : null;
+        }` }, { sessionId });
+                const selected = isObject(applied) && isObject(applied.result) ? applied.result.value : null;
+                const expected = found.chosen.map(item => isObject(item) ? item.value : null);
+                if (!Array.isArray(selected) || selected.some(value => typeof value !== "string") || JSON.stringify([...selected].sort()) !== JSON.stringify([...expected].sort()))
+                    throw new Error("Select did not retain the requested options");
+                return selected;
             }
             if (text !== undefined) {
                 const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) {
@@ -1703,14 +1759,7 @@ export class OpenBrowserUseTab {
         await this.act(index, snapshotId, undefined, false, checked);
     }
     async selectOption(index, snapshotId, values) {
-        const specs = (Array.isArray(values) ? values : [values]).map(value => {
-            if (typeof value === "string")
-                return { value, label: value, either: true };
-            if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key => !["value", "label"].includes(key)) ||
-                (value.value === undefined && value.label === undefined) || (value.value !== undefined && typeof value.value !== "string") || (value.label !== undefined && typeof value.label !== "string"))
-                throw new Error("Invalid select option");
-            return { ...value, either: false };
-        });
+        const specs = selectSpecs(values);
         const result = await this.act(index, snapshotId, undefined, false, undefined, specs);
         if (!Array.isArray(result) || result.some(value => typeof value !== "string"))
             throw new Error("Invalid selected options result");
@@ -2459,25 +2508,32 @@ export class OpenBrowserUseCssLocator {
             await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
         }
     }
-    click(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false), options.timeoutMs); }
-    dblclick(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, undefined, true), options.timeoutMs); }
-    hover(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, true), options.timeoutMs); }
+    click(options = {}) { return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false); }, options.timeoutMs); }
+    dblclick(options = {}) { return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, true); }, options.timeoutMs); }
+    hover(options = {}) { return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, true); }, options.timeoutMs); }
     check(options = {}) { return this.setChecked(true, options); }
     uncheck(options = {}) { return this.setChecked(false, options); }
     setChecked(checked, options = {}) {
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be a boolean");
-        return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked), options.timeoutMs);
+        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked); }, options.timeoutMs);
     }
     press(key, options = {}) {
         if (typeof key !== "string")
             throw new Error("Invalid key");
-        return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, key), options.timeoutMs);
+        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, key); }, options.timeoutMs);
     }
     fill(text, options = {}) {
         if (typeof text !== "string")
             throw new Error("Text must be a string");
-        return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, text), options.timeoutMs);
+        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, text); }, options.timeoutMs);
+    }
+    async selectOption(values, options = {}) {
+        const specs = selectSpecs(values);
+        const result = await this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, undefined, false, undefined, specs), options.timeoutMs);
+        if (!Array.isArray(result))
+            throw new Error("Invalid selected options result");
+        return result;
     }
     async innerText(options = {}) {
         const value = await this.read("innerText", "", options.timeoutMs);

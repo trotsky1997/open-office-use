@@ -459,6 +459,9 @@ export declare class OpenBrowserUseCssLocator {
     fill(text: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
+    selectOption(values: SelectOption | SelectOption[], options?: {
+        timeoutMs?: number;
+    }): Promise<string[]>;
     innerText(options?: {
         timeoutMs?: number;
     }): Promise<string>;
