@@ -485,3 +485,5 @@ CSS 与语义定位器新增 focus：聚焦前后复核目标、frame 和焦点�
 REPL 的 nodeRepl.emitImage 对 PNG、JPEG、WebP 校验文件签名与 MIME 一致，格式不符直接报错；检查只覆盖签名，完整解码由接收方负责。SDK 95 项测试、macOS Electron 44.7 完整 smoke 通过；本地真实 JPEG/WebP 经 MCP 输出后由 Pillow 解码验证。Linux 和 Windows 本轮未测。
 
 CSS 与语义定位器的 focus 正数期限覆盖目标准备、聚焦派发及后续校验：准备超时阻止迟到派发，派发开始后的超时报告结果未知；连接完成后也会检查取消信号。SDK 97 项测试覆盖准备延迟、未知结果和迟到连接，macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展正常聚焦通过。其他定位器动作仍有后续准备超时缺口；Windows 未测。
+
+macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展对 focus 超时进行实页注入延迟验证：目标解析延迟超过期限后释放，未派发迟到聚焦；已完成的聚焦响应被延迟时报告结果未知，实际焦点变化仅发生一次。Windows 未测。

@@ -142,6 +142,20 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   finally {await evaluate(a.id,"Object.defineProperty(Node.prototype,'isConnected',window.savedConnected);true");}
 
   check('SDK locators: focus without mouse or key events');
+  await evaluate(a.id,"document.querySelector('#increment').focus()");
+  const originalCdpCall=sdkTab.browser.cdp.call.bind(sdkTab.browser.cdp);let unblockResolve,focusDispatches=0;
+  sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.resolveNode' && !unblockResolve)await new Promise(resolve=>{unblockResolve=resolve});if(args[1]==='DOM.focus')focusDispatches++;return originalCdpCall(...args);};
+  try {
+    await assert.rejects(messageCss.focus({timeoutMs:500}),/preparation timed out/i);assert.ok(unblockResolve);unblockResolve();await new Promise(resolve=>setTimeout(resolve,250));
+    assert.equal(focusDispatches,0);assert.equal(await evaluate(a.id,'document.activeElement.id'),'increment');
+  } finally {unblockResolve?.();sdkTab.browser.cdp.call=originalCdpCall;}
+  let unblockFocus,issuedFocuses=0;
+  sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.focus'){issuedFocuses++;const result=await originalCdpCall(...args);await new Promise(resolve=>{unblockFocus=resolve});return result;}return originalCdpCall(...args);};
+  try {
+    await assert.rejects(messageCss.focus({timeoutMs:1000}),/outcome is unknown/i);assert.ok(unblockFocus);assert.equal(await evaluate(a.id,'document.activeElement.id'),'message');unblockFocus();await new Promise(resolve=>setTimeout(resolve,100));assert.equal(issuedFocuses,1);
+  } finally {unblockFocus?.();sdkTab.browser.cdp.call=originalCdpCall;}
+  check('SDK focus deadline: no late dispatch and unknown issued outcome');
+
   await evaluate(a.id,`(()=>{window.focusChanges=0;const el=document.createElement('input');el.id='focus-changing';el.addEventListener('focus',()=>{window.focusChanges++;el.id='focus-changed'});document.body.append(el)})()`);
   await assert.rejects(sdkTab.playwright.locator('#focus-changing').focus({timeoutMs:1000}),/changed|focus/i);
   assert.equal(await evaluate(a.id,'window.focusChanges'),1);await evaluate(a.id,"document.querySelector('#focus-changed').remove()");
