@@ -415,7 +415,7 @@ def append_slides(presentation, slides):
             allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
                        'rectangle': geometry | {'fill'}, 'shape': geometry | {'id', 'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'connector': {'type', 'start', 'end', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
-                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values'}}
+                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values', 'show_percent', 'point_colors'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
             if kind == 'connector':
                 ends = []
@@ -591,12 +591,19 @@ def append_slides(presentation, slides):
                 chart_count += 1
                 if chart_count > 20: raise ValueError('At most 20 slide charts are supported per request')
                 chart_type = element.get('chart_type'); categories = element.get('categories'); series_specs = element.get('series')
-                if chart_type not in ('column', 'bar', 'line'): raise ValueError('Chart type must be column, bar or line')
+                if chart_type not in ('column', 'bar', 'line', 'pie'): raise ValueError('Chart type must be column, bar, line or pie')
                 if not isinstance(categories, list) or not 1 <= len(categories) <= 200 or any(not isinstance(value, str) or not value or len(value) > 255 for value in categories): raise ValueError('Chart categories require 1 to 200 nonempty text values')
                 if not isinstance(series_specs, list) or not 1 <= len(series_specs) <= 20 or len(series_specs) * len(categories) > 2000: raise ValueError('Chart requires at most 20 series and 2,000 data points')
                 chart_points += len(series_specs) * len(categories)
                 if chart_points > 10000: raise ValueError('Slide chart data exceeds 10,000 points per request')
-                title = element.get('title'); legend = element.get('legend', len(series_specs) > 1)
+                title = element.get('title'); legend = element.get('legend', chart_type == 'pie' or len(series_specs) > 1)
+                if chart_type == 'pie' and (len(series_specs) != 1 or 'x_axis_title' in element or 'y_axis_title' in element): raise ValueError('Pie charts require one series and have no axes')
+                if chart_type != 'pie' and ('show_percent' in element or 'point_colors' in element): raise ValueError('Percent labels and point colors require a pie chart')
+                if 'show_percent' in element and not isinstance(element['show_percent'], bool): raise ValueError('Chart show_percent must be a boolean')
+                point_colors = element.get('point_colors')
+                if point_colors is not None:
+                    if not isinstance(point_colors, list) or len(point_colors) != len(categories): raise ValueError('Pie point_colors require one color per category')
+                    for value in point_colors: color(value)
                 if title is not None and (not isinstance(title, str) or len(title) > 255): raise ValueError('Chart title must be text of at most 255 characters')
                 for key in ('x_axis_title', 'y_axis_title'):
                     if key in element and (not isinstance(element[key], str) or len(element[key]) > 255): raise ValueError('Chart axis titles must be text of at most 255 characters')
@@ -608,11 +615,12 @@ def append_slides(presentation, slides):
                     name, values = series.get('name'), series.get('values')
                     if not isinstance(name, str) or not name or len(name) > 255 or not isinstance(values, list) or len(values) != len(categories): raise ValueError('Chart series needs a name and one value per category')
                     if any(value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value)) for value in values): raise ValueError('Chart values must be finite numbers or null')
+                    if chart_type == 'pie' and ('color' in series or any(value is not None and value < 0 for value in values) or not any(value is not None and value > 0 for value in values)): raise ValueError('Pie charts require nonnegative values, at least one positive value, and optional point_colors instead of series color')
                     number_format = series.get('number_format')
                     if number_format is not None and (not isinstance(number_format, str) or not 1 <= len(number_format) <= 255): raise ValueError('Chart number format must be text of at most 255 characters')
                     if 'color' in series: color(series['color'])
                     data.add_series(name, values, number_format=number_format)
-                chart = slide.shapes.add_chart({'column': XL_CHART_TYPE.COLUMN_CLUSTERED, 'bar': XL_CHART_TYPE.BAR_CLUSTERED, 'line': XL_CHART_TYPE.LINE}[chart_type], x, y, width, height, data).chart
+                chart = slide.shapes.add_chart({'column': XL_CHART_TYPE.COLUMN_CLUSTERED, 'bar': XL_CHART_TYPE.BAR_CLUSTERED, 'line': XL_CHART_TYPE.LINE, 'pie': XL_CHART_TYPE.PIE}[chart_type], x, y, width, height, data).chart
                 # Chart axis IDs must be positive and cross-references must stay consistent.
                 axis_ids = {}
                 for axis_id in chart._element.xpath('.//c:axId | .//c:crossAx'):
@@ -634,14 +642,18 @@ def append_slides(presentation, slides):
                 finally:
                     embedded.close()
                 chart.has_legend = legend
-                if element.get('show_values', False):
+                if element.get('show_values', False) or element.get('show_percent', False):
                     chart.plots[0].has_data_labels = True
                     labels = chart.plots[0].data_labels
-                    labels.show_value = True
-                    labels.show_category_name = False; labels.show_series_name = False; labels.show_legend_key = False; labels.show_percentage = False
+                    labels.show_value = element.get('show_values', False)
+                    labels.show_category_name = False; labels.show_series_name = False; labels.show_legend_key = False; labels.show_percentage = element.get('show_percent', False)
                 if title is not None: chart.has_title = True; chart.chart_title.text_frame.text = title
-                for key, axis in (('x_axis_title', chart.value_axis), ('y_axis_title', chart.category_axis)) if chart_type == 'bar' else (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
-                    if key in element: axis.has_title = True; axis.axis_title.text_frame.text = element[key]
+                if chart_type != 'pie':
+                    for key, axis in (('x_axis_title', chart.value_axis), ('y_axis_title', chart.category_axis)) if chart_type == 'bar' else (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
+                        if key in element: axis.has_title = True; axis.axis_title.text_frame.text = element[key]
+                if point_colors is not None:
+                    for point, value in zip(chart.series[0].points, point_colors):
+                        point.format.fill.solid(); point.format.fill.fore_color.rgb = color(value)
                 for chart_series, spec in zip(chart.series, series_specs):
                     if 'color' in spec:
                         if chart_type in ('column', 'bar'): chart_series.format.fill.solid(); chart_series.format.fill.fore_color.rgb = color(spec['color'])

@@ -153,7 +153,7 @@ async def main():
                 chart_changed = await session.call_tool('session_inspect_slide_charts', {'directory':str(chart_draft),'revision':1})
                 assert chart_changed.structuredContent['charts'][0]['reconciliation']['status'] == 'match' and chart_edit.structuredContent['synchronized_references'], chart_changed
                 blank_slide = root/'blank-chart.pptx'
-                blank_spec = {'slides':[{'layout':'blank','elements':[{'type':'chart','chart_type':'bar','show_values':True,'x':1,'y':1,'width':5,'height':3,'categories':['Q1','Q2'],'series':[{'name':'Revenue','values':[100,None]}]}]}]}
+                blank_spec = {'slides':[{'layout':'blank','elements':[{'type':'chart','chart_type':'pie','show_values':True,'x':1,'y':1,'width':5,'height':3,'categories':['Q1','Q2'],'series':[{'name':'Revenue','values':[100,None]}]}]}]}
                 assert not (await session.call_tool('author_file', {'spec':blank_spec,'output':str(blank_slide)})).isError
                 blank_draft = root/'blank-chart-draft'; assert not (await session.call_tool('start_session', {'directory':str(blank_draft),'source':str(blank_slide)})).isError
                 blank_scan = await session.call_tool('session_inspect_slide_charts', {'directory':str(blank_draft),'revision':0})

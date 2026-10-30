@@ -391,3 +391,5 @@ Added native attached PowerPoint connectors between named shapes with geometry-s
 Added horizontal PowerPoint bar charts with editable embedded data, cache validation, series colors and visual-axis titles.
 
 Added optional native value labels to authored PowerPoint charts; checked percentage labels in LibreOffice rendering.
+
+Added native PowerPoint pie charts with embedded data, slice colors and percentage labels; verified schema, reconciliation and LibreOffice rendering.
