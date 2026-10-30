@@ -62,7 +62,7 @@ Specifications:
 
 The `author` command sets whole paragraphs, cells or text frames. Replacing paragraph or shape text drops its run-level formatting. The libraries may alter or drop unsupported Office features when saving existing files; retain the original and review the output. Formula strings are stored, not recalculated by `author`. LibreOffice rendering may recalculate and can differ visually from Microsoft Office. Inspect is a basic content extraction and is not a full fidelity representation (e.g. charts, text in DOCX tables during paragraph edits, speaker notes, and embedded objects). Rendering produces PDF; use a PDF viewer to inspect pages visually. The `author` command does not support encrypted or macro-enabled files, live editing, collaboration, comments, tracked changes, cloud documents, or rich styling.
 
-Structured renders, page previews, selection extraction, Word/slide/cell searches, Word tracked-change inspection and review bundles check the source file identity, size and timestamps while making their shared snapshot; detected concurrent changes fail with a retry message. The check depends on filesystem metadata and does not lock other writers. Other inspection operations may use separate snapshot copying; use a saved, closed file for reliable results.
+Structured renders, page previews, selection extraction, Word/slide/cell searches, Word tracked-change inspection, review bundles, OfficeCLI batches, session startup, restore and export check the source file identity, size and timestamps while making their snapshot; detected concurrent changes fail with a retry message. The check depends on filesystem metadata and does not lock other writers. Other inspection operations may use separate snapshot copying; use a saved, closed file for reliable results.
 
 ## Structured OfficeCLI operations
 
@@ -118,7 +118,7 @@ To inspect one rendered page without producing all page PNGs, use `office-use re
 
 A session is a local directory of saved revision files. Start from a saved source, or pass `--format docx`, `xlsx` or `pptx` to start blank. The directory must be new and its parent must exist.
 
-For an existing source, startup checks the copied snapshot for ZIP packaging, required package metadata and a main content type matching its extension. This is a basic format check; use `audit` and visual review to assess document validity and fidelity. If startup fails, the new session directory is removed.
+For an existing source, startup limits the file to 128 MiB and checks the copied snapshot for ZIP packaging, required package metadata and a main content type matching its extension. This is a basic format check; use `audit` and visual review to assess document validity and fidelity. If startup fails, the new session directory is removed.
 
 ```sh
 office-use session start ./draft --source original.docx
@@ -336,6 +336,7 @@ The server offers `office_doctor`, `office_schema`, `inspect_file`, `session_ins
 ```sh
 python3 office/snapshot_smoke.py    # concurrent snapshot change detection
 python3 office/snapshot_integration_smoke.py # search and review entry points
+python3 office/session_snapshot_smoke.py # session and OfficeCLI batch entry points
 python3 office/install_smoke.py     # isolated install, CLI and MCP; requires pip, build tooling and MCP extra
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI

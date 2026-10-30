@@ -21,6 +21,7 @@ import officecli_backend
 import ooxml
 import review
 import spreadsheet
+import snapshot as snapshots
 import slides
 import slide_text_check
 import word
@@ -71,8 +72,10 @@ def start(directory, source=None, format=None):
     try:
         initial = directory / ('revision-000000' + suffix)
         if source:
-            shutil.copyfile(source, initial)
-            validate_source(initial, suffix)
+            with tempfile.TemporaryDirectory(dir=directory, prefix='.office-source-') as tmp:
+                candidate, _ = snapshots.copy(source, tmp)
+                validate_source(candidate, suffix)
+                os.replace(candidate, initial)
         else:
             officecli_backend.batch([], initial)
         with (directory / 'session.json').open('x', encoding='utf-8') as f:
@@ -141,8 +144,7 @@ def restore(directory, base_revision, revision):
         raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.{state['format']}"
     with tempfile.TemporaryDirectory(dir=state['directory'], prefix='.office-restore-') as tmp:
-        candidate = Path(tmp) / ('document' + source.suffix)
-        shutil.copyfile(source, candidate)
+        candidate, _ = snapshots.copy(source, tmp)
         try:
             os.link(candidate, output)
         except FileExistsError as exc:
@@ -251,8 +253,7 @@ def export(directory, revision, output):
         raise FileExistsError(f'Output already exists: {output}')
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-export-') as tmp:
-        candidate = Path(tmp) / ('document' + source.suffix)
-        shutil.copyfile(source, candidate)
+        candidate, _ = snapshots.copy(source, tmp)
         os.link(candidate, output)
     return {'revision': revision, 'output': str(output)}
 

@@ -129,3 +129,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Detect file replacement and ordinary concurrent writes during shared render and selection snapshot copying, remove incomplete copies, and verify both failure paths.
 
 - Apply checked snapshots to Word, slide and cell search, tracked-change inventory and review bundles; verify concurrent-write rejection at each entry point.
+
+- Check source stability before OfficeCLI batches and session creation, restore and export; concurrent writes abort publication, and session startup now shares the 128 MiB snapshot limit.

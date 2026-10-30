@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+import snapshot as snapshots
 from pathlib import Path
 
 
@@ -159,7 +160,8 @@ def batch(operations, output, source=None):
         created = False
         try:
             if source:
-                shutil.copyfile(source, candidate)
+                frozen, _ = snapshots.copy(source, tmp)
+                os.replace(frozen, candidate)
             else:
                 # create may start a resident even if its response fails.
                 created = True
