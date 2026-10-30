@@ -13,6 +13,7 @@ import officecli_backend
 import spreadsheet
 import review
 import session
+import selection_text
 from open_office_use import inspect, preview, render
 
 server = FastMCP(
@@ -59,6 +60,12 @@ def session_info(directory: str) -> dict[str, Any]:
 def session_selection(directory: str) -> dict[str, Any]:
     """Read the latest saved visual selection, its revision and whether it is stale."""
     return session.get_selection(directory)
+
+
+@server.tool()
+def session_selection_text(directory: str) -> dict[str, Any]:
+    """Extract PDF text whose word centers fall in the saved visual selection, including revision and bounds."""
+    return selection_text.extract(directory, render)
 
 
 @server.tool()

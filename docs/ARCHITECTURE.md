@@ -312,3 +312,5 @@ CLI `audit` and MCP `audit_file` run OfficeCLI schema validation and a bounded i
 Local draft sessions store saved revision files in a caller-chosen directory. Each batch creates the next revision by exclusive publication with optimistic base-revision checking; export copies a selected revision to a new external path. This is a file-backed editing session, without a live editor connection.
 
 `office-use watch` serves a local browser preview of the latest draft revision. It binds to loopback, uses a random URL token and exact Host checking, and renders page images in a temporary directory. The preview polls for committed revisions and can save a revision-bound visual selection. MCP exposes selection metadata and a crop from that exact revision; document edits remain in the batch workflow.
+
+Selected visual regions can be rendered to PDF and queried for word-center text geometry with Poppler. Results carry the selected revision and current staleness; they are visual text evidence and require structured lookup for editing targets.

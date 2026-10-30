@@ -19,3 +19,5 @@ Added file-backed versioned draft sessions with conflict detection and export vi
 Added loopback browser preview for the latest session revision with random URL access and automatic refresh. Tested real rendering, route restrictions and Chrome revision updates.
 
 Added revision-bound visual area selection in the session viewer and MCP access to metadata and rendered crops. Tested browser interaction, origin restrictions and stale revisions.
+
+Added selected-region PDF text and word geometry through CLI and MCP, retaining revision and staleness context. Verified three formats and narrow-region selection.

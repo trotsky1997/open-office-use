@@ -44,3 +44,7 @@ Added a local read-only browser preview that updates for committed session revis
 ## Visual selections
 
 Added page rectangle selection in the local viewer, persisted with revision and page. MCP returns selection metadata, staleness, and a rendered crop of the selected revision. Verified browser drag, stale selection rejection and cross-origin request rejection. Selection-to-element mapping and direct editing remain open.
+
+## Selected text
+
+Added PDF word-geometry extraction for saved visual selections via CLI and MCP. Verified selected text for DOCX, XLSX and PPTX, a bounded DOCX region and historical revision behavior. OCR, exact visual-to-element mapping and complex layout fidelity remain open.

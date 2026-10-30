@@ -16,6 +16,7 @@ import officecli_backend
 import spreadsheet
 import review
 import session
+import selection_text
 
 
 def kind(path):
@@ -150,6 +151,8 @@ def main():
     draft = commands.add_parser('session'); sub = draft.add_subparsers(dest='action', required=True)
     start = sub.add_parser('start'); start.add_argument('directory'); group = start.add_mutually_exclusive_group(required=True); group.add_argument('--source'); group.add_argument('--format', choices=['docx', 'xlsx', 'pptx'])
     state = sub.add_parser('info'); state.add_argument('directory')
+    selection = sub.add_parser('selection'); selection.add_argument('directory')
+    selected_text = sub.add_parser('selection-text'); selected_text.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
     watcher = commands.add_parser('watch'); watcher.add_argument('directory'); watcher.add_argument('--port', type=int, default=0)
@@ -174,6 +177,10 @@ def main():
                 result = session.start(args.directory, args.source, args.format)
             elif args.action == 'info':
                 result = session.info(args.directory)
+            elif args.action == 'selection':
+                result = session.get_selection(args.directory)
+            elif args.action == 'selection-text':
+                result = selection_text.extract(args.directory, render)
             elif args.action == 'apply':
                 with open(args.spec, encoding='utf-8') as f:
                     operations = json.load(f)

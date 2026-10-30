@@ -4,7 +4,7 @@ A first office-file workbench in the [iFurySt/open-browser-use](https://github.c
 
 ## Install
 
-Python 3.10+. PDF rendering requires LibreOffice on PATH; page PNG previews additionally require Poppler `pdftoppm`. The structured operations below require OfficeCLI on PATH (tested with 1.0.147):
+Python 3.10+. PDF rendering requires LibreOffice on PATH; page PNG previews additionally require Poppler `pdftoppm`, and selected text extraction requires `pdftotext`. The structured operations below require OfficeCLI on PATH (tested with 1.0.147):
 
 ```sh
 python3 -m pip install ./office
@@ -84,7 +84,7 @@ To watch the latest revision in a browser, run this in a separate terminal:
 office-use watch ./draft
 ```
 
-Open the printed URL on the same machine. The preview refreshes after a new revision is committed and shows LibreOffice/Poppler page images. Drag a rectangle on a page to save a visual selection for the agent; the selection form also accepts page-relative percentages by keyboard. The selection is stored in the session directory and replaces the previous selection. Stop the server with Ctrl+C. It binds to `127.0.0.1`, uses a random URL token and rejects other Host headers. Anyone who obtains that URL and can reach the local server can view the document; keep it private. The viewer changes selection metadata; editing and exporting documents continue through the CLI or MCP. Render fidelity and page layout depend on LibreOffice.
+Open the printed URL on the same machine. The preview refreshes after a new revision is committed and shows LibreOffice/Poppler page images. Drag a rectangle on a page to save a visual selection for the agent; the selection form also accepts page-relative percentages by keyboard. The selection is stored in the session directory and replaces the previous selection. Use `office-use session selection ./draft` to read it and `office-use session selection-text ./draft` to extract text from that region. Stop the server with Ctrl+C. It binds to `127.0.0.1`, uses a random URL token and rejects other Host headers. Anyone who obtains that URL and can reach the local server can view the document; keep it private. The viewer changes selection metadata; editing and exporting documents continue through the CLI or MCP. Render fidelity and page layout depend on LibreOffice.
 
 ## Inspect for issues
 
@@ -129,13 +129,14 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_export`, `session_selection`, and `session_selection_image`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. The selection is visual and does not identify an editable document element; find the appropriate element through structured reads before editing. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_export`, `session_selection`, `session_selection_image`, and `session_selection_text`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. Selected text extraction uses `pdftotext` word centers within the rectangle on a freshly rendered PDF and returns text, normalized word boxes, revision and staleness. It is bounded to 5,000 selected words and an 8 MiB page extraction. It can miss partially selected words, reordered text, images, or scanned text; it does not perform OCR. The selection is visual and does not identify an editable document element; locate and verify the target through structured reads before editing. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 
 ```sh
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
+python3 office/selection_smoke.py   # requires LibreOffice, Poppler and OfficeCLI
 python3 office/watch_smoke.py       # requires OfficeCLI, LibreOffice and Poppler
 python3 office/session_smoke.py     # requires OfficeCLI
 python3 office/audit_smoke.py       # requires OfficeCLI
