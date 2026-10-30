@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 from openpyxl import Workbook
 import xlsxwriter
@@ -39,7 +40,23 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [item['cell'] for item in json.loads(output.stdout)['matches']] == ['A201', 'A202']
     shared = root / 'shared.xlsx'; writer = xlsxwriter.Workbook(str(shared)); writer.add_worksheet().write('A1', '共享文本'); writer.close()
     shared_result = spreadsheet.search_cells(shared, '共享')
-    assert shared_result['matches'][0]['cell'] == 'A1' and not shared_result['complete'] and shared_result['unverified_text_cells'] == 1
+    assert shared_result['matches'][0]['cell'] == 'A1' and shared_result['complete'] and shared_result['unverified_text_cells'] == 0
+    mixed = root / 'mixed.xlsx'; writer = xlsxwriter.Workbook(str(mixed)); tab = writer.add_worksheet()
+    tab.write('A1', 'prefix x005F_text'); tab.write('A2', 'literal _x0041_')
+    tab.write_rich_string('A3', 'rich ', writer.add_format({'bold': True}), 'needle'); writer.close()
+    preserved = spreadsheet.search_cells(mixed, 'x005F_text')
+    assert preserved['matches'][0]['cell'] == 'A1' and preserved['matches'][0]['text_complete']
+    assert spreadsheet.search_cells(mixed, 'needle')['matches'][0]['cell'] == 'A3'
+    escaped = spreadsheet.search_cells(mixed, '_x0041_')
+    assert escaped['matches'][0]['cell'] == 'A2' and not escaped['matches'][0]['text_complete'] and escaped['unverified_text_cells'] == 1
+    phonetic = root / 'phonetic.xlsx'
+    with zipfile.ZipFile(shared) as original, zipfile.ZipFile(phonetic, 'w') as output:
+        for entry in original.infolist():
+            data = original.read(entry)
+            if entry.filename == 'xl/sharedStrings.xml': data = data.replace(b'</si>', b'<rPh sb="0" eb="1"><t>phonetic</t></rPh></si>', 1)
+            output.writestr(entry, data)
+    uncertain = spreadsheet.search_cells(phonetic, '共享')
+    assert uncertain['matches'][0]['cell'] == 'A1' and not uncertain['complete'] and uncertain['unverified_text_cells'] == 1
     large = root / 'large.xlsx'; big = Workbook(write_only=True); page = big.create_sheet()
     for _ in range(100000): page.append(['other'])
     page.append(['needle']); big.save(large)

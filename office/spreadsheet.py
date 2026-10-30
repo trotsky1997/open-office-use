@@ -185,6 +185,40 @@ FORMULA_SCAN_MAX_CELLS = 1000000
 FORMULA_SCAN_MAX_ISSUES = 200
 
 
+def search_shared_strings(archive):
+    """Read verifiable plain and rich strings from the package's shared string table."""
+    types_ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+    main_ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+    types = ET.fromstring(archive.read('[Content_Types].xml'))
+    parts = [item.get('PartName', '').lstrip('/') for item in types.findall(types_ns + 'Override')
+             if item.get('ContentType') == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml']
+    if len(parts) != 1 or parts[0] not in archive.namelist(): return None
+    strings = []
+    with archive.open(parts[0]) as stream:
+        root = None
+        for event, node in ET.iterparse(stream, events=('start', 'end')):
+            if root is None:
+                root = node
+                if root.tag != main_ns + 'sst': return None
+            if event == 'end' and node.tag == main_ns + 'si':
+                children = list(node); texts = []; valid = bool(children)
+                plain = [child for child in children if child.tag == main_ns + 't']
+                runs = [child for child in children if child.tag == main_ns + 'r']
+                valid = valid and (len(plain) == 1 and len(children) == 1 or bool(runs) and len(runs) == len(children))
+                for child in children:
+                    if child.tag == main_ns + 't':
+                        if len(child): valid = False
+                        texts.append(child.text or '')
+                    elif child.tag == main_ns + 'r':
+                        run_text = child.findall(main_ns + 't')
+                        if len(run_text) != 1 or len(child.findall(main_ns + 'rPr')) > 1 or any(len(item) for item in run_text) or any(item.tag not in (main_ns + 't', main_ns + 'rPr') for item in child): valid = False
+                        texts.extend(item.text or '' for item in run_text)
+                text = ''.join(texts)
+                if re.search(r'_x[0-9a-fA-F]{4}_', text): valid = False
+                strings.append((text, valid)); root.remove(node); node.clear()
+    return strings
+
+
 def search_cells(file, query, sheet=None, offset=0, snapshot_sha256=None):
     """Search stored worksheet text and formula text in a saved XLSX snapshot."""
     if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
@@ -213,6 +247,7 @@ def search_cells(file, query, sheet=None, offset=0, snapshot_sha256=None):
                 workbook = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
                 try:
                     sheets = [(s.title, s.sheet_state, s._worksheet_path, s._shared_strings) for s in workbook.worksheets]
+                    raw_strings = search_shared_strings(archive)
                     chartsheets = len(workbook.sheetnames) - len(sheets)
                     total_worksheets = len(sheets)
                     if sheet is not None:
@@ -247,7 +282,9 @@ def search_cells(file, query, sheet=None, offset=0, snapshot_sha256=None):
                                     elif element.get('t') == 's':
                                         raw = value.text if value is not None else None
                                         if raw is None or not raw.isdecimal() or len(raw) > 10 or int(raw) >= len(strings): raise ValueError(f'Invalid shared string index in {name}')
-                                        kind, text, uncertain = 'text', strings[int(raw)], True
+                                        index = int(raw); kind, text, uncertain = 'text', strings[index], True
+                                        if raw_strings is not None and len(raw_strings) == len(strings) and raw_strings[index][1]:
+                                            text, uncertain = raw_strings[index][0], False
                                     elif element.get('t') == 'inlineStr' and inline is not None:
                                         kind = 'text'; text = ''.join(node.text or '' for child in inline for node in ([child] if child.tag == ns + 't' else child.findall(ns + 't') if child.tag == ns + 'r' else []))
                                         uncertain = any(child.tag not in (ns + 't', ns + 'r') or child.tag == ns + 'r' and any(item.tag not in (ns + 't', ns + 'rPr') for item in child) for child in inline)
@@ -279,7 +316,7 @@ def search_cells(file, query, sheet=None, offset=0, snapshot_sha256=None):
                             'limits': {'stored_cells': 100000, 'matches': 200},
                             'notes': ['Counts and completeness apply to this page; continue with the same query and sheet.',
                                       'Search covers stored text and formula text, not calculated values or chart content.',
-                                      'Shared strings, shared formula followers and Excel escape sequences may be unverified.']}
+                                      'Complex shared strings, shared formula followers and Excel escape sequences may be unverified.']}
                 finally: workbook.close()
         except (zipfile.BadZipFile, ET.ParseError) as exc:
             raise ValueError(f'Invalid workbook package or worksheet XML: {exc}') from exc
