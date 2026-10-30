@@ -82,6 +82,32 @@ def metadata_part(archive):
     return path
 
 
+
+def unexpanded_dynamic_cell(cell, address):
+    if cell.tag != X + 'c' or cell.get('r') != address or cell.get('cm') != '1' or any(key not in ('r', 's', 't', 'cm') for key in cell.attrib): return False
+    if any(child.tag not in (X + 'f', X + 'v') for child in cell): return False
+    formulas = cell.findall(X + 'f'); values = cell.findall(X + 'v')
+    return len(formulas) == 1 and len(values) <= 1 and dict(formulas[0].attrib) == {'t': 'array', 'ref': address} and bool(formulas[0].text) and not len(formulas[0])
+
+
+def unexpanded_dynamic_anchors(source, sheet, addresses):
+    if not addresses: return set()
+    try:
+        part = grid_styles.sheet_part(source, sheet)
+        with zipfile.ZipFile(source) as archive:
+            if metadata_part(archive) is None: return set()
+            root = ooxml.parse_xml(archive.read(part)).getroot()
+            data = root.findall(X + 'sheetData')
+            if root.tag != X + 'worksheet' or len(data) != 1 or len(list(root.iter(X + 'sheetData'))) != 1: return set()
+            found = {}
+            for row in data[0].findall(X + 'row'):
+                for cell in row.findall(X + 'c'):
+                    address = cell.get('r')
+                    if address in addresses: found.setdefault(address, []).append(cell)
+            return {address for address, cells in found.items() if len(cells) == 1 and unexpanded_dynamic_cell(cells[0], address)}
+    except (ValueError, KeyError, etree.XMLSyntaxError):
+        return set()
+
 def remove_calculation_chain(archive, manifest):
     rel_path = 'xl/_rels/workbook.xml.rels'
     rel_raw = archive.read(rel_path); rel_tree = ooxml.parse_xml(rel_raw); rels = rel_tree.getroot()
@@ -133,6 +159,7 @@ def remove_calculation_chain(archive, manifest):
 def apply(source, output, sheet, changes, operations):
     source = Path(source); output = Path(output); targets = {change['cell']: change['value'] for change in changes}
     literal = {change['cell'] for change in changes if change.get('type') == 'text'}
+    old_dynamic = unexpanded_dynamic_anchors(source, sheet, set(targets))
     with zipfile.ZipFile(source) as archive:
         if any(name.startswith('_xmlsignatures/') for name in archive.namelist()): raise ValueError('Digitally signed workbooks are not supported for grid edits')
         style_name = grid_styles.style_part(archive)
@@ -162,8 +189,11 @@ def apply(source, output, sheet, changes, operations):
                     if requested: raise ValueError('OfficeCLI omitted a target cell')
                     values[address] = (None, None, None); continue
                 if any(key not in ('r', 's', 't', 'cm') for key in cell.attrib): raise ValueError('Candidate cell has unsupported metadata')
-                is_dynamic = cell.get('cm') is not None
-                if is_dynamic and (address in literal or not requested.startswith('=') or cell.get('cm') != '1'): raise ValueError('Unsupported candidate cell metadata')
+                cm = cell.get('cm')
+                if cm is not None and (cm != '1' or (address not in old_dynamic and (address in literal or not requested.startswith('=')))): raise ValueError('Unsupported candidate cell metadata')
+                formula_node = cell.find(X + 'f')
+                is_dynamic = cm is not None and formula_node is not None and formula_node.get('t') == 'array'
+                if cm is not None and not is_dynamic and address not in old_dynamic: raise ValueError('Unsupported candidate cell metadata')
                 style = cell.get('s', '0'); kind = cell.get('t'); children = list(cell)
                 if address not in literal and requested.startswith('='):
                     formulas = cell.findall(X + 'f')
@@ -222,11 +252,12 @@ def apply(source, output, sheet, changes, operations):
             cells = grid_styles.prepare_cells(root, addresses); cell_text.request_recalculation(root)
             formula_changed = False; string_count_uncertain = False
             for address, cell in cells.items():
-                if any(key not in ('r', 's', 't') for key in cell.attrib): raise ValueError('Target cell contains unsupported metadata')
+                old_is_dynamic = address in old_dynamic and unexpanded_dynamic_cell(cell, address) and metadata_part(archive) is not None
+                if any(key not in (('r', 's', 't', 'cm') if old_is_dynamic else ('r', 's', 't')) for key in cell.attrib): raise ValueError('Target cell contains unsupported metadata')
                 if any(child.tag not in (X + 'f', X + 'v', X + 'is') for child in cell): raise ValueError('Target cell contains unsupported content')
                 if len(cell.findall(X + 'f')) > 1 or len(cell.findall(X + 'v')) > 1 or len(cell.findall(X + 'is')) > 1: raise ValueError('Target cell content is ambiguous')
                 formula = cell.find(X + 'f')
-                if formula is not None and any(key != 't' or value != 'normal' for key, value in formula.attrib.items()): raise ValueError('Target formula has unsupported metadata')
+                if formula is not None and not old_is_dynamic and any(key != 't' or value != 'normal' for key, value in formula.attrib.items()): raise ValueError('Target formula has unsupported metadata')
                 inline = cell.find(X + 'is')
                 if inline is not None and any(node.tag in (X + 'rPh', X + 'phoneticPr') for node in inline.iter()): raise ValueError('Target text contains phonetic metadata')
                 style, kind, children = values[address]
@@ -235,7 +266,7 @@ def apply(source, output, sheet, changes, operations):
                 old_is_text = formula is None and cell.get('t') in ('s', 'str', 'inlineStr')
                 new_is_text = new_formula is None and kind == 'inlineStr'
                 if old_formula is not None or new_formula is not None or old_is_text != new_is_text: string_count_uncertain = True
-                if old_formula != new_formula: formula_changed = True
+                if old_formula != new_formula or old_is_dynamic != (address in dynamic): formula_changed = True
                 old_style = cell.get('s', '0')
                 if not re.fullmatch(r'[0-9]{1,10}', old_style) or original_xfs is None or int(old_style) >= len(original_xfs): raise ValueError('Invalid source style index')
                 if style is not None and int(style) != int(old_style):
@@ -249,6 +280,7 @@ def apply(source, output, sheet, changes, operations):
                     if grid_styles.equivalent(before_xf) != grid_styles.equivalent(after_xf): raise ValueError('Candidate changed unrelated cell formatting')
                 if style is not None and int(style) != int(old_style): cell.set('s', style)
                 if address in dynamic: cell.set('cm', '1')
+                elif old_is_dynamic: cell.attrib.pop('cm', None)
                 if kind is None: cell.attrib.pop('t', None)
                 else: cell.set('t', kind)
                 for child in list(cell): cell.remove(child)

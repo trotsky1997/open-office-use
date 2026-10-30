@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert comparison['before_render_advisory']['dynamic_array_metadata'] and comparison['after_render_advisory']['dynamic_array_metadata']
     cli_render = subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'render', result['file'], '--out-dir', str(root / 'pdf')], capture_output=True, text=True, check=True)
     assert json.loads(cli_render.stdout)['render_advisory']['dynamic_array_metadata'] and json.loads(cli_render.stdout)['snapshot_sha256'] == hashlib.sha256(Path(result['file']).read_bytes()).hexdigest()
-    grid = session.read_grid(draft, 1, 'Sheet', 'D1:E1'); assert all(not item['editable'] and item['read_only_reason'] == 'formula_range' for item in grid['rows'][0])
+    grid = session.read_grid(draft, 1, 'Sheet', 'D1:E1'); assert all(item['editable'] and item['dynamic_formula_anchor'] for item in grid['rows'][0])
     added = session.edit_grid(draft, 1, 'Sheet', 'F1', [{'cell':'F1','value':'=XLOOKUP(A1,D1:D3,E1:E3)'}])
     with zipfile.ZipFile(added['file']) as archive:
         assert grid_values.metadata_part(archive) == 'xl/office-use-metadata.xml'
@@ -76,10 +76,42 @@ with tempfile.TemporaryDirectory() as tmp:
         assert cells['F1'].find(X+'f').text == '_xlfn.XLOOKUP(A1,D1:D3,E1:E3)' and cells['F1'].find(X+'v') is None
     single = session.edit(draft, 2, '/Sheet/G1', 'formula', '=SORT(A1:A2)')
     assert single['dynamic_formula_cells'] == ['G1'] and single['revision'] == 3
-    try: session.edit_grid(draft, 3, 'Sheet', 'D1', [{'cell':'D1','value':'4'}])
+    try: session.format_grid(draft, 3, 'Sheet', 'D1', 'D1', {'bold': True})
     except ValueError: pass
-    else: raise AssertionError('Dynamic array anchor was editable')
-    assert session.info(draft)['latest_revision'] == 3
+    else: raise AssertionError('Dynamic array formatting accepted')
+    for index, (value, kind) in enumerate([('=SEQUENCE(4)', None), ('=1+1', None), ('7', None), ('', None), ('=literal', 'text')]):
+        edit_draft = root / f'anchor-edit-{index}'; session.start(edit_draft, source=result['file'])
+        change = {'cell': 'D1', 'value': value, **({'type': kind} if kind else {})}
+        edited = session.edit_grid(edit_draft, 0, 'Sheet', 'D1', [change])
+        with zipfile.ZipFile(edited['file']) as archive:
+            root_xml = etree.fromstring(archive.read('xl/worksheets/sheet1.xml')); cells = {cell.get('r'):cell for cell in root_xml.iter(X+'c')}
+            cell = cells['D1']; assert (cell.get('cm') == '1') == (index == 0)
+            assert cells['E1'].find(X+'f').text == '_xlfn.LET(_xlpm.x,1,_xlpm.x+1)' and cells['B1'].find(X+'v').text == '14'
+            if index == 0: assert cell.find(X+'f').text == '_xlfn.SEQUENCE(4)' and cell.find(X+'v') is None
+            if index == 1: assert cell.find(X+'f').text == '1+1' and cell.find(X+'v') is None
+            if index == 4: assert cell.get('t') == 'inlineStr' and cell.find(X+'is/'+X+'t').text == '=literal'
+        assert officecli_backend.audit(edited['file'])['validation']['exit_code'] == 0
+    single_draft = root / 'anchor-single'; session.start(single_draft, source=result['file'])
+    single_edit = session.edit(single_draft, 0, '/Sheet/D1', 'formula', '=SEQUENCE(5)')
+    assert single_edit['dynamic_formula_cells'] == ['D1']
+    expanded = root / 'expanded.xlsx'
+    with zipfile.ZipFile(result['file']) as before, zipfile.ZipFile(expanded, 'w') as after:
+        for entry in before.infolist():
+            data = before.read(entry)
+            if entry.filename == 'xl/worksheets/sheet1.xml':
+                tree = etree.fromstring(data); data_node = tree.find(X+'sheetData')
+                cells = {cell.get('r'):cell for cell in tree.iter(X+'c')}; cells['D1'].find(X+'f').set('ref','D1:D3')
+                for number in (2, 3):
+                    row = etree.SubElement(data_node, X+'row', r=str(number)); cell = etree.SubElement(row, X+'c', r=f'D{number}'); etree.SubElement(cell, X+'v').text = str(number)
+                data = etree.tostring(tree)
+            after.writestr(entry, data)
+    expanded_draft = root / 'expanded'; session.start(expanded_draft, source=expanded)
+    grid = session.read_grid(expanded_draft, 0, 'Sheet', 'D1:D3')
+    assert all(not row[0]['editable'] and row[0]['read_only_reason'] == 'formula_range' for row in grid['rows'])
+    try: session.edit_grid(expanded_draft, 0, 'Sheet', 'D1', [{'cell':'D1','value':'=SEQUENCE(4)'}])
+    except ValueError: pass
+    else: raise AssertionError('Expanded dynamic array was editable')
+    assert session.info(expanded_draft)['latest_revision'] == 0 and session.info(draft)['latest_revision'] == 3
     scan = session.scan_formulas(draft, 3); assert scan['dynamic_array_metadata'] is True and scan['dynamic_array_metadata_issue'] is None
     try: session.recalculate(draft, 3)
     except ValueError as error: assert 'Dynamic-array metadata detected' in str(error)

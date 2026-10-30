@@ -601,18 +601,25 @@ def read_grid(directory, base_revision, sheet, cell_range):
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     constraints = spreadsheet.worksheet_constraints(source, sheet, (min_col, min_row, max_col, max_row), True, True)
     result = spreadsheet.read_range(source, sheet, cell_range, include_style=True)
+    complex_addresses = {f'{get_column_letter(min_col + col_index)}{min_row + row_index}' for row_index, row in enumerate(result['rows']) for col_index, cell in enumerate(row) if isinstance(cell.get('formula'), dict)}
+    dynamic_anchors = grid_values.unexpanded_dynamic_anchors(source, sheet, complex_addresses)
     rows = []
     for row_index, row in enumerate(result['rows']):
         cells = []
         for col_index, cell in enumerate(row):
             col, row_number = min_col + col_index, min_row + row_index
+            address = f'{get_column_letter(col)}{row_number}'
             reason, origin = spreadsheet.cell_constraint(constraints, col, row_number, cell['locked'], isinstance(cell.get('formula'), dict))
-            display = cell.get('formula') if isinstance(cell.get('formula'), str) else cell.get('value')
+            overlaps = [bounds for bounds in constraints['formula_ranges'] if bounds[0] <= col <= bounds[2] and bounds[1] <= row_number <= bounds[3]]
+            dynamic_anchor = address in dynamic_anchors and overlaps == [(col, row_number, col, row_number)] and not any(bounds[0] <= col <= bounds[2] and bounds[1] <= row_number <= bounds[3] for bounds in constraints['merged_ranges']) and not (constraints['sheet_protected'] and cell['locked'])
+            if dynamic_anchor and reason == 'formula_range': reason = None
+            formula = cell.get('formula')
+            display = formula if isinstance(formula, str) else formula.get('text') if isinstance(formula, dict) else cell.get('value')
             if reason is None and 'formula' not in cell and cell.get('text_complete') is False:
                 reason = 'unverified_text'
             if reason is None and isinstance(display, str) and len(display.encode('utf-16-le')) // 2 > 4000:
                 reason = 'value_too_long'
-            cells.append({'cell': f'{get_column_letter(col)}{row_number}', **cell,
+            cells.append({'cell': address, **cell, 'dynamic_formula_anchor': dynamic_anchor,
                           'editable': reason is None, 'read_only_reason': reason, 'merged_anchor': origin})
         rows.append(cells)
     latest = info(directory)['latest_revision']
@@ -708,8 +715,8 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
             match = re.fullmatch(r'([A-Z]+)([0-9]+)', cell['cell'])
             col, number = column_index_from_string(match.group(1)), int(match.group(2))
             if sc1 <= col <= sc2 and sr1 <= number <= sr2:
-                if not cell['editable']:
-                    raise ValueError(f"Cell cannot be formatted in the grid: {cell['cell']} ({cell['read_only_reason']})")
+                if not cell['editable'] or cell['dynamic_formula_anchor']:
+                    raise ValueError(f"Cell cannot be formatted in the grid: {cell['cell']} ({cell['read_only_reason'] or 'formula_range'})")
                 operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': props})
     state = info(directory); source = revision_file(state, base_revision)
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")

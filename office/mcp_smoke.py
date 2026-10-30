@@ -377,7 +377,12 @@ async def main():
                 dynamic = await session.call_tool('session_edit_grid', {'directory': str(dynamic_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'C1', 'changes': [{'cell': 'C1', 'value': '=SEQUENCE(3)'}]})
                 assert not dynamic.isError and dynamic.structuredContent['recalculation_requested'] and dynamic.structuredContent['dynamic_formula_cells'] == ['C1'], dynamic
                 dynamic_read = await session.call_tool('session_read_grid', {'directory': str(dynamic_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'C1'})
-                assert not dynamic_read.isError and not dynamic_read.structuredContent['rows'][0][0]['editable'], dynamic_read
+                assert not dynamic_read.isError and dynamic_read.structuredContent['rows'][0][0]['editable'] and dynamic_read.structuredContent['rows'][0][0]['dynamic_formula_anchor'], dynamic_read
+                dynamic_edit_draft = root / 'dynamic-edit-draft'
+                assert not (await session.call_tool('start_session', {'directory': str(dynamic_edit_draft), 'source': str(dynamic_draft / 'revision-000001.xlsx')})).isError
+                dynamic_edited = await session.call_tool('session_edit_grid', {'directory': str(dynamic_edit_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'C1', 'changes': [{'cell':'C1','value':'=SEQUENCE(4)'}]})
+                assert not dynamic_edited.isError and dynamic_edited.structuredContent['dynamic_formula_cells'] == ['C1'], dynamic_edited
+                assert load_workbook(dynamic_edit_draft / 'revision-000001.xlsx').active['C1'].value.text == '=_xlfn.SEQUENCE(4)'
                 dynamic_pdf = await session.call_tool('render_pdf', {'file': str(dynamic_draft / 'revision-000001.xlsx'), 'output_dir': str(root / 'dynamic-pdf')})
                 assert not dynamic_pdf.isError and dynamic_pdf.structuredContent['render_advisory']['dynamic_array_metadata'] is True, dynamic_pdf
                 dynamic_view = await session.call_tool('session_view_page', {'directory': str(dynamic_draft), 'revision': 1, 'page': 1})

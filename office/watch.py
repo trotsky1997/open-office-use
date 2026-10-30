@@ -133,7 +133,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Changes affect entire columns or rows, including cells outside this range.</p>
 <details><summary>Stored dimensions for loaded range</summary><pre id="grid-dimensions"></pre></details></fieldset>
 <p>Formatting applies to the loaded range or a smaller range. Existing patterned fills keep their pattern; theme colors are not previewed in the grid.</p>
-<p>Up to 200 cells. Paste tab-separated cells starting at the focused cell. Enter formulas beginning with =. Choose a default type or override it for each cell. Literal text retains leading zeros or = characters. Changing a nonempty cell’s type also saves it. Enter line breaks in a cell; quoted clipboard cells may contain line breaks. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
+<p>Up to 200 cells. Paste tab-separated cells starting at the focused cell. Enter formulas beginning with =. Choose a default type or override it for each cell. Literal text retains leading zeros or = characters. Changing a nonempty cell’s type also saves it. Enter line breaks in a cell; quoted clipboard cells may contain line breaks. Numeric and date values can be converted by OfficeCLI; expanded array, data-table and shared formula ranges are read-only; supported unexpanded dynamic-array anchors can be edited.</p>
 <p id="grid-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
@@ -373,6 +373,7 @@ async function loadGrid(target=null) {
     input.title=`Number format: ${cell.style.number_format}`;
     if (value.includes('\\r')) input.title+='; editing normalizes carriage returns to line feeds';
     if (typeof formula==='string') input.title+=`; cached result: ${cell.value == null ? 'unknown' : cell.value}`;
+    if (cell.dynamic_formula_anchor) input.title+='; dynamic array anchor with unresolved spill range';
     if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : cell.read_only_reason==='value_too_long' ? 'Cell content exceeds the 4,000 UTF-16-unit editing limit' : cell.read_only_reason==='unverified_text' ? 'Text could not be verified; inspect the source before editing' : 'Protected formula range';
     else if (cell.merged_anchor) input.title+=`; merged region anchor ${cell.merged_anchor}`;
     const mode=document.createElement('select'); mode.setAttribute('aria-label', `${sheet} ${cell.cell} input type`);
