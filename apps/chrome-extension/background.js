@@ -758,17 +758,18 @@ class BrowserBackend {
   }
 
   async waitForDownload(params) {
-    await this.requireSessionTab(params, "waitForDownload");
-    const timeoutMs =
-      typeof params.timeoutMs === "number" && params.timeoutMs > 0
-        ? params.timeoutMs
-        : DEFAULT_CDP_TIMEOUT_MS;
-    if (params.waitId !== undefined && (typeof params.waitId !== "string" || !/^[0-9a-f-]{36}$/.test(params.waitId))) throw new Error("Invalid download wait ID");
     // shortcut: downloads lack tab attribution here; permit concurrent waits when reliable attribution is available.
     if (this.downloadStartWait) throw new Error("Already waiting for a Chrome download");
-    const wait = { sessionId: params.session_id, tabId: params.tabId, controller: new AbortController() };
+    const wait = { sessionId: params?.session_id, tabId: params?.tabId, controller: new AbortController() };
     this.downloadStartWait = wait;
     try {
+      await this.requireSessionTab(params, "waitForDownload");
+      if (wait.controller.signal.aborted) throw new Error("Download wait canceled");
+      const timeoutMs =
+        typeof params.timeoutMs === "number" && params.timeoutMs > 0
+          ? params.timeoutMs
+          : DEFAULT_CDP_TIMEOUT_MS;
+      if (params.waitId !== undefined && (typeof params.waitId !== "string" || !/^[0-9a-f-]{36}$/.test(params.waitId))) throw new Error("Invalid download wait ID");
       const waiting = this.waitForDownloadChange(
         (change) => change.status === "started",
         timeoutMs,

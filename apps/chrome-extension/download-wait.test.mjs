@@ -63,6 +63,17 @@ test('ending the owning session cancels its pending download wait',async()=>{
   assert.equal((await next).downloadId,'next');
 });
 
+test('session cleanup also cancels a download wait during tab validation',async()=>{
+  const backend=new Backend();await backend.store.ready;
+  let release;backend.requireSessionTab=()=>new Promise(resolve=>{release=resolve;});
+  backend.requireSession=async params=>({sessionId:params.session_id});backend.getSessionTabs=async()=>[];
+  let ready=false;backend.downloadReadyListeners.add(()=>{ready=true;});
+  const pending=backend.waitForDownload({session_id:'first',tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
+  const canceled=assert.rejects(pending,/Download wait canceled/);
+  await backend.turnEnded({session_id:'first'});release();await canceled;
+  assert.equal(ready,false);assert.equal(backend.downloadWaiters.size,0);assert.equal(backend.downloadStartWait,null);
+});
+
 test('file chooser readiness follows interception and preserves the frame session',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.requireSession=async()=>({});backend.attachedTabs.add(1);
   commands.length=0;let ready=false;

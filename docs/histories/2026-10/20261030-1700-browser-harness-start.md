@@ -159,3 +159,5 @@ Electron 新增作用域下载：宿主显式配置现有私有目录与大小�
 Chrome 下载并发检查补充原生链路验证：macOS 隔离 Chromium profile 中，第二个等待请求被拒绝，首个等待仍可完成，随后下一次下载也成功。调研中启用 Page 域后，主页面下载产生带来源 tab、frameId 和 GUID 的 Page.downloadWillBegin；chrome.downloads.onCreated 则使用独立数字 ID，当前观察到 URL 相同但缺少跨接口的共同标识。两个连续样本不能证明事件排序或同 URL 并发时的关联，仍需研究可靠匹配方案。
 
 Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器断开取消，释放唯一的下载等待槽；其他会话结束不会取消该等待。扩展测试 27 项通过，macOS 隔离 Chromium 经原生消息链路实测 turnEnded 取消等待及后续重新注册。
+
+修复下载等待注册与会话清理的竞态：在异步校验标签前记录等待，若会话清理期间取消，则校验完成后直接结束，既不注册监听也不发送准备通知。扩展测试 28 项通过；macOS 隔离 Chromium 的真实下载、并发拒绝及会话取消检查通过。
