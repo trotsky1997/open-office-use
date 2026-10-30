@@ -2566,7 +2566,7 @@ export class OpenBrowserUseTabDomCUA {
         const step = { selector: 'a[href],button,input,textarea,select,summary,details,label,img,video,audio,[role],[onclick],[contenteditable="true"],[tabindex]', before: [{ visible: true }] };
         const frames = await this.tab.domFrames(), connectionGeneration = this.tab.browser.client.connectionGeneration;
         const nodes = [];
-        let total = 0;
+        let total = 0, visibilityIncomplete = false;
         const frameVisibility = new Map(), frameClips = new Map();
         for (const frame of frames) {
             const inViewport = await this.tab.domFrameInViewport(frame, frames);
@@ -2587,12 +2587,36 @@ export class OpenBrowserUseTabDomCUA {
             const world = await this.tab.browser.cdp.call(this.tab.id, 'Page.createIsolatedWorld', { frameId: snapshot.frame.id, worldName: 'open-browser-use-selector' }, { sessionId });
             if (!isObject(world) || typeof world.executionContextId !== 'number')
                 throw new RetryablePreflightError('DOM context unavailable; observe again');
-            for (const id of snapshot.ids) {
-                const resolved = await this.tab.browser.cdp.call(this.tab.id, 'DOM.resolveNode', { backendNodeId: id, executionContextId: world.executionContextId }, { sessionId });
-                const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
-                if (typeof objectId !== 'string')
-                    throw new RetryablePreflightError('DOM target changed; observe again');
-                try {
+            const objects = [];
+            try {
+                for (const id of snapshot.ids) {
+                    const resolved = await this.tab.browser.cdp.call(this.tab.id, 'DOM.resolveNode', { backendNodeId: id, executionContextId: world.executionContextId }, { sessionId });
+                    const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+                    if (typeof objectId !== 'string')
+                        throw new RetryablePreflightError('DOM target changed; observe again');
+                    objects.push({ id, objectId });
+                }
+                const observeIntersections = async () => {
+                    if (!objects.length)
+                        return [];
+                    if (visibilityIncomplete)
+                        return objects.map(() => true);
+                    const observed = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId: objects[0].objectId, arguments: objects.slice(1).map(item => ({ objectId: item.objectId })), returnByValue: true, awaitPromise: true, functionDeclaration: `async function(...others){const nodes=[this,...others];return await new Promise((resolve,reject)=>{const indices=new Map(nodes.map((node,index)=>[node,index])),values=Array(nodes.length),seen=new Set();const timer=setTimeout(()=>{observer.disconnect();reject(new Error('Intersection observation timed out'))},3000);const observer=new IntersectionObserver(entries=>{for(const entry of entries){const index=indices.get(entry.target);if(index===undefined)continue;values[index]=entry.isIntersecting && entry.intersectionRect.width>0 && entry.intersectionRect.height>0;seen.add(index)}if(seen.size===nodes.length){clearTimeout(timer);observer.disconnect();resolve(values)}});for(const node of nodes)observer.observe(node)})}` }, { sessionId });
+                    const exception = isObject(observed) && isObject(observed.exceptionDetails) && isObject(observed.exceptionDetails.exception) ? observed.exceptionDetails.exception.description : undefined;
+                    if (typeof exception === 'string' && exception.includes('Intersection observation timed out')) {
+                        visibilityIncomplete = true;
+                        return objects.map(() => true);
+                    }
+                    const values = isObject(observed) && isObject(observed.result) ? observed.result.value : null;
+                    if (!Array.isArray(values) || values.length !== objects.length || values.some(value => typeof value !== 'boolean'))
+                        throw new RetryablePreflightError('DOM visibility unavailable; observe again');
+                    return values;
+                };
+                const intersections = await observeIntersections();
+                for (let i = 0; i < objects.length; i++) {
+                    if (!intersections[i])
+                        continue;
+                    const { id, objectId } = objects[i];
                     const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: clip }], functionDeclaration: `function(clip){if(!this.isConnected)return null;const r=this.getBoundingClientRect();if(r.right<=clip.left || r.bottom<=clip.top || r.left>=clip.right || r.top>=clip.bottom)return {outside:true};const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role'),name:name.trim().slice(0,500) || null}}` }, { sessionId });
                     const value = isObject(result) && isObject(result.result) ? result.result.value : null;
                     if (!isObject(value))
@@ -2605,9 +2629,13 @@ export class OpenBrowserUseTabDomCUA {
                     ids.set(node_id, { snapshot, id, identity });
                     nodes.push({ node_id, frame_id: frame.id, ...identity });
                 }
-                finally {
+                const beforeIncomplete = visibilityIncomplete, latestIntersections = await observeIntersections();
+                if (!beforeIncomplete && !visibilityIncomplete && JSON.stringify(latestIntersections) !== JSON.stringify(intersections))
+                    throw new RetryablePreflightError('DOM visibility changed; observe again');
+            }
+            finally {
+                for (const { objectId } of objects)
                     await this.tab.browser.cdp.call(this.tab.id, 'Runtime.releaseObject', { objectId }, { sessionId }).catch(() => { });
-                }
             }
             const fresh = await this.tab.queryCss(step, undefined, [], undefined, undefined, frame.id);
             if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids)) {
@@ -2626,7 +2654,7 @@ export class OpenBrowserUseTabDomCUA {
         this.ids = ids;
         this.connectionGeneration = connectionGeneration;
         this.snapshot = true;
-        return { nodes };
+        return { nodes, ...(visibilityIncomplete ? { visibility_incomplete: true } : {}) };
     }
     target(node_id) {
         const target = this.ids.get(node_id);

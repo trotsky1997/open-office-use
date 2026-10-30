@@ -395,6 +395,7 @@ export declare class OpenBrowserUseTabDomCUA {
             role: string | null;
             name: string | null;
         }>;
+        visibility_incomplete?: boolean;
     }>;
     private target;
     private clickNode;

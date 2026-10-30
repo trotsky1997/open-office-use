@@ -846,8 +846,11 @@ Electron hosts must authorize the exact files and grant `files.upload` and
 `frame_id`, tag, role and a short name for visible, viewport-intersecting
 interactive elements in readable frames and open shadow roots. Frame viewport
 intersection is propagated through axis-aligned frame bounds. Rotated or skewed
-frames make the snapshot fail explicitly. Clipping by other overflow ancestors
-is not reflected in the snapshot; input performs hit checks.
+frames make the snapshot fail explicitly. Browser intersection observations also
+filter nodes clipped by overflow ancestors. If an observation takes over three
+seconds, as can happen in a background tab, the result sets
+`visibility_incomplete: true` and uses geometry without overflow clipping.
+Occlusion is checked before input.
 The underlying match set is limited to 1000 elements across frames. Text and
 attributes are page data and may be incomplete.
 
