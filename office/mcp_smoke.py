@@ -144,6 +144,10 @@ async def main():
                 assert not slide_text.isError and slide_text.structuredContent['mapping_valid'] and slide_text.structuredContent['text_shapes_checked'] == 1 and slide_text.structuredContent['table_cells_checked'] == 1, slide_text
                 slide_text_revision = await session.call_tool('session_inspect_slide_text', {'directory': str(slide_draft), 'revision': 0})
                 assert not slide_text_revision.isError and slide_text_revision.structuredContent['revision'] == 0, slide_text_revision
+                group_source = root / 'group-text.pptx'; group_deck = Presentation(); group_slide = group_deck.slides.add_slide(group_deck.slide_layouts[6]); group = group_slide.shapes.add_group_shape()
+                group.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = 'group text'; group_deck.save(group_source)
+                group_check = await session.call_tool('inspect_slide_text', {'file': str(group_source)})
+                assert not group_check.isError and group_check.structuredContent['complete'] and group_check.structuredContent['text_shapes_checked'] == 1, group_check
                 slide_edit = await session.call_tool('session_replace_text', {'directory': str(slide_draft), 'base_revision': 0, 'path': '/slide[1]/shape[1]/paragraph[1]', 'find': 'content', 'replacement': 'result'})
                 assert not slide_edit.isError and Presentation(slide_draft / 'revision-000001.pptx').slides[0].shapes[0].text == 'slide result', slide_edit
                 historic_layout = await session.call_tool('session_inspect_slide_layout', {'directory': str(slide_draft), 'revision': 0})

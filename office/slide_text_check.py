@@ -28,7 +28,7 @@ def validate_package(source):
             raise ValueError('Presentation exceeds package limits or contains duplicate parts')
 
 
-def table_cells(shape, slide, width, height):
+def table_cells(shape, prefix, matrix, width, height):
     table = shape.table; rows = len(table.rows); columns = len(table.columns)
     if not rows or not columns or rows * columns > 10000: raise ValueError('table_size')
     col_sizes = [column.width for column in table.columns]; row_sizes = [row.height for row in table.rows]
@@ -36,7 +36,7 @@ def table_cells(shape, slide, width, height):
     x_edges = [shape.left]; y_edges = [shape.top]; total_width = sum(col_sizes); total_height = sum(row_sizes)
     for value in col_sizes: x_edges.append(x_edges[-1] + value * shape.width / total_width)
     for value in row_sizes: y_edges.append(y_edges[-1] + value * shape.height / total_height)
-    prefix = f'/slide[{slide}]/table[@id={shape.shape_id}]'; covered = set(); entries = []
+    covered = set(); entries = []
     for row in range(rows):
         for column in range(columns):
             cell = table.cell(row, column); path = f'{prefix}/tr[{row + 1}]/tc[{column + 1}]'
@@ -53,7 +53,9 @@ def table_cells(shape, slide, width, height):
                     if (r, c) == (row, column): continue
                     if (r, c) in covered: raise ValueError('overlapping_merged_cells')
                     covered.add((r, c))
-            bounds = [x_edges[column] / width, y_edges[row] / height, x_edges[column + col_span] / width, y_edges[row + row_span] / height]
+            x1, y1 = layout.point(matrix, x_edges[column], y_edges[row])
+            x2, y2 = layout.point(matrix, x_edges[column + col_span], y_edges[row + row_span])
+            bounds = [x1 / width, y1 / height, x2 / width, y2 / height]
             entries.append((path, cell.text, bounds))
     return entries, rows * columns
 
@@ -75,7 +77,7 @@ def inspect(source, pdf):
               'mapping_issues': reasons, 'shapes_scanned': 0, 'text_shapes_checked': 0, 'table_cells_scanned': 0, 'table_cells_checked': 0,
               'skipped_count': 0, 'skipped': [], 'skipped_truncated': False, 'candidate_count': 0, 'candidates': [], 'candidates_truncated': False, 'complete': False,
               'notes': ['Candidates compare source text with extracted PDF text within the text box or table cell bounds; inspect the rendered page.',
-                        'Font encoding, overlapping objects, line order, clipping and renderer differences affect results. Masters, layouts, groups and OCR are outside this check.']}
+                        'Font encoding, overlapping objects, line order, clipping and renderer differences affect results. Masters, layouts, rotated or flipped groups and OCR are outside this check.']}
     if reasons: return result
     executable = shutil.which('pdftotext')
     if not executable: raise RuntimeError('Poppler pdftotext is required for slide text inspection')
@@ -104,47 +106,66 @@ def inspect(source, pdf):
             except (KeyError, ValueError) as exc: raise ValueError('Invalid PDF word bounds') from exc
             if not all(math.isfinite(value) for value in box): raise ValueError('Invalid PDF word bounds')
             words.append(((box[0] + box[2]) / (2 * pw), (box[1] + box[3]) / (2 * ph), ''.join(node.itertext())))
-        for shape in slide.shapes:
-            if result['shapes_scanned'] >= 10000: skip(index, None, 'shape_limit'); stop = True; break
-            result['shapes_scanned'] += 1
-            metadata = next(shape._element.iter(layout.P + 'cNvPr'), None)
-            if metadata is not None and metadata.get('hidden') in ('1', 'true'): continue
-            path = f'/slide[{index}]/shape[@id={shape.shape_id}]'
-            if shape.shape_type == MSO_SHAPE_TYPE.GROUP: skip(index, path, 'group'); continue
-            is_table = shape.has_table
-            if is_table: path = f'/slide[{index}]/table[@id={shape.shape_id}]'
-            if not is_table and (not shape.has_text_frame or not shape.text_frame.text.strip()): continue
-            if shape.rotation or shape.left is None or shape.top is None or shape.width is None or shape.height is None or shape.width <= 0 or shape.height <= 0:
-                skip(index, path, 'rotated_or_empty_bounds'); continue
-            if is_table:
-                transform = shape._element.find(layout.P + 'xfrm')
-                if transform is not None and any(transform.get(attr) not in (None, '0', 'false') for attr in ('flipH', 'flipV')):
-                    skip(index, path, 'flipped_table'); continue
-                try: entries, cell_count = table_cells(shape, index, width, height)
-                except (ValueError, TypeError, IndexError, AttributeError, OverflowError) as exc:
-                    skip(index, path, str(exc)[:100] or 'invalid_table'); continue
-                if result['table_cells_scanned'] + cell_count > 10000:
-                    skip(index, path, 'table_cell_limit'); stop = True; break
-                result['table_cells_scanned'] += cell_count
-            else:
-                x1, y1 = shape.left / width, shape.top / height
-                x2, y2 = (shape.left + shape.width) / width, (shape.top + shape.height) / height
-                entries = [(path, shape.text_frame.text, [x1, y1, x2, y2])]
-            for path, text, bounds in entries:
-                if not text.strip(): continue
-                if len(text) > 10000: skip(index, path, 'text_limit'); continue
-                expected = normalize(text)
-                if not expected: skip(index, path, 'no_comparable_characters'); continue
-                if checks + len(words) > 2000000: skip(index, path, 'comparison_limit'); stop = True; break
-                checks += len(words)
-                x1, y1, x2, y2 = bounds
-                extracted = normalize(' '.join(text for x, y, text in words if x1 <= x <= x2 and y1 <= y <= y2))
-                result['table_cells_checked' if is_table else 'text_shapes_checked'] += 1
-                if expected not in extracted:
-                    result['candidate_count'] += 1
-                    if len(result['candidates']) < 200:
-                        result['candidates'].append({'slide': index, 'path_hint': path, 'name': str(shape.name or '')[:200], 'source_text': text[:200], 'source_text_truncated': len(text) > 200,
-                                                     'bounds': bounds, 'extracted_text': extracted[:200]})
+        def walk(shapes, matrix, prefix, depth):
+            nonlocal checks, stop
+            for shape in shapes:
+                if result['shapes_scanned'] >= 10000: skip(index, None, 'shape_limit'); stop = True; break
+                result['shapes_scanned'] += 1
+                metadata = next(shape._element.iter(layout.P + 'cNvPr'), None)
+                if metadata is not None and metadata.get('hidden') in ('1', 'true'): continue
+                path = f'{prefix}/shape[@id={shape.shape_id}]'
+                if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                    path = f'{prefix}/group[@id={shape.shape_id}]'
+                    if depth >= 8: skip(index, path, 'group_depth'); continue
+                    try:
+                        transform = shape._element.find(layout.P + 'grpSpPr/' + layout.A + 'xfrm')
+                        if transform is None or any(transform.get(attr) not in (None, '0', 'false', '1', 'true') for attr in ('flipH', 'flipV')):
+                            raise ValueError('invalid_group_transform')
+                        child_matrix = layout.group_transform(shape, matrix)
+                        if not all(math.isfinite(v) for v in child_matrix) or child_matrix[0] <= 0 or child_matrix[3] <= 0 or abs(child_matrix[1]) > 1e-9 or abs(child_matrix[2]) > 1e-9:
+                            raise ValueError('rotated_or_flipped_group')
+                        walk(shape.shapes, child_matrix, path, depth + 1)
+                        if stop: return
+                    except (ValueError, TypeError, AttributeError, OverflowError) as exc:
+                        skip(index, path, str(exc)[:100] or 'invalid_group')
+                    continue
+                is_table = shape.has_table
+                if is_table: path = f'{prefix}/table[@id={shape.shape_id}]'
+                if not is_table and (not shape.has_text_frame or not shape.text_frame.text.strip()): continue
+                if shape.rotation or shape.left is None or shape.top is None or shape.width is None or shape.height is None or shape.width <= 0 or shape.height <= 0:
+                    skip(index, path, 'rotated_or_empty_bounds'); continue
+                if is_table:
+                    transform = shape._element.find(layout.P + 'xfrm')
+                    if transform is not None and any(transform.get(attr) not in (None, '0', 'false') for attr in ('flipH', 'flipV')):
+                        skip(index, path, 'flipped_table'); continue
+                    try: entries, cell_count = table_cells(shape, path, matrix, width, height)
+                    except (ValueError, TypeError, IndexError, AttributeError, OverflowError) as exc:
+                        skip(index, path, str(exc)[:100] or 'invalid_table'); continue
+                    if result['table_cells_scanned'] + cell_count > 10000:
+                        skip(index, path, 'table_cell_limit'); stop = True; break
+                    result['table_cells_scanned'] += cell_count
+                else:
+                    x1, y1 = layout.point(matrix, shape.left, shape.top)
+                    x2, y2 = layout.point(matrix, shape.left + shape.width, shape.top + shape.height)
+                    x1, y1, x2, y2 = x1 / width, y1 / height, x2 / width, y2 / height
+                    entries = [(path, shape.text_frame.text, [x1, y1, x2, y2])]
+                for path, text, bounds in entries:
+                    if not text.strip(): continue
+                    if len(text) > 10000: skip(index, path, 'text_limit'); continue
+                    expected = normalize(text)
+                    if not expected: skip(index, path, 'no_comparable_characters'); continue
+                    if checks + len(words) > 2000000: skip(index, path, 'comparison_limit'); stop = True; break
+                    checks += len(words)
+                    x1, y1, x2, y2 = bounds
+                    extracted = normalize(' '.join(text for x, y, text in words if x1 <= x <= x2 and y1 <= y <= y2))
+                    result['table_cells_checked' if is_table else 'text_shapes_checked'] += 1
+                    if expected not in extracted:
+                        result['candidate_count'] += 1
+                        if len(result['candidates']) < 200:
+                            result['candidates'].append({'slide': index, 'path_hint': path, 'name': str(shape.name or '')[:200], 'source_text': text[:200], 'source_text_truncated': len(text) > 200,
+                                                         'bounds': bounds, 'extracted_text': extracted[:200]})
+                if stop: return
+        walk(slide.shapes, (1, 0, 0, 1, 0, 0), f'/slide[{index}]', 0)
         if stop: break
     result['complete'] = not result['skipped_count'] and result['mapping_valid']
     result['candidates_truncated'] = result['candidate_count'] > len(result['candidates'])
