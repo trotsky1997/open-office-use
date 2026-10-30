@@ -39,7 +39,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.datavalidation import DataValidation
-from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
+from openpyxl.worksheet.hyperlink import Hyperlink
+from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries, quote_sheetname
 from openpyxl.utils.datetime import to_excel
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
@@ -1173,6 +1174,7 @@ def author(spec, output, source=None):
             obj = spreadsheet.load_author_workbook(source) if source else Workbook()
             sheets = spec.get('sheets', {}); ranges = spec.get('ranges', {})
             if not isinstance(sheets, dict) or not isinstance(ranges, dict) or len(ranges) > 100: raise ValueError('Workbook sheets and ranges must be objects with at most 100 range sheets')
+            internal_targets = []
             def write_cell(ws, address, value):
                 if ws.tables:
                     try:
@@ -1183,15 +1185,18 @@ def author(spec, output, source=None):
                         a, b, c, d = range_boundaries(table.ref)
                         if a <= c1 <= c and ((r1 == b and table.headerRowCount != 0) or (r1 == d and (table.totalsRowCount or table.totalsRowShown))):
                             raise ValueError('Table header and totals cells require a table-aware edit')
-                literal = False; temporal = False; link_url = None
+                literal = False; temporal = False; link_url = None; link_location = None
                 if isinstance(value, dict):
                     if value.get('type') == 'hyperlink':
-                        if set(value) != {'type', 'value', 'url'} or not isinstance(value['value'], str) or not value['value']: raise ValueError('Hyperlink cell requires nonempty text and a URL')
-                        link_url = value['url']
-                        if not isinstance(link_url, str) or len(link_url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 or 0xd800 <= ord(char) <= 0xdfff or ord(char) in (0xfffe, 0xffff) for char in link_url): raise ValueError('Invalid hyperlink URL')
-                        try: parsed = urlsplit(link_url); hostname = parsed.hostname
-                        except ValueError: raise ValueError('Invalid hyperlink URL') from None
-                        if parsed.scheme.lower() not in ('http', 'https', 'mailto') or (parsed.scheme.lower() in ('http', 'https') and not hostname) or (parsed.scheme.lower() == 'mailto' and not parsed.path): raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
+                        if set(value) not in ({'type', 'value', 'url'}, {'type', 'value', 'location'}) or not isinstance(value['value'], str) or not value['value']: raise ValueError('Hyperlink cell requires nonempty text and one target')
+                        if 'location' in value:
+                            link_location = session.normalize_hyperlink_location(value['location']); internal_targets.append(link_location)
+                        else:
+                            link_url = value['url']
+                            if not isinstance(link_url, str) or len(link_url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 or 0xd800 <= ord(char) <= 0xdfff or ord(char) in (0xfffe, 0xffff) for char in link_url): raise ValueError('Invalid hyperlink URL')
+                            try: parsed = urlsplit(link_url); hostname = parsed.hostname
+                            except ValueError: raise ValueError('Invalid hyperlink URL') from None
+                            if parsed.scheme.lower() not in ('http', 'https', 'mailto') or (parsed.scheme.lower() in ('http', 'https') and not hostname) or (parsed.scheme.lower() == 'mailto' and not parsed.path): raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
                         literal = True; value = value['value']
                     else:
                         if set(value) != {'type', 'value'} or value['type'] not in ('text', 'date', 'datetime') or not isinstance(value['value'], str) or not value['value']: raise ValueError('Invalid typed cell value')
@@ -1215,8 +1220,9 @@ def author(spec, output, source=None):
                 if not formula: spreadsheet.validate_cell_value(value)
                 ws[address] = value
                 if literal: ws[address].data_type = 's'
-                if link_url is not None:
-                    cell = ws[address]; cell.hyperlink = link_url
+                if link_url is not None or link_location is not None:
+                    cell = ws[address]
+                    cell.hyperlink = link_url if link_url is not None else Hyperlink(ref=cell.coordinate, location=quote_sheetname(link_location['sheet']) + '!' + link_location['cell'])
                     if not cell.has_style:
                         font = copy(cell.font); font.color = 'FF0563C1'; font.underline = 'single'; cell.font = font
             def worksheet(name):
@@ -1257,6 +1263,8 @@ def author(spec, output, source=None):
                             seen.add((col,number)); write_cell(ws, f'{get_column_letter(col)}{number}', value)
             if not source and 'Sheet' not in sheets and 'Sheet' not in ranges and len(obj.sheetnames) > 1:
                 del obj['Sheet']
+            for target in internal_targets:
+                if target['sheet'] not in obj.sheetnames or not isinstance(obj[target['sheet']], Worksheet): raise ValueError('Internal hyperlink target worksheet is unavailable')
             if 'sheet_options' in spec: format_workbook(obj, spec['sheet_options'])
         else:
             obj = Presentation(source) if source else Presentation()
@@ -1396,7 +1404,7 @@ def main():
     chart_grid = sub.add_parser('read-slide-chart-grid'); chart_grid.add_argument('directory'); chart_grid.add_argument('--revision', type=int, required=True); chart_grid.add_argument('--part', required=True); chart_grid.add_argument('--sheet', required=True); chart_grid.add_argument('--range', dest='cell_range', required=True)
     chart_grid_edit = sub.add_parser('edit-slide-chart-grid'); chart_grid_edit.add_argument('directory'); chart_grid_edit.add_argument('--base', type=int, required=True); chart_grid_edit.add_argument('--part', required=True); chart_grid_edit.add_argument('--sheet', required=True); chart_grid_edit.add_argument('--range', dest='cell_range', required=True); chart_grid_edit.add_argument('--changes', required=True, help='JSON array of cell/value objects'); chart_grid_edit.add_argument('--sync-caches', action='store_true')
     table_column = sub.add_parser('rename-table-column'); table_column.add_argument('directory'); table_column.add_argument('--base', type=int, required=True); table_column.add_argument('--sheet', required=True); table_column.add_argument('--table', required=True); table_column.add_argument('--old', required=True); table_column.add_argument('--new', required=True)
-    link_edit = sub.add_parser('set-grid-hyperlink'); link_edit.add_argument('directory'); link_edit.add_argument('--base', type=int, required=True); link_edit.add_argument('--sheet', required=True); link_edit.add_argument('--cell', required=True); link_mode = link_edit.add_mutually_exclusive_group(required=True); link_mode.add_argument('--url'); link_mode.add_argument('--remove', action='store_true'); link_edit.add_argument('--expected-sha256')
+    link_edit = sub.add_parser('set-grid-hyperlink'); link_edit.add_argument('directory'); link_edit.add_argument('--base', type=int, required=True); link_edit.add_argument('--sheet', required=True); link_edit.add_argument('--cell', required=True); link_mode = link_edit.add_mutually_exclusive_group(required=True); link_mode.add_argument('--url'); link_mode.add_argument('--target-sheet'); link_mode.add_argument('--remove', action='store_true'); link_edit.add_argument('--target-cell'); link_edit.add_argument('--expected-sha256')
     grid_edit = sub.add_parser('edit-grid'); grid_edit.add_argument('directory'); grid_edit.add_argument('--base', type=int, required=True); grid_edit.add_argument('--sheet', required=True); grid_edit.add_argument('--range', required=True, dest='cell_range'); grid_edit.add_argument('--changes', required=True, help='JSON array of cell/value objects')
     grid_resize = sub.add_parser('resize-grid'); grid_resize.add_argument('directory'); grid_resize.add_argument('--base', type=int, required=True); grid_resize.add_argument('--sheet', required=True); grid_resize.add_argument('--range', required=True, dest='cell_range'); grid_resize.add_argument('--target-range', required=True); grid_resize.add_argument('--column-width', type=float); grid_resize.add_argument('--row-height', type=float)
     merge = sub.add_parser('merge-cells'); merge.add_argument('directory'); merge.add_argument('--base', type=int, required=True); merge.add_argument('--sheet', required=True); merge.add_argument('--range', required=True, dest='cell_range'); merge.add_argument('--unmerge', action='store_true')
@@ -1481,7 +1489,9 @@ def main():
             elif args.action == 'rename-table-column':
                 result = session.rename_table_column(args.directory, args.base, args.sheet, args.table, args.old, args.new)
             elif args.action == 'set-grid-hyperlink':
-                result = session.set_grid_hyperlink(args.directory, args.base, args.sheet, args.cell, None if args.remove else args.url, args.expected_sha256)
+                if (args.target_sheet is None) != (args.target_cell is None): raise ValueError('Internal links require --target-sheet and --target-cell')
+                location = {'sheet': args.target_sheet, 'cell': args.target_cell} if args.target_sheet is not None else None
+                result = session.set_grid_hyperlink(args.directory, args.base, args.sheet, args.cell, args.url, args.expected_sha256, location)
             elif args.action == 'edit-grid':
                 result = session.edit_grid(args.directory, args.base, args.sheet, args.cell_range, json.loads(args.changes))
             elif args.action == 'resize-grid':

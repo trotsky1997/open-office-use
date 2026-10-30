@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 from lxml import etree
 from openpyxl.formula.tokenizer import Tokenizer, TokenizerError
 from pptx import Presentation
-from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
+from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries, quote_sheetname
 
 import cell_text
 import chart_cache
@@ -1063,8 +1063,16 @@ def grid_hyperlinks(root, archive, part, bounds):
     return mapped, {'complete': not issues, 'issues': sorted(issues), 'links_scanned': links_scanned}
 
 
-def set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha256=None):
-    """Set or remove a single-cell external hyperlink without rewriting cell data."""
+def normalize_hyperlink_location(location):
+    if not isinstance(location, dict) or set(location) != {'sheet', 'cell'} or not isinstance(location['sheet'], str) or not location['sheet']: raise ValueError('Internal target requires a sheet and single cell')
+    match = re.fullmatch(r'([A-Za-z]{1,3})([1-9][0-9]{0,6})', location['cell']) if isinstance(location['cell'], str) else None
+    if match is None: raise ValueError('Internal target requires a single cell address')
+    cell = match.group(1).upper() + match.group(2); grid_bounds(cell)
+    return {'sheet': location['sheet'], 'cell': cell}
+
+
+def set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha256=None, location=None):
+    """Set or remove a single-cell hyperlink without rewriting cell data."""
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'xlsx': raise ValueError('Hyperlink editing requires an XLSX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
@@ -1072,6 +1080,9 @@ def set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha2
     match = re.fullmatch(r'([A-Za-z]{1,3})([1-9][0-9]{0,6})', cell) if isinstance(cell, str) else None
     if match is None: raise ValueError('Provide a single cell address')
     cell = match.group(1).upper() + match.group(2); bounds = grid_bounds(cell)
+    if location is not None:
+        if url is not None: raise ValueError('Internal target cannot include a URL')
+        location = normalize_hyperlink_location(location)
     if url is not None:
         if not isinstance(url, str) or not url or len(url) > 2048 or any(c.isspace() or ord(c) < 32 or ord(c) == 127 or 0xd800 <= ord(c) <= 0xdfff or ord(c) in (0xfffe, 0xffff) for c in url): raise ValueError('Invalid hyperlink URL')
         try: parsed = urlsplit(url); hostname = parsed.hostname
@@ -1086,8 +1097,9 @@ def set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha2
         if not grid['hyperlink_inspection']['complete']: raise ValueError('Hyperlink inspection is incomplete')
         existing = target['hyperlink']
         if existing and range_boundaries(existing['ref']) != bounds: raise ValueError('Multi-cell hyperlinks require a separate edit')
-        if url is None and not existing: raise ValueError('Cell has no hyperlink')
-        if url is not None and target.get('value') is None and not target.get('formula'): raise ValueError('Enter a cell value before adding a hyperlink')
+        if url is None and location is None and not existing: raise ValueError('Cell has no hyperlink')
+        if (url is not None or location is not None) and target.get('value') is None and not target.get('formula'): raise ValueError('Enter a cell value before adding a hyperlink')
+        if location is not None: grid_styles.sheet_part(frozen, location['sheet'])
         part = grid_styles.sheet_part(frozen, sheet); rel_path = posixpath.join(posixpath.dirname(part), '_rels', posixpath.basename(part) + '.rels')
         def edit(tree, archive):
             ns = grid_styles.X; rel_ns = grid_styles.REL; rid_ns = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
@@ -1116,7 +1128,7 @@ def set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha2
                 entries = list(rel_root); ids = [item.get('Id') for item in entries]
                 if len(entries) > 10000 or any(item.tag != rel_ns + 'Relationship' or not item.get('Id') for item in entries) or len(set(ids)) != len(ids): raise ValueError('Ambiguous worksheet relationships')
             old_id = node.get(rid_ns + 'id') if node is not None else None; rel_changed = False
-            if url is None:
+            if url is None and location is None:
                 container.remove(node)
                 if not len(container): root.remove(container)
             else:
@@ -1127,11 +1139,15 @@ def set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha2
                     if any(child.tag not in {ns+name for name in before | after} for child in children): raise ValueError('Unsupported worksheet structure for hyperlink insertion')
                     container = etree.Element(ns + 'hyperlinks'); position = next((i for i,child in enumerate(children) if child.tag in {ns+name for name in after}),len(children)); root.insert(position,container)
                 if node is None: node = etree.SubElement(container, ns + 'hyperlink', ref=cell)
-                node.attrib.pop('location', None)
-                used = {item.get('Id') for item in rel_root}; number = 1
-                while f'rId{number}' in used: number += 1
-                identity = f'rId{number}'; node.set(rid_ns + 'id', identity)
-                etree.SubElement(rel_root, rel_ns + 'Relationship', Id=identity, Type=rid_ns[1:-1] + '/hyperlink', Target=url, TargetMode='External'); rel_changed = True
+                if location is not None:
+                    node.attrib.pop(rid_ns + 'id', None)
+                    node.set('location', quote_sheetname(location['sheet']) + '!' + location['cell'])
+                else:
+                    node.attrib.pop('location', None)
+                    used = {item.get('Id') for item in rel_root}; number = 1
+                    while f'rId{number}' in used: number += 1
+                    identity = f'rId{number}'; node.set(rid_ns + 'id', identity)
+                    etree.SubElement(rel_root, rel_ns + 'Relationship', Id=identity, Type=rid_ns[1:-1] + '/hyperlink', Target=url, TargetMode='External'); rel_changed = True
             if old_id and rel_root is not None and not any(old_id in element.attrib.values() for element in root.iter()):
                 old = [item for item in rel_root if item.get('Id') == old_id]
                 if len(old) != 1 or old[0].get('Type') != rid_ns[1:-1] + '/hyperlink' or old[0].get('TargetMode') != 'External': raise ValueError('Unsupported old hyperlink relationship')
@@ -1141,7 +1157,7 @@ def set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha2
             return {rel_path: serialized}
         try: ooxml.edit_xml(frozen, output, lambda _: part, edit, allow_new=True, expected_sha256=digest)
         except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'cell': cell, 'action': 'remove' if url is None else 'set'}
+    return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'cell': cell, 'action': 'remove' if url is None and location is None else 'set_internal' if location is not None else 'set'}
 
 
 def read_grid(directory, base_revision, sheet, cell_range):

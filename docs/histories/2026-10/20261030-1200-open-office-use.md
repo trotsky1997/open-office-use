@@ -417,3 +417,5 @@ Verified workbook hyperlink display and label editing in an in-app browser; adde
 Added targeted, atomic workbook hyperlink updates and removal with revision, snapshot, protection and shared-relationship checks.
 
 Connected the workbook viewer to snapshot-bound single-cell hyperlink edits and verified pending-edit protection, setting and removal in a browser.
+
+Added workbook-internal hyperlink authoring and session/viewer editing with target-sheet validation and safe relationship conversion.

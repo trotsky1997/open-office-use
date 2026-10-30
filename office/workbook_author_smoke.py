@@ -14,7 +14,6 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.worksheet.datavalidation import DataValidation
-from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.chart import LineChart, Reference
 from PIL import Image
 import xlsxwriter
@@ -163,10 +162,13 @@ with tempfile.TemporaryDirectory() as tmp:
         assert not invalid.exists()
     links_file = root/'links.xlsx'
     link_spec = {'sheets':{'Sources':{'A1':{'type':'hyperlink','value':'=Source','url':'https://example.com/source'}}},'ranges':{'Sources':[{'start':'A2','values':[[{'type':'hyperlink','value':'Email','url':'mailto:author@example.com'}]]}]}}
+    link_spec['sheets']['Sources']['A3'] = {'type':'hyperlink','value':'Internal','location':{'sheet':'Sources','cell':'B2'}}
+    link_spec['sheets']['Sources']['A4'] = {'type':'hyperlink','value':'Quoted sheet','location':{'sheet':"O'Brien",'cell':'a1'}}
+    link_spec['sheets']["O'Brien"] = {'A1':'Destination'}
     open_office_use.author(link_spec,links_file)
-    link_book = load_workbook(links_file); link_book['Sources']['A3'] = 'Internal'; link_book['Sources']['A3'].hyperlink = Hyperlink(ref='A3',location="'Sources'!B2"); link_book.save(links_file)
     links = load_workbook(links_file)['Sources']
     assert links['A1'].value == '=Source' and links['A1'].data_type == 's' and links['A1'].hyperlink.target == 'https://example.com/source'
+    assert links['A4'].hyperlink.location == "'O''Brien'!A1"
     assert links['A1'].font.color.rgb == 'FF0563C1' and links['A1'].font.underline == 'single' and links['A2'].hyperlink.target == 'mailto:author@example.com'
     external = review.external_relationships(links_file); assert external['complete'] and external['external_count'] == 2, external
     code,validation,_ = officecli_backend.invoke('validate',links_file); assert code == 0 and validation['success'], validation
@@ -221,6 +223,21 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid link target accepted')
     assert session.info(edit_links)['latest_revision'] == 3
+    internal_cli = subprocess.run([sys.executable,str(cli),'session','set-grid-hyperlink',str(edit_links),'--base','3','--sheet','Sources','--cell','A1','--target-sheet',"O'Brien",'--target-cell','b5'],capture_output=True,text=True,check=True)
+    assert json.loads(internal_cli.stdout)['revision'] == 4
+    internal_cell = load_workbook(edit_links/'revision-000004.xlsx')['Sources']['A1']
+    assert internal_cell.hyperlink.location == "'O''Brien'!B5" and internal_cell.value == '=Source'
+    assert review.external_relationships(edit_links/'revision-000004.xlsx')['external_count'] == 1
+    for bad in ({'sheet':'Missing','cell':'A1'},{'sheet':'Sources','cell':'XFE1'},{'sheet':'Sources','cell':'A1:B2'}):
+        try: session.set_grid_hyperlink(edit_links,4,'Sources','A1',None,location=bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid internal target accepted')
+    assert session.info(edit_links)['latest_revision'] == 4
+    invalid_internal = root/'missing-target.xlsx'
+    try: open_office_use.author({'sheets':{'Main':{'A1':{'type':'hyperlink','value':'Missing','location':{'sheet':'Absent','cell':'A1'}}}}},invalid_internal)
+    except ValueError: pass
+    else: raise AssertionError('Missing internal sheet accepted')
+    assert not invalid_internal.exists()
     plain_draft = root/'plain-link-draft'; session.start(plain_draft,source=output)
     inserted = session.set_grid_hyperlink(plain_draft,0,'Forecast','A2','https://example.org/new')
     assert load_workbook(inserted['file'])['Forecast']['A2'].value == 'Q1' and load_workbook(inserted['file'])['Forecast']['A2'].hyperlink.target == 'https://example.org/new'
@@ -239,6 +256,11 @@ with tempfile.TemporaryDirectory() as tmp:
     shared_sheet = load_workbook(shared_result['file']).active
     assert shared_sheet['A1'].hyperlink.target == 'https://example.org/changed' and shared_sheet['A2'].hyperlink.target == 'https://example.com/shared'
     assert review.external_relationships(shared_result['file'])['external_count'] == 2
+    shared_internal = session.set_grid_hyperlink(shared_draft,1,'Sheet','A2',None,location={'sheet':'Sheet','cell':'A1'})
+    shared_after = load_workbook(shared_internal['file']).active
+    assert shared_after['A1'].hyperlink.target == 'https://example.org/changed' and shared_after['A2'].hyperlink.location == "'Sheet'!A1"
+    assert review.external_relationships(shared_internal['file'])['external_count'] == 1
+
     typed_file=root/'literal-cells.xlsx'
     typed_spec={'sheets':{'Data':{'A1':{'type':'text','value':'=Heading'},'A2':{'type':'text','value':'=SUM(1,2)'},'A3':{'type':'text','value':'#N/A'},'A4':{'type':'text','value':'00123'},'B1':'=1+2'}},'sheet_options':{'Data':{'tables':[{'name':'TextTable','range':'A1:A4'}]}}}
     typed_json=root/'literal-cells.json';typed_json.write_text(json.dumps(typed_spec))

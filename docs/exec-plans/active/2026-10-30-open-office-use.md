@@ -314,3 +314,5 @@ The workbook viewer was exercised in a real in-app browser: link targets appeare
 Session grids support snapshot-bound single-cell external hyperlink creation, replacement and removal while preserving cell data and shared relationships. Multi-cell links and internal-link creation remain outside this operation.
 
 The workbook viewer can set and remove a link on an editable loaded cell, requiring complete hyperlink inspection, a displayed snapshot and no pending grid edits. Browser tests covered updating and removing a link.
+
+Workbook authors, sessions and the viewer support internal single-cell links to an existing worksheet, including quoted sheet names. LibreOffice PDF export produced a link to the destination page; native Excel remains unverified.

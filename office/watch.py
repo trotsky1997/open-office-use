@@ -118,7 +118,10 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <fieldset><legend>Cell hyperlink</legend>
 <label>Cell <input id="grid-link-cell" maxlength="10" placeholder="A1"></label>
 <label>New URL <input id="grid-link-url" maxlength="2048" placeholder="https://example.com"></label>
-<button type="button" id="grid-link-set" disabled>Set link</button>
+<button type="button" id="grid-link-set" disabled>Set external link</button>
+<label>Target sheet <input id="grid-link-target-sheet" maxlength="31"></label>
+<label>Target cell <input id="grid-link-target-cell" maxlength="10" placeholder="A1"></label>
+<button type="button" id="grid-link-internal" disabled>Set internal link</button>
 <button type="button" id="grid-link-remove" disabled>Remove link</button>
 <p id="grid-link-info">Load a range to inspect and edit a link.</p>
 <p>Save pending cell edits first. The cell value and formatting stay unchanged.</p></fieldset>
@@ -355,7 +358,7 @@ document.getElementById('formula-recalculate').addEventListener('click', async (
  finally { calcBusy=false; button.disabled=pinned!==null; document.getElementById('formula-scan').disabled=pinned!==null || scanBusy; }
 });
 function invalidateGrid(message) {
- gridLoaded=null; document.getElementById('grid-merge').disabled=true; document.getElementById('grid-unmerge').disabled=true; document.getElementById('grid-freeze').disabled=true; document.getElementById('grid-unfreeze').disabled=true; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-link-set').disabled=true; document.getElementById('grid-link-remove').disabled=true;
+ gridLoaded=null; document.getElementById('grid-merge').disabled=true; document.getElementById('grid-unmerge').disabled=true; document.getElementById('grid-freeze').disabled=true; document.getElementById('grid-unfreeze').disabled=true; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-link-set').disabled=true; document.getElementById('grid-link-internal').disabled=true; document.getElementById('grid-link-remove').disabled=true;
  lockGridInputs([...document.querySelectorAll('#grid-output textarea')], true); document.getElementById('grid-link-info').textContent='Load a range to inspect and edit a link.';
  if (message) document.getElementById('grid-status').textContent=message;
 }
@@ -450,7 +453,7 @@ async function loadGrid(target=null) {
    body.appendChild(tr);
   }
   table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range,snapshot_sha256:data.snapshot_sha256,sheet_protected:data.sheet_protected,hyperlink_inspection:data.hyperlink_inspection,cells:Object.fromEntries(data.rows.flat().map(cell=>[cell.cell,cell]))};
-  document.getElementById('grid-link-cell').value=data.rows[0][0].cell; updateGridLinkControls();
+  document.getElementById('grid-link-cell').value=data.rows[0][0].cell; if (!document.getElementById('grid-link-target-sheet').value) document.getElementById('grid-link-target-sheet').value=sheet; updateGridLinkControls();
   document.getElementById('grid-merge').disabled=data.sheet_protected; document.getElementById('grid-unmerge').disabled=data.sheet_protected; document.getElementById('grid-merge-range').value=cell_range;
   const pane=data.worksheet_view.pane;
   document.getElementById('grid-freeze').disabled=false; document.getElementById('grid-unfreeze').disabled=false;
@@ -564,6 +567,7 @@ function updateGridLinkControls() {
  const loaded=gridLoaded, address=document.getElementById('grid-link-cell').value.trim().toUpperCase();
  const cell=loaded?.cells[address], valid=!!cell && cell.editable && loaded.hyperlink_inspection.complete && current===loaded.revision && pinned===null;
  document.getElementById('grid-link-set').disabled=!valid || (cell.value == null && !cell.formula);
+ document.getElementById('grid-link-internal').disabled=!valid || (cell.value == null && !cell.formula);
  document.getElementById('grid-link-remove').disabled=!valid || !cell.hyperlink;
  const info=document.getElementById('grid-link-info');
  if (!loaded) info.textContent='Load a range to inspect and edit a link.';
@@ -575,24 +579,27 @@ function updateGridLinkControls() {
  else info.textContent='This cell has no hyperlink.';
 }
 document.getElementById('grid-link-cell').addEventListener('input',updateGridLinkControls);
-async function changeGridLink(remove) {
+async function changeGridLink(remove, internal=false) {
  if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision!==current || pinned!==null) { invalidateGrid('Version changed; reload the range.'); return; }
  const loaded=gridLoaded, cell=document.getElementById('grid-link-cell').value.trim().toUpperCase(), entry=loaded.cells[cell];
  if (!entry || !entry.editable || !loaded.hyperlink_inspection.complete) { document.getElementById('grid-status').textContent='Choose an editable cell with complete hyperlink inspection.'; return; }
  if (gridDirty()) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before changing a link.'; return; }
- const inputs=[...document.querySelectorAll('#grid-output textarea')], buttons=['grid-link-set','grid-link-remove','grid-merge','grid-unmerge','grid-freeze','grid-unfreeze','grid-save','grid-format','grid-resize'];
+ const inputs=[...document.querySelectorAll('#grid-output textarea')], buttons=['grid-link-set','grid-link-internal','grid-link-remove','grid-merge','grid-unmerge','grid-freeze','grid-unfreeze','grid-save','grid-format','grid-resize'];
  gridBusy=true; for (const name of buttons) document.getElementById(name).disabled=true; lockGridInputs(inputs,true);
  try {
-  const response=await fetch('grid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell,url:remove ? null : document.getElementById('grid-link-url').value,snapshot_sha256:loaded.snapshot_sha256})});
+  const payload={base_revision:loaded.revision,sheet:loaded.sheet,cell,url:remove || internal ? null : document.getElementById('grid-link-url').value,snapshot_sha256:loaded.snapshot_sha256};
+  if (internal) payload.location={sheet:document.getElementById('grid-link-target-sheet').value,cell:document.getElementById('grid-link-target-cell').value};
+  const response=await fetch('grid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Link edit failed');
   invalidateGrid(`Link ${remove ? 'removed' : 'saved'} for ${cell} as revision ${result.revision}. Reload the range.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
-  if (gridLoaded===loaded && current===loaded.revision && pinned===null) { for (const name of buttons) document.getElementById(name).disabled=loaded.sheet_protected && !['grid-freeze','grid-unfreeze','grid-save','grid-link-set','grid-link-remove'].includes(name); lockGridInputs(inputs,false); updateGridLinkControls(); }
+  if (gridLoaded===loaded && current===loaded.revision && pinned===null) { for (const name of buttons) document.getElementById(name).disabled=loaded.sheet_protected && !['grid-freeze','grid-unfreeze','grid-save','grid-link-set','grid-link-internal','grid-link-remove'].includes(name); lockGridInputs(inputs,false); updateGridLinkControls(); }
  } finally { gridBusy=false; }
 }
 document.getElementById('grid-link-set').addEventListener('click',()=>changeGridLink(false));
+document.getElementById('grid-link-internal').addEventListener('click',()=>changeGridLink(false,true));
 document.getElementById('grid-link-remove').addEventListener('click',()=>changeGridLink(true));
 async function mergeGrid(merge) {
  if (gridBusy) return;
@@ -1662,8 +1669,8 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Grid requires base_revision, sheet and cell_range')
                             saved = session.read_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'])
                         elif route.endswith('/grid-link'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell', 'url', 'snapshot_sha256'} or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Link edit requires revision, sheet, cell, URL and a valid snapshot')
-                            saved = session.set_grid_hyperlink(directory, payload['base_revision'], payload['sheet'], payload['cell'], payload['url'], expected_sha256=payload['snapshot_sha256'])
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell', 'url', 'snapshot_sha256'}, {'base_revision', 'sheet', 'cell', 'url', 'snapshot_sha256', 'location'}) or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Link edit requires revision, sheet, cell, URL and a valid snapshot')
+                            saved = session.set_grid_hyperlink(directory, payload['base_revision'], payload['sheet'], payload['cell'], payload['url'], expected_sha256=payload['snapshot_sha256'], location=payload.get('location'))
                         elif route.endswith('/grid-merge'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell_range', 'merge'}, {'base_revision', 'sheet', 'cell_range', 'merge', 'snapshot_sha256'}): raise ValueError('Merge requires revision, sheet, range and operation')
                             saved = session.merge_cells(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['merge'], expected_sha256=payload.get('snapshot_sha256'))

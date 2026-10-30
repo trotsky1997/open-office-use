@@ -270,6 +270,10 @@ with tempfile.TemporaryDirectory() as tmp:
         updated = post('grid',{'base_revision':1,'sheet':'Sheet','cell_range':'A1'})
         removed = post('grid-link',{'base_revision':1,'sheet':'Sheet','cell':'A1','url':None,'snapshot_sha256':updated['snapshot_sha256']})
         assert removed['revision'] == 2 and load_workbook(removed['file']).active['A1'].value == 'Source' and load_workbook(removed['file']).active['A1'].hyperlink is None
+        latest = post('grid',{'base_revision':2,'sheet':'Sheet','cell_range':'A1'})
+        internal = post('grid-link',{'base_revision':2,'sheet':'Sheet','cell':'A1','url':None,'location':{'sheet':'Sheet','cell':'B2'},'snapshot_sha256':latest['snapshot_sha256']})
+        assert internal['revision'] == 3 and load_workbook(internal['file']).active['A1'].hyperlink.location == "'Sheet'!B2"
+
     finally:
         server.send_signal(signal.SIGINT); server.wait(timeout=20)
 print('Watch smoke passed: revision updates, page PNG, token path and host restriction')
