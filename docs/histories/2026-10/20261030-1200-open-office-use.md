@@ -325,3 +325,5 @@ Added editable speaker notes to newly authored slides, including source-based ap
 Grid reads and the viewer now report bounded conditional-format rule metadata and affected cells, including incomplete coverage. Rules are not evaluated and complete style details are not included.
 
 PowerPoint table authoring now supports rich cell paragraphs, styled runs and hyperlinks using the same logic as textboxes. Validated CLI, OfficeCLI, rendered output, text search and paragraph-specific editing; native PowerPoint remains unverified.
+
+Added explicit literal-text cell authoring for new and copied workbooks, including formula-like and error-like strings. Validated saved types, table headers, grid reads, invalid input and OfficeCLI schema.

@@ -138,6 +138,25 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid conditional format accepted')
         assert not invalid.exists()
+    typed_file=root/'literal-cells.xlsx'
+    typed_spec={'sheets':{'Data':{'A1':{'type':'text','value':'=Heading'},'A2':{'type':'text','value':'=SUM(1,2)'},'A3':{'type':'text','value':'#N/A'},'A4':{'type':'text','value':'00123'},'B1':'=1+2'}},'sheet_options':{'Data':{'tables':[{'name':'TextTable','range':'A1:A4'}]}}}
+    typed_json=root/'literal-cells.json';typed_json.write_text(json.dumps(typed_spec))
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(typed_json),'--out',str(typed_file)],capture_output=True,text=True,check=True)
+    typed_sheet=load_workbook(typed_file)['Data']
+    assert [typed_sheet[f'A{i}'].value for i in range(1,5)]==['=Heading','=SUM(1,2)','#N/A','00123'] and all(typed_sheet[f'A{i}'].data_type=='s' for i in range(1,5))
+    assert typed_sheet['B1'].data_type=='f' and typed_sheet.tables['TextTable'].tableColumns[0].name=='=Heading'
+    code,validation,_=officecli_backend.invoke('validate',typed_file);assert code==0 and validation['success'],validation
+    typed_draft=root/'literal-cells-draft';session.start(typed_draft,source=typed_file)
+    typed_grid=session.read_grid(typed_draft,0,'Data','A2:A4')
+    assert [row[0]['value'] for row in typed_grid['rows']]==['=SUM(1,2)','#N/A','00123'] and all('formula' not in row[0] for row in typed_grid['rows'])
+    typed_copy=root/'literal-cells-copy.xlsx';open_office_use.author({'sheets':{'Data':{'C1':{'type':'text','value':'=copied'}}}},typed_copy,typed_file)
+    assert load_workbook(typed_copy)['Data']['C1'].value=='=copied' and load_workbook(typed_copy)['Data']['C1'].data_type=='s'
+    for index,value in enumerate([{'type':'text','value':''},{'type':'text','value':'_x0041_'},{'type':'text','value':'bad\x00text'},{'type':'text','value':'😀'*16384},{'type':'formula','value':'=1'}]):
+        bad=root/f'bad-literal-cell-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Data':{'A1':value}}},bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid typed cell accepted')
+        assert not bad.exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))

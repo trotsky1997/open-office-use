@@ -979,8 +979,14 @@ def author(spec, output, source=None):
                             a, b, c, d = range_boundaries(table.ref)
                             if a <= c1 <= c and ((r1 == b and table.headerRowCount != 0) or (r1 == d and (table.totalsRowCount or table.totalsRowShown))):
                                 raise ValueError('Table header and totals cells require a table-aware edit')
-                    if not isinstance(value, str) or not value.startswith('='): spreadsheet.validate_cell_value(value)
+                    literal = isinstance(value, dict)
+                    if literal:
+                        if set(value) != {'type', 'value'} or value['type'] != 'text' or not isinstance(value['value'], str) or not value['value']: raise ValueError('Typed cell values require nonempty literal text')
+                        value = value['value']
+                        if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value) or len(value.encode('utf-16-le')) // 2 > 32767: raise ValueError('Literal cell text contains unsupported characters or exceeds 32,767 UTF-16 units')
+                    if literal or not isinstance(value, str) or not value.startswith('='): spreadsheet.validate_cell_value(value)
                     ws[address] = value
+                    if literal: ws[address].data_type = 's'
             if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:
                 del obj['Sheet']
             if 'sheet_options' in spec: format_workbook(obj, spec['sheet_options'])
