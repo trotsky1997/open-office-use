@@ -36,9 +36,10 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError:pass
         else:raise AssertionError('Protected edit accepted')
     assert session.info(protected_draft)['latest_revision']==0
-    session.replace_text(protected_draft,0,'/Sheet/B1','Open','OK')
-    result=session.edit_grid(protected_draft,1,'Sheet','B1',[{'cell':'B1','value':'Allowed'}]); changed=load_workbook(result['file']).active
+    result=session.edit_grid(protected_draft,0,'Sheet','B1',[{'cell':'B1','value':'Allowed'}]); changed=load_workbook(result['file']).active
     assert changed['A1'].value=='Locked' and changed['B1'].value=='Allowed' and changed.protection.sheet
+    session.replace_text(protected_draft,1,'/Sheet/B1','Allowed','OK')
+    assert load_workbook(protected_draft/'revision-000002.xlsx').active['B1'].value=='OK'
     overlap=root/'overlap.xlsx'
     with zipfile.ZipFile(source) as a,zipfile.ZipFile(overlap,'w') as b:
         for entry in a.infolist():

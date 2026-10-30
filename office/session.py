@@ -275,7 +275,7 @@ def edit_target(directory, base_revision, path):
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
             'format': state['format'], 'mode': mode, 'value': value, 'read_only_reason': read_only_reason,
-            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode == 'value' and format_data.get('type') in {'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
+            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode == 'value' and format_data.get('type') in {'String', 'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
 
 
 def edit(directory, base_revision, path, mode, value):

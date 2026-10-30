@@ -230,6 +230,12 @@ async def main():
                 assert not text_edit.isError, text_edit
                 changed_cell = load_workbook(text_draft / 'revision-000001.xlsx').active['A1']
                 assert changed_cell.value == 'value beta' and changed_cell.font.bold
+                grid_text = await session.call_tool('session_edit_grid', {'directory': str(text_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1', 'changes': [{'cell': 'A1', 'value': 'gamma beta'}]})
+                assert not grid_text.isError, grid_text
+                grid_text_target = await session.call_tool('session_edit_target', {'directory': str(text_draft), 'base_revision': 2, 'path': '/Sheet/A1'})
+                assert not grid_text_target.isError and grid_text_target.structuredContent['replace_text_path_supported'], grid_text_target
+                grid_text_edit = await session.call_tool('session_replace_text', {'directory': str(text_draft), 'base_revision': 2, 'path': '/Sheet/A1', 'find': 'gamma', 'replacement': 'delta'})
+                assert not grid_text_edit.isError and load_workbook(text_draft / 'revision-000003.xlsx').active['A1'].value == 'delta beta', grid_text_edit
                 grid_draft = root / 'grid-draft'
                 grid_started = await session.call_tool('start_session', {'directory': str(grid_draft), 'source': str(original)})
                 assert not grid_started.isError, grid_started

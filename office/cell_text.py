@@ -84,7 +84,18 @@ def replace_text(source, output, path, find, replacement):
         if cell.get('cm') is not None or cell.get('vm') is not None or cell.get('ph') not in (None, '0', 'false'):
             raise ValueError('Cell metadata or phonetic content is not supported')
         kind = cell.get('t'); additional = {}
-        if kind == 'inlineStr':
+        if kind == 'str':
+            if len(cell) != 1 or cell[0].tag != X + 'v' or len(cell[0]) or any(key != '{http://www.w3.org/XML/1998/namespace}space' for key in cell[0].attrib):
+                raise ValueError('String cell has unsupported content or a formula')
+            node = cell[0]; value = node.text or ''
+            if ESCAPED.search(value): raise ValueError('Excel escaped text sequences are not supported')
+            start = ooxml.match_index(value, find, replacement)
+            value = value[:start] + replacement + value[start + len(find):]
+            if ESCAPED.search(value): raise ValueError('Replacement creates an unsupported Excel escaped text sequence')
+            if len(value.encode('utf-16-le')) // 2 > 32767: raise ValueError('Cell text exceeds Excel’s 32,767 UTF-16-unit limit')
+            node.text = value
+            return additional
+        elif kind == 'inlineStr':
             if len(cell) != 1 or cell[0].tag != X + 'is':
                 raise ValueError('Inline text cell has unsupported content')
             content = cell[0]
@@ -105,7 +116,7 @@ def replace_text(source, output, path, find, replacement):
                 raise ValueError('Shared string index does not exist')
             content = copy.deepcopy(entries[index])
         else:
-            raise ValueError('Target must be a text cell with inline or shared string storage')
+            raise ValueError('Target must be a text cell with string, inline or shared storage')
         nodes = []
         for child in content:
             if child.tag == X + 't':
