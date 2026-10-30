@@ -224,3 +224,5 @@ Grid inspection now summarizes intersecting conditional-format rules and coverag
 PowerPoint table cells accept formatted paragraphs and hyperlinks, and support search and targeted paragraph edits. LibreOffice rendering and OfficeCLI validation passed; native PowerPoint remains unverified.
 
 Workbook authoring supports explicit literal-text cells, preserving strings such as `=literal` and `#N/A` without changing formula behavior for ordinary strings.
+
+Workbook authoring rejects unsupported cell characters, oversized text and formulas, and non-finite or out-of-range numbers before publishing.

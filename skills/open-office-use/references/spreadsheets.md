@@ -28,3 +28,5 @@ Use `sheet_options.conditional_formats` to create native numeric threshold, form
 `session_read_grid` reports intersecting standard conditional-format rules and coverage issues. It does not evaluate rules or include complete rule styles; use a rendered workbook or spreadsheet application to inspect effective appearance.
 
 For basic `author_file` workbook creation, use `{"type":"text","value":"=literal"}` for nonempty literal text that resembles a formula or error. Untyped strings starting with `=` remain formulas.
+
+Workbook creation rejects oversized cell text and formulas, unsupported XML characters, non-finite numbers and numbers outside Excel numeric range before publishing. Use text for identifiers needing exact digits.

@@ -983,8 +983,14 @@ def author(spec, output, source=None):
                     if literal:
                         if set(value) != {'type', 'value'} or value['type'] != 'text' or not isinstance(value['value'], str) or not value['value']: raise ValueError('Typed cell values require nonempty literal text')
                         value = value['value']
-                        if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value) or len(value.encode('utf-16-le')) // 2 > 32767: raise ValueError('Literal cell text contains unsupported characters or exceeds 32,767 UTF-16 units')
-                    if literal or not isinstance(value, str) or not value.startswith('='): spreadsheet.validate_cell_value(value)
+                    formula = isinstance(value, str) and value.startswith('=') and not literal
+                    if isinstance(value, str):
+                        if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value): raise ValueError('Cell text contains unsupported XML characters')
+                        if len(value.encode('utf-16-le')) // 2 > (8192 if formula else 32767): raise ValueError('Cell text or formula exceeds Excel length limits')
+                        if formula and value == '=': raise ValueError('Formula expression is empty')
+                    elif value is not None and not isinstance(value, (int, float, bool)): raise ValueError('Cell value must be text, number, boolean or null')
+                    elif isinstance(value, (int, float)) and not isinstance(value, bool) and (value > 1.7976931348623157e308 or value < -1.7976931348623157e308 or isinstance(value, float) and not math.isfinite(value)): raise ValueError('Cell number must be finite and within Excel numeric range')
+                    if not formula: spreadsheet.validate_cell_value(value)
                     ws[address] = value
                     if literal: ws[address].data_type = 's'
             if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:

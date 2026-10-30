@@ -76,7 +76,7 @@ For spreadsheet cells that must remain literal text, use a typed value:
 {"sheets":{"Data":{"A1":{"type":"text","value":"=SUM(1,2)"},"A2":{"type":"text","value":"#N/A"},"A3":{"type":"text","value":"00123"},"B1":"=1+2"}}}
 ```
 
-Typed text is saved as text even when it resembles a formula or Excel error. It must be nonempty, at most 32,767 UTF-16 units, and contain no unsupported XML controls, surrogate code points, noncharacters or Excel escape-like sequences. Use `null` for a blank cell. Untyped strings beginning with `=` retain formula behavior; `author` does not calculate formulas. Typed values work in new workbooks and source-based copies, subject to the same table-header and totals protections as other cell edits.
+All authored spreadsheet text is checked before writing: text is limited to 32,767 UTF-16 units and formulas to 8,192 units, and unsupported XML characters are rejected. Numeric values must be finite and within the Excel numeric range. An empty formula (`=`) is rejected. Excel stores numeric values at floating-point precision; use explicit text when exact long identifiers matter. Typed text is saved as text even when it resembles a formula or Excel error. It must be nonempty, at most 32,767 UTF-16 units, and contain no unsupported XML controls, surrogate code points, noncharacters or Excel escape-like sequences. Use `null` for a blank cell. Untyped strings beginning with `=` retain formula behavior; `author` does not calculate formulas. Typed values work in new workbooks and source-based copies, subject to the same table-header and totals protections as other cell edits.
 
 For new Word documents, optional `page_setup` configures page size, margins and running text:
 

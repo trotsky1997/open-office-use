@@ -157,6 +157,15 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid typed cell accepted')
         assert not bad.exists()
+    limits_file=root/'cell-limits.xlsx'; maximum='😀'*16383+'a'
+    open_office_use.author({'sheets':{'Data':{'A1':maximum,'A2':{'type':'text','value':maximum},'B1':1.7e308}}},limits_file)
+    limits_sheet=load_workbook(limits_file)['Data']; assert limits_sheet['A1'].value==maximum and limits_sheet['A2'].value==maximum and limits_sheet['B1'].value==1.7e308
+    for index,value in enumerate(['😀'*16384, '=1'+'+1'*4096, '=', float('nan'), float('inf'), 10**309, 'bad\x00text', 'bad\ud800text']):
+        bad=root/f'bad-cell-limits-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Data':{'A1':value}}},bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid cell input accepted')
+        assert not bad.exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))
