@@ -51,7 +51,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <label>Find text <input id="word-find" maxlength="4000"></label>
 <label>Replace with <input id="word-replacement" maxlength="4000"></label>
 <button type="button" id="word-replace">Replace once</button>
-<p>Requires one exact match in a simple body or table paragraph. Replacement takes the first matched run's formatting; fields, links and annotations require another workflow.</p></fieldset>
+<p>Requires one exact match in a simple Word or PowerPoint paragraph. Replacement takes the first matched run's formatting; fields, links and annotations require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
@@ -320,7 +320,7 @@ document.getElementById('edit-form').addEventListener('submit', async event => {
 });
 document.getElementById('word-replace').addEventListener('click', async () => {
  if (editBusy) return;
- if (!loaded || loaded.format!=='docx' || loaded.type!=='paragraph' || pinned!==null || loaded.revision!==current) { invalidateEdit('Version changed; load the paragraph again.'); return; }
+ if (!loaded || !loaded.replace_text_path_supported || pinned!==null || loaded.revision!==current) { invalidateEdit('Version changed; load the paragraph again.'); return; }
  if (elementDirty()) { document.getElementById('edit-status').textContent='Save or copy pending element edits before replacing text.'; return; }
  const target=loaded, path=document.getElementById('edit-path'), mode=document.getElementById('edit-mode'), value=document.getElementById('edit-value');
  const find=document.getElementById('word-find'), replacement=document.getElementById('word-replacement'), button=document.getElementById('word-replace');
@@ -328,7 +328,7 @@ document.getElementById('word-replace').addEventListener('click', async () => {
  try {
   const response=await fetch('replace-text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,find:find.value,replacement:replacement.value})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Replacement failed');
-  invalidateEdit(`Replacement saved as revision ${result.revision}.`); await refresh();
+  invalidateEdit(`Replacement saved as revision ${result.revision}. Reload the element to see its updated content.`); await refresh();
  } catch(error) {
   document.getElementById('edit-status').textContent=`Replacement error: ${error.message}`;
   if (loaded===target && current===target.revision && pinned===null) { value.readOnly=false; mode.disabled=false; document.getElementById('edit-save').disabled=false; }

@@ -57,3 +57,5 @@ Added bounded workbook-wide scanning of stored formula caches and error cells th
 Added versioned, run-preserving Word text replacement for simple direct-body paragraphs through CLI, MCP and the viewer, with package preservation and explicit structural rejection.
 
 Extended run-preserving Word replacement to physical table-cell paths, nested tables and saved paragraph IDs; fixed preservation of the XML standalone declaration.
+
+Added run-preserving PowerPoint replacement with relationship-based slide resolution, shape and group paths, and shared atomic single-part package editing.

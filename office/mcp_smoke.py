@@ -6,6 +6,8 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from docx import Document
+from pptx import Presentation
+from pptx.util import Inches
 from session import set_selection
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -45,6 +47,13 @@ async def main():
                 assert not table_started.isError, table_started
                 table_edit = await session.call_tool('session_replace_text', {'directory': str(table_draft), 'base_revision': 0, 'path': '/body/tbl[1]/tr[1]/tc[1]/p[1]', 'find': 'content', 'replacement': 'result'})
                 assert not table_edit.isError and Document(table_draft / 'revision-000001.docx').tables[0].cell(0, 0).text == 'table result', table_edit
+                slide_source = root / 'slides.pptx'; deck = Presentation(); slide = deck.slides.add_slide(deck.slide_layouts[6])
+                slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = 'slide content'; deck.save(slide_source)
+                slide_draft = root / 'slide-draft'
+                slide_started = await session.call_tool('start_session', {'directory': str(slide_draft), 'source': str(slide_source)})
+                assert not slide_started.isError, slide_started
+                slide_edit = await session.call_tool('session_replace_text', {'directory': str(slide_draft), 'base_revision': 0, 'path': '/slide[1]/shape[1]/paragraph[1]', 'find': 'content', 'replacement': 'result'})
+                assert not slide_edit.isError and Presentation(slide_draft / 'revision-000001.pptx').slides[0].shapes[0].text == 'slide result', slide_edit
                 directory = root / 'draft'
                 started = await session.call_tool('start_session', {'directory': str(directory), 'source': str(output)})
                 assert not started.isError and started.structuredContent['latest_revision'] == 0, started
