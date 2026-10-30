@@ -114,3 +114,4 @@
 - [x] 索引或当前焦点支持纯文本、Markdown 源码和 HTML 粘贴，可选纯文本回退；Linux ARM64 Chromium 原生消息及 Electron 虚拟显示实测可信 paste 与跨进程 frame。Electron 私有通道连接状态与剪贴板拒绝路径通过测试。
 - [x] Chromium 清空富文本保留单个 BR 占位时按空内容校验；macOS Electron 与 Linux Chromium 实页验证。
 - [x] Electron 客户端取消和超时通知宿主，阻止排队中的迟到输入；已派发操作报告结果可能未知。
+- [x] Electron 文件选择等待响应取消并释放拦截；队列中尚未开始的等待取消时保留其他命令。macOS Electron 实页验证取消、重试与授权上传。

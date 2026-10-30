@@ -498,3 +498,5 @@ macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展对 fo
 新增索引与当前焦点粘贴，支持纯文本、Markdown 源码、HTML 及可选纯文本回退；写入后保持剪贴板，检查连接代际，并在错误后提示观察。Linux ARM64 隔离 Chromium 和 Electron 虚拟显示验证可信事件和跨 frame；Electron 私有通道修正连接状态并验证授权拒绝。富文本清空允许浏览器保留单个 BR 占位。真实 macOS Electron 粘贴与 Windows 尚未验证。
 
 Electron 请求取消及客户端超时现会通知宿主，阻止已经排队、尚未派发的输入；连接关闭和授权撤销也会中断对应请求。已派发的操作可能已产生效果，超时与取消会提示结果未知。socket 回归覆盖排队取消、超时及下载授权撤销。
+
+Electron 文件选择等待接收请求取消信号，释放拦截与等待槽；准备尚未开始时保留已有调试会话。57 项 Electron 检查通过，macOS Electron 实页验证取消后重新等待并授权上传文件。Linux 与 Windows 的本轮文件选择取消未实测。

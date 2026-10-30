@@ -573,3 +573,28 @@ test('socket cancellation and timeout stop queued input before dispatch', {skip:
   await client.request('executeCdp',{target:{tabId:tab.id},method:'Runtime.enable'});
   assert.deepEqual(commands,['Runtime.evaluate','Runtime.enable']);
 });
+
+test('file chooser cancellation releases interception and preserves unrelated queued commands', {skip:!['darwin','linux'].includes(process.platform),timeout:2000}, async t => {
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create(),debug=adapter.views[0].webContents.debugger;
+  await runtime.connections.openSocket();
+  const grant=runtime.connections.grant('a','socket',{ttlMs:10000,operations:['page.control','files.upload']},process.pid);
+  const client=await connectSocketIab(grant);t.after(()=>client.close());
+  const controller=new AbortController();
+  let ready; const observed=new Promise(resolve=>{ready=resolve;});
+  const unsubscribe=runtime.subscribe(e=>{if(e.method==='onFileChooserWaitReady')ready();});t.after(unsubscribe);
+  const wait=client.request('waitForFileChooser',{tabId:tab.id,timeoutMs:5000,waitId:'00000000-0000-0000-0000-000000000000'},undefined,6000,controller.signal);
+  await observed;controller.abort();await assert.rejects(wait,/cancelled/);
+  while (!debug.commands.some(c=>c.method==='Page.setInterceptFileChooserDialog' && c.params.enabled===false)) await new Promise(resolve=>setImmediate(resolve));
+  const again=runtime.dispatch('a','waitForFileChooser',{tabId:tab.id,timeoutMs:1000},['page.control','files.upload']);
+  await new Promise(resolve=>setImmediate(resolve));debug.emit('message',{},'Page.fileChooserOpened',{backendNodeId:7,mode:'selectSingle'},undefined);
+  assert.ok((await again).fileChooserId);
+  let release;const send=debug.sendCommand.bind(debug);
+  debug.sendCommand=async(method,params,session)=>{if(method==='Runtime.evaluate')return await new Promise(resolve=>{release=resolve;});return send(method,params,session);};
+  const busy=runtime.dispatch('a','executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'},['page.control']);
+  while (!release) await new Promise(resolve=>setImmediate(resolve));
+  const blocked=new AbortController();
+  const queued=runtime.dispatch('a','waitForFileChooser',{tabId:tab.id,timeoutMs:1000},['page.control','files.upload'],()=>true,blocked.signal);
+  blocked.abort();await assert.rejects(queued,/REVOKED/);
+  assert.equal(debug.isAttached(),true);release({});await busy;
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(debug.isAttached(),true);
+});

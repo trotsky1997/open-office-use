@@ -548,9 +548,10 @@ export class IabRuntime implements Backend {
     scope.uploadFiles = new Set(files);
   }
 
-  private async waitForFileChooser(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean): Promise<any> {
+  private async waitForFileChooser(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<any> {
     const timeoutMs = params.timeoutMs ?? 10_000;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000 || (params.waitId !== undefined && (typeof params.waitId !== 'string' || !/^[0-9a-f-]{36}$/.test(params.waitId)))) throw new Error('Invalid file chooser wait');
+    if (signal?.aborted || !authorized()) throw new Error('IAB_AUTH_REVOKED');
     if (this.chooserWaits.has(tab.id)) throw new Error('File chooser already pending');
     this.chooserWaits.add(tab.id); tab.pending++;
     let failure: Error | undefined, settled = false;
@@ -559,6 +560,8 @@ export class IabRuntime implements Backend {
     const event = new Promise<{params: Record<string, any>; sessionId?: string}>((resolve,reject) => { resolveEvent=resolve; rejectEvent=reject; });
     void event.catch(() => {});
     const reject = (error: Error) => { if (!settled) { settled=true; failure=error; rejectEvent(error); } };
+    const abort = () => reject(new Error('IAB_AUTH_REVOKED'));
+    signal?.addEventListener('abort', abort, { once: true });
     const unsubscribe = this.subscribe(message => {
       if (message.scopeId !== scopeId || settled) return;
       if (message.method === 'onDebuggerDetach' && message.params.tabId === tab.id) return reject(new Error('File chooser debugger detached'));
@@ -575,10 +578,12 @@ export class IabRuntime implements Backend {
     });
     const timer = setTimeout(() => reject(new Error('Timed out waiting for file chooser')), timeoutMs);
     const enabled: Array<string | undefined> = [];
-    let active = true, setupFinished = false;
+    let active = true, setupStarted = false, setupFinished = false;
     const setupAuthorized = () => active && authorized();
     try {
       const setup = tab.queue.then(async () => {
+        if (!setupAuthorized()) throw new Error('IAB_AUTH_REVOKED');
+        setupStarted = true;
         for (const sessionId of [undefined, ...tab.frameSessions.keys()]) {
           await this.cdp(this.tab(scopeId,tab.id),'Page.enable',{},setupAuthorized,sessionId);
           enabled.push(sessionId);
@@ -597,8 +602,8 @@ export class IabRuntime implements Backend {
       return {fileChooserId:id,isMultiple:opened.params.mode==='selectMultiple'};
     } finally {
       active = false;
-      clearTimeout(timer); reject(new Error('File chooser wait ended')); unsubscribe();
-      if (!setupFinished && !tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) {
+      clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new Error('File chooser wait ended')); unsubscribe();
+      if (setupStarted && !setupFinished && !tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) {
         try { tab.contents.debugger.detach(); } catch {}
       }
       try {
@@ -681,7 +686,7 @@ export class IabRuntime implements Backend {
       tab.pending++;
       try { return await this.clipboardCall(scope,tab,method,params,authorized,signal); } finally { tab.pending--; }
     }
-    if (method === 'waitForFileChooser') { need('files.upload'); return this.waitForFileChooser(scopeId,tab,params,authorized); }
+    if (method === 'waitForFileChooser') { need('files.upload'); return this.waitForFileChooser(scopeId,tab,params,authorized,signal); }
     if (method==='webmcp_list_tools' || method==='webmcp_invoke_tool') {
       need('page.control');tab.pending++;
       const run=tab.queue.then(()=>this.webMcp(this.tab(scopeId,tab.id),method,params,authorized));tab.queue=run.catch(()=>{});
