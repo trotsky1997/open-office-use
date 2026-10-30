@@ -203,3 +203,5 @@ JavaScript SDK 新增 tab.clipboard 的 readText/writeText/read/write，映射�
 Electron 44 新增系统剪贴板访问，客户端需持有 page.control 及独立的 clipboard.read 或 clipboard.write 授权；限制数据量并在异步操作前后检查租约。Linux ARM64 Electron 44.7 在隔离 Xvfb 中经原生 socket 验证文本、HTML、PNG；47 项 Electron 测试通过。写入一经发出可能在撤权后完成，macOS/Windows 实际剪贴板及旧版 Electron 暂未覆盖。
 
 语义定位器新增 allTextContents()，按一次观察中的匹配顺序逐项读取原始文本，沿用作用域、frame 和变化校验；空匹配返回空数组，并限制单项及总长度。SDK 59 项通过；Linux ARM64 隔离 Chromium 原生消息和 Electron 44/Xvfb socket 验证容器中多个元素及隐藏后代文本，Electron 还验证同一结果中的跨进程 frame。读取期间页面可能变化，结果没有原子快照保证。
+
+domSnapshot 从页面正文文本改为有界可访问性快照，包含角色、名称、状态和可读取 frame；截断或读取失败明确标注，并刷新已有观察。SDK 60 项通过；Linux ARM64 隔离 Chromium 原生消息及 Electron 44/Xvfb socket 验证跨进程 frame 控件，Chromium 验证密码样本未出现在输出。快照不主动读取字段值，页面提供的可访问名称和文本可能包含敏感内容。

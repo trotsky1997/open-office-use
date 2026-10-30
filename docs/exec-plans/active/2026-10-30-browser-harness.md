@@ -8,7 +8,7 @@
 
 - 复用已有 extension、session/tab ownership、Electron scope 和 SDK。
 - 当前 Codex 的统一入口提供持久 JavaScript 会话、浏览器发现、标签页绑定、可访问性状态、截图与基于状态的操作。具体支持依 backend 而异。
-- 本仓库已有 Chrome 和 Electron 传输、会话与底层 CDP；JavaScript SDK 的 `domSnapshot` 当前只返回页面文本。Electron MCP 已提供原始 AX tree 和截图。
+- 本仓库已有 Chrome 和 Electron 传输、会话与底层 CDP；JavaScript SDK 的 `domSnapshot` 通过可访问性树返回角色、名称、状态及可读取 frame。Electron MCP 已提供原始 AX tree 和截图。
 - 第一阶段先暴露 JavaScript SDK 的 AX tree 和截图，保持原始 CDP 语义；不宣称具备元素索引、增量树或 Codex 的完整能力。
 
 ## 后续里程碑
@@ -45,6 +45,7 @@
 - [x] Linux ARM64 隔离 Chromium 150：原生消息链路验证跨进程与嵌套 frame 的可信输入、导航、遮挡和重连。
 - [ ] 跨进程 iframe 的其他平台与动态 frame 场景验收。
 - [x] 同一文档支持有序文本差异；导航和截断后回到完整基线。
+- [x] domSnapshot 使用有界的可访问性状态与 frame 内容，标出截断或不可读取的 frame；输出不直接暴露可操作索引。
 - [x] 语义定位器支持批量读取匹配节点的原始文本，保留作用域与 frame 校验；Linux 隔离 Chromium 原生消息和 Electron 44 socket 验证，Electron 覆盖跨进程 frame。
 - [x] 按 CSS viewport 坐标点击和滚动；本机隔离 Chrome 验证真实鼠标和滚轮行为。
 - [x] 语义定位器与 CSS viewport 坐标悬停；macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证可信 mouseenter，Electron 验证坐标悬停。

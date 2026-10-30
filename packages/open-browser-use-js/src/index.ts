@@ -599,8 +599,10 @@ export class OpenBrowserUseTab {
     }
   }
 
-  domSnapshot(): Promise<string> {
-    return this.browser.cdp.evaluate(this.id, "document.body?.innerText ?? ''").then((value) => String(value ?? ""));
+  async domSnapshot(): Promise<string> {
+    const state = await this.observe({includeFrames:true,includeText:true});
+    const text = state.text.replace(/^\[\d+\] /gm, "");
+    return [text, ...(state.truncated ? ["[Snapshot truncated]"] : []), ...(state.unavailableFrames?.length ? [`[${state.unavailableFrames.length} frame(s) unavailable]`] : [])].filter(Boolean).join("\n");
   }
 
   getAXState(): Promise<JsonValue> {

@@ -143,8 +143,12 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
           result = expression.includes("readyState")
             ? { result: { value: { href: "https://example.test/issues", readyState: "interactive" } } }
             : { result: { value: "Open\nClosed\nIssues\nStarred" } };
+        } else if (request.params.method === "DOM.getDocument") {
+          result = { root: { backendNodeId: 1 } };
+        } else if (request.params.method === "Page.getFrameTree") {
+          result = { frameTree: { frame: { id: "main", loaderId: "one", url: "https://example.test/" }, childFrames: [{ frame: { id: "child", loaderId: "two", url: "https://child.test/" } }] } };
         } else if (request.params.method === "Accessibility.getFullAXTree") {
-          result = { nodes: [{ nodeId: "1", role: { value: "button" }, name: { value: "Submit" } }] };
+          result = { nodes: [{ nodeId: "1", role: { value: "button" }, name: { value: request.params.commandParams?.frameId === "child" ? "Frame action" : "Submit" }, backendDOMNodeId: 2 }] };
         } else if (request.params.method === "Page.captureScreenshot") {
           result = { data: Buffer.from("png-data").toString("base64") };
         }
@@ -162,26 +166,10 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
     const tab = await browser.newTab();
     await tab.goto("https://example.test/issues", { waitUntil: "domcontentloaded", timeoutMs: 1000 });
     await tab.playwright.waitForLoadState({ state: "domcontentloaded", timeoutMs: 1000 });
-    assert.equal(await tab.playwright.domSnapshot(), "Open\nClosed\nIssues\nStarred");
+    assert.equal(await tab.playwright.domSnapshot(), 'button "Submit"\nframe "https://child.test/"\nbutton "Frame action"');
     assert.equal((await tab.getAXState()).nodes[0].name.value, "Submit");
     assert.deepEqual(await tab.getScreenshot(), Buffer.from("png-data"));
-    assert.deepEqual(calls, [
-      ["createTab", null],
-      ["attach", null],
-      ["executeCdp", "Page.enable"],
-      ["attach", null],
-      ["executeCdp", "Page.navigate"],
-      ["attach", null],
-      ["executeCdp", "Page.enable"],
-      ["attach", null],
-      ["executeCdp", "Runtime.evaluate"],
-      ["attach", null],
-      ["executeCdp", "Runtime.evaluate"],
-      ["attach", null],
-      ["executeCdp", "Accessibility.getFullAXTree"],
-      ["attach", null],
-      ["executeCdp", "Page.captureScreenshot"]
-    ]);
+    assert.ok(calls.some(([method,command])=>method === "executeCdp" && command === "Page.getFrameTree"));
   } finally {
     browser.close();
     server.close();

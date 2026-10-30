@@ -63,6 +63,7 @@ app.whenReady().then(async()=>{
     const crossUrl=fixture.url.replace('127.0.0.1','localhost')+'/cross-frame';
     await sdk.evaluate(`(async()=>{const f=document.createElement('iframe');f.id='cross';f.src=${JSON.stringify(crossUrl)};Object.assign(f.style,{position:'fixed',left:'20px',top:'200px',width:'500px',height:'300px',zIndex:'9999'});document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`,{awaitPromise:true});
     const observed=await sdk.observe({includeFrames:true});const node=observed.nodes.find(item=>item.name==='Cross-frame action');assert.ok(node?.frameId);
+    const snapshot=await sdk.playwright.domSnapshot();assert.match(snapshot,/button "Cross-frame action"/);assert.match(snapshot,/frame "http:\/\/localhost:/);
     const session=(await sdk.browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===node.frameId)?.sessionId;assert.ok(session);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`console.warn('socket-cross-log')`},{sessionId:session});await new Promise(resolve=>setTimeout(resolve,50));
     assert.ok((await sdk.dev.logs({levels:['warning'],filter:'socket-cross-log'})).length);

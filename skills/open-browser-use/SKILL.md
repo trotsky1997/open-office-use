@@ -29,7 +29,9 @@ When the source build provides `obu-repl-mcp`, a trusted local agent can use its
 persistent `js` tool. Connect to the selected socket with
 `const browser = await connectBrowser({socketPath, sessionId})`, list existing
 tabs via `browser.getUserTabs()`, and claim the matching tab with
-`await browser.claimTab(id)`. Call `await tab.observe()` after page changes;
+`await browser.claimTab(id)`. `tab.playwright.domSnapshot()` returns bounded
+roles, names, states and readable frame content; heed truncation and unavailable
+frame markers. It replaces any previous observation. Call `await tab.observe()` after page changes;
 use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
 to replace a text field's contents. For semantic selection, use
 `tab.playwright.getByRole(role, {name, exact:true}).click()`, `.dblclick()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()` or `.fill(text)`;

@@ -686,6 +686,12 @@ test("cross-process frame input uses its session and rejects detached targets", 
   await assert.rejects(tab.click(stale.nodes.find(node=>node.name==="Nested").index,stale.snapshotId),/Frame changed/);
 });
 
+test("DOM snapshot reports truncation and unreadable frames", async () => {
+  const tab = new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  tab.observe=async options=>{assert.deepEqual(options,{includeFrames:true,includeText:true});return {text:'[1] button "Save"',truncated:true,unavailableFrames:['f']};};
+  assert.equal(await tab.playwright.domSnapshot(),'button "Save"\n[Snapshot truncated]\n[1 frame(s) unavailable]');
+});
+
 test("role locators reobserve, reject ambiguous matches and honor explicit position", async () => {
   const client = new OpenBrowserUseClient({socketPath:'unused'});
   const tab = new OpenBrowserUseBrowser({client}).tab(1), calls=[];

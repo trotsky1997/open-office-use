@@ -86,6 +86,12 @@ const axTree = await tab.getAXState(); // CDP accessibility tree
 const png = await tab.getScreenshot(); // PNG Buffer
 ```
 
+`domSnapshot()` returns a bounded accessibility snapshot with roles, names,
+states and readable frame content. It marks truncated output and inaccessible
+frames, does not explicitly read form values, and replaces the previous
+`observe()` result; call `observe()` again before using an observation index.
+Page-provided accessible names and text can still contain sensitive data.
+
 The accessibility tree is the raw CDP response. It does not provide stable
 interaction indices or state diffs; request a fresh tree after page changes.
 
