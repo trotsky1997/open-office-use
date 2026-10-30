@@ -884,7 +884,8 @@ test("focused frame changes prevent sending keyboard input", async () => {
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'},childFrames:[{frame:{id:'child',loaderId:'v2',url:'https://child.test'}}]}};
     if(params.method==='DOM.getFrameOwner')return {backendNodeId:2};
-    if(params.method==='DOM.resolveNode')return {object:{objectId:'frame'}};
+    if(params.method==='Page.createIsolatedWorld')return {executionContextId:42};
+    if(params.method==='DOM.resolveNode'){assert.equal(params.commandParams.executionContextId,42);return {object:{objectId:'frame'}};}
     if(params.method==='Runtime.callFunctionOn')return {result:{value:++checks===1}};
     if(params.method==='Input.dispatchKeyEvent')keys++;
     if(params.method==='Input.insertText')insertions++;

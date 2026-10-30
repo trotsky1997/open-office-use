@@ -115,6 +115,10 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,`(()=>{window.focusProbe={clicks:0,keys:0};const el=document.querySelector('#message');el.addEventListener('click',()=>window.focusProbe.clicks++);el.addEventListener('keydown',()=>window.focusProbe.keys++)})()`);
   for (const locator of [messageCss,messageRole]) { await evaluate(a.id,"document.querySelector('#increment').focus()");await locator.focus({timeoutMs:3000});assert.equal(await evaluate(a.id,"document.activeElement.id"),'message'); }
   assert.deepEqual(await evaluate(a.id,'window.focusProbe'),{clicks:0,keys:0});
+  await evaluate(a.id,`(()=>{window.savedConnected=Object.getOwnPropertyDescriptor(Node.prototype,'isConnected');Object.defineProperty(Node.prototype,'isConnected',{configurable:true,get:()=>false});return true})()`);
+  try {await messageRole.focus();assert.equal(await evaluate(a.id,"document.activeElement.id"),'message');}
+  finally {await evaluate(a.id,"Object.defineProperty(Node.prototype,'isConnected',window.savedConnected);true");}
+
   check('SDK locators: focus without mouse or key events');
   await evaluate(a.id,`(()=>{window.focusChanges=0;const el=document.createElement('input');el.id='focus-changing';el.addEventListener('focus',()=>{window.focusChanges++;el.id='focus-changed'});document.body.append(el)})()`);
   await assert.rejects(sdkTab.playwright.locator('#focus-changing').focus({timeoutMs:1000}),/changed|focus/i);
@@ -165,7 +169,9 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   check('SDK locator: waits for moving target to settle');
   const crossUrl = fixture.url.replace('127.0.0.1','localhost') + '/cross-frame';
   await evaluate(a.id,`(async()=>{window.crossMessages=[];window.addEventListener('message',e=>window.crossMessages.push(e.data));const f=document.createElement('iframe');f.id='cross-frame';f.src=${JSON.stringify(crossUrl)};document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`);
-  await sdkTab.playwright.locator('#cross-frame').focus();assert.equal(await evaluate(a.id,"document.activeElement.id"),'cross-frame');
+  await evaluate(a.id,`(()=>{window.savedFrameRoot=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'getRootNode');HTMLIFrameElement.prototype.getRootNode=()=>({activeElement:null});return true})()`);
+  try {await sdkTab.playwright.locator('#cross-frame').focus();assert.equal(await evaluate(a.id,"document.activeElement.id"),'cross-frame');}
+  finally {await evaluate(a.id,"if(window.savedFrameRoot)Object.defineProperty(HTMLIFrameElement.prototype,'getRootNode',window.savedFrameRoot);else delete HTMLIFrameElement.prototype.getRootNode;true");}
   const crossState = await sdkTab.observe({includeFrames:true});
   assert.equal(crossState.frameCoverage,'cross-process');
   const crossButton = crossState.nodes.find(node=>node.name==='Cross-frame action');assert.ok(crossButton?.frameId);

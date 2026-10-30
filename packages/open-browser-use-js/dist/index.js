@@ -2414,7 +2414,10 @@ export class OpenBrowserUseTab {
                     const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: child.id }, { sessionId: current.sessionId });
                     if (!isObject(owner) || typeof owner.backendNodeId !== "number")
                         throw new RetryablePreflightError("Frame owner is unavailable; observe again");
-                    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId }, { sessionId: current.sessionId });
+                    const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: current.id, worldName: "open-browser-use-selector" }, { sessionId: current.sessionId });
+                    if (!isObject(world) || typeof world.executionContextId !== "number")
+                        throw new RetryablePreflightError("Frame focus context is unavailable; observe again");
+                    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId, executionContextId: world.executionContextId }, { sessionId: current.sessionId });
                     const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
                     if (typeof objectId !== "string")
                         throw new RetryablePreflightError("Frame owner is unavailable; observe again");
@@ -2580,7 +2583,17 @@ export class OpenBrowserUseTab {
             if (!checked && ["radio", "menuitemradio"].includes(node.role))
                 throw new Error("A selected radio cannot be unchecked directly");
         }
-        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: node.backendNodeId }, { sessionId: targetSession });
+        let focusContext;
+        if (focusOnly) {
+            const frameId = node.frameId ?? observation.frames?.[0]?.id;
+            if (!frameId)
+                throw new RetryablePreflightError("Target frame is unavailable; observe again");
+            const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId, worldName: "open-browser-use-selector" }, { sessionId: targetSession });
+            if (!isObject(world) || typeof world.executionContextId !== "number")
+                throw new RetryablePreflightError("Target focus context is unavailable; observe again");
+            focusContext = world.executionContextId;
+        }
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: node.backendNodeId, ...(focusContext === undefined ? {} : { executionContextId: focusContext }) }, { sessionId: targetSession });
         const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
         if (typeof objectId !== "string")
             throw new RetryablePreflightError("Target is unavailable; observe again");
