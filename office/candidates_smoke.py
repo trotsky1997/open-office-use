@@ -35,7 +35,9 @@ with tempfile.TemporaryDirectory() as tmp:
         assert result['revision'] == 0 and not result['stale'] and result['requires_verification'], result
         assert result['returned_candidate_count'] >= 2, result
         assert len({candidate['path'] for candidate in result['candidates']}) >= 2, result
-        assert all('Shared needle' in candidate['text'] for candidate in result['candidates']), result
+        assert sum('Shared needle' in candidate['text'] for candidate in result['candidates']) >= 2, result
+        assert all(candidate.get('geometry_match') or 'Shared needle' in candidate['text'] for candidate in result['candidates']), result
+        assert not result['selection_changed'] and result['render_advisory'] == ({'dynamic_array_metadata': False, 'issue': None} if suffix == '.xlsx' else None), result
         if suffix == '.docx':
             spec = root / 'ops.json'; spec.write_text(json.dumps([{'command': 'set', 'path': '/body/p[1]', 'props': {'text': 'Changed'}}]))
             run('session', 'apply', directory, '--base', '0', '--spec', spec)

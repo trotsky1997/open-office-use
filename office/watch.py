@@ -1351,7 +1351,7 @@ def serve(directory, preview, port=0, render=None):
                         result = selection_candidates.candidates(directory, render)
                         with lock:
                             selected = session.get_selection(directory)
-                            if selected['stale'] or result['stale'] or any(selected[key] != expected[key] for key in expected) or any(result[key] != expected[key] for key in expected):
+                            if selected['stale'] or result['stale'] or result['selection_changed'] or any(selected[key] != expected[key] for key in expected) or any(result[key] != expected[key] for key in expected):
                                 raise ValueError('Selection changed; select the current page again')
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
                     with lock:

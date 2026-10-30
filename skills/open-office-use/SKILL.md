@@ -53,4 +53,6 @@ Grid and XLSX single-cell editing can create supported dynamic-array formulas wh
 
 Before LibreOffice recalculation, check `dynamic_array_metadata` and `dynamic_array_metadata_issue` in the formula scan. Recalculation rejects detected or uninspectable metadata by default; `allow_dynamic_arrays: true` explicitly permits conversion with potentially incomplete spill results.
 
-Check the XLSX `render_advisory` returned by structured rendering commands. LibreOffice previews may omit dynamic-array spills. Image-only MCP responses have no structured advisory; scan the exact workbook separately.
+Check the XLSX `render_advisory` returned by structured rendering commands. LibreOffice previews may omit dynamic-array spills. MCP rendered-image responses include an image first, then text and structured metadata with warnings and page or revision details; inspect them alongside the image.
+
+Selection text and candidate results include `render_advisory` and `selection_changed`; inspect both before using text extracted from a rendered workbook.

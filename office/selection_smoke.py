@@ -9,6 +9,9 @@ from docx import Document
 from openpyxl import Workbook
 from pptx import Presentation
 from session import set_selection
+import open_office_use
+import selection_text
+import selection_candidates
 
 cli = Path(__file__).with_name('open_office_use.py')
 def run(*args):
@@ -43,4 +46,16 @@ with tempfile.TemporaryDirectory() as tmp:
             run('session', 'apply', directory, '--base', '0', '--spec', spec)
             stale = run('session', 'selection-text', directory)
             assert stale['stale'] and stale['revision'] == 0 and 'First title' in stale['text'], stale
+    directory = root / 'xlsx'
+    initial = {'revision': 0, 'page': 1, 'box': [0, 0, 1, 1]}
+    def changed_during_render(source, out):
+        pdf = open_office_use.render(source, out)
+        set_selection(directory, {'revision': 0, 'page': 1, 'box': [0, 0, .5, .5]})
+        return pdf
+    set_selection(directory, initial)
+    extracted = selection_text.extract(directory, changed_during_render)
+    assert extracted['selection_changed'] and not extracted['stale'] and extracted['render_advisory']['dynamic_array_metadata'] is False
+    set_selection(directory, initial)
+    candidates = selection_candidates.candidates(directory, changed_during_render)
+    assert candidates['selection_changed'] and not candidates['stale'] and candidates['render_advisory']['dynamic_array_metadata'] is False
 print('Selection smoke passed: three formats, bounded text and exact stale revision')

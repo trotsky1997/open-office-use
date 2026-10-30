@@ -95,4 +95,4 @@ Added explicit ordered formatting-preserving text replacements across Word, Powe
 
 ## Dynamic-array preview advisory
 
-Rendered XLSX previews disclose XLDAPR metadata or incomplete inspection for the displayed revision and comparison sides. Structured render and image-file results return advisories; image-only MCP tools direct callers to the formula scan. Local LibreOffice preview of SEQUENCE showed only the first result.
+Rendered XLSX previews disclose XLDAPR metadata or incomplete inspection for the displayed revision and comparison sides. Structured render and image-file results return advisories; MCP image responses include image, text and structured advisory, page and revision metadata. Local LibreOffice preview of SEQUENCE showed only the first result.

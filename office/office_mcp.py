@@ -1,9 +1,11 @@
 """MCP access to the local office authoring workbench."""
 from pathlib import Path
+import json
 
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP, Image
+from mcp.types import CallToolResult, TextContent
 
 import officecli_backend
 import chart_cache
@@ -27,6 +29,17 @@ server = FastMCP(
                  'Save and close external OfficeCLI sessions before using a source. '
                  'Render and inspect page images before delivering an artifact.',
 )
+
+
+def image_result(data, details):
+    warnings = []
+    for field, label in (('render_advisory', 'Rendered workbook'), ('before_render_advisory', 'Before workbook'), ('after_render_advisory', 'After workbook')):
+        advisory = details.get(field)
+        if advisory and advisory.get('dynamic_array_metadata') is not False:
+            state = 'has dynamic-array metadata' if advisory.get('dynamic_array_metadata') is True else 'has unverified dynamic-array metadata'
+            warnings.append(f'{label} {state}; LibreOffice may omit spill results. Review in a compatible application.')
+    details = {**details, 'warnings': warnings}
+    return CallToolResult(content=[Image(data=data, format='png').to_image_content(), TextContent(type='text', text=json.dumps(details, ensure_ascii=False))], structuredContent=details)
 
 
 @server.tool()
@@ -139,14 +152,15 @@ def session_selection_candidates(directory: str) -> dict[str, Any]:
     return selection_candidates.candidates(directory, render)
 
 
-@server.tool()
-def session_selection_image(directory: str) -> Image:
+@server.tool(structured_output=False)
+def session_selection_image(directory: str) -> CallToolResult:
     """Render the selected region of the exact revision. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     selection = session.get_selection(directory)
     state = session.info(directory)
     source = session.revision_file(state, selection['revision'])
-    data, _ = visual.page_image(source, selection['page'], render, selection['box'])
-    return Image(data=data, format='png')
+    data, details = visual.page_image(source, selection['page'], render, selection['box'])
+    current_selection = session.get_selection(directory); latest = current_selection['latest_revision']
+    return image_result(data, {**details, 'revision': selection['revision'], 'latest_revision': latest, 'stale': selection['revision'] != latest, 'selection_changed': any(selection[key] != current_selection[key] for key in ('revision', 'page', 'box'))})
 
 
 @server.tool()
@@ -479,53 +493,53 @@ def preview_pages(file: str, output_dir: str) -> dict[str, Any]:
     return {'pages': preview(file, output_dir), 'render_advisory': spreadsheet.render_advisory(file)}
 
 
-@server.tool()
-def view_document_page(file: str, page: int, box: list[float] | None = None) -> Image:
+@server.tool(structured_output=False)
+def view_document_page(file: str, page: int, box: list[float] | None = None) -> CallToolResult:
     """View a rendered page; for XLSX check scan_formulas first because dynamic-array spills can be incomplete in LibreOffice previews."""
-    data, _ = visual.page_image(file, page, render, box)
-    return Image(data=data, format='png')
+    data, details = visual.page_image(file, page, render, box)
+    return image_result(data, details)
 
 
-@server.tool()
-def session_view_page(directory: str, revision: int, page: int, box: list[float] | None = None) -> Image:
+@server.tool(structured_output=False)
+def session_view_page(directory: str, revision: int, page: int, box: list[float] | None = None) -> CallToolResult:
     """View a session revision page; for XLSX inspect dynamic-array metadata because LibreOffice previews may omit spill results."""
     state = session.info(directory)
     source = session.revision_file(state, revision)
-    data, _ = visual.page_image(source, page, render, box)
-    return Image(data=data, format='png')
+    data, details = visual.page_image(source, page, render, box)
+    return image_result(data, {**details, 'revision': revision})
 
 
-@server.tool()
-def compare_page_images(before: str, after: str, before_page: int, after_page: int) -> Image:
+@server.tool(structured_output=False)
+def compare_page_images(before: str, after: str, before_page: int, after_page: int) -> CallToolResult:
     """Compare rendered pages visually; red shows RGB differences of at least 16/255. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
-    data, _ = visual.compare_pages(before, after, before_page, after_page, render)
-    return Image(data=data, format='png')
+    data, details = visual.compare_pages(before, after, before_page, after_page, render)
+    return image_result(data, details)
 
 
-@server.tool()
-def session_compare_page_images(directory: str, before_revision: int, after_revision: int, before_page: int, after_page: int) -> Image:
+@server.tool(structured_output=False)
+def session_compare_page_images(directory: str, before_revision: int, after_revision: int, before_page: int, after_page: int) -> CallToolResult:
     """Compare rendered pages from exact session revisions; check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     state = session.info(directory)
     before = session.revision_file(state, before_revision)
     after = session.revision_file(state, after_revision)
-    data, _ = visual.compare_pages(before, after, before_page, after_page, render)
-    return Image(data=data, format='png')
+    data, details = visual.compare_pages(before, after, before_page, after_page, render)
+    return image_result(data, {**details, 'before_revision': before_revision, 'after_revision': after_revision})
 
 
-@server.tool()
-def view_contact_sheet(file: str, start_page: int = 1, count: int = 12) -> Image:
+@server.tool(structured_output=False)
+def view_contact_sheet(file: str, start_page: int = 1, count: int = 12) -> CallToolResult:
     """Render up to 12 numbered pages as a PNG overview. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
-    data, _ = visual.contact_sheet(file, start_page, count, render)
-    return Image(data=data, format='png')
+    data, details = visual.contact_sheet(file, start_page, count, render)
+    return image_result(data, details)
 
 
-@server.tool()
-def session_contact_sheet(directory: str, revision: int, start_page: int = 1, count: int = 12) -> Image:
+@server.tool(structured_output=False)
+def session_contact_sheet(directory: str, revision: int, start_page: int = 1, count: int = 12) -> CallToolResult:
     """Render a numbered overview of an exact revision. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     state = session.info(directory)
     source = session.revision_file(state, revision)
-    data, _ = visual.contact_sheet(source, start_page, count, render)
-    return Image(data=data, format='png')
+    data, details = visual.contact_sheet(source, start_page, count, render)
+    return image_result(data, {**details, 'revision': revision})
 
 
 @server.tool()

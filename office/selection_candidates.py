@@ -55,9 +55,10 @@ def candidates(directory, render):
                                    'text_truncated': isinstance(text, str) and len(text) > 2000, 'matched_text': []}
                 if phrase not in found[path]['matched_text']:
                     found[path]['matched_text'].append(phrase)
-    latest = session.info(directory)['latest_revision']
+    current = session.get_selection(directory); latest = current['latest_revision']
     return {'revision': selected['revision'], 'page': selected['page'], 'box': selected['box'],
             'latest_revision': latest, 'stale': selected['revision'] != latest,
+            'selection_changed': selected['selection_changed'] or any(selected[key] != current[key] for key in ('revision', 'page', 'box')), 'render_advisory': selected['render_advisory'],
             'search_text': lines, 'selection_text_truncated': selected['truncated'],
             'candidates': list(found.values())[:50], 'returned_candidate_count': len(found),
             'candidates_truncated': len(found) > 50 or bool(geometry and geometry['selection_match_count'] > len(geometry['selection_matches'])), 'requires_verification': True,

@@ -229,13 +229,13 @@ async def main():
                 matches = await session.call_tool('session_selection_candidates', {'directory': str(directory)})
                 assert not matches.isError and matches.structuredContent['requires_verification'] and matches.structuredContent['candidates'], matches
                 cropped = await session.call_tool('session_selection_image', {'directory': str(directory)})
-                assert not cropped.isError and cropped.content[0].type == 'image', cropped
+                assert not cropped.isError and cropped.content[0].type == 'image' and cropped.content[1].type == 'text' and cropped.structuredContent['stale'] is False, cropped
                 advanced = await session.call_tool('session_apply', {'directory': str(directory), 'base_revision': 1, 'operations': []})
                 assert not advanced.isError, advanced
                 stale_selection = await session.call_tool('session_selection', {'directory': str(directory)})
                 assert not stale_selection.isError and stale_selection.structuredContent['stale'] is True, stale_selection
                 stale_image = await session.call_tool('session_selection_image', {'directory': str(directory)})
-                assert not stale_image.isError and stale_image.content[0].data == cropped.content[0].data, stale_image
+                assert not stale_image.isError and stale_image.content[0].data == cropped.content[0].data and stale_image.structuredContent['stale'] is True, stale_image
                 restored = await session.call_tool('session_restore', {'directory': str(directory), 'base_revision': 2, 'revision': 0})
                 assert not restored.isError and restored.structuredContent['revision'] == 3, restored
                 outdated_restore = await session.call_tool('session_restore', {'directory': str(directory), 'base_revision': 2, 'revision': 0})
@@ -379,12 +379,27 @@ async def main():
                 assert not dynamic_read.isError and not dynamic_read.structuredContent['rows'][0][0]['editable'], dynamic_read
                 dynamic_pdf = await session.call_tool('render_pdf', {'file': str(dynamic_draft / 'revision-000001.xlsx'), 'output_dir': str(root / 'dynamic-pdf')})
                 assert not dynamic_pdf.isError and dynamic_pdf.structuredContent['render_advisory']['dynamic_array_metadata'] is True, dynamic_pdf
+                dynamic_view = await session.call_tool('session_view_page', {'directory': str(dynamic_draft), 'revision': 1, 'page': 1})
+                assert not dynamic_view.isError and dynamic_view.content[0].type == 'image' and dynamic_view.content[1].type == 'text' and dynamic_view.structuredContent['revision'] == 1 and dynamic_view.structuredContent['warnings'], dynamic_view
+                dynamic_contact = await session.call_tool('view_contact_sheet', {'file': str(dynamic_draft / 'revision-000001.xlsx'), 'count': 1})
+                assert not dynamic_contact.isError and dynamic_contact.content[0].type == 'image' and dynamic_contact.structuredContent['render_advisory']['dynamic_array_metadata'] is True and dynamic_contact.structuredContent['warnings'], dynamic_contact
+                dynamic_comparison = await session.call_tool('session_compare_page_images', {'directory': str(dynamic_draft), 'before_revision': 0, 'after_revision': 1, 'before_page': 1, 'after_page': 1})
+                assert not dynamic_comparison.isError and dynamic_comparison.content[0].type == 'image' and dynamic_comparison.structuredContent['after_render_advisory']['dynamic_array_metadata'] is True and dynamic_comparison.structuredContent['before_render_advisory']['dynamic_array_metadata'] is False, dynamic_comparison
+                set_selection(dynamic_draft, {'revision': 1, 'page': 1, 'box': [0,0,.5,.5]})
+                dynamic_selection = await session.call_tool('session_selection_image', {'directory': str(dynamic_draft)})
+                assert not dynamic_selection.isError and dynamic_selection.structuredContent['stale'] is False and not dynamic_selection.structuredContent['selection_changed'] and dynamic_selection.structuredContent['warnings'], dynamic_selection
+                dynamic_text = await session.call_tool('session_selection_text', {'directory': str(dynamic_draft)})
+                assert not dynamic_text.isError and dynamic_text.structuredContent['render_advisory']['dynamic_array_metadata'] is True and not dynamic_text.structuredContent['selection_changed'], dynamic_text
+                dynamic_candidates = await session.call_tool('session_selection_candidates', {'directory': str(dynamic_draft)})
+                assert not dynamic_candidates.isError and dynamic_candidates.structuredContent['render_advisory']['dynamic_array_metadata'] is True and not dynamic_candidates.structuredContent['selection_changed'], dynamic_candidates
                 dynamic_scan = await session.call_tool('session_scan_formulas', {'directory': str(dynamic_draft), 'base_revision': 1})
                 assert not dynamic_scan.isError and dynamic_scan.structuredContent['dynamic_array_metadata'] is True, dynamic_scan
                 denied_calc = await session.call_tool('session_recalculate', {'directory': str(dynamic_draft), 'base_revision': 1})
                 assert denied_calc.isError, denied_calc
                 allowed_calc = await session.call_tool('session_recalculate', {'directory': str(dynamic_draft), 'base_revision': 1, 'allow_dynamic_arrays': True})
                 assert not allowed_calc.isError and allowed_calc.structuredContent['dynamic_array_override'], allowed_calc
+                stale_dynamic = await session.call_tool('session_selection_image', {'directory': str(dynamic_draft)})
+                assert not stale_dynamic.isError and stale_dynamic.structuredContent['revision'] == 1 and stale_dynamic.structuredContent['latest_revision'] == 2 and stale_dynamic.structuredContent['stale'] is True, stale_dynamic
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
                 assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1 and saved_grid.structuredContent['formula_cache_effect'] == 'may_be_stale' and saved_grid.structuredContent['recalculation_requested'], saved_grid
                 styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True, 'italic': True, 'font_color': '336699', 'horizontal': 'center', 'wrap': True}})

@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import session
+import spreadsheet
 
 
 def extract(directory, render):
@@ -69,9 +70,10 @@ def extract(directory, render):
                     break
         except (ET.ParseError, KeyError, TypeError) as exc:
             raise RuntimeError(f'Invalid PDF text geometry: {exc}') from exc
-    latest = session.info(directory)['latest_revision']
+    current = session.get_selection(directory); latest = current['latest_revision']
     return {'revision': selection['revision'], 'page': selection['page'], 'box': selection['box'],
-            'latest_revision': latest, 'stale': selection['revision'] != latest,
+            'latest_revision': latest, 'stale': selection['revision'] != latest, 'selection_changed': any(selection[key] != current[key] for key in ('revision', 'page', 'box')),
+            'render_advisory': spreadsheet.render_advisory(source),
             'text': '\n'.join(lines), 'words': words, 'truncated': truncated,
             'pdf_page_count': page_count, 'pdf_page_size': [width, height],
             'method': 'pdf_word_centers'}
