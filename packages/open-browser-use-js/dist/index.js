@@ -30,18 +30,14 @@ function applyLocatorOptions(locator, options) {
 function validateCheckOptions(options) {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["timeoutMs", "force"].includes(key)) || (options.force !== undefined && typeof options.force !== "boolean"))
         throw new Error("Invalid locator check options");
-    if (options.force)
-        throw new Error("Forced locator checks are not supported");
 }
 function locatorClickOptions(options) {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["timeoutMs", "button", "modifiers", "force"].includes(key)) || (options.force !== undefined && typeof options.force !== "boolean"))
         throw new Error("Invalid locator click options");
-    if (options.force)
-        throw new Error("Forced locator clicks are not supported");
     const button = options.button ?? "left", masks = { left: 1, middle: 4, right: 2 };
     if (!Object.hasOwn(masks, button))
         throw new Error("Invalid mouse button");
-    return { button, buttons: masks[button], modifiers: cuaModifiers(options.modifiers) };
+    return { button, buttons: masks[button], modifiers: cuaModifiers(options.modifiers), ...(options.force ? { force: true } : {}) };
 }
 const inputValueFunction = `function(){if(this instanceof HTMLInputElement && this.type==='password')return {error:'redacted'};if(!(this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement || this instanceof HTMLSelectElement))return {error:'unsupported'};return {value:this.value.slice(0,30001)}}`;
 const domIdentityFunction = `function(){
@@ -1466,12 +1462,13 @@ export class OpenBrowserUseTab {
         try {
             const chain = frameAncestry(frame, snapshot.frames);
             const measure = async () => {
-                const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: hover }], functionDeclaration: `function(allowDisabled) {
+                const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: hover }, { value: !!mouse.force }], functionDeclaration: `function(allowDisabled,force) {
           if (!this.isConnected) return null;
           if (!allowDisabled) for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return null;
           this.scrollIntoView({block:'center',inline:'center'});
           const r=this.getBoundingClientRect(), x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2, y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
           if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
+          if(force)return {x,y,width:r.width,height:r.height};
           let target=this, root=target.getRootNode();
           while (true) { const hit=root.elementFromPoint(x,y); if (!hit || (hit!==target && !target.contains(hit))) return null; if (!(root instanceof ShadowRoot)) return {x,y,width:r.width,height:r.height}; target=root.host; root=target.getRootNode(); }
         }` }, { sessionId });
@@ -1482,7 +1479,7 @@ export class OpenBrowserUseTab {
                 let point = { x: geometry.x, y: geometry.y }, inputPoint = point;
                 for (let i = 0; i < chain.length; i++) {
                     const ownerSession = chain[i + 1]?.sessionId;
-                    point = await this.framePoint(chain[i].id, point.x, point.y, ownerSession);
+                    point = await this.framePoint(chain[i].id, point.x, point.y, ownerSession, !!mouse.force);
                     if (ownerSession === sessionId)
                         inputPoint = point;
                 }
@@ -1654,10 +1651,12 @@ export class OpenBrowserUseTab {
                     throw new Error("Text field did not retain the requested value");
                 return;
             }
+            const pointerPoint = mouse.force ? second.point : second.inputPoint;
+            const pointerOptions = mouse.force ? (domConnectionGeneration !== undefined ? { expectedGeneration: domConnectionGeneration } : {}) : options;
             if (hover)
-                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", ...second.inputPoint, button: "none", buttons: 0 }, options);
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", ...pointerPoint, button: "none", buttons: 0 }, pointerOptions);
             else {
-                await this.dispatchClick(second.inputPoint, mouse, 1, options);
+                await this.dispatchClick(pointerPoint, mouse, 1, pointerOptions);
                 if (checked !== undefined) {
                     const latest = await this.queryCss(snapshot.step, snapshot.framePath, snapshot.scopes, snapshot.semantic?.scope, undefined, snapshot.frameId);
                     if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots) !== JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids) || (await checkedState()).value !== checked)
@@ -1671,7 +1670,7 @@ export class OpenBrowserUseTab {
                     if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots) !== JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || (domIdentity ? !latest.ids.includes(id) : JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids)))
                         throw new Error("Selector target changed after the first click; observe again");
                     await verifyDomIdentity();
-                    await this.dispatchClick(second.inputPoint, mouse, 2, options);
+                    await this.dispatchClick(pointerPoint, mouse, 2, pointerOptions);
                 }
             }
         }
@@ -2433,10 +2432,10 @@ export class OpenBrowserUseTab {
             throw new Error("Text must be a string");
         await this.act(index, snapshotId, text, true);
     }
-    async setChecked(index, snapshotId, checked) {
+    async setChecked(index, snapshotId, checked, force = false) {
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be boolean");
-        await this.act(index, snapshotId, undefined, false, checked);
+        await this.act(index, snapshotId, undefined, false, checked, undefined, false, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(force ? { force: true } : {}) });
     }
     async selectOption(index, snapshotId, values) {
         const specs = selectSpecs(values);
@@ -2512,8 +2511,8 @@ export class OpenBrowserUseTab {
         try {
             const measure = async () => {
                 const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
-                    objectId, returnByValue: true, arguments: [{ value: hover }],
-                    functionDeclaration: `function(allowDisabled) {
+                    objectId, returnByValue: true, arguments: [{ value: hover }, { value: !!mouse.force }],
+                    functionDeclaration: `function(allowDisabled,force) {
             const element=this.nodeType===Node.TEXT_NODE ? this.parentElement : this;
             if (!this.isConnected || !(element instanceof Element)) return null;
             if (!allowDisabled) for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return null;
@@ -2526,6 +2525,7 @@ export class OpenBrowserUseTab {
             if (!r) return null;
             const x = (Math.max(0,r.left) + Math.min(innerWidth,r.right)) / 2, y = (Math.max(0,r.top) + Math.min(innerHeight,r.bottom)) / 2;
             if (!r.width || !r.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
+            if(force)return {x,y,width:r.width,height:r.height};
             let target = element, root = target.getRootNode();
             while (true) {
               const hit = root.elementFromPoint(x, y);
@@ -2544,7 +2544,7 @@ export class OpenBrowserUseTab {
                     for (let i = 0; i < node.frameChain.length; i++) {
                         const frame = node.frameChain[i];
                         const ownerSession = node.frameChain[i + 1]?.sessionId;
-                        point = await this.framePoint(frame.id, point.x, point.y, ownerSession);
+                        point = await this.framePoint(frame.id, point.x, point.y, ownerSession, !!mouse.force);
                         if (ownerSession === targetSession)
                             inputPoint = point;
                     }
@@ -2686,7 +2686,9 @@ export class OpenBrowserUseTab {
                 await this.sendKey(key, targetSession);
                 return;
             }
-            const inputOptions = { sessionId: targetSession, ...(targetSession ? { visualPoint: { x: point.x, y: point.y } } : {}) };
+            const inputOptions = mouse.force ? {} : { sessionId: targetSession, ...(targetSession ? { visualPoint: { x: point.x, y: point.y } } : {}) };
+            if (mouse.force)
+                inputPoint = point;
             inputIssued = true;
             if (hover) {
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, inputOptions);
@@ -2825,7 +2827,7 @@ export class OpenBrowserUseTab {
         if (chain.some(frame => !current.some(item => item.id === frame.id && item.loaderId === frame.loaderId && item.parentId === frame.parentId && item.sessionId === frame.sessionId)))
             throw new RetryablePreflightError("Frame changed; observe again");
     }
-    async framePoint(frameId, x, y, sessionId) {
+    async framePoint(frameId, x, y, sessionId, force = false) {
         const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId }, { sessionId });
         if (!isObject(owner) || typeof owner.backendNodeId !== "number")
             throw new RetryablePreflightError("Frame owner is unavailable");
@@ -2835,8 +2837,8 @@ export class OpenBrowserUseTab {
             throw new RetryablePreflightError("Frame owner is unavailable");
         try {
             const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
-                objectId, returnByValue: true, arguments: [{ value: x }, { value: y }],
-                functionDeclaration: `function(x,y) {
+                objectId, returnByValue: true, arguments: [{ value: x }, { value: y }, { value: force }],
+                functionDeclaration: `function(x,y,force) {
           if (!this.isConnected) return null;
           this.scrollIntoView({block:'center',inline:'center'});
           for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) {
@@ -2848,6 +2850,7 @@ export class OpenBrowserUseTab {
           x=r.left+(this.clientLeft+x)*r.width/this.offsetWidth;
           y=r.top+(this.clientTop+y)*r.height/this.offsetHeight;
           if (x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
+          if(force)return {x,y};
           let target=this, root=target.getRootNode();
           while (true) { const hit=root.elementFromPoint(x,y); if (!hit || (hit!==target && !target.contains(hit))) return null; if (!(root instanceof ShadowRoot)) return {x,y}; target=root.host; root=target.getRootNode(); }
         }`
@@ -3624,7 +3627,7 @@ export class OpenBrowserUseCssLocator {
         validateCheckOptions(options);
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be a boolean");
-        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked); }, options.timeoutMs);
+        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(options.force ? { force: true } : {}) }); }, options.timeoutMs);
     }
     press(key, options = {}) {
         if (typeof key !== "string")
@@ -4049,7 +4052,7 @@ export class OpenBrowserUseRoleLocator {
         validateCheckOptions(options);
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be a boolean");
-        await this.perform((node, id) => this.tab.setChecked(node.index, id, checked), options.timeoutMs);
+        await this.perform((node, id) => this.tab.setChecked(node.index, id, checked, options.force), options.timeoutMs);
     }
     async selectOption(values, options = {}) { return this.perform((node, id) => this.tab.selectOption(node.index, id, values), options.timeoutMs); }
 }

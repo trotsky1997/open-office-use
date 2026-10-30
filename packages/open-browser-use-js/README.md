@@ -268,8 +268,10 @@ Role names, labels, text, placeholders, alt text and text filters accept strings
 or `RegExp` objects. Regular expressions retain their own case-sensitivity;
 the `exact` option applies to string matching.
 `click()` and `dblclick()` accept `button` (left, middle, or right) and
-`modifiers` (Alt, Control, ControlOrMeta, Meta, Shift). Forced clicks are
-rejected. `dblclick()` rechecks the target and its position between clicks. If the first
+`modifiers` (Alt, Control, ControlOrMeta, Meta, Shift). `force: true` skips
+hit-testing while retaining target, geometry, stability and disabled-state
+checks. Input is dispatched at the target's main-page coordinate, so a covering
+element can receive the click. `dblclick()` rechecks the target and its position between clicks. If the first
 click changes the page or a later input fails, inspect the result before retrying.
 If a mouse press or release fails, the SDK attempts a release and reports the
 original error; the page may already have received the click.
@@ -445,8 +447,9 @@ the same `exact` option. `check()` and `uncheck()` check the current state,
 click only when a change is needed, and verify the resulting state. The
 observation's nodes include `checked` when available. Mixed states and clearing
 a selected radio directly are rejected; choose another radio to change a group.
-For CSS and semantic locators, `force: false` is accepted; `force: true` is
-rejected before browser input because forced checking is not implemented.
+For CSS and semantic locators, `force: true` skips hit-testing; the browser
+still delivers input to whatever is at that coordinate. Check operations verify
+the requested state afterward and report failure if it did not change.
 
 `getByAltText` matches the native `alt` attribute exposed by the accessibility
 tree, including when `aria-label` supplies a different accessible name. It

@@ -121,6 +121,7 @@ type MouseClick = {
     button: "left" | "middle" | "right";
     buttons: number;
     modifiers: number;
+    force?: boolean;
 };
 type CssMatcher = string | {
     source: string;
@@ -419,7 +420,7 @@ export declare class OpenBrowserUseTab {
     }>;
     typeText(index: number, snapshotId: string, text: string): Promise<void>;
     fill(index: number, snapshotId: string, text: string): Promise<void>;
-    setChecked(index: number, snapshotId: string, checked: boolean): Promise<void>;
+    setChecked(index: number, snapshotId: string, checked: boolean, force?: boolean): Promise<void>;
     selectOption(index: number, snapshotId: string, values: SelectOption | SelectOption[]): Promise<string[]>;
     private act;
     private documentId;

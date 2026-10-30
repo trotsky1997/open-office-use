@@ -387,3 +387,5 @@ selectOption 增加零起始 index 描述符，可与 value、label 同时约束
 CSS 与语义 locator 的 check/uncheck/setChecked 校验 force 和未知参数；force:false 可用，force:true 在任何浏览器输入前明确拒绝，避免参数被静默忽略。SDK 85 项通过；隔离 Linux ARM64 Chromium 验证两类定位器的可信勾选与拒绝后状态不变。Electron、Windows 与强制勾选功能仍未验证或实现。
 
 语义 selectOption 在修改前重新匹配完整选项条件并检查祖先禁用状态；期间新增同值选项或祖先变为禁用时停止且不派发事件。SDK 85 项通过；隔离 Linux ARM64 Chromium 原生扩展验证两种变化并通过跨进程 frame 完整 smoke，回归场景保留在 smoke 中。Electron 与 Windows 本轮未测。
+
+CSS 与语义 locator 的 click、dblclick、check、uncheck、setChecked 支持 force:true：跳过命中检查，保留目标、位置、稳定性和禁用检查；从主页面坐标派发可信鼠标事件，遮挡物可收到事件，勾选后仍复核状态。SDK 86 项通过；Linux ARM64 Chromium 验证遮挡层、跨进程 frame 和勾选失败；macOS Electron 44.7 socket smoke 验证跨进程 frame 的遮挡层接收事件。Windows 未测。
