@@ -59,7 +59,7 @@ class JsonRpcPeer {
       return;
     }
     const id = message.id;
-    const controller = id !== undefined && message.method === "executeCdp" ? new AbortController() : undefined;
+    const controller = id !== undefined && ["executeCdp", "waitForFileChooser", "waitForDownload"].includes(message.method) ? new AbortController() : undefined;
     if (controller) this.inFlight.set(id, controller);
     try {
       const handler = this.handlers[message.method];
@@ -729,12 +729,14 @@ class BrowserBackend {
     }
   }
 
-  async waitForFileChooser(params) {
-    await this.requireSessionTab(params, "waitForFileChooser");
+  async waitForFileChooser(params, signal) {
+    const check = () => { if (signal?.aborted) throw new Error("File chooser wait canceled"); };
+    check(); await this.requireSessionTab(params, "waitForFileChooser"); check();
     const tabId = requireTabId(params, "waitForFileChooser");
     if (!this.attachedTabs.has(tabId)) {
       await this.attach(params);
     }
+    check();
     const timeoutMs =
       typeof params.timeoutMs === "number" && params.timeoutMs > 0
         ? params.timeoutMs
@@ -743,19 +745,25 @@ class BrowserBackend {
     const waitForEvent = this.waitForFileChooserEvent(tabId);
     void waitForEvent.catch(() => {});
     const enabled = [];
+    const abort = () => this.fileChooserWaitersByTabId.get(tabId)?.reject(new Error("File chooser wait canceled"));
+    signal?.addEventListener("abort", abort, {once:true});
     try {
+      check();
       const sessions = [undefined, ...(this.frameSessionsByTabId.get(tabId)?.keys() ?? [])];
       for (const sessionId of sessions) {
         const target = {tabId, ...(sessionId ? {sessionId} : {})};
-        await chrome.debugger.sendCommand(target, "Page.enable");
-        enabled.push(target);
-        await chrome.debugger.sendCommand(target, "Page.setInterceptFileChooserDialog", { enabled: true });
+        check(); await chrome.debugger.sendCommand(target, "Page.enable");
+        enabled.push(target); check();
+        await chrome.debugger.sendCommand(target, "Page.setInterceptFileChooserDialog", { enabled: true }); check();
       }
       const waiter = this.fileChooserWaitersByTabId.get(tabId);
       if (waiter?.error) throw waiter.error;
       if (params.waitId) for (const listener of this.fileChooserReadyListeners) listener(params.waitId);
-      return await withTimeout(timeoutMs, () => waitForEvent);
+      const chooser = await withTimeout(timeoutMs, () => waitForEvent);
+      check(); return chooser;
     } finally {
+      signal?.removeEventListener("abort", abort);
+      if (signal?.aborted) this.fileChoosersById.delete(this.fileChooserWaitersByTabId.get(tabId)?.chooserId);
       this.fileChooserWaitersByTabId.get(tabId)?.reject(new Error("File chooser wait ended"));
       try {
         await Promise.all(enabled.map(target => chrome.debugger.sendCommand(target, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {})));
@@ -793,11 +801,13 @@ class BrowserBackend {
     });
   }
 
-  async waitForDownload(params) {
+  async waitForDownload(params, signal) {
     // shortcut: downloads lack tab attribution here; permit concurrent waits when reliable attribution is available.
     if (this.downloadStartWait) throw new Error("Already waiting for a Chrome download");
     const wait = { sessionId: params?.session_id, tabId: params?.tabId, controller: new AbortController() };
     this.downloadStartWait = wait;
+    const abort = () => wait.controller.abort();
+    if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, {once:true});
     try {
       await this.requireSessionTab(params, "waitForDownload");
       if (wait.controller.signal.aborted) throw new Error("Download wait canceled");
@@ -816,6 +826,7 @@ class BrowserBackend {
       const download = await waiting;
       return { downloadId: download.id, url: download.url || null };
     } finally {
+      signal?.removeEventListener("abort", abort);
       if (this.downloadStartWait === wait) this.downloadStartWait = null;
     }
   }
@@ -1065,6 +1076,7 @@ class BrowserBackend {
           }
           waiter.settled = true;
           const fileChooserId = crypto.randomUUID();
+          waiter.chooserId = fileChooserId;
           const chooser = {
             tabId,
             ...(typeof sessionId === "string" ? { sessionId } : {}),

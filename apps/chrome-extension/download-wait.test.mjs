@@ -177,3 +177,12 @@ test('cancelled CDP request does not dispatch after delayed tab authorization',a
   await peer.handleMessage({jsonrpc:'2.0',method:'obu.cancel',params:{id:'host-1'}});release();await pending;
   assert.equal(commands.length,before);assert.equal(sent.length,0);assert.equal(peer.inFlight.size,0);
 });
+
+test('cancelled waits release download slots and file chooser interception',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.attachedTabs.add(1);
+  const downloadAbort=new AbortController();const download=backend.waitForDownload({tabId:1,timeoutMs:1000},downloadAbort.signal);
+  await new Promise(resolve=>setImmediate(resolve));downloadAbort.abort();await assert.rejects(download,/canceled/);assert.equal(backend.downloadStartWait,null);assert.equal(backend.downloadWaiters.size,0);
+  const chooserAbort=new AbortController();const chooser=backend.waitForFileChooser({tabId:1,timeoutMs:1000},chooserAbort.signal);
+  await new Promise(resolve=>setImmediate(resolve));chooserAbort.abort();await assert.rejects(chooser,/canceled/);assert.equal(backend.fileChooserWaitersByTabId.size,0);
+  assert.deepEqual(commands.filter(c=>c.method==='Page.setInterceptFileChooserDialog').slice(-2).map(c=>c.params.enabled),[true,false]);
+});
