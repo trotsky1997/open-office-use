@@ -40,7 +40,7 @@ from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.oxml.xmlchemy import OxmlElement as PptxElement
 from pptx.util import Inches, Pt
 from PIL import Image
@@ -332,7 +332,7 @@ def append_slides(presentation, slides):
         for element in elements:
             if not isinstance(element, dict): raise ValueError('Slide elements must be objects')
             kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
-            allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill'},
+            allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
                        'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
                        'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title'}}
@@ -351,6 +351,15 @@ def append_slides(presentation, slides):
                 if 'align' in element and (not isinstance(element['align'], str) or element['align'] not in alignment): raise ValueError('Alignment must be left, center or right')
                 if 'font_size' in element: number(element['font_size'], 'font_size', 1, 400)
                 if 'color' in element: color(element['color'])
+                if 'wrap' in element and not isinstance(element['wrap'], bool): raise ValueError('Textbox wrap must be a boolean')
+                vertical = {'top': MSO_ANCHOR.TOP, 'middle': MSO_ANCHOR.MIDDLE, 'bottom': MSO_ANCHOR.BOTTOM}
+                if 'vertical_align' in element and (not isinstance(element['vertical_align'], str) or element['vertical_align'] not in vertical): raise ValueError('Invalid textbox vertical alignment')
+                auto_fit = {'none': MSO_AUTO_SIZE.NONE, 'shrink': MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE, 'resize': MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT}
+                if 'auto_fit' in element and (not isinstance(element['auto_fit'], str) or element['auto_fit'] not in auto_fit): raise ValueError('Invalid textbox auto fit')
+                margins = element.get('margins')
+                if 'margins' in element:
+                    if not isinstance(margins, dict) or set(margins) - {'left', 'right', 'top', 'bottom'}: raise ValueError('Invalid textbox margins')
+                    for key, value in margins.items(): number(value, 'margin ' + key, 0, 5)
                 if paragraphs is not None:
                     if not isinstance(paragraphs, list) or not 1 <= len(paragraphs) <= 100: raise ValueError('Textbox paragraphs must contain 1 to 100 entries')
                     for para in paragraphs:
@@ -375,7 +384,13 @@ def append_slides(presentation, slides):
                                 except ValueError: raise ValueError('Invalid hyperlink URL') from None
                                 if parsed.scheme.lower() not in ('http', 'https', 'mailto') or parsed.scheme.lower() in ('http', 'https') and not parsed.hostname or parsed.scheme.lower() == 'mailto' and not parsed.path: raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
                 elif 'paragraphs' in element: raise ValueError('Textbox paragraphs must be a list')
-                shape = slide.shapes.add_textbox(x, y, width, height); shape.text_frame.word_wrap = True
+                shape = slide.shapes.add_textbox(x, y, width, height); frame = shape.text_frame
+                frame.word_wrap = element.get('wrap', True)
+                if 'vertical_align' in element: frame.vertical_anchor = vertical[element['vertical_align']]
+                if 'auto_fit' in element: frame.auto_size = auto_fit[element['auto_fit']]
+                if margins is not None:
+                    for key, value in margins.items(): setattr(frame, 'margin_' + key, Inches(value))
+                    if frame.margin_left + frame.margin_right >= width or frame.margin_top + frame.margin_bottom >= height: raise ValueError('Textbox margins leave no content area')
                 if 'fill' in element: shape.fill.solid(); shape.fill.fore_color.rgb = color(element['fill'])
                 if paragraphs is None:
                     shape.text = text

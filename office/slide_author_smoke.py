@@ -7,8 +7,10 @@ from pathlib import Path
 from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
 import open_office_use
 import officecli_backend
+import slide_text_check
 import session
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -25,11 +27,13 @@ with tempfile.TemporaryDirectory() as tmp:
     assert slide.shapes[1].text_frame.paragraphs[0].runs[0].font.size.pt == 32
     assert slide.shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Teal illustration'
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
-    rich_spec={'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':7,'height':3,'font':'Arial','font_size':24,'color':'14283F','paragraphs':[{'runs':[{'text':'Revenue '},{'text':'+18%','bold':True,'color':'236B8E','url':'https://example.com/report'}]},{'text':'Retention 92%','bullet':True,'level':0,'space_after':8},{'text':'Renewals improved','bullet':True,'level':1}]}]}]}
+    rich_spec={'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':7,'height':3,'font':'Arial','font_size':24,'color':'14283F','margins':{'left':0.2,'right':0.15,'top':0.1,'bottom':0.1},'vertical_align':'middle','auto_fit':'shrink','wrap':True,'paragraphs':[{'runs':[{'text':'Revenue '},{'text':'+18%','bold':True,'color':'236B8E','url':'https://example.com/report'}]},{'text':'Retention 92%','bullet':True,'level':0,'space_after':8},{'text':'Renewals improved','bullet':True,'level':1}]}]}]}
     rich=root/'rich.pptx'; rich_spec_path=root/'rich.json'; rich_spec_path.write_text(json.dumps(rich_spec))
     cli=Path(__file__).with_name('open_office_use.py'); call=subprocess.run([sys.executable,str(cli),'author','--spec',str(rich_spec_path),'--out',str(rich)],capture_output=True,text=True,check=True)
     assert json.loads(call.stdout)['output']==str(rich.resolve())
     rich_shape=Presentation(rich).slides[0].shapes[0]; paragraphs=rich_shape.text_frame.paragraphs
+    assert rich_shape.text_frame.vertical_anchor == MSO_ANCHOR.MIDDLE and rich_shape.text_frame.auto_size == MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+    assert abs(rich_shape.text_frame.margin_left.inches-0.2)<0.001 and rich_shape.text_frame.word_wrap
     assert [paragraph.text for paragraph in paragraphs]==['Revenue +18%','Retention 92%','Renewals improved']
     assert paragraphs[0].runs[1].font.bold and paragraphs[0].runs[1].font.size.pt==24 and str(paragraphs[0].runs[1].font.color.rgb)=='236B8E'
     assert paragraphs[0].runs[1].hyperlink.address=='https://example.com/report' and paragraphs[2].level==1
@@ -40,6 +44,16 @@ with tempfile.TemporaryDirectory() as tmp:
     rich_draft=root/'rich-draft';session.start(rich_draft,source=rich)
     changed=session.replace_text(rich_draft,0,f'/slide[1]/shape[@id={rich_shape.shape_id}]/paragraph[2]','Retention','Customer retention')
     assert Presentation(changed['file']).slides[0].shapes[0].text_frame.paragraphs[1].text=='Customer retention 92%'
+    for mode, expected in [('none',1),('shrink',0),('resize',1)]:
+        text_file=root/f'auto-{mode}.pptx'
+        text_spec={'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':2,'height':0.6,'text':'A very long sentence that overflows this small text box and requires attention','font_size':24,'auto_fit':mode}]}]}
+        open_office_use.author(text_spec,text_file); result=slide_text_check.scan(text_file,open_office_use.render)
+        assert result['mapping_valid'] and result['candidate_count']==expected, (mode,result)
+        if mode=='resize': assert Presentation(text_file).slides[0].shapes[0].text_frame.auto_size == MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
+    no_wrap=root/'no-wrap.pptx'
+    open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':4,'height':1,'text':'Short','wrap':False,'vertical_align':'bottom','auto_fit':'none'}]}]},no_wrap)
+    frame=Presentation(no_wrap).slides[0].shapes[0].text_frame
+    assert frame.word_wrap is False and frame.vertical_anchor==MSO_ANCHOR.BOTTOM and frame.auto_size==MSO_AUTO_SIZE.NONE
     fit_spec = {'slides':[{'layout':'blank','elements':[
         {'type':'image','path':str(image),'x':1,'y':1,'width':2,'height':2,'fit':'contain'},
         {'type':'image','path':str(image),'x':4,'y':1,'width':2,'height':2,'fit':'cover'}]}]}
@@ -86,7 +100,7 @@ with tempfile.TemporaryDirectory() as tmp:
     try: open_office_use.author({'slide_size':{'width':10,'height':7.5}}, root/'resize.pptx', out)
     except ValueError: pass
     else: raise AssertionError('Existing presentation was resized')
-    invalid_paragraphs=[{'paragraphs':[{'text':'x','runs':[]}]}, {'paragraphs':[{'text':'x','bullet':'yes'}]}, {'paragraphs':[{'text':'x','level':9}]}, {'paragraphs':[{'runs':[{'text':'x','url':'javascript:alert(1)'}]}]}, {'paragraphs':[{'runs':[{'text':'bad\nline'}]}]}, {'text':'x','paragraphs':[{'text':'x'}]}]
+    invalid_paragraphs=[{'paragraphs':[{'text':'x','runs':[]}]}, {'paragraphs':[{'text':'x','bullet':'yes'}]}, {'paragraphs':[{'text':'x','level':9}]}, {'paragraphs':[{'runs':[{'text':'x','url':'javascript:alert(1)'}]}]}, {'paragraphs':[{'runs':[{'text':'bad\nline'}]}]}, {'text':'x','paragraphs':[{'text':'x'}]}, {'text':'x','vertical_align':'center'}, {'text':'x','auto_fit':'invalid'}, {'text':'x','wrap':'yes'}, {'text':'x','margins':{'left':2,'right':2}}, {'text':'x','margins':None}]
     for index, content in enumerate(invalid_paragraphs):
         path=root/f'bad-rich-{index}.pptx'
         try: open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'textbox','x':0,'y':0,'width':3,'height':2,**content}]}]},path)

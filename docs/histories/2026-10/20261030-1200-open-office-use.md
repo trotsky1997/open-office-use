@@ -291,3 +291,7 @@ Added cell-anchored PNG/JPEG workbook drawings with bounded dimensions, snapshot
 ### Rich PowerPoint textbox authoring
 
 Added multiple formatted paragraphs, bullet levels and hyperlinks to positioned textboxes. Verified schema, paragraph replacement, invalid inputs, MCP, and a rendered slide; native PowerPoint fidelity remains unverified.
+
+### Slide textbox layout controls
+
+Added textbox insets, vertical alignment, wrapping and auto-fit settings, including rich text. Verified schema and compared clipped versus shrink rendering; resize may extend beyond saved bounds. Native PowerPoint remains unverified.

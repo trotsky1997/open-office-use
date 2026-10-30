@@ -202,3 +202,5 @@ Workbook authoring supports print paper, orientation, area, repeat rows/columns,
 Workbook authoring supports bounded local PNG/JPEG drawings with pixel-preserving aspect ratio, cell anchors and alternative text. Validated source snapshots, existing images and charts, OOXML schema, CLI/MCP and LibreOffice PDF image output; native Excel fidelity remains open.
 
 Positioned slide textboxes support rich runs, links, multiple paragraphs, bullet levels and paragraph spacing. Validated OOXML, targeted paragraph editing, CLI/MCP and LibreOffice rendering; native PowerPoint and complex text formatting remain open.
+
+Slide textbox authoring supports margins, vertical alignment, wrapping and none/shrink/resize auto-fit. LibreOffice shrink was compared with a clipped baseline; resize can render beyond saved shape bounds and remains a review candidate.

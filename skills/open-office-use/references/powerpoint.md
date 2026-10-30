@@ -19,3 +19,5 @@ Set `sync_caches: true` on `session_edit_slide_chart_grid` to synchronize fully 
 Verified blank cells can be filled or cleared with atomic cache synchronization. Blanks in merged or multi-cell formula ranges and formulas without saved results remain unverified; chart blank display depends on rendering settings.
 
 Positioned textboxes support rich paragraphs and runs with bullets, levels, fonts, colors and links. Use paragraph-level search and targeted replacement for later edits, and inspect rendered slides for wrapping.
+
+Textbox margins, vertical alignment, wrapping and auto-fit modes can be set during authoring. Inspect rendered slides: auto-fit behavior depends on the application, and text beyond saved shape bounds may be flagged.
