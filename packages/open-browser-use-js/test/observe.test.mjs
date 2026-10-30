@@ -252,6 +252,7 @@ test('expectNavigation arms before the action and ignores child-frame navigation
   assert.equal(result,'done');assert.equal(handlers.size,1);
   await assert.rejects(tab.expectNavigation(async()=>{emit('Page.frameNavigated',{frame:{id:'child',parentId:'root'}});},{timeoutMs:10}),/Timed out waiting for navigation/);
   await assert.rejects(tab.expectNavigation(async()=>{throw new Error('action failed');},{timeoutMs:500}),/action failed/);
+  let invoked=false;await assert.rejects(tab.expectNavigation(async()=>{invoked=true;},{url:'**/{broken'}),/Invalid URL glob/);assert.equal(invoked,false);
   assert.equal(handlers.size,1);
   let release;href='https://example.test/slow';
   await assert.rejects(tab.expectNavigation(()=>{emit('Page.navigatedWithinDocument',{frameId:'root'});return new Promise(resolve=>{release=resolve;});},{timeoutMs:10}),/Timed out waiting for navigation/);
@@ -392,6 +393,13 @@ test('URL wait checks the matching document state and propagates transport error
   await tab.playwright.waitForURL(pattern,{timeoutMs:1000});
   assert.equal(calls,3);assert.equal(pattern.lastIndex,0);
   await tab.waitForURL(runInNewContext('/done$/'),{timeoutMs:0});
+  await tab.waitForURL('**/done',{timeoutMs:0});
+  await tab.waitForURL('https://example.test/{done,other}*',{timeoutMs:0});
+  await assert.rejects(tab.waitForURL('https://example.test/*/done',{timeoutMs:0}),/Timed out/);
+  await assert.rejects(tab.waitForURL('**/do?e*',{timeoutMs:0}),/Timed out/);
+  await tab.waitForURL('**/do*e',{timeoutMs:0});
+  await assert.rejects(tab.waitForURL('**/{done',{timeoutMs:0}),/Invalid URL glob/);
+
   await assert.rejects(tab.waitForURL('https://example.test/missing',{timeoutMs:0}),/Timed out/);
   await assert.rejects(tab.waitForURL(/done/,{timeoutMs:-1}),/Invalid URL timeout/);
   client.request=async()=>{throw new Error('scope revoked');};

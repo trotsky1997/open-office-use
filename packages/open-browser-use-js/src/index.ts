@@ -38,6 +38,28 @@ export type NotificationHandler = (notification: OpenBrowserUseNotification) => 
 const headerBytes = 4;
 const defaultNavigationTimeoutMs = 10_000;
 
+function urlGlob(pattern: string): RegExp {
+  let result = "^", depth = 0;
+  const literal = (value:string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (char === "\\" && i + 1 < pattern.length) { result += literal(pattern[++i]); continue; }
+    if (char === "*") {
+      if (pattern[i + 1] === "*") {
+        i++;
+        if ((i === 1 || pattern[i - 2] === "/") && pattern[i + 1] === "/") { result += "(?:.*/)?"; i++; }
+        else result += ".*";
+      } else result += "[^/]*";
+    } else if (char === "{") { result += "(?:"; depth++; }
+    else if (char === "}" && depth) { result += ")"; depth--; }
+    else if (char === "," && depth) result += "|";
+    else result += literal(char);
+  }
+  if (depth) throw new Error("Invalid URL glob pattern");
+  return new RegExp(result + "$");
+}
+
+
 export type OpenBrowserUseLoadState = "domcontentloaded" | "load";
 export type OpenBrowserUseWaitUntil = OpenBrowserUseLoadState | "commit";
 
@@ -875,6 +897,7 @@ export class OpenBrowserUseTab {
   async expectNavigation<T>(action: () => Promise<T>, options: {timeoutMs?: number; url?: string | RegExp; waitUntil?: OpenBrowserUseLoadState} = {}): Promise<T> {
     if (typeof action !== "function") throw new Error("Navigation action must be a function");
     if (options.url !== undefined && typeof options.url !== "string" && !types.isRegExp(options.url)) throw new Error("URL matcher must be a string or RegExp");
+    if (typeof options.url === "string" && options.url.includes("*")) urlGlob(options.url);
     const waitUntil = options.waitUntil ?? "load", timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
     assertSupportedLoadState(waitUntil);
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid navigation timeout");
@@ -919,7 +942,7 @@ export class OpenBrowserUseTab {
 
   async waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseWaitUntil; timeoutMs?: number} = {}): Promise<void> {
     if (typeof url !== "string" && !types.isRegExp(url)) throw new Error("URL matcher must be a string or RegExp");
-    const matcher = typeof url === "string" ? url : new RegExp(url.source, url.flags);
+    const matcher = typeof url === "string" ? (url.includes("*") ? urlGlob(url) : url) : new RegExp(url.source, url.flags);
     const waitUntil = options.waitUntil ?? "load";
     if(waitUntil!=="commit")assertSupportedLoadState(waitUntil);
     const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;

@@ -695,6 +695,8 @@ after dispatch, inspect the page before deciding whether to try again.
 ## Waiting for a URL
 
 `await tab.waitForURL("https://example.com/done")` waits for an exact URL.
+`await tab.waitForURL("**/done")` accepts a full-URL glob: `*` excludes `/`,
+`**` includes it, `{a,b}` selects alternatives, `?` is literal, and `\` escapes special characters.
 `await tab.playwright.waitForURL(/\/done(?:\?|$)/, {waitUntil: "domcontentloaded", timeoutMs: 15000})`
 accepts a regular expression. Both forms inspect the current main document and
 work with history API route changes as well as document navigation. Use
