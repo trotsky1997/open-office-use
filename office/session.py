@@ -78,6 +78,11 @@ def revision_file(state, revision):
     return Path(state['revisions'][revision]['file'])
 
 
+def dump(directory, revision, path='/'):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **officecli_backend.dump(source, path)}
+
+
 def apply(directory, base_revision, operations):
     state = info(directory)
     source = revision_file(state, base_revision)

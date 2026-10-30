@@ -156,6 +156,7 @@ def main():
     visual_compare = commands.add_parser('compare-pages'); visual_compare.add_argument('before'); visual_compare.add_argument('after'); visual_compare.add_argument('--before-page', type=int, required=True); visual_compare.add_argument('--after-page', type=int, required=True); visual_compare.add_argument('--out', required=True)
     contact = commands.add_parser('contact-sheet'); contact.add_argument('file'); contact.add_argument('--out', required=True); contact.add_argument('--start', type=int, default=1); contact.add_argument('--count', type=int, default=12)
     structured = commands.add_parser('structured'); structured.add_argument('file'); structured.add_argument('mode', choices=['outline', 'get', 'query']); structured.add_argument('target', nargs='?')
+    dump = commands.add_parser('dump'); dump.add_argument('file'); dump.add_argument('path', nargs='?', default='/')
     schema = commands.add_parser('schema'); schema.add_argument('format', choices=['docx', 'xlsx', 'pptx']); schema.add_argument('--element'); schema.add_argument('--operation', choices=['add', 'set', 'get', 'query', 'remove']); schema.add_argument('--query')
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
     cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
@@ -170,6 +171,7 @@ def main():
     draft = commands.add_parser('session'); sub = draft.add_subparsers(dest='action', required=True)
     start = sub.add_parser('start'); start.add_argument('directory'); group = start.add_mutually_exclusive_group(required=True); group.add_argument('--source'); group.add_argument('--format', choices=['docx', 'xlsx', 'pptx'])
     state = sub.add_parser('info'); state.add_argument('directory')
+    session_dump = sub.add_parser('dump'); session_dump.add_argument('directory'); session_dump.add_argument('--revision', type=int, required=True); session_dump.add_argument('--path', default='/')
     selection = sub.add_parser('selection'); selection.add_argument('directory')
     selected_text = sub.add_parser('selection-text'); selected_text.add_argument('directory')
     candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
@@ -216,6 +218,8 @@ def main():
                 result = session.start(args.directory, args.source, args.format)
             elif args.action == 'info':
                 result = session.info(args.directory)
+            elif args.action == 'dump':
+                result = session.dump(args.directory, args.revision, args.path)
             elif args.action == 'selection':
                 result = session.get_selection(args.directory)
             elif args.action == 'selection-text':
@@ -318,6 +322,8 @@ def main():
             if (args.mode == 'outline') != (args.target is None):
                 raise ValueError('get and query require a target; outline takes no target')
             result = officecli_backend.read(args.file, args.mode, args.target)
+        elif args.command == 'dump':
+            result = officecli_backend.dump(args.file, args.path)
         elif args.command == 'schema':
             result = officecli_backend.schema(args.format, args.element, args.operation, args.query)
         else:

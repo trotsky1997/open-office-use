@@ -72,6 +72,18 @@ def structured_read(file: str, mode: Literal['outline', 'get', 'query'], target:
 
 
 @server.tool()
+def dump_office_subtree(file: str, path: str = '/') -> dict[str, Any]:
+    """Extract bounded OfficeCLI operations; inspect paths and fidelity before applying them."""
+    return officecli_backend.dump(file, path)
+
+
+@server.tool()
+def session_dump_office_subtree(directory: str, revision: int, path: str = '/') -> dict[str, Any]:
+    """Extract OfficeCLI operations from one saved session revision; verify omitted resources."""
+    return session.dump(directory, revision, path)
+
+
+@server.tool()
 def apply_batch(output: str, operations: list[dict[str, Any]], source: str | None = None) -> dict[str, Any]:
     """Apply OfficeCLI operations to a new file or a saved source copy. Existing output is protected."""
     return officecli_backend.batch(operations, output, source)

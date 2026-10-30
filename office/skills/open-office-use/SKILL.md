@@ -24,3 +24,5 @@ After editing XLSX chart source cells, use `scan_chart_caches` or `session_scan_
 For a supported chart-cache mismatch, `session_sync_chart_cache` updates one reference from saved source values in a new revision. Check formula cache freshness before explicitly opting in to formula sources; rescan and inspect the chart after syncing.
 
 Use `office_schema` to discover the installed OfficeCLI elements and property definitions before constructing unfamiliar structured operations. Filter by format, operation and query; verify the resulting document and rendering.
+
+Use `dump_office_subtree` or `session_dump_office_subtree` to extract a bounded starting batch from a saved template. Review paths and dependencies before applying; charts and sibling resources can be omitted, and slide layouts may require a compatible template. Compare and render the replayed document.
