@@ -461,3 +461,5 @@ REPL 输入关闭并完成已接收请求后，内置浏览器连接与发现帮
 browser.tabs.getByUrl 按精确 URL 绑定当前会话中唯一标签，缺失或多个匹配明确报错，不接管用户标签。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展实测通过；Linux 验证了重复 URL 后拒绝以及关闭重复标签后恢复。Windows 未测。
 
 持久 REPL 执行完成、超时或取消后关闭输出上下文并释放旧缓冲，后台回调的迟到输出不再格式化或积累；正常响应保留文本和图像。SDK 95 项测试与 macOS Electron 44.7 完整 smoke 通过，覆盖完成和超时后的迟到输出。Linux 与 Windows 本轮未测。
+
+Linux ARM64 Chromium 150 原生扩展实测 getByUrl 返回的句柄导航后保持标签 ID，旧 URL 失去匹配，新 URL 匹配同一标签；README 明确 URL 仅在查询时检查。Windows 与 Electron 此场景本轮未测。

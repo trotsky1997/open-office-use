@@ -788,7 +788,8 @@ execution remains active; previously scheduled background work is not cancelled.
 
 After selecting a browser, `await browser.tabs.getByUrl(url)` binds the single
 session-owned tab with an exactly matching URL. Missing or duplicate matches
-raise an error; the method does not claim user tabs outside the session.
+raise an error; the method does not claim user tabs outside the session. The URL is
+checked at lookup time; the returned handle follows the tab ID after navigation.
 
 `agent.browsers.list()` reports available browser IDs, types and capabilities.
 `agent.browsers.get(id)` selects a listed ID or the unique `extension` / `iab`
