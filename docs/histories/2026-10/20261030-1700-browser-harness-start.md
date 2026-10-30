@@ -548,3 +548,5 @@ Chrome 对外下载句柄改为随机 UUID，扩展内保存句柄与原生数�
 下载开始观察期间，新 frame 的 Page.enable 会成为后续 SDK CDP 操作的准备屏障，事件或失败后释放。SDK 108 项检查通过；Linux ARM64 Chromium 原生消息和 macOS Electron 实页注入延迟，确认后续下载动作等待启用并收到 frame 事件。页面独立触发及绕过 SDK 的动作仍可能发生在启用之前；Windows 未测。
 
 下载开始事件已经成功观察时，其他仍在准备的 frame 不再让等待中的后续 SDK 操作误报取消；观察失败时保留准备失败的传播。SDK 109 项检查通过；macOS Electron 实页注入一个挂起的动态 frame，确认主 frame 下载事件到达后后续操作恢复。Linux 和 Windows 本轮未测。
+
+SDK CDP 调用在等待准备屏障或调试器附着时响应取消，并阻止延迟恢复后的命令派发；Chrome attach 在授权检查后复核取消信号。SDK 110 项、Electron 58 项、Chrome 扩展 40 项检查通过；Linux ARM64 Chromium 原生消息实测取消可及时结束且屏障释放后无迟到输入。已开始的调试器附着可能完成；Windows 未测。

@@ -59,7 +59,7 @@ class JsonRpcPeer {
       return;
     }
     const id = message.id;
-    const controller = id !== undefined && ["executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath", "webmcp_list_tools", "webmcp_invoke_tool"].includes(message.method) ? new AbortController() : undefined;
+    const controller = id !== undefined && ["attach", "executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath", "webmcp_list_tools", "webmcp_invoke_tool"].includes(message.method) ? new AbortController() : undefined;
     if (controller) this.inFlight.set(id, controller);
     try {
       const handler = this.handlers[message.method];
@@ -590,8 +590,9 @@ class BrowserBackend {
     }
   }
 
-  async attach(params) {
+  async attach(params, signal) {
     await this.requireSessionTab(params, "attach");
+    if (signal?.aborted) throw new Error("Command cancelled before dispatch");
     const tabId = requireTabId(params, "attach");
     this.debuggerSessionByTabId.set(tabId, params.session_id);
     if (!this.attachedTabs.has(tabId)) {

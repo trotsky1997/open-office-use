@@ -211,3 +211,10 @@ test('download paths are restricted to the waiting session',async()=>{
   backend.emitDownloadChange({id:'owned',status:'complete',filename:'/private/file'});
   assert.equal((await backend.downloadPath({session_id:'owner',downloadId:handle})).path,'/private/file');
 });
+
+test('cancelled debugger attachment stops after delayed authorization',async()=>{
+  const backend=new Backend();await backend.store.ready;let release,calls=0;backend.requireSessionTab=async()=>await new Promise(resolve=>{release=resolve;});
+  const previous=chrome.debugger.attach;chrome.debugger.attach=async()=>{calls++;};
+  try{const controller=new AbortController();const pending=backend.attach({session_id:'owner',tabId:7},controller.signal);while(!release)await new Promise(resolve=>setImmediate(resolve));controller.abort();release();await assert.rejects(pending,/cancelled/);assert.equal(calls,0);assert.equal(backend.debuggerSessionByTabId.size,0);}
+  finally{chrome.debugger.attach=previous;}
+});

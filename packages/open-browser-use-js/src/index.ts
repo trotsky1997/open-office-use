@@ -74,6 +74,16 @@ function selectSpecs(values: SelectOption | SelectOption[]): SelectSpec[] {
     return {...value,either:false};
   });
 }
+async function waitUntilAbortable<T>(promise:Promise<T>, signal?:AbortSignal):Promise<T> {
+  if(!signal)return await promise;
+  if(signal.aborted){void promise.catch(()=>{});throw new Error("Command cancelled before dispatch");}
+  return await new Promise<T>((resolve,reject)=>{
+    const abort=()=>{cleanup();reject(new Error("Command cancelled before dispatch"));};
+    const cleanup=()=>signal.removeEventListener("abort",abort);
+    signal.addEventListener("abort",abort,{once:true});
+    promise.then(value=>{cleanup();resolve(value);},error=>{cleanup();reject(error);});
+  });
+}
 async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number, deadline: number, message: string): Promise<T> {
   if (timeoutMs === 0) return await read;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -373,8 +383,8 @@ export class OpenBrowserUseClient {
     return this.request("nameSession", { name });
   }
 
-  attach(tabId: number, requestTimeoutMs = this.timeoutMs): Promise<JsonValue> {
-    return this.request("attach", { tabId },undefined,requestTimeoutMs);
+  attach(tabId: number, requestTimeoutMs = this.timeoutMs, signal?:AbortSignal): Promise<JsonValue> {
+    return this.request("attach", { tabId },undefined,requestTimeoutMs,signal);
   }
 
   detach(tabId: number): Promise<JsonValue> {
@@ -3895,11 +3905,12 @@ export class OpenBrowserUseCdp {
     commandParams: BrowserUseRequestParams = {},
     options: { timeoutMs?: number; sessionId?: string; visualPoint?: {x: number; y: number}; expectedGeneration?: number; signal?: AbortSignal } = {}
   ): Promise<JsonValue> {
+    if(options.signal?.aborted)throw new Error("Command cancelled before dispatch");
     const preparations=this.#eventPreparations.get(tabId);
     // Frame attachment and log setup must finish before a chooser can be registered.
-    if (preparations?.size && !["Target.setAutoAttach","Runtime.enable","Log.enable"].includes(method)) await Promise.all([...preparations]);
+    if (preparations?.size && !["Target.setAutoAttach","Runtime.enable","Log.enable"].includes(method)) await waitUntilAbortable(Promise.all([...preparations]),options.signal);
     const requestTimeoutMs=options.timeoutMs === undefined ? this.client.timeoutMs : Math.max(this.client.timeoutMs,Math.ceil(options.timeoutMs)+2000);
-    await this.ensureAttached(tabId,requestTimeoutMs);
+    await waitUntilAbortable(this.ensureAttached(tabId,requestTimeoutMs,options.signal),options.signal);
     if(options.signal?.aborted)throw new Error("Command cancelled before dispatch");
     if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration) throw new Error("Connection changed; observe again");
     const result = await this.client.request("executeCdp", {
@@ -4096,8 +4107,8 @@ export class OpenBrowserUseCdp {
     ).then(() => undefined);
   }
 
-  async ensureAttached(tabId: number, requestTimeoutMs?:number): Promise<void> {
-    await this.client.attach(tabId,requestTimeoutMs);
+  async ensureAttached(tabId: number, requestTimeoutMs?:number, signal?:AbortSignal): Promise<void> {
+    await this.client.attach(tabId,requestTimeoutMs,signal);
   }
 }
 

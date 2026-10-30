@@ -15,6 +15,20 @@ function selectSpecs(values) {
         return { ...value, either: false };
     });
 }
+async function waitUntilAbortable(promise, signal) {
+    if (!signal)
+        return await promise;
+    if (signal.aborted) {
+        void promise.catch(() => { });
+        throw new Error("Command cancelled before dispatch");
+    }
+    return await new Promise((resolve, reject) => {
+        const abort = () => { cleanup(); reject(new Error("Command cancelled before dispatch")); };
+        const cleanup = () => signal.removeEventListener("abort", abort);
+        signal.addEventListener("abort", abort, { once: true });
+        promise.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
+    });
+}
 async function locatorReadBeforeDeadline(read, timeoutMs, deadline, message) {
     if (timeoutMs === 0)
         return await read;
@@ -337,8 +351,8 @@ export class OpenBrowserUseClient {
     nameSession(name) {
         return this.request("nameSession", { name });
     }
-    attach(tabId, requestTimeoutMs = this.timeoutMs) {
-        return this.request("attach", { tabId }, undefined, requestTimeoutMs);
+    attach(tabId, requestTimeoutMs = this.timeoutMs, signal) {
+        return this.request("attach", { tabId }, undefined, requestTimeoutMs, signal);
     }
     detach(tabId) {
         return this.request("detach", { tabId });
@@ -4913,12 +4927,14 @@ export class OpenBrowserUseCdp {
         void barrier.then(cleanup, cleanup);
     }
     async call(tabId, method, commandParams = {}, options = {}) {
+        if (options.signal?.aborted)
+            throw new Error("Command cancelled before dispatch");
         const preparations = this.#eventPreparations.get(tabId);
         // Frame attachment and log setup must finish before a chooser can be registered.
         if (preparations?.size && !["Target.setAutoAttach", "Runtime.enable", "Log.enable"].includes(method))
-            await Promise.all([...preparations]);
+            await waitUntilAbortable(Promise.all([...preparations]), options.signal);
         const requestTimeoutMs = options.timeoutMs === undefined ? this.client.timeoutMs : Math.max(this.client.timeoutMs, Math.ceil(options.timeoutMs) + 2000);
-        await this.ensureAttached(tabId, requestTimeoutMs);
+        await waitUntilAbortable(this.ensureAttached(tabId, requestTimeoutMs, options.signal), options.signal);
         if (options.signal?.aborted)
             throw new Error("Command cancelled before dispatch");
         if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration)
@@ -5150,8 +5166,8 @@ export class OpenBrowserUseCdp {
             timeoutMessage: `Timed out waiting for ${state} in tab ${tabId}`
         }).then(() => undefined);
     }
-    async ensureAttached(tabId, requestTimeoutMs) {
-        await this.client.attach(tabId, requestTimeoutMs);
+    async ensureAttached(tabId, requestTimeoutMs, signal) {
+        await this.client.attach(tabId, requestTimeoutMs, signal);
     }
 }
 export function encodeFrame(value) {

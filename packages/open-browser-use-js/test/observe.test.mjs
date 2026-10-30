@@ -1854,3 +1854,14 @@ test('successful download observation releases other stalled frame preparations'
   for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1},method:'Page.downloadWillBegin',params:{guid:'g',frameId:'root',url:'https://example.test',suggestedFilename:'file'}}});
   assert.equal((await wait.wait()).guid,'g');await next;assert.equal(commands,1);
 });
+
+test('CDP cancellation interrupts pending preparation and attachment',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),browser=new OpenBrowserUseBrowser({client});let releaseBarrier,releaseAttach,commands=0;
+  const barrier=new Promise(resolve=>{releaseBarrier=resolve;});browser.cdp.blockUntilPrepared(1,barrier);
+  browser.cdp.ensureAttached=async()=>{};client.request=async()=>{commands++;return {};};
+  const first=new AbortController(),pending=browser.cdp.call(1,'Input.insertText',{text:'late'},{signal:first.signal});first.abort();
+  await assert.rejects(pending,/cancelled before dispatch/);releaseBarrier();await new Promise(resolve=>setImmediate(resolve));assert.equal(commands,0);
+  browser.cdp.ensureAttached=async()=>await new Promise(resolve=>{releaseAttach=resolve;});
+  const second=new AbortController(),waiting=browser.cdp.call(1,'Input.insertText',{text:'late'},{signal:second.signal});
+  while(!releaseAttach)await new Promise(resolve=>setImmediate(resolve));second.abort();await assert.rejects(waiting,/cancelled before dispatch/);releaseAttach();await new Promise(resolve=>setImmediate(resolve));assert.equal(commands,0);
+});
