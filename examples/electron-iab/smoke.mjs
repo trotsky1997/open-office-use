@@ -111,6 +111,13 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await assert.rejects(sdkTab.playwright.evaluate(()=>{while(true){}},undefined,{timeoutMs:100}),/timed out|terminated|side.effect/i);
   assert.equal(await sdkTab.playwright.evaluate(()=>document.querySelector('#increment').id),'increment');
   check('SDK read-only evaluate: DOM reads and mutation rejection');
+
+  const originalEnsure=sdkTab.browser.cdp.ensureAttached.bind(sdkTab.browser.cdp),originalRequest=sdkTab.browser.client.request.bind(sdkTab.browser.client);let unblockEvalAttach,lateEvaluations=0;
+  sdkTab.browser.cdp.ensureAttached=async (...args)=>{await new Promise(resolve=>{unblockEvalAttach=resolve});return originalEnsure(...args);};
+  sdkTab.browser.client.request=async (...args)=>{if(args[0]==='executeCdp' && args[1]?.method==='Runtime.evaluate' && args[1]?.commandParams?.expression==='document.title')lateEvaluations++;return originalRequest(...args);};
+  try {await assert.rejects(sdkTab.playwright.evaluate('document.title',undefined,{timeoutMs:100}),/timed out/i);assert.ok(unblockEvalAttach);unblockEvalAttach();await new Promise(resolve=>setTimeout(resolve,150));assert.equal(lateEvaluations,0);}
+  finally {unblockEvalAttach?.();sdkTab.browser.cdp.ensureAttached=originalEnsure;sdkTab.browser.client.request=originalRequest;}
+  check('SDK read-only evaluate: no dispatch after preparation timeout');
   await evaluate(a.id,`(()=>{window.semanticIsolationClicks=0;const button=document.createElement('button');button.id='semantic-isolation-button';button.textContent='Isolation action';button.onclick=e=>{if(e.isTrusted)window.semanticIsolationClicks++};const input=document.createElement('input');input.id='semantic-isolation-input';input.setAttribute('aria-label','Isolation field');document.body.append(button,input);window.savedSemanticConnected=Object.getOwnPropertyDescriptor(Node.prototype,'isConnected');Object.defineProperty(Node.prototype,'isConnected',{configurable:true,get:()=>false});return true})()`);
   try {
     const isolatedState=await sdkTab.observe(),isolatedButton=isolatedState.nodes.find(node=>node.name==='Isolation action');assert.ok(isolatedButton);await sdkTab.click(isolatedButton.index,isolatedState.snapshotId);

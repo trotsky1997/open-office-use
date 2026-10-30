@@ -929,6 +929,7 @@ export declare class OpenBrowserUseCdp {
         awaitPromise?: boolean;
         throwOnSideEffect?: boolean;
         timeoutMs?: number;
+        signal?: AbortSignal;
     }): Promise<JsonValue>;
     navigate(tabId: number, url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     waitForLoadState(tabId: number, options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;

@@ -3589,7 +3589,7 @@ export class OpenBrowserUseTabPlaywright {
         if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => key !== "timeoutMs") || (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 0 || options.timeoutMs > 120000)))
             throw new Error("Invalid evaluation timeout");
         const timeoutMs = options.timeoutMs ?? 5000, deadline = performance.now() + timeoutMs;
-        const read = (expression) => locatorReadBeforeDeadline(this.tab.browser.cdp.evaluate(this.tab.id, expression, { awaitPromise: true, throwOnSideEffect: true, timeoutMs: timeoutMs || 5000 }), timeoutMs, deadline, "Evaluation timed out");
+        const read = (expression) => { const controller = new AbortController(); return locatorReadBeforeDeadline(this.tab.browser.cdp.evaluate(this.tab.id, expression, { awaitPromise: true, throwOnSideEffect: true, timeoutMs: timeoutMs || 5000, signal: controller.signal }), timeoutMs, deadline, "Evaluation timed out").catch(error => { controller.abort(); throw error; }); };
         if (typeof pageFunction === "string") {
             if (arg !== undefined)
                 throw new Error("An evaluation argument requires a function");
@@ -4621,7 +4621,7 @@ export class OpenBrowserUseCdp {
             ...(options.awaitPromise === undefined ? {} : { awaitPromise: options.awaitPromise }),
             ...(options.throwOnSideEffect ? { throwOnSideEffect: true } : {}),
             ...(options.timeoutMs === undefined ? {} : { timeout: Math.max(1, Math.ceil(options.timeoutMs)) })
-        }, options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs });
+        }, { ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }), ...(options.signal ? { signal: options.signal } : {}) });
         if (isObject(result) && isObject(result.exceptionDetails)) {
             const exception = result.exceptionDetails.exception;
             throw new Error(isObject(exception) && typeof exception.description === "string" ? exception.description : String(result.exceptionDetails.text ?? "Open Browser Use evaluation failed"));

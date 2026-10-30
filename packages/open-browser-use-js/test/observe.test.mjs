@@ -1726,3 +1726,10 @@ test('sequential typing timeout prevents late preparation and input',async()=>{
   await assert.rejects(tab.playwright.locator('input').pressSequentially('a',{timeoutMs:20}),/preparation timed out/);
   releaseWorld({executionContextId:1});await new Promise(resolve=>setImmediate(resolve));assert.equal(measurements,0);assert.equal(inputs,0);
 });
+
+test('read-only evaluation timeout prevents dispatch after delayed attachment',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1);
+  let resume,requests=0;browser.cdp.ensureAttached=()=>new Promise(resolve=>{resume=resolve});client.request=async()=>{requests++;return {result:{value:'late'}};};
+  await assert.rejects(tab.playwright.evaluate('document.title',undefined,{timeoutMs:20}),/timed out/i);
+  resume();await new Promise(resolve=>setImmediate(resolve));assert.equal(requests,0);
+});

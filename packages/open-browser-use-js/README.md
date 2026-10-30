@@ -134,7 +134,9 @@ The function
 runs in the page context without access to its caller’s closures. Chromium
 rejects operations it considers to have side effects; some otherwise harmless
 expressions may also be rejected. Its default timeout is five seconds; an optional
-third argument accepts `timeoutMs`. For explicit page mutation, use `tab.evaluate`.
+third argument accepts `timeoutMs`. A preparation timeout prevents late dispatch;
+already issued reads may finish after the caller times out. For explicit page
+mutation, use `tab.evaluate`.
 
 `domSnapshot()` returns a bounded accessibility snapshot with roles, names,
 states and readable frame content. Indentation follows the reported accessibility
