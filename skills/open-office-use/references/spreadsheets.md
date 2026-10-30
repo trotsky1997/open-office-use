@@ -46,3 +46,5 @@ Chart specifications accept `series_colors` as one six-digit RGB string per Y se
 Grid reads return `snapshot_sha256`. Pass it as `expected_sha256` to `session_edit_grid` or `session_format_grid` when editing a previously inspected grid; a changed source is rejected. The same option is available for `session_merge_cells`, `session_freeze_panes`, and `session_resize_grid`; the viewer passes the loaded hash for all five operations.
 
 Chart cache scans return `snapshot_sha256`; pass it as `expected_sha256` to session cache synchronization to bind the repair to inspected workbook bytes.
+
+For native source links in newly authored cells, use `{"type":"hyperlink","value":"Source","url":"https://example.com/report"}`. Cell text is literal, and subsequent grid value edits preserve the link target; audit external relationships and review the destination.

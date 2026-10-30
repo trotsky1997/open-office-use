@@ -1183,19 +1183,28 @@ def author(spec, output, source=None):
                         a, b, c, d = range_boundaries(table.ref)
                         if a <= c1 <= c and ((r1 == b and table.headerRowCount != 0) or (r1 == d and (table.totalsRowCount or table.totalsRowShown))):
                             raise ValueError('Table header and totals cells require a table-aware edit')
-                literal = False; temporal = False
+                literal = False; temporal = False; link_url = None
                 if isinstance(value, dict):
-                    if set(value) != {'type', 'value'} or value['type'] not in ('text', 'date', 'datetime') or not isinstance(value['value'], str) or not value['value']: raise ValueError('Invalid typed cell value')
-                    kind, value = value['type'], value['value']
-                    if kind == 'text': literal = True
+                    if value.get('type') == 'hyperlink':
+                        if set(value) != {'type', 'value', 'url'} or not isinstance(value['value'], str) or not value['value']: raise ValueError('Hyperlink cell requires nonempty text and a URL')
+                        link_url = value['url']
+                        if not isinstance(link_url, str) or len(link_url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in link_url): raise ValueError('Invalid hyperlink URL')
+                        try: parsed = urlsplit(link_url); hostname = parsed.hostname
+                        except ValueError: raise ValueError('Invalid hyperlink URL') from None
+                        if parsed.scheme.lower() not in ('http', 'https', 'mailto') or (parsed.scheme.lower() in ('http', 'https') and not hostname) or (parsed.scheme.lower() == 'mailto' and not parsed.path): raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
+                        literal = True; value = value['value']
                     else:
-                        pattern = r'[0-9]{4}-[0-9]{2}-[0-9]{2}' if kind == 'date' else r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?'
-                        if not re.fullmatch(pattern, value): raise ValueError('Invalid ISO date or datetime')
-                        try: value = date.fromisoformat(value) if kind == 'date' else datetime.fromisoformat(value)
-                        except ValueError: raise ValueError('Invalid ISO date or datetime') from None
-                        day = value.date() if isinstance(value, datetime) else value
-                        if day < date(1900, 1, 1) or day <= obj.epoch.date(): raise ValueError('Date must be after the workbook epoch and no earlier than 1900-01-01')
-                        temporal = True
+                        if set(value) != {'type', 'value'} or value['type'] not in ('text', 'date', 'datetime') or not isinstance(value['value'], str) or not value['value']: raise ValueError('Invalid typed cell value')
+                        kind, value = value['type'], value['value']
+                        if kind == 'text': literal = True
+                        else:
+                            pattern = r'[0-9]{4}-[0-9]{2}-[0-9]{2}' if kind == 'date' else r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?'
+                            if not re.fullmatch(pattern, value): raise ValueError('Invalid ISO date or datetime')
+                            try: value = date.fromisoformat(value) if kind == 'date' else datetime.fromisoformat(value)
+                            except ValueError: raise ValueError('Invalid ISO date or datetime') from None
+                            day = value.date() if isinstance(value, datetime) else value
+                            if day < date(1900, 1, 1) or day <= obj.epoch.date(): raise ValueError('Date must be after the workbook epoch and no earlier than 1900-01-01')
+                            temporal = True
                 formula = isinstance(value, str) and value.startswith('=') and not literal
                 if isinstance(value, str):
                     if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value): raise ValueError('Cell text contains unsupported XML characters')
@@ -1206,6 +1215,10 @@ def author(spec, output, source=None):
                 if not formula: spreadsheet.validate_cell_value(value)
                 ws[address] = value
                 if literal: ws[address].data_type = 's'
+                if link_url is not None:
+                    cell = ws[address]; cell.hyperlink = link_url
+                    if not cell.has_style:
+                        font = copy(cell.font); font.color = 'FF0563C1'; font.underline = 'single'; cell.font = font
             def worksheet(name):
                 if not isinstance(name, str) or not name: raise ValueError('Worksheet name must be nonempty text')
                 ws = obj[name] if name in obj.sheetnames else obj.create_sheet(name)

@@ -20,6 +20,7 @@ import xlsxwriter
 import open_office_use
 import officecli_backend
 import chart_cache
+import review
 import session
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -158,6 +159,26 @@ with tempfile.TemporaryDirectory() as tmp:
         try: open_office_use.author({'sheets':{'Data':{}},'sheet_options':{'Data':{'conditional_formats':[rule]}}},invalid)
         except ValueError: pass
         else: raise AssertionError('Invalid conditional format accepted')
+        assert not invalid.exists()
+    links_file = root/'links.xlsx'
+    link_spec = {'sheets':{'Sources':{'A1':{'type':'hyperlink','value':'=Source','url':'https://example.com/source'}}},'ranges':{'Sources':[{'start':'A2','values':[[{'type':'hyperlink','value':'Email','url':'mailto:author@example.com'}]]}]}}
+    open_office_use.author(link_spec,links_file); links = load_workbook(links_file)['Sources']
+    assert links['A1'].value == '=Source' and links['A1'].data_type == 's' and links['A1'].hyperlink.target == 'https://example.com/source'
+    assert links['A1'].font.color.rgb == 'FF0563C1' and links['A1'].font.underline == 'single' and links['A2'].hyperlink.target == 'mailto:author@example.com'
+    external = review.external_relationships(links_file); assert external['complete'] and external['external_count'] == 2, external
+    code,validation,_ = officecli_backend.invoke('validate',links_file); assert code == 0 and validation['success'], validation
+    source_linked = root/'source-linked.xlsx'
+    open_office_use.author({'sheets':{'Forecast':{'B2':{'type':'hyperlink','value':'Source','url':'https://example.com/report'}}}},source_linked,output)
+    styled_link = load_workbook(source_linked)['Forecast']['B2']
+    assert styled_link.hyperlink.target == 'https://example.com/report' and styled_link.number_format == '#,##0.00'
+    link_draft = root/'links-draft'; session.start(link_draft,source=links_file)
+    modified = session.edit_grid(link_draft,0,'Sources','A1',[{'cell':'A1','value':'New label'}])
+    assert load_workbook(modified['file'])['Sources']['A1'].hyperlink.target == 'https://example.com/source'
+    for index,url in enumerate(['javascript:alert(1)','file:///tmp/test','https://','https://example.com/bad path','mailto:']):
+        invalid=root/f'invalid-hyperlink-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Data':{'A1':{'type':'hyperlink','value':'Link','url':url}}}},invalid)
+        except ValueError: pass
+        else: raise AssertionError('Invalid hyperlink accepted')
         assert not invalid.exists()
     typed_file=root/'literal-cells.xlsx'
     typed_spec={'sheets':{'Data':{'A1':{'type':'text','value':'=Heading'},'A2':{'type':'text','value':'=SUM(1,2)'},'A3':{'type':'text','value':'#N/A'},'A4':{'type':'text','value':'00123'},'B1':'=1+2'}},'sheet_options':{'Data':{'tables':[{'name':'TextTable','range':'A1:A4'}]}}}

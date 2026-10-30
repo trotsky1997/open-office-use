@@ -304,3 +304,5 @@ TOC cache refresh resolves direct outline levels and paragraph-style inheritance
 Positioned PowerPoint elements accept nonvisual descriptions, including tables, charts, shapes and connectors; chart inspection and layout candidates report bounded descriptions. Screen-reader behavior and native PowerPoint remain unverified.
 
 Existing slide object descriptions can be updated in snapshot-bound session revisions for shapes, pictures, connectors, tables and charts, including groups. Native PowerPoint and screen-reader behavior remain unverified.
+
+Workbook authoring supports typed HTTP(S)/mailto hyperlinks with literal labels and visible default styling. Grid value edits retain links; external-relationship inspection exposes targets. Native Excel fidelity remains unverified.

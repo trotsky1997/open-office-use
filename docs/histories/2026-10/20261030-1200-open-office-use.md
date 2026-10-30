@@ -407,3 +407,5 @@ Extended TOC cache refresh to resolve custom inherited heading styles and direct
 Extended PowerPoint element authoring and inspection with bounded alternative descriptions for native shapes, connectors, tables and charts.
 
 Added targeted CLI and MCP updates for existing PowerPoint object alternative text with revision and snapshot checks.
+
+Added native workbook hyperlink cells with validated URL schemes, literal labels, preserved source styles and external-relationship audit coverage.
