@@ -191,3 +191,7 @@ Extended PowerPoint small-text review to paragraph `defRPr` sizes when the run l
 ### External relationship inspection
 
 Added bounded, snapshot-bound external OPC relationship inventory across DOCX, XLSX and PPTX through CLI, MCP, session revisions and review bundles. Verified real hyperlinks in all three formats, revision identity, malformed relationship XML and review flags. Targets are not contacted; indirect references outside OPC relationships remain outside scope.
+
+### Basic MCP authoring
+
+Exposed JSON-spec `author_file` through MCP and snapshot-checked source files before library loading. Verified direct MCP creation and inspection for DOCX, XLSX and PPTX, source preservation, overwrite rejection, and the CLI author/render smoke suite. Rich existing documents still need targeted operations and visual review.

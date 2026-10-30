@@ -7,6 +7,7 @@ from docx import Document
 from openpyxl import Workbook
 from pptx import Presentation
 import review_bundle
+import open_office_use
 import slides
 import snapshot
 import spreadsheet
@@ -30,12 +31,13 @@ with tempfile.TemporaryDirectory() as tmp:
     cases = [(document, lambda p: word.search_body(p, 'needle')),
              (document, word.tracked_changes), (presentation, lambda p: slides.search_text(p, 'needle')),
              (workbook, lambda p: spreadsheet.search_cells(p, 'needle')),
-             (document, lambda p: review_bundle.create(p, root / 'report', lambda *_: None))]
+             (document, lambda p: review_bundle.create(p, root / 'report', lambda *_: None)),
+             (document, lambda p: open_office_use.author({'paragraphs': ['new']}, root / 'authored.docx', p))]
     for index, (original, call) in enumerate(cases):
         source = root / f'case-{index}{original.suffix}'; source.write_bytes(original.read_bytes())
         with patch.object(snapshot.hashlib, 'sha256', side_effect=lambda: MutatingDigest(source)):
             try: call(source)
             except ValueError as exc: assert 'changed while creating snapshot' in str(exc)
             else: raise AssertionError(f'Concurrent write accepted in case {index}')
-    assert not (root / 'report').exists()
-print('Snapshot integration smoke passed: searches, tracked changes and review bundle')
+    assert not (root / 'report').exists() and not (root / 'authored.docx').exists()
+print('Snapshot integration smoke passed: searches, authoring, tracked changes and review bundle')

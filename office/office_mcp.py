@@ -21,7 +21,7 @@ import selection_text
 import selection_candidates
 import slides
 import slide_text_check
-from open_office_use import doctor, inspect, render, render_with_info
+from open_office_use import author, doctor, inspect, render, render_with_info
 
 server = FastMCP(
     'open-office-use',
@@ -58,6 +58,12 @@ def office_schema(format: Literal['docx', 'xlsx', 'pptx'], element: str | None =
 def inspect_file(file: str) -> dict[str, Any]:
     """Extract basic content; XLSX uses bounded sparse cell samples and reports scan limits."""
     return inspect(file)
+
+
+@server.tool()
+def author_file(spec: dict[str, Any], output: str, source: str | None = None) -> dict[str, str]:
+    """Create a new file from a simple spec: DOCX {paragraphs: [text]}, XLSX {sheets: {name: {cell: value}}}, or PPTX {slides: [{title, body}]}. With source, also supports DOCX replace_paragraphs and PPTX replace_text. Output must not exist. Whole-element replacement and library saves can change rich formatting and features."""
+    return {'output': author(spec, output, source)}
 
 
 @server.tool()

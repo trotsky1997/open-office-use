@@ -28,6 +28,7 @@ import session
 import selection_text
 import selection_candidates
 import slides
+import snapshot as snapshots
 
 
 def doctor():
@@ -94,41 +95,44 @@ def author(spec, output, source=None):
         raise FileExistsError(f'Output already exists: {out}')
     if source and out.resolve() == Path(source).resolve():
         raise ValueError('Output must differ from source')
-    if suffix == '.docx':
-        doc = Document(source) if source else Document()
-        for index, text in spec.get('replace_paragraphs', {}).items():
-            # Setting paragraph text discards run-level formatting in that paragraph.
-            doc.paragraphs[int(index)].text = text
-        for text in spec.get('paragraphs', []):
-            doc.add_paragraph(text)
-        obj = doc
-    elif suffix == '.xlsx':
-        obj = spreadsheet.load_author_workbook(source) if source else Workbook()
-        for name, cells in spec.get('sheets', {}).items():
-            ws = obj[name] if name in obj.sheetnames else obj.create_sheet(name)
-            for address, value in cells.items():
-                if not isinstance(value, str) or not value.startswith('='): spreadsheet.validate_cell_value(value)
-                ws[address] = value
-        if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:
-            del obj['Sheet']
-    else:
-        obj = Presentation(source) if source else Presentation()
-        for item in spec.get('replace_text', []):
-            shape = obj.slides[item['slide']].shapes[item['shape']]
-            if not shape.has_text_frame:
-                raise ValueError('Selected shape has no text frame')
-            shape.text = item['text']
-        for item in spec.get('slides', []):
-            slide = obj.slides.add_slide(obj.slide_layouts[1])
-            slide.shapes.title.text = item['title']
-            slide.placeholders[1].text = item.get('body', '')
-    out.parent.mkdir(parents=True, exist_ok=True)
-    # Save into the target directory, then exclusively create the requested output.
-    with tempfile.TemporaryDirectory(dir=out.parent) as tmp:
-        candidate = Path(tmp) / out.name
-        obj.save(candidate)
-        os.link(candidate, out)
-    return str(out.resolve())
+    with tempfile.TemporaryDirectory(prefix='office-author-source-') as tmp:
+        if source:
+            source, _ = snapshots.copy(source, tmp)
+        if suffix == '.docx':
+            doc = Document(source) if source else Document()
+            for index, text in spec.get('replace_paragraphs', {}).items():
+                # Setting paragraph text discards run-level formatting in that paragraph.
+                doc.paragraphs[int(index)].text = text
+            for text in spec.get('paragraphs', []):
+                doc.add_paragraph(text)
+            obj = doc
+        elif suffix == '.xlsx':
+            obj = spreadsheet.load_author_workbook(source) if source else Workbook()
+            for name, cells in spec.get('sheets', {}).items():
+                ws = obj[name] if name in obj.sheetnames else obj.create_sheet(name)
+                for address, value in cells.items():
+                    if not isinstance(value, str) or not value.startswith('='): spreadsheet.validate_cell_value(value)
+                    ws[address] = value
+            if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:
+                del obj['Sheet']
+        else:
+            obj = Presentation(source) if source else Presentation()
+            for item in spec.get('replace_text', []):
+                shape = obj.slides[item['slide']].shapes[item['shape']]
+                if not shape.has_text_frame:
+                    raise ValueError('Selected shape has no text frame')
+                shape.text = item['text']
+            for item in spec.get('slides', []):
+                slide = obj.slides.add_slide(obj.slide_layouts[1])
+                slide.shapes.title.text = item['title']
+                slide.placeholders[1].text = item.get('body', '')
+        out.parent.mkdir(parents=True, exist_ok=True)
+        # Save into the target directory, then exclusively create the requested output.
+        with tempfile.TemporaryDirectory(dir=out.parent) as tmp:
+            candidate = Path(tmp) / out.name
+            obj.save(candidate)
+            os.link(candidate, out)
+        return str(out.resolve())
 
 
 def render(source, output_dir):

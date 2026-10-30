@@ -138,3 +138,7 @@ Font-size inspection also uses explicit paragraph default run sizes when a run h
 ## External relationship inventory
 
 CLI, MCP and revision-aware inspection report bounded OPC external relationships without network access, and review bundles flag their presence or incomplete output. Targets may contain sensitive information. Formulas, field codes, embedded documents and indirect references require separate inspection.
+
+## Basic authoring over MCP
+
+MCP `author_file` exposes the existing JSON-spec authoring path for DOCX, XLSX and PPTX without requiring OfficeCLI. Source-based authoring takes a checked snapshot before loading. Whole-element replacement and library round-tripping retain their documented fidelity limits.

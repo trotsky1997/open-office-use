@@ -7,6 +7,8 @@ description: Inspect, create, edit, review, and render local DOCX, XLSX, and PPT
 
 Use `office-use --help` and the [project guide](https://github.com/trotsky1997/open-office-use/blob/main/office/README.md) for installation, MCP configuration, arguments, and fidelity limits. The skill supplies guidance; install the CLI and optional MCP dependency separately. `office-use doctor` or `office_doctor` reports available dependencies; a version probe does not establish output fidelity.
 
+Use `author_file` to create a simple DOCX, XLSX, or PPTX from a JSON spec without OfficeCLI, or to write a new copy from a source snapshot. Whole-element replacement and library saves can alter formatting and unsupported features; use targeted session operations for existing rich files.
+
 For multi-step work, start a local session from a saved, closed source or a blank format. Read `session_info`, use the latest revision as `base_revision` for edits, and export a selected revision to a new path. A conflict requires re-reading the latest revision. Historical revisions can be previewed, compared, and restored as a new revision. `office-use watch` provides a local viewer when a user wants to follow or edit the session.
 
 For format-specific operations, read only the relevant reference:
