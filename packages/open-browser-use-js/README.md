@@ -234,7 +234,8 @@ Heading locators can filter by positive integer `level`; observations expose
 the browser-reported level when available.
 `textContent()` reads the raw DOM text, including hidden descendants, with the
 same match and length checks.
-`allTextContents()` reads raw text from all current semantic matches in one
+`allTextContents()` and `allInnerTexts()` read raw text and rendered inner text
+from all current semantic matches in one
 observation, returning an empty array when there are none. Each value is limited
 to 30000 characters and the total to 1000000. The page can change between reads;
 stale targets are retried within the optional `timeoutMs`.
@@ -337,7 +338,7 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 ```
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
-`textContent`, `allTextContents`, `getAttribute`, `isVisible`, `isEnabled`,
+`textContent`, `allTextContents`, `allInnerTexts`, `getAttribute`, `isVisible`, `isEnabled`,
 `isChecked`, `inputValue`, `boundingBox`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
 `uncheck`, `setChecked` and `selectOption`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a

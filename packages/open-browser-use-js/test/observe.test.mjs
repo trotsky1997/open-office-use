@@ -1009,6 +1009,9 @@ test("role locators reobserve, reject ambiguous matches and honor explicit posit
   const reads=[];tab.locatorRead=async(id,index,mode)=>{reads.push({id,index,mode});return `value ${index}`;};
   assert.deepEqual(await locator.allTextContents(),['value 10','value 11']);
   assert.equal(reads[0].id,reads[1].id);assert.equal(reads[0].mode,'textContent');
+  assert.deepEqual(await locator.allInnerTexts(),['value 10','value 11']);assert.equal(reads.at(-1).mode,'innerText');
+  const css=tab.playwright.locator('button');tab.queryCss=async()=>({ids:[10,11]});tab.readCss=async(_snapshot,id,mode)=>`${mode} ${id}`;
+  assert.deepEqual(await css.allInnerTexts(),['innerText 10','innerText 11']);assert.deepEqual(await css.allTextContents(),['textContent 10','textContent 11']);
   await locator.last().click();assert.equal(calls.at(-1).index,11);
   nodes.reverse();await all[0].click();assert.equal(calls.at(-1).index,11);
   assert.equal(await locator.nth(0).last().count(),1);

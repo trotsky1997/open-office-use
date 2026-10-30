@@ -659,6 +659,10 @@ export declare class OpenBrowserUseCssLocator {
     allTextContents(options?: {
         timeoutMs?: number;
     }): Promise<string[]>;
+    allInnerTexts(options?: {
+        timeoutMs?: number;
+    }): Promise<string[]>;
+    private readAllText;
     private perform;
     private read;
     isEnabled(): Promise<boolean>;
@@ -769,6 +773,10 @@ export declare class OpenBrowserUseRoleLocator {
     allTextContents(options?: {
         timeoutMs?: number;
     }): Promise<string[]>;
+    allInnerTexts(options?: {
+        timeoutMs?: number;
+    }): Promise<string[]>;
+    private readAllText;
     innerText(options?: {
         timeoutMs?: number;
     }): Promise<string>;

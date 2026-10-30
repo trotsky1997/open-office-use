@@ -3521,7 +3521,9 @@ export class OpenBrowserUseCssLocator {
     }
     async count() { return (await this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope)).ids.length; }
     async all() { return Array.from({ length: await this.count() }, (_, i) => this.nth(i)); }
-    async allTextContents(options = {}) {
+    allTextContents(options = {}) { return this.readAllText("textContent", options); }
+    allInnerTexts(options = {}) { return this.readAllText("innerText", options); }
+    async readAllText(mode, options) {
         const timeoutMs = options.timeoutMs ?? 5000;
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid locator timeout");
@@ -3531,7 +3533,7 @@ export class OpenBrowserUseCssLocator {
                 const snapshot = await this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope), values = [];
                 let total = 0;
                 for (const id of snapshot.ids) {
-                    const value = await this.tab.readCss(snapshot, id, "textContent");
+                    const value = await this.tab.readCss(snapshot, id, mode);
                     if (typeof value !== "string")
                         throw new RetryablePreflightError("Target text is unavailable; observe again");
                     total += value.length;
@@ -3929,7 +3931,9 @@ export class OpenBrowserUseRoleLocator {
     }
     async count() { return (await this.find()).matches.length; }
     async all() { return Array.from({ length: await this.count() }, (_, index) => this.nth(index)); }
-    async allTextContents(options = {}) {
+    allTextContents(options = {}) { return this.readAllText("textContent", options); }
+    allInnerTexts(options = {}) { return this.readAllText("innerText", options); }
+    async readAllText(mode, options) {
         const timeoutMs = options.timeoutMs ?? 5_000;
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid locator timeout");
@@ -3941,7 +3945,7 @@ export class OpenBrowserUseRoleLocator {
                 let total = 0;
                 for (const match of matches) {
                     this.tab.bindLocatorScope(state.snapshotId, match.node.index, match.path, match.filters, this.framePath ? [...this.framePath] : undefined, match.css, this.guard(state.snapshotId, matches));
-                    const value = await this.tab.locatorRead(state.snapshotId, match.node.index, "textContent");
+                    const value = await this.tab.locatorRead(state.snapshotId, match.node.index, mode);
                     if (typeof value !== "string")
                         throw new RetryablePreflightError("Target text is unavailable; observe again");
                     total += value.length;

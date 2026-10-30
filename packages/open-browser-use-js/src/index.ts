@@ -2862,7 +2862,9 @@ export class OpenBrowserUseCssLocator {
   }
   async count(): Promise<number> { return (await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope)).ids.length; }
   async all(): Promise<OpenBrowserUseCssLocator[]> { return Array.from({length:await this.count()},(_,i)=>this.nth(i)); }
-  async allTextContents(options: {timeoutMs?: number} = {}): Promise<string[]> {
+  allTextContents(options: {timeoutMs?: number} = {}): Promise<string[]> { return this.readAllText("textContent",options); }
+  allInnerTexts(options: {timeoutMs?: number} = {}): Promise<string[]> { return this.readAllText("innerText",options); }
+  private async readAllText(mode: "textContent" | "innerText", options: {timeoutMs?: number}): Promise<string[]> {
     const timeoutMs=options.timeoutMs ?? 5000;
     if (!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000) throw new Error("Invalid locator timeout");
     const deadline=performance.now()+timeoutMs;
@@ -2871,7 +2873,7 @@ export class OpenBrowserUseCssLocator {
         const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), values:string[]=[];
         let total=0;
         for (const id of snapshot.ids) {
-          const value=await this.tab.readCss(snapshot,id,"textContent");
+          const value=await this.tab.readCss(snapshot,id,mode);
           if (typeof value !== "string") throw new RetryablePreflightError("Target text is unavailable; observe again");
           total+=value.length;if(total>1_000_000) throw new Error("Locator values exceed the 1000000 character limit");
           values.push(value);
@@ -3165,7 +3167,9 @@ export class OpenBrowserUseRoleLocator {
   async count(): Promise<number> { return (await this.find()).matches.length; }
   async all(): Promise<OpenBrowserUseRoleLocator[]> { return Array.from({length:await this.count()},(_,index)=>this.nth(index)); }
 
-  async allTextContents(options: {timeoutMs?: number} = {}): Promise<string[]> {
+  allTextContents(options: {timeoutMs?: number} = {}): Promise<string[]> { return this.readAllText("textContent",options); }
+  allInnerTexts(options: {timeoutMs?: number} = {}): Promise<string[]> { return this.readAllText("innerText",options); }
+  private async readAllText(mode: "textContent" | "innerText", options: {timeoutMs?: number}): Promise<string[]> {
     const timeoutMs = options.timeoutMs ?? 5_000;
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now() + timeoutMs;
@@ -3176,7 +3180,7 @@ export class OpenBrowserUseRoleLocator {
         let total = 0;
         for (const match of matches) {
           this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css,this.guard(state.snapshotId,matches));
-          const value = await this.tab.locatorRead(state.snapshotId,match.node.index,"textContent");
+          const value = await this.tab.locatorRead(state.snapshotId,match.node.index,mode);
           if (typeof value !== "string") throw new RetryablePreflightError("Target text is unavailable; observe again");
           total += value.length;
           if (total > 1_000_000) throw new Error("Locator values exceed the 1000000 character limit");
