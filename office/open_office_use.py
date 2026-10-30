@@ -15,6 +15,7 @@ from pptx import Presentation
 import officecli_backend
 import spreadsheet
 import review
+import session
 
 
 def kind(path):
@@ -146,6 +147,11 @@ def main():
     calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
     audit = commands.add_parser('audit'); audit.add_argument('file')
     comparison = commands.add_parser('compare'); comparison.add_argument('before'); comparison.add_argument('after')
+    draft = commands.add_parser('session'); sub = draft.add_subparsers(dest='action', required=True)
+    start = sub.add_parser('start'); start.add_argument('directory'); group = start.add_mutually_exclusive_group(required=True); group.add_argument('--source'); group.add_argument('--format', choices=['docx', 'xlsx', 'pptx'])
+    state = sub.add_parser('info'); state.add_argument('directory')
+    apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
+    export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
     commands.add_parser('mcp', help='Start the local MCP stdio server (requires the mcp extra)')
     args = parser.parse_args()
     try:
@@ -158,7 +164,18 @@ def main():
                 raise
             office_mcp.main()
             return 0
-        if args.command == 'inspect':
+        if args.command == 'session':
+            if args.action == 'start':
+                result = session.start(args.directory, args.source, args.format)
+            elif args.action == 'info':
+                result = session.info(args.directory)
+            elif args.action == 'apply':
+                with open(args.spec, encoding='utf-8') as f:
+                    operations = json.load(f)
+                result = session.apply(args.directory, args.base, operations)
+            else:
+                result = session.export(args.directory, args.revision, args.out)
+        elif args.command == 'inspect':
             result = inspect(args.file)
         elif args.command == 'author':
             with open(args.spec, encoding='utf-8') as f:

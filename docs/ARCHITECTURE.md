@@ -308,3 +308,5 @@ The spreadsheet module provides bounded formula/cache inspection and explicit Li
 `compare` and MCP `compare_files` take disk snapshots, compare OOXML part hashes and provide bounded OfficeCLI text-view diffs. The text view is not a complete semantic comparison.
 
 CLI `audit` and MCP `audit_file` run OfficeCLI schema validation and a bounded issue scan against a disk snapshot. They preserve validator exit status and report issue-scan errors. Visual and application compatibility review remain separate.
+
+Local draft sessions store saved revision files in a caller-chosen directory. Each batch creates the next revision by exclusive publication with optimistic base-revision checking; export copies a selected revision to a new external path. This is a file-backed editing session, without a live editor connection.

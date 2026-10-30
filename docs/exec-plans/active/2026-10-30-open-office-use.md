@@ -32,3 +32,7 @@ Added saved-file text diffs and OOXML part-change summaries through CLI and MCP.
 ## Artifact checks
 
 Added OfficeCLI schema validation and issue scanning via CLI and MCP, retaining the raw validator result and reporting issue-scan failures. Verified a valid DOCX, invalid OOXML and a formula error; broader Office compatibility and visual evaluation are still required.
+
+## Draft sessions
+
+Added persistent local multi-step sessions with explicit base revisions, concurrent-writer conflict protection and copy-based export through CLI and MCP. Tested all three formats, stale writes, failed edits, competing writers and exports. A visible editor, collaborative CRDT state, undo UI and external-editor synchronization remain open.

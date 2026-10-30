@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP, Image
 import officecli_backend
 import spreadsheet
 import review
+import session
 from open_office_use import inspect, preview, render
 
 server = FastMCP(
@@ -35,6 +36,30 @@ def structured_read(file: str, mode: Literal['outline', 'get', 'query'], target:
 def apply_batch(output: str, operations: list[dict[str, Any]], source: str | None = None) -> dict[str, Any]:
     """Apply OfficeCLI operations to a new file or a saved source copy. Existing output is protected."""
     return officecli_backend.batch(operations, output, source)
+
+
+@server.tool()
+def start_session(directory: str, source: str | None = None, format: Literal['docx', 'xlsx', 'pptx'] | None = None) -> dict[str, Any]:
+    """Start a session in a new directory, from a saved source or a blank format."""
+    return session.start(directory, source, format)
+
+
+@server.tool()
+def session_info(directory: str) -> dict[str, Any]:
+    """List immutable revision files and the latest revision number."""
+    return session.info(directory)
+
+
+@server.tool()
+def session_apply(directory: str, base_revision: int, operations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Apply an OfficeCLI batch to the latest revision; reject concurrent or stale edits."""
+    return session.apply(directory, base_revision, operations)
+
+
+@server.tool()
+def session_export(directory: str, revision: int, output: str) -> dict[str, Any]:
+    """Export a revision to a new file outside the session directory."""
+    return session.export(directory, revision, output)
 
 
 @server.tool()

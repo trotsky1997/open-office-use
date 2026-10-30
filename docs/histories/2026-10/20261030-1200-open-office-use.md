@@ -13,3 +13,5 @@ Added bounded spreadsheet formula/cache inspection and explicit LibreOffice reca
 Added bounded saved-file comparison through CLI and MCP, reporting textual excerpts and changed OOXML parts. Verified three formats and formatting-only change detection.
 
 Added audit commands for OfficeCLI schema validation and issue checks with a saved snapshot. Validated real schema errors, formula issues and MCP access.
+
+Added file-backed versioned draft sessions with conflict detection and export via CLI and MCP. Verified all formats, failure and concurrent write handling.

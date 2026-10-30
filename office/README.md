@@ -65,6 +65,19 @@ Operations run on a temporary file. A successful batch is closed before the comp
 
 `preview` creates a new directory containing one PNG per rendered page. It refuses an existing directory. Inspect the images, since a successful render or schema validation alone does not establish visual quality or Office fidelity.
 
+## Multi-step draft sessions
+
+A session is a local directory of saved revision files. Start from a saved source, or pass `--format docx`, `xlsx` or `pptx` to start blank. The directory must be new and its parent must exist.
+
+```sh
+office-use session start ./draft --source original.docx
+office-use session info ./draft
+office-use session apply ./draft --base 0 --spec operations.json
+office-use session export ./draft --revision 1 --out final.docx
+```
+
+Each successful batch creates the next revision. `--base` must match the latest revision; a stale or concurrent competing write fails. A failed batch leaves the previous revision intact. `info` lists file paths for use with `structured`, `compare`, `audit` and `preview`. Export copies any revision to a new output outside the session directory. Session operations never replace the source or an existing export. Keep the session directory private to its owner and do not edit its revision files directly: the session protocol assumes those files remain unchanged. Save and close external editing sessions before creating a session from a source. Session history persists until the directory is removed manually.
+
 ## Inspect for issues
 
 ```sh
@@ -108,13 +121,14 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, and `audit_file`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, `audit_file`, `start_session`, `session_info`, `session_apply`, and `session_export`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 
 ```sh
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
+python3 office/session_smoke.py     # requires OfficeCLI
 python3 office/audit_smoke.py       # requires OfficeCLI
 python3 office/review_smoke.py      # requires OfficeCLI
 python3 office/spreadsheet_smoke.py # requires LibreOffice
