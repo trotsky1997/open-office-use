@@ -1630,3 +1630,10 @@ test('single locator reads honor their deadline after target lookup',async()=>{
   const role=tab.playwright.getByRole('button');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};tab.locatorRead=()=>new Promise(()=>{});
   await assert.rejects(role.textContent({timeoutMs:20}),/Timed out reading locator/);
 });
+
+test('locator state queries bound stalled browser reads',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1),css=tab.playwright.locator('button');
+  tab.queryCss=()=>new Promise(()=>{});await assert.rejects(css.isVisible({timeoutMs:20}),/Timed out/);await assert.rejects(css.isHidden({timeoutMs:20}),/Timed out/);
+  tab.queryCss=async()=>({ids:[1]});tab.readCss=()=>new Promise(()=>{});await assert.rejects(css.isEditable({timeoutMs:20}),/Timed out/);
+  const role=tab.playwright.getByRole('button');role.find=()=>new Promise(()=>{});await assert.rejects(role.isVisible({timeoutMs:20}),/Timed out/);
+});

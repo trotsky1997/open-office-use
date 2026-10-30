@@ -2937,19 +2937,22 @@ export class OpenBrowserUseCssLocator {
   private read(mode: "innerText" | "textContent" | "attribute", name = "", timeoutMs = 5000): Promise<string | null> {
     return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,mode,name) as string | null,timeoutMs,true);
   }
-  isEnabled(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"enabled") as boolean,undefined,true); }
-  isChecked(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"checked") as boolean,undefined,true); }
-  isEditable(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"editable") as boolean,undefined,true); }
+  isEnabled(options: {timeoutMs?:number} = {}): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"enabled") as boolean,options.timeoutMs,true); }
+  isChecked(options: {timeoutMs?:number} = {}): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"checked") as boolean,options.timeoutMs,true); }
+  isEditable(options: {timeoutMs?:number} = {}): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"editable") as boolean,options.timeoutMs,true); }
   boundingBox(options:{timeoutMs?:number} = {}):Promise<{x:number;y:number;width:number;height:number}|null> { return this.perform(async (snapshot,id)=>{if(!snapshot.frame)throw new RetryablePreflightError("Frame unavailable; observe again");if(!await this.tab.readCss(snapshot,id,"visible"))return null;const box=await this.tab.nodeBoundingBox(snapshot.frame,snapshot.frames,id);if(!box || !await this.tab.readCss(snapshot,id,"visible"))throw new RetryablePreflightError("Target geometry changed; observe again");return box;},options.timeoutMs,true); }
   inputValue(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"inputValue") as string,options.timeoutMs,true); }
-  async isVisible(): Promise<boolean> {
-    const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), ids=snapshot.ids;
+  async isVisible(options: {timeoutMs?:number} = {}): Promise<boolean> {
+    const timeoutMs=options.timeoutMs ?? 5000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000) throw new Error("Invalid locator timeout");
+    const deadline=performance.now()+timeoutMs, message="Timed out reading locator visibility";
+    const snapshot=await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,message), ids=snapshot.ids;
     if (!ids.length) return false;
     if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
-    return await this.tab.readCss(snapshot,ids[0],"visible") as boolean;
+    return await locatorReadBeforeDeadline(this.tab.readCss(snapshot,ids[0],"visible"),timeoutMs,deadline,message) as boolean;
   }
-  async isHidden(): Promise<boolean> { return !(await this.isVisible()); }
-  async isDisabled(): Promise<boolean> { return !(await this.isEnabled()); }
+  async isHidden(options: {timeoutMs?:number} = {}): Promise<boolean> { return !(await this.isVisible(options)); }
+  async isDisabled(options: {timeoutMs?:number} = {}): Promise<boolean> { return !(await this.isEnabled(options)); }
   async waitFor(options: {state: "attached" | "detached" | "visible" | "hidden"; timeoutMs?: number}): Promise<void> {
     if (!options || !["attached","detached","visible","hidden"].includes(options.state)) throw new Error("Invalid locator wait state");
     const timeoutMs=options.timeoutMs ?? 5000;
@@ -3234,28 +3237,31 @@ export class OpenBrowserUseRoleLocator {
 
   async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs,true); }
   async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs,true); }
-  async isEnabled(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean,undefined,true); }
-  async isChecked(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"checked")) as boolean,undefined,true); }
-  async isEditable(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"editable")) as boolean,undefined,true); }
+  async isEnabled(options: {timeoutMs?:number} = {}): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean,options.timeoutMs,true); }
+  async isChecked(options: {timeoutMs?:number} = {}): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"checked")) as boolean,options.timeoutMs,true); }
+  async isEditable(options: {timeoutMs?:number} = {}): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"editable")) as boolean,options.timeoutMs,true); }
   boundingBox(options:{timeoutMs?:number} = {}):Promise<{x:number;y:number;width:number;height:number}|null> { return this.perform(async (node,id)=>{if(!await this.tab.locatorRead(id,node.index,"visible"))return null;const observation=this.tab.currentObservation(id),target=observation.nodes.find(item=>item.index===node.index),frame=observation.frames?.find(item=>item.id===(target?.frameId ?? observation.frames?.[0]?.id));if(!target || !frame || !observation.frames)throw new RetryablePreflightError("Target frame unavailable; observe again");const box=await this.tab.nodeBoundingBox(frame,observation.frames,target.backendNodeId);if(!box || !await this.tab.locatorRead(id,node.index,"visible"))throw new RetryablePreflightError("Target geometry changed; observe again");return box;},options.timeoutMs,true); }
   inputValue(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"inputValue")) as string,options.timeoutMs,true); }
-  async isVisible(): Promise<boolean> {
-    const {state,matches} = await this.find();
+  async isVisible(options: {timeoutMs?:number} = {}): Promise<boolean> {
+    const timeoutMs=options.timeoutMs ?? 5000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000) throw new Error("Invalid locator timeout");
+    const deadline=performance.now()+timeoutMs, message="Timed out reading locator visibility";
+    const {state,matches} = await locatorReadBeforeDeadline(this.find(),timeoutMs,deadline,message);
     if (!matches.length) return false;
     if (matches.length > 1) throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
     const match = matches[0];
     this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css,this.guard(state.snapshotId,matches));
-    return await this.tab.locatorRead(state.snapshotId,match.node.index,"visible") as boolean;
+    return await locatorReadBeforeDeadline(this.tab.locatorRead(state.snapshotId,match.node.index,"visible"),timeoutMs,deadline,message) as boolean;
   }
-  async isHidden(): Promise<boolean> { return !(await this.isVisible()); }
-  async isDisabled(): Promise<boolean> { return !(await this.isEnabled()); }
+  async isHidden(options: {timeoutMs?:number} = {}): Promise<boolean> { return !(await this.isVisible(options)); }
+  async isDisabled(options: {timeoutMs?:number} = {}): Promise<boolean> { return !(await this.isEnabled(options)); }
   async waitFor(options: {state: "visible" | "hidden"; timeoutMs?: number}): Promise<void> {
     if (!options || !["visible","hidden"].includes(options.state)) throw new Error("Locator wait supports visible and hidden states");
     const timeoutMs = options.timeoutMs ?? 5_000;
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now() + timeoutMs;
     while (true) {
-      try { if (await locatorReadBeforeDeadline(this.isVisible(),timeoutMs,deadline,`Timed out waiting for locator to become ${options.state}`) === (options.state === "visible")) return; }
+      try { if (await locatorReadBeforeDeadline(this.isVisible({timeoutMs:0}),timeoutMs,deadline,`Timed out waiting for locator to become ${options.state}`) === (options.state === "visible")) return; }
       catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error(`Timed out waiting for locator to become ${options.state}`);

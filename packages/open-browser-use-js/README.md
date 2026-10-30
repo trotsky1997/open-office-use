@@ -265,6 +265,9 @@ issue a late action. Later action preparation and issued input may take longer.
 select, contenteditable elements, and supported explicit ARIA roles. Other
 elements raise an error. This state check does not guarantee that every input
 method supports the target control.
+`isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()` and
+`isEditable()` accept `timeoutMs` for their browser reads. `isVisible()` and
+`isHidden()` inspect the current match without waiting for it to appear.
 `isHidden()` returns the inverse of `isVisible()`, including for an absent match;
 `isDisabled()` returns the inverse of `isEnabled()` and waits for a match.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and

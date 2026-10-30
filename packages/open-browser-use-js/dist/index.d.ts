@@ -678,9 +678,15 @@ export declare class OpenBrowserUseCssLocator {
     private readAllText;
     private perform;
     private read;
-    isEnabled(): Promise<boolean>;
-    isChecked(): Promise<boolean>;
-    isEditable(): Promise<boolean>;
+    isEnabled(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isChecked(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isEditable(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
     boundingBox(options?: {
         timeoutMs?: number;
     }): Promise<{
@@ -692,9 +698,15 @@ export declare class OpenBrowserUseCssLocator {
     inputValue(options?: {
         timeoutMs?: number;
     }): Promise<string>;
-    isVisible(): Promise<boolean>;
-    isHidden(): Promise<boolean>;
-    isDisabled(): Promise<boolean>;
+    isVisible(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isHidden(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isDisabled(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
     waitFor(options: {
         state: "attached" | "detached" | "visible" | "hidden";
         timeoutMs?: number;
@@ -802,9 +814,15 @@ export declare class OpenBrowserUseRoleLocator {
     textContent(options?: {
         timeoutMs?: number;
     }): Promise<string | null>;
-    isEnabled(): Promise<boolean>;
-    isChecked(): Promise<boolean>;
-    isEditable(): Promise<boolean>;
+    isEnabled(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isChecked(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isEditable(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
     boundingBox(options?: {
         timeoutMs?: number;
     }): Promise<{
@@ -816,9 +834,15 @@ export declare class OpenBrowserUseRoleLocator {
     inputValue(options?: {
         timeoutMs?: number;
     }): Promise<string>;
-    isVisible(): Promise<boolean>;
-    isHidden(): Promise<boolean>;
-    isDisabled(): Promise<boolean>;
+    isVisible(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isHidden(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
+    isDisabled(options?: {
+        timeoutMs?: number;
+    }): Promise<boolean>;
     waitFor(options: {
         state: "visible" | "hidden";
         timeoutMs?: number;
