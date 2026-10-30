@@ -52,6 +52,15 @@ Open Browser Use 原生 host 清单和稳定链接，使用同一 host 名称的
 此二进制文件和扩展 ID。请保留工作目录与二进制文件路径；扩展 ID 变化后重新注册。
 可通过 `--browser` 选择受支持的其他浏览器。Windows 注册代码已有实现，端到端验证待完成。
 
+使用自定义 `--user-data-dir` 启动的 Chromium 实例可能从该目录查找 native host，
+而标准注册路径对应默认浏览器位置。macOS 或 Linux 上可在上述命令后增加：
+
+```bash
+--output "/absolute/path/to/user-data/NativeMessagingHosts/com.ifuryst.open_browser_use.extension.json"
+```
+
+此操作同样会更新稳定 host 链接；请核对所用浏览器及配置目录的实际查找位置。
+
 持久 JavaScript MCP 可使用构建产物的绝对路径配置：
 
 ```toml

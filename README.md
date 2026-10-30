@@ -63,6 +63,18 @@ the unpacked extension ID changes, register it again. Use `--browser` to
 select a supported non-default browser. Windows registration is present in
 the source and has not yet received end-to-end validation.
 
+For a Chromium instance launched with a custom `--user-data-dir`, its native
+host lookup can use that directory instead of the standard browser location.
+On macOS or Linux, register directly into that directory with the same command
+and an additional flag:
+
+```bash
+--output "/absolute/path/to/user-data/NativeMessagingHosts/com.ifuryst.open_browser_use.extension.json"
+```
+
+This also updates the stable host link. Verify the lookup location for the
+specific browser build and profile you run.
+
 Configure the persistent JavaScript MCP with the absolute path to the built
 file:
 
