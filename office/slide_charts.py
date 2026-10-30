@@ -345,6 +345,42 @@ def set_axis_bounds(source, output, part, axis_id, minimum, maximum, expected_sh
     return {'output': str(output), 'chart_part': part, 'axis_id': axis_id, 'minimum': minimum, 'maximum': maximum, 'affected_paths': selected['paths'], 'affected_paths_complete': selected['complete']}
 
 
+def set_literal_value(source, output, part, series, point, value, expected_sha256=None):
+    """Update one existing numeric literal point without rewriting the presentation."""
+    if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from slide chart inspection')
+    if any(isinstance(item, bool) or not isinstance(item, int) or not 1 <= item <= limit for item, limit in ((series, 30), (point, 200))): raise ValueError('Series and point must be positive one-based indices within inspection limits')
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value): raise ValueError('Chart value must be a finite number within ±1e100')
+    selected = {}
+    def select(file):
+        inventory = inspect(file); charts = [item for item in inventory['charts'] if item.get('chart_part') == part]
+        if not charts or any(item.get('plot_count') != 1 for item in charts): raise ValueError('Chart must have one inspectable plot')
+        chart = charts[0]
+        if len(chart['series']) != chart['series_total'] or series > len(chart['series']): raise ValueError('Series inventory is incomplete')
+        item = chart['series'][series - 1]
+        if item['references']['val']['status'] != 'literal' or item['values_truncated'] or item['unverified_values'] or point > len(item['values']) or item['values'][point - 1] is None: raise ValueError('Point must be an existing verified numeric literal')
+        selected['old_value'] = item['values'][point - 1]; selected['values'] = item['values']; selected['paths'] = [item['path'] for item in charts]; selected['complete'] = inventory['complete']
+        return part.lstrip('/')
+    def edit(tree, _archive):
+        areas = tree.getroot().findall(C + 'chart/' + C + 'plotArea')
+        if len(areas) != 1: raise ValueError('Chart plot area is ambiguous')
+        plots = [node for node in areas[0] if isinstance(node.tag, str) and node.tag.startswith(C) and node.tag.endswith('Chart')]
+        if len(plots) != 1: raise ValueError('Chart plot structure is unsupported')
+        all_series = plots[0].findall(C + 'ser')
+        if series > len(all_series): raise ValueError('Chart series changed')
+        values = all_series[series - 1].findall(C + 'val/' + C + 'numLit')
+        if len(values) != 1: raise ValueError('Chart literal values changed')
+        points = [node for node in values[0].findall(C + 'pt') if node.get('idx') == str(point - 1)]
+        if len(points) != 1: raise ValueError('Chart point is missing or ambiguous')
+        nodes = points[0].findall(C + 'v')
+        if len(nodes) != 1 or len(nodes[0]) or nodes[0].attrib: raise ValueError('Chart point value has unsupported structure')
+        if plots[0].tag in (C + 'pieChart', C + 'doughnutChart'):
+            if value < 0: raise ValueError('Pie chart values must be nonnegative')
+            if value == 0 and not any(item is not None and item > 0 for index, item in enumerate(selected['values']) if index != point - 1): raise ValueError('Pie chart requires a positive value')
+        nodes[0].text = str(value)
+    ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+    return {'output': str(output), 'chart_part': part, 'series': series, 'point': point, 'old_value': selected['old_value'], 'value': value, 'affected_paths': selected['paths'], 'affected_paths_complete': selected['complete']}
+
+
 def sync(source, output, part, reference, allow_formula_caches=False, expected_sha256=None):
     """Synchronize one verified chart reference from its saved embedded workbook."""
     if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from slide chart inspection')

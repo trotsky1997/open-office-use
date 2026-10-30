@@ -1,5 +1,6 @@
 """Inspect PowerPoint chart caches, revisions and bounded failure modes."""
 import hashlib
+import copy
 import io
 import json
 import subprocess
@@ -49,6 +50,35 @@ with tempfile.TemporaryDirectory() as tmp:
     axis_id=next(item['id'] for item in literal_chart['axis_inventory']['axes'] if item['type']=='valAx')
     session.set_slide_chart_axis_bounds(literal_draft,0,literal_chart['chart_part'],axis_id,0,110,literal_report['snapshot_sha256'])
     assert session.inspect_slide_charts(literal_draft,1)['charts'][0]['axis_range_candidates']['count']==1
+    point_draft=root/'literal-point-draft'; session.start(point_draft,source=literal)
+    for bad in [(0,1,2),(1,3,2),(1,1,True),(1,1,float('inf'))]:
+        try: session.set_slide_chart_literal_value(point_draft,0,literal_chart['chart_part'],*bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid literal point edit accepted')
+    try: session.set_slide_chart_literal_value(point_draft,0,literal_chart['chart_part'],1,1,130,'0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale literal chart snapshot accepted')
+    assert session.info(point_draft)['latest_revision']==0
+    point_edit=session.set_slide_chart_literal_value(point_draft,0,literal_chart['chart_part'],1,1,130,literal_report['snapshot_sha256'])
+    assert point_edit['old_value']==100 and point_edit['affected_paths']==[literal_chart['path']]
+    assert session.inspect_slide_charts(point_draft,1)['charts'][0]['series'][0]['values']==[130,120]
+    with zipfile.ZipFile(literal) as before,zipfile.ZipFile(point_edit['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name != literal_chart['chart_part'].lstrip('/'))
+    cli=Path(__file__).with_name('open_office_use.py')
+    command=[sys.executable,str(cli),'session','set-slide-chart-literal-value',str(point_draft),'--base','1','--part',literal_chart['chart_part'],'--series','1','--point','2','--value','140']
+    assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2
+    assert session.inspect_slide_charts(point_draft,2)['charts'][0]['series'][0]['values']==[130,140]
+    shared_literal=root/'shared-literal.pptx'; deck=Presentation(literal); shape=next(item for item in deck.slides[0].shapes if item.has_chart)
+    duplicate=copy.deepcopy(shape._element); duplicate.nvGraphicFramePr.cNvPr.set('id','1000'); shape._element.addnext(duplicate); deck.save(shared_literal)
+    shared_report=slide_charts.inspect(shared_literal); shared_draft=root/'shared-literal-draft'; session.start(shared_draft,source=shared_literal)
+    shared_change=session.set_slide_chart_literal_value(shared_draft,0,literal_chart['chart_part'],1,1,145,shared_report['snapshot_sha256'])
+    assert len(shared_change['affected_paths'])==2 and shared_change['affected_paths_complete']
+    assert all(item['series'][0]['values'][0]==145 for item in session.inspect_slide_charts(shared_draft,1)['charts'])
+    referenced_draft=root/'reference-point-draft'; session.start(referenced_draft,source=source)
+    try: session.set_slide_chart_literal_value(referenced_draft,0,chart['chart_part'],1,1,130)
+    except ValueError: pass
+    else: raise AssertionError('Referenced chart value accepted')
+    assert session.info(referenced_draft)['latest_revision']==0
     grid_draft=root/'grid-draft';session.start(grid_draft,source=source)
     grid=session.read_slide_chart_grid(grid_draft,0,chart['chart_part'],'Sheet1','B2:B3')
     assert grid['rows'][0][0]['value']==100 and grid['rows'][0][0]['editable']

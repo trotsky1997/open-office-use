@@ -117,6 +117,12 @@ def session_sync_chart_cache(directory: str, base_revision: int, part: str, refe
 
 
 @server.tool()
+def session_set_slide_chart_literal_value(directory: str, base_revision: int, part: str, series: StrictInt, point: StrictInt, value: StrictFloat, expected_sha256: str | None = None) -> dict[str, Any]:
+    """Set one existing numeric literal chart point using one-based series and point indices from inspection. Shared chart parts affect all placements."""
+    return session.set_slide_chart_literal_value(directory, base_revision, part, series, point, value, expected_sha256)
+
+
+@server.tool()
 def session_set_slide_chart_axis_bounds(directory: str, base_revision: int, part: str, axis_id: str, minimum: StrictFloat | None, maximum: StrictFloat | None, expected_sha256: str | None = None) -> dict[str, Any]:
     """Set both value-axis bounds in a slide chart; null clears a bound to automatic. Use an inspected chart part, axis ID and snapshot."""
     return session.set_slide_chart_axis_bounds(directory, base_revision, part, axis_id, minimum, maximum, expected_sha256)

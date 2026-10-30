@@ -57,3 +57,5 @@ Use `session_set_slide_chart_axis_bounds` with an inspected chart part, value-ax
 Inspect `axis_range_candidates` for saved cache points outside explicit value-axis bounds. It covers one unstacked bar/column or line plot; unsupported structures report their reason. Cache freshness and rendered clipping require separate review.
 
 Chart inspection also reads directly embedded literal category and numeric series data. Check workbook status: literal-only charts may have no embedded worksheet to reconcile or edit.
+
+For a numeric literal chart series, `session_set_slide_chart_literal_value` updates an existing point by one-based series and point positions from chart inspection. It edits the chart part directly, with no embedded workbook update; inspect affected paths and render the slide.

@@ -1451,6 +1451,7 @@ def main():
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_nav = sub.add_parser('inspect-slide-navigation'); session_nav.add_argument('directory'); session_nav.add_argument('--revision', type=int, required=True)
     session_charts = sub.add_parser('inspect-slide-charts'); session_charts.add_argument('directory'); session_charts.add_argument('--revision', type=int, required=True)
+    literal_edit = sub.add_parser('set-slide-chart-literal-value'); literal_edit.add_argument('directory'); literal_edit.add_argument('--base', type=int, required=True); literal_edit.add_argument('--part', required=True); literal_edit.add_argument('--series', type=int, required=True); literal_edit.add_argument('--point', type=int, required=True); literal_edit.add_argument('--value', type=float, required=True); literal_edit.add_argument('--expected-sha256')
     axis_edit = sub.add_parser('set-slide-chart-axis-bounds'); axis_edit.add_argument('directory'); axis_edit.add_argument('--base', type=int, required=True); axis_edit.add_argument('--part', required=True); axis_edit.add_argument('--axis-id', required=True); axis_edit.add_argument('--minimum', type=lambda value: None if value == 'auto' else float(value), required=True, help='Number or auto'); axis_edit.add_argument('--maximum', type=lambda value: None if value == 'auto' else float(value), required=True, help='Number or auto'); axis_edit.add_argument('--expected-sha256')
     slide_chart_sync = sub.add_parser('sync-slide-chart-cache'); slide_chart_sync.add_argument('directory'); slide_chart_sync.add_argument('--base', type=int, required=True); slide_chart_sync.add_argument('--part', required=True); slide_chart_sync.add_argument('--reference', type=int, required=True); slide_chart_sync.add_argument('--allow-formula-caches', action='store_true'); slide_chart_sync.add_argument('--expected-sha256')
     session_external = sub.add_parser('external-links'); session_external.add_argument('directory'); session_external.add_argument('--revision', type=int, required=True)
@@ -1574,6 +1575,8 @@ def main():
                 result = session.inspect_slide_navigation(args.directory, args.revision)
             elif args.action == 'inspect-slide-charts':
                 result = session.inspect_slide_charts(args.directory, args.revision)
+            elif args.action == 'set-slide-chart-literal-value':
+                result = session.set_slide_chart_literal_value(args.directory, args.base, args.part, args.series, args.point, args.value, args.expected_sha256)
             elif args.action == 'set-slide-chart-axis-bounds':
                 result = session.set_slide_chart_axis_bounds(args.directory, args.base, args.part, args.axis_id, args.minimum, args.maximum, args.expected_sha256)
             elif args.action == 'sync-slide-chart-cache':

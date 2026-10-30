@@ -445,3 +445,5 @@ Added a revision-bound viewer panel for inspecting and editing slide chart axes,
 Added bounded slide-chart axis range candidates and review flags based on saved chart caches, with explicit unsupported coverage.
 
 Probed OfficeCLI reference artifacts and added PowerPoint literal chart category, name and numeric value inspection, including axis range checks. Source DOCX and PPTX schema diagnostics were present before edits.
+
+Added snapshot-bound editing of existing numeric literal chart points, with shared-placement reporting and preservation checks.
