@@ -608,6 +608,8 @@ unsubscribe();
   the next download started after the wait is registered. Chrome download events
   currently lack a reliable tab association here, so a concurrent download from
   another tab can satisfy the wait; verify the result before using its path.
+  The download handle exposes `url`, when the browser supplies it; URLs may
+  contain credentials or signed query parameters, so handle them as page data.
   Only one Chrome download-start wait can be active at a time; a second wait
   fails immediately. Ending its session, closing its tab, or detaching its
   debugger cancels the pending wait.

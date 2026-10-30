@@ -21,7 +21,7 @@ type Tab = {
   loading: boolean; pendingUrl?: string; loadError?: { code: number; description: string; url: string };
 };
 type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; uploadFiles: Set<string>; uploadEpoch: number; download?: { directory: string; maxBytes: number }; downloadEpoch: number; closing?: boolean };
-type DownloadWait = { scopeId: string; tabId: number; epoch: number; authorized: () => boolean; signal?: AbortSignal; resolve: (value: {downloadId: string}) => void; reject: (error: Error) => void };
+type DownloadWait = { scopeId: string; tabId: number; epoch: number; authorized: () => boolean; signal?: AbortSignal; resolve: (value: {downloadId: string; url: string | null}) => void; reject: (error: Error) => void };
 type DownloadRecord = { scopeId: string; epoch: number; path: string; done: Promise<string | null>; cancel: () => void; cleanup: () => void };
 type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds: { x: number; y: number; width: number; height: number }; remove: () => void };
 const pageCommands = new Set([
@@ -326,8 +326,8 @@ export class IabRuntime implements Backend {
     if (this.downloads.size >= 128) { event.preventDefault(); waiter.reject(new Error('IAB_DOWNLOAD_LIMIT')); return; }
     this.downloadWaits.delete(tab.id);
     const maxBytes=scope.download.maxBytes;
-    let totalBytes: number, filename: string;
-    try { totalBytes=item.getTotalBytes(); filename=item.getFilename(); }
+    let totalBytes: number, filename: string, url: string;
+    try { totalBytes=item.getTotalBytes(); filename=item.getFilename(); url=item.getURL(); }
     catch { event.preventDefault(); waiter.reject(new Error('IAB_DOWNLOAD_FAILED')); return; }
     if (totalBytes > maxBytes) { event.preventDefault(); waiter.reject(new Error('IAB_DOWNLOAD_SIZE_LIMIT')); return; }
     const id=randomUUID(), extension=extname(filename).toLowerCase();
@@ -353,18 +353,18 @@ export class IabRuntime implements Backend {
     this.downloads.set(id,{scopeId:waiter.scopeId,epoch:waiter.epoch,path,done,cancel,cleanup});
     try { item.setSavePath(path); }
     catch { event.preventDefault(); cancel(); this.downloads.delete(id); cleanup(); waiter.reject(new Error('IAB_DOWNLOAD_FAILED')); return; }
-    waiter.resolve({downloadId:id});
+    waiter.resolve({downloadId:id,url:url || null});
   }
 
-  private async waitForDownload(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<{downloadId: string}> {
+  private async waitForDownload(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<{downloadId: string; url: string | null}> {
     const timeoutMs=params.timeoutMs ?? 10_000, scope=this.scope(scopeId);
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000 || (params.waitId !== undefined && (typeof params.waitId !== 'string' || !/^[0-9a-f-]{36}$/.test(params.waitId)))) throw new Error('Invalid download wait');
     if (!scope.download) throw new Error('IAB_DOWNLOAD_NOT_CONFIGURED');
     if (this.downloadWaits.has(tab.id)) throw new Error('IAB_DOWNLOAD_WAIT_PENDING');
     if (signal?.aborted || !authorized()) throw new Error('IAB_AUTH_REVOKED');
     tab.pending++;
-    let resolveEvent!: (value: {downloadId: string}) => void, rejectEvent!: (error: Error) => void;
-    const result=new Promise<{downloadId: string}>((resolve,reject)=>{resolveEvent=resolve;rejectEvent=reject;});
+    let resolveEvent!: (value: {downloadId: string; url: string | null}) => void, rejectEvent!: (error: Error) => void;
+    const result=new Promise<{downloadId: string; url: string | null}>((resolve,reject)=>{resolveEvent=resolve;rejectEvent=reject;});
     const waiter: DownloadWait={scopeId,tabId:tab.id,epoch:scope.downloadEpoch,authorized,signal,resolve:resolveEvent,reject:rejectEvent};
     this.downloadWaits.set(tab.id,waiter);
     const abort=()=>waiter.reject(new Error('IAB_AUTH_REVOKED'));

@@ -161,3 +161,5 @@ Chrome 下载并发检查补充原生链路验证：macOS 隔离 Chromium profil
 Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器断开取消，释放唯一的下载等待槽；其他会话结束不会取消该等待。扩展测试 27 项通过，macOS 隔离 Chromium 经原生消息链路实测 turnEnded 取消等待及后续重新注册。
 
 修复下载等待注册与会话清理的竞态：在异步校验标签前记录等待，若会话清理期间取消，则校验完成后直接结束，既不注册监听也不发送准备通知。扩展测试 28 项通过；macOS 隔离 Chromium 的真实下载、并发拒绝及会话取消检查通过。
+
+下载句柄新增浏览器报告的 URL，Chrome 扩展及 Electron 后端均提供，未提供时为 null。macOS 隔离 Chromium 原生消息链路及 Electron 44 页面分别验证下载 URL 与文件内容；SDK 53 项、Electron 45 项及扩展下载测试通过。Chrome 的 URL 有助于人工或调用方核对，但同 URL 并发仍无法可靠判定标签归属。隔离 Chromium 141 实验中，页面调试目标拒绝 Browser.setDownloadBehavior，Page.downloadProgress 不含保存路径。

@@ -352,9 +352,11 @@ export class OpenBrowserUseDialog {
 export class OpenBrowserUseDownload {
     client;
     id;
-    constructor(client, id) {
+    url;
+    constructor(client, id, url = null) {
         this.client = client;
         this.id = id;
+        this.url = url;
     }
     async path(timeoutMs) {
         const result = await this.client.downloadPath(this.id, timeoutMs);
@@ -374,7 +376,9 @@ export class OpenBrowserUseDownloadWait {
         const result = await this.result;
         if (!isObject(result) || typeof result.downloadId !== "string" || !result.downloadId)
             throw new Error("Browser returned an invalid download ID");
-        return new OpenBrowserUseDownload(this.client, result.downloadId);
+        if (result.url !== undefined && result.url !== null && typeof result.url !== "string")
+            throw new Error("Browser returned an invalid download URL");
+        return new OpenBrowserUseDownload(this.client, result.downloadId, result.url ?? null);
     }
 }
 export class OpenBrowserUseFileChooser {

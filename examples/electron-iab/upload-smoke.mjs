@@ -27,7 +27,7 @@ app.whenReady().then(async()=>{
     await sdk.evaluate(`(()=>{const a=document.createElement('a');a.href='/download-fixture';a.textContent='Download fixture';a.id='fixture-download';Object.assign(a.style,{position:'fixed',left:'20px',top:'100px',zIndex:'9999'});document.body.append(a)})()`);
     const downloadReady=await sdk.prepareDownload({timeoutMs:20000});const downloadWait=downloadReady.wait();void downloadWait.catch(()=>{});
     await sdk.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});
-    const download=await downloadWait, downloadPath=await download.path(20000);assert.ok(downloadPath);assert.equal(readFileSync(downloadPath,'utf8'),'isolated download fixture');
+    const download=await downloadWait, downloadPath=await download.path(20000);assert.equal(download.url,fixture.url+'/download-fixture');assert.ok(downloadPath);assert.equal(readFileSync(downloadPath,'utf8'),'isolated download fixture');
     await scope.downloads.configure({directory:root,maxBytes:1});
     const limitReady=await sdk.prepareDownload({timeoutMs:20000}),limitedWait=limitReady.wait();void limitedWait.catch(()=>{});
     await sdk.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});

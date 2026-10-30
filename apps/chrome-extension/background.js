@@ -778,7 +778,7 @@ class BrowserBackend {
       );
       if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId);
       const download = await waiting;
-      return { downloadId: download.id };
+      return { downloadId: download.id, url: download.url || null };
     } finally {
       if (this.downloadStartWait === wait) this.downloadStartWait = null;
     }

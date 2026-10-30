@@ -218,7 +218,7 @@ test('prepared download waits for registration and retains the eventual result',
   await new Promise(resolve=>setImmediate(resolve));assert.equal(prepared,false);
   for(const handler of handlers)handler({method:'onDownloadWaitReady',params:{waitId}});
   const wait=await preparing;assert.equal(handlers.size,1);
-  complete({downloadId:'123'});const download=await wait.wait();assert.equal(download.id,'123');assert.equal(await download.path(),'/tmp/fixture');
+  complete({downloadId:'123',url:'https://example.test/file'});const download=await wait.wait();assert.equal(download.id,'123');assert.equal(download.url,'https://example.test/file');assert.equal(await download.path(),'/tmp/fixture');
   client.request=()=>{throw new Error('connection unavailable');};
   await assert.rejects(tab.prepareDownload(),/connection unavailable/);assert.equal(handlers.size,1);
 });

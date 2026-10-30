@@ -71,7 +71,7 @@ test('authorized socket client can complete the file chooser handshake', {skip:!
 
 function fakeDownload(filename='fixture.txt',total=10) {
   const item=Object.assign(new EventEmitter(),{filename,total,received:0,cancelled:false,path:'',
-    getFilename(){return this.filename;},getTotalBytes(){return this.total;},getReceivedBytes(){return this.received;},
+    getFilename(){return this.filename;},getURL(){return 'https://example.test/fixture';},getTotalBytes(){return this.total;},getReceivedBytes(){return this.received;},
     setSavePath(path){this.path=path;},cancel(){this.cancelled=true;this.emit('done',{},'cancelled');}});
   return item;
 }
@@ -92,7 +92,7 @@ test('downloads require scoped authorization and match the originating page',asy
   const sameScope={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',sameScope,fakeDownload(),adapter.views[2].webContents);assert.equal(sameScope.blocked,true);
   const item=fakeDownload('../../private.txt'),event={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',event,item,wc);
   const duplicate={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',duplicate,fakeDownload(),wc);assert.equal(duplicate.blocked,true);
-  const result=await pending;unsubscribe();const resolvedDir=await import('node:fs/promises').then(fs=>fs.realpath(dir));assert.equal(event.blocked,false);assert.ok(item.path.startsWith(resolvedDir+'/'));assert.ok(item.path.endsWith('.txt'));assert.notEqual(item.path,join(resolvedDir,'private.txt'));
+  const result=await pending;unsubscribe();assert.equal(result.url,'https://example.test/fixture');const resolvedDir=await import('node:fs/promises').then(fs=>fs.realpath(dir));assert.equal(event.blocked,false);assert.ok(item.path.startsWith(resolvedDir+'/'));assert.ok(item.path.endsWith('.txt'));assert.notEqual(item.path,join(resolvedDir,'private.txt'));
   await assert.rejects(runtime.dispatch('b','downloadPath',{downloadId:result.downloadId},['page.control','files.download']),/UNAVAILABLE/);
   const path=runtime.dispatch('a','downloadPath',{downloadId:result.downloadId,timeoutMs:1000},['page.control','files.download']);
   item.received=10;item.emit('done',{},'completed');assert.equal((await path).path,item.path);

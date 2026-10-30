@@ -143,7 +143,8 @@ export declare class OpenBrowserUseDialog {
 export declare class OpenBrowserUseDownload {
     private client;
     readonly id: string;
-    constructor(client: OpenBrowserUseClient, id: string);
+    readonly url: string | null;
+    constructor(client: OpenBrowserUseClient, id: string, url?: string | null);
     path(timeoutMs?: number): Promise<string | null>;
 }
 export declare class OpenBrowserUseDownloadWait {
