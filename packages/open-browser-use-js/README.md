@@ -373,7 +373,10 @@ Semantic locators also support `and(other)` and `or(other)` with semantic
 locators in the same tab and frame. They combine the observed target set,
 deduplicate unions in observation order, and recheck matches before input.
 Position selection and filters can follow the combination. Combination nesting
-is limited to eight levels; mixing CSS and semantic operands is not supported.
+is limited to eight levels. `and()` also accepts one CSS and one semantic
+locator, in either order; the CSS operand must have no semantic root scope.
+The intersection contains observable semantic targets in the CSS result.
+Mixed CSS and semantic `or()` is not supported.
 Semantic locators are not yet supported as inner filters. CSS locators can scope
 `getByRole`, `getByLabel`, `getByText`, `getByAltText` and `getByPlaceholder`;
 the first semantic target is resolved in the CSS locator's selected frame.

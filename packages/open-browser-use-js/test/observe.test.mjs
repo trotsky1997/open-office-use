@@ -942,6 +942,18 @@ test('semantic locator combinations preserve order, positions, and scope',async(
   assert.throws(()=>save.and(new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1).playwright.getByRole('button')),/same tab and frame/);
 });
 
+test('CSS and semantic intersection tracks backend identities',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  const nodes=[{index:1,backendNodeId:101,frameId:'main',role:'button',name:'Save'},{index:2,backendNodeId:102,frameId:'main',role:'button',name:'Save'}],frames=[{id:'main'}];
+  tab.observe=async()=>({snapshotId:'1',nodes,unavailableFrames:[],text:'',textMode:'full',truncated:false});
+  tab.currentObservation=id=>({id,documentId:9,frames,nodes,unindexedText:[],guards:new Map()});tab.bindLocatorScope=()=>{};
+  const role=tab.playwright.getByRole('button',{name:'Save'}),css=tab.playwright.locator('.primary');let ids=[102];
+  css.snapshot=async()=>({documentId:9,frames,frame:frames[0],ids});
+  assert.equal(await role.and(css).count(),1);assert.equal(await css.and(role).count(),1);
+  ids=[];assert.equal(await role.and(css).count(),0);
+  assert.throws(()=>role.and(tab.browser.tab(2).playwright.locator('button')),/same tab and frame/);
+});
+
 test("role locator waits for a missing target but never retries an issued action", async () => {
   const tab = new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
   let nodes=[], observations=0, clicks=0;

@@ -363,3 +363,5 @@ Chrome 与 Electron 的会话标签列表提供作用域内 openerTabId；新增
 浏览器历史高层接口返回具名 BrowserHistoryEntry 类型并校验后端数据，支持 TypeScript 直接使用 url、dateVisited 和可选 title。隔离 Linux ARM64 Chromium 在真实 MDN 访问后查询其历史记录成功；Electron 不提供历史记录。
 
 语义定位器支持同标签、同 frame 的 and/or 组合，按观察顺序去重并支持后续位置与筛选，输入前沿用匹配复核；组合限八层。SDK 75 项通过；隔离 Linux ARM64 Chromium 原生扩展验证跨 frame 观察结果组合、可信点击和页面变化后的重算。CSS 与语义定位器混合组合、Windows 和 Electron 本轮未测。
+
+CSS 与语义定位器支持双向 and 交集，按 frame 和后端节点身份求交，沿用输入前重新匹配；语义根作用域的 CSS 操作数暂不支持。SDK 76 项通过；隔离 Linux ARM64 Chromium 原生扩展验证双向交集、可信点击及页面变化后的结果。混合 or、Electron 与 Windows 本轮未验证。

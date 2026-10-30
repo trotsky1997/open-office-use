@@ -635,6 +635,7 @@ export declare class OpenBrowserUseCssLocator {
     private step;
     private innerSteps;
     and(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator;
+    and(locator: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator;
     or(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator;
     filter(options: {
         hasText?: TextMatcher;
@@ -723,7 +724,7 @@ export declare class OpenBrowserUseRoleLocator {
     constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[], framePath?: readonly string[] | undefined, cssScope?: OpenBrowserUseCssLocator | undefined, combination?: {
         kind: "and" | "or";
         left: OpenBrowserUseRoleLocator;
-        right: OpenBrowserUseRoleLocator;
+        right: OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator;
     } | undefined);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
@@ -745,7 +746,7 @@ export declare class OpenBrowserUseRoleLocator {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
     private combine;
-    and(other: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator;
+    and(other: OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator): OpenBrowserUseRoleLocator;
     or(other: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator;
     filter(options: {
         hasText?: TextMatcher;

@@ -3370,7 +3370,11 @@ export class OpenBrowserUseCssLocator {
     }
     /** @internal */
     async countWithin(observation, index) {
-        return (await this.tab.queryCss(this.step(), this.framePath, this.scopes, undefined, { observation, index })).ids.length;
+        return (await this.snapshotWithin(observation, index)).ids.length;
+    }
+    /** @internal */
+    snapshotWithin(observation, index) {
+        return this.tab.queryCss(this.step(), this.framePath, this.scopes, undefined, { observation, index });
     }
     getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     getByRole(role, options = {}) { return this.tab.playwright.getByRole(role, options).withinCss(this); }
@@ -3409,6 +3413,8 @@ export class OpenBrowserUseCssLocator {
         return steps;
     }
     and(locator) {
+        if (locator instanceof OpenBrowserUseRoleLocator)
+            return locator.and(this);
         if (locator?.semanticScope !== this.semanticScope)
             throw new Error("Intersection locators must share a semantic scope");
         const filter = { and: this.innerSteps(locator) };
@@ -3629,9 +3635,13 @@ export class OpenBrowserUseRoleLocator {
     getByAltText(text, options = {}) { return this.child(this.tab.playwright.getByAltText(text, options)); }
     getByPlaceholder(text, options = {}) { return this.child(this.tab.playwright.getByPlaceholder(text, options)); }
     combine(kind, other) {
-        if (!(other instanceof OpenBrowserUseRoleLocator) || other.tab.browser !== this.tab.browser || other.tab.id !== this.tab.id || JSON.stringify(other.framePath ?? null) !== JSON.stringify(this.framePath ?? null))
+        if (other instanceof OpenBrowserUseCssLocator) {
+            if (kind !== "and" || !other.isRelativeTo(this.tab, this.framePath))
+                throw new Error("Combined locators must belong to the same tab and frame without a semantic CSS scope");
+        }
+        else if (!(other instanceof OpenBrowserUseRoleLocator) || other.tab.browser !== this.tab.browser || other.tab.id !== this.tab.id || JSON.stringify(other.framePath ?? null) !== JSON.stringify(this.framePath ?? null))
             throw new Error("Combined locators must belong to the same tab and frame");
-        const depth = (locator) => locator.combination ? 1 + Math.max(depth(locator.combination.left), depth(locator.combination.right)) : 1;
+        const depth = (locator) => locator instanceof OpenBrowserUseRoleLocator && locator.combination ? 1 + Math.max(depth(locator.combination.left), depth(locator.combination.right)) : 1;
         if (Math.max(depth(this), depth(other)) >= 8)
             throw new Error("Locator combination nesting exceeds 8 levels");
         return new OpenBrowserUseRoleLocator(this.tab, [], {}, undefined, false, "name", undefined, [], [], this.framePath, undefined, { kind, left: this, right: other });
@@ -3678,7 +3688,7 @@ export class OpenBrowserUseRoleLocator {
         return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.position === undefined ? [...this.filtersBefore, filter] : this.filtersBefore, this.position === undefined ? this.filtersAfter : [...this.filtersAfter, filter], this.framePath, this.cssScope, this.combination);
     }
     needsText() {
-        return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText() || !!this.combination && (this.combination.left.needsText() || this.combination.right.needsText());
+        return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText() || !!this.combination && (this.combination.left.needsText() || (this.combination.right instanceof OpenBrowserUseRoleLocator && this.combination.right.needsText()));
     }
     async matches(observation, baseIndex) {
         const frameId = this.framePath ? await this.tab.resolveFramePath(this.framePath, undefined, observation.frames) : undefined;
@@ -3695,7 +3705,17 @@ export class OpenBrowserUseRoleLocator {
         const normalize = (value) => this.textMatch ? value.replace(/\s+/g, " ").trim() : value;
         const matches = [];
         if (this.combination) {
-            const left = await this.combination.left.matches(observation, baseIndex), right = await this.combination.right.matches(observation, baseIndex);
+            const left = await this.combination.left.matches(observation, baseIndex);
+            let right;
+            if (this.combination.right instanceof OpenBrowserUseCssLocator) {
+                const snapshot = baseIndex === undefined ? await this.combination.right.snapshot() : await this.combination.right.snapshotWithin(observation, baseIndex);
+                if (snapshot.documentId !== observation.documentId || JSON.stringify(snapshot.frames) !== JSON.stringify(observation.frames))
+                    throw new RetryablePreflightError("CSS intersection changed; observe again");
+                const ids = new Set(snapshot.ids);
+                right = left.filter(item => { const node = observation.nodes.find(node => node.index === item.node.index); return !!node && (node.frameId ?? observation.frames?.[0]?.id) === snapshot.frame?.id && ids.has(node.backendNodeId); });
+            }
+            else
+                right = await this.combination.right.matches(observation, baseIndex);
             const byIndex = new Map(right.map(item => [item.node.index, item]));
             if (this.combination.kind === 'and')
                 matches.push(...left.filter(item => byIndex.has(item.node.index)));
