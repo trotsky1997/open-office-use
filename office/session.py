@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.formula.tokenizer import Tokenizer, TokenizerError
 from pptx import Presentation
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
 
@@ -896,6 +897,32 @@ def read_grid(directory, base_revision, sheet, cell_range):
             'rows': rows, 'data_validation': validations, 'cache_freshness': 'unknown'}
 
 
+def table_formula_node(part, node):
+    ns = grid_styles.X
+    tag = node.tag
+    if part.startswith('xl/worksheets/') and part.endswith('.xml') and tag in (ns+'f', ns+'formula', ns+'formula1', ns+'formula2'): return True
+    if part == 'xl/workbook.xml' and tag == ns+'definedName': return True
+    return part.startswith('xl/charts/') and tag == '{http://schemas.openxmlformats.org/drawingml/2006/chart}f'
+
+
+def rewrite_table_formula(formula, table_name, old_name, new_name):
+    prefix = '=' if formula.startswith('=') else ''; expression = formula[len(prefix):]
+    try: tokens = Tokenizer('=' + expression).items
+    except (TokenizerError, ValueError, IndexError) as exc: raise ValueError('Unsupported structured formula') from exc
+    if ''.join(token.value for token in tokens) != expression: raise ValueError('Structured formula cannot be preserved exactly')
+    updated = []; count = 0
+    for token in tokens:
+        value = token.value
+        if '[' in value or ']' in value:
+            match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.]*)\[([^\[\]#@,':]+)\]", value) if token.type == 'OPERAND' and token.subtype == 'RANGE' else None
+            if match is None: raise ValueError('Unsupported structured reference')
+            if match[1].casefold() == table_name.casefold() and match[2].casefold() == old_name.casefold():
+                if re.search(r"[#@,':]", new_name): raise ValueError('New name requires unsupported structured-reference escaping')
+                value = match[1] + '[' + new_name + ']'; count += 1
+        updated.append(value)
+    return prefix + ''.join(updated), count
+
+
 def rename_table_column(directory, base_revision, sheet, table_name, old_name, new_name):
     """Rename one table header and its column metadata in one revision."""
     if not isinstance(sheet, str) or not sheet or '/' in sheet or '\x00' in sheet: raise ValueError('Invalid sheet name')
@@ -939,17 +966,26 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
             if table_owners != [(sheet_part, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table')]: raise ValueError('Table part has shared or unsupported relationships')
             xml_parts = [name for name in parts if name.startswith('xl/') and name.endswith('.xml')]
             if len(xml_parts) > 1000: raise ValueError('Workbook has too many XML parts to inspect')
-            table_declarations = []
+            table_declarations = []; rewrites = {}; rewrite_count = 0
             for name in xml_parts:
                 if archive.getinfo(name).file_size > 8 * 1024 * 1024: raise ValueError('Workbook XML part exceeds table rename inspection limit')
                 root = ooxml.parse_xml(archive.read(name)).getroot()
                 if root.tag == grid_styles.X+'table' and any((root.get(key) or '').casefold() == table_name.casefold() for key in ('name','displayName')): table_declarations.append(name)
+                formula_index = 0
                 for node in root.iter():
                     if not isinstance(node.tag, str): continue
-                    values = [node.text or '', node.tail or '', *node.attrib.values()]
-                    if any('[' in value or ']' in value or re.search(r'_x005[bBdD]_', value) for value in values): raise ValueError('Workbook contains possible structured references; rename requires separate review')
-                    if node.tag.rsplit('}',1)[-1].lower() in ('f','formula','formula1','formula2','definedname','calculatedcolumnformula','totalsrowformula') and re.search(r'(?i)\b(?:INDIRECT|EVALUATE)\s*\(', node.text or ''):
-                        raise ValueError('Workbook contains indirect references; rename requires separate review')
+                    eligible = table_formula_node(name, node)
+                    if eligible: formula_index += 1
+                    text = node.text or ''; other = [node.tail or '', *node.attrib.values()]
+                    if any('[' in value or ']' in value or re.search(r'_x005[bBdD]_', value) for value in other) or re.search(r'_x005[bBdD]_', text): raise ValueError('Workbook contains ambiguous structured-reference text')
+                    if node.tag.rsplit('}',1)[-1].lower() in ('f','formula','formula1','formula2','definedname','calculatedcolumnformula','totalsrowformula') and re.search(r'(?i)\b(?:INDIRECT|EVALUATE)\s*\(', text): raise ValueError('Workbook contains indirect references; rename requires separate review')
+                    if '[' in text or ']' in text:
+                        if not eligible: raise ValueError('Workbook contains possible structured references outside supported formulas')
+                        updated, count = rewrite_table_formula(text, table_name, old_name, new_name)
+                        if count:
+                            if node.tag == grid_styles.X+'f' and (node.getparent().tag != grid_styles.X+'c' or node.get('t') not in (None, 'normal') or any(key != 't' for key in node.attrib)): raise ValueError('Shared or array formulas require separate review')
+                            rewrites.setdefault(name, []).append((formula_index, text, updated)); rewrite_count += count
+                            if rewrite_count > 500 or len(rewrites) > 100: raise ValueError('Structured-reference rewrite limit exceeded')
             if table_declarations != [table['part']]: raise ValueError('Table name is duplicated or ambiguous')
             tree = ooxml.parse_xml(archive.read(table['part'])); root = tree.getroot(); ns = grid_styles.X
             columns = root.findall(ns+'tableColumns')
@@ -992,14 +1028,55 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
         change = {'cell': address, 'value': new_name, 'type': 'text'}
         operation = {'command': 'set', 'path': f'/{sheet}/{address}', 'props': {'value': 'office-use-literal-text'}}
         result = grid_values.apply(snapshot, candidate, sheet, [change], [operation])
-        def edit(tree, _archive):
+        def edit(tree, archive):
             current = tree.getroot().findall(ns+'tableColumns/'+ns+'tableColumn')
             if len(current) != len(names) or [item.get('name') for item in current] != names: raise ValueError('Table column metadata changed')
             current[index].set('name', new_name)
-        try: ooxml.edit_xml(candidate, output, lambda _: table['part'], edit)
+            additional = {}
+            for part, edits in rewrites.items():
+                raw = archive.read(part); document = ooxml.parse_xml(raw); root = document.getroot()
+                formulas = [node for node in root.iter() if isinstance(node.tag, str) and table_formula_node(part, node)]
+                sheet_changed = False
+                for ordinal, old, replacement in edits:
+                    if ordinal > len(formulas) or formulas[ordinal-1].text != old: raise ValueError('Formula changed during table rename')
+                    node = formulas[ordinal-1]; node.text = replacement
+                    if node.tag == ns+'f':
+                        cell = node.getparent(); cached = cell.findall(ns+'v')
+                        if cell.tag != ns+'c' or len(cached) > 1: raise ValueError('Unsupported formula cache')
+                        for item in cached: cell.remove(item)
+                        sheet_changed = True
+                if sheet_changed: cell_text.request_recalculation(root)
+                additional[part] = ooxml.serialize_xml(document, raw)
+            if rewrites:
+                raw = additional.get('xl/workbook.xml', archive.read('xl/workbook.xml')); document = ooxml.parse_xml(raw); root = document.getroot()
+                if root.tag != ns+'workbook': raise ValueError('Invalid workbook XML')
+                calculations = root.findall(ns+'calcPr')
+                if len(calculations) > 1: raise ValueError('Ambiguous workbook calculation settings')
+                if calculations: calculation = calculations[0]
+                else:
+                    from lxml import etree
+                    calculation = etree.Element(ns+'calcPr')
+                    later = {ns+key for key in ('oleSize','customWorkbookViews','pivotCaches','smartTagPr','smartTagTypes','webPublishing','fileRecoveryPr','webPublishObjects','extLst')}
+                    position = next((i for i,item in enumerate(root) if item.tag in later),len(root)); root.insert(position,calculation)
+                for key in ('fullCalcOnLoad','forceFullCalc'):
+                    if calculation.get(key) not in (None,'0','1','true','false'): raise ValueError('Invalid calculation setting')
+                    calculation.set(key,'1')
+                additional['xl/workbook.xml'] = ooxml.serialize_xml(document, raw)
+                manifest = ooxml.parse_xml(archive.read('[Content_Types].xml'))
+                chain, _ = grid_values.remove_calculation_chain(archive, manifest)
+                if set(chain) & set(additional): raise ValueError('Calculation chain conflicts with formula edits')
+                additional.update(chain)
+            return additional
+        finished = Path(tmp) / 'finished.xlsx'
+        ooxml.edit_xml(candidate, finished, lambda _: table['part'], edit, allow_remove=True)
+        with zipfile.ZipFile(finished) as archive:
+            entries = archive.infolist()
+            if finished.stat().st_size > 128 * 1024 * 1024 or len(entries) > 5000 or len({item.filename for item in entries}) != len(entries) or sum(item.file_size for item in entries) > 128 * 1024 * 1024:
+                raise ValueError('Renamed workbook exceeds package limits')
+        try: os.link(finished, output)
         except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'table': table_name, 'cell': address,
-            'old_name': old_name, 'new_name': new_name, 'snapshot_sha256': digest, 'formula_cache_effect': result['formula_cache_effect'], 'chart_cache_effect': 'may_be_stale'}
+            'old_name': old_name, 'new_name': new_name, 'snapshot_sha256': digest, 'rewritten_references': rewrite_count, 'formula_cache_effect': result['formula_cache_effect'], 'chart_cache_effect': 'may_be_stale'}
 
 
 def edit_grid(directory, base_revision, sheet, cell_range, changes):

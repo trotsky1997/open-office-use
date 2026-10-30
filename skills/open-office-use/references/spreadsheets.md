@@ -19,4 +19,4 @@ Use `author_file` with `sheet_options.images` to embed a local PNG or JPEG as a 
 
 `author_file` can create native styled/filterable Excel tables using `sheet_options.tables`. Table headers and totals are read-only in the targeted grid and text replacement workflows; use a table-aware operation and review table metadata for changes there.
 
-Use `session_rename_table_column` to update a supported table header and column metadata together. Structured or indirect references and other opaque dependencies cause a refusal; inspect formula and chart caches afterward.
+Use `session_rename_table_column` to update a supported table header and column metadata together. Simple explicit structured references are rewritten; nested, implicit and indirect references or opaque dependencies cause a refusal. Recalculate and inspect formula and chart caches afterward.

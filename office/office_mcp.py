@@ -214,7 +214,7 @@ def session_edit_slide_chart_grid(directory: str, base_revision: int, part: str,
 
 @server.tool()
 def session_rename_table_column(directory: str, base_revision: int, sheet: str, table_name: str, old_name: str, new_name: str) -> dict[str, Any]:
-    """Rename a table header and its column metadata in one revision; structured or indirect references are rejected."""
+    """Rename a table column and rewrite supported simple structured references in one revision; complex and indirect references are rejected."""
     return session.rename_table_column(directory, base_revision, sheet, table_name, old_name, new_name)
 
 

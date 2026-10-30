@@ -7,6 +7,10 @@ from lxml import etree
 import subprocess
 from pathlib import Path
 from openpyxl import load_workbook
+from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.chart import LineChart, Reference
 from PIL import Image
 import xlsxwriter
 import open_office_use
@@ -130,7 +134,7 @@ with tempfile.TemporaryDirectory() as tmp:
     cli_draft=root/'rename-cli';session.start(cli_draft,source=table_file)
     command=[sys.executable,str(cli),'session','rename-table-column',str(cli_draft),'--base','0','--sheet','Sales','--table','SalesTable','--old','Revenue','--new','Amount']
     assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['new_name']=='Amount'
-    for index, expression in enumerate(['=SUM(SalesTable[Revenue])','=INDIRECT(A2)']):
+    for index, expression in enumerate(['=SUM(SalesTable[[#All],[Revenue]])','=INDIRECT(A2)','=[@Revenue]']):
         dependent=root/f'dependent-{index}.xlsx'
         open_office_use.author({'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C1':expression}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}},dependent)
         blocked=root/f'dependent-draft-{index}';session.start(blocked,source=dependent)
@@ -186,6 +190,69 @@ with tempfile.TemporaryDirectory() as tmp:
     with zipfile.ZipFile(shared_text_result['file']) as archive:
         shared_root=etree.fromstring(archive.read('xl/sharedStrings.xml'))
         assert shared_root.get('count') is None and shared_root.get('uniqueCount') is None
+    referenced=root/'referenced.xlsx'
+    ref_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C2':'=SUM(SalesTable[Revenue])'},'Other':{'A1':'=SUM(SalesTable[Revenue])+SalesTable[Revenue]'}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}}
+    open_office_use.author(ref_spec,referenced)
+    book=load_workbook(referenced);book.defined_names.add(DefinedName('RevenueRef',attr_text='SalesTable[Revenue]'))
+    book.calculation.calcMode='manual';book.calculation.fullCalcOnLoad=False;book.calculation.forceFullCalc=False
+    book['Other'].conditional_formatting.add('A1',FormulaRule(formula=['SUM(SalesTable[Revenue])>0']))
+    validation_rule=DataValidation(type='custom',formula1='SUM(SalesTable[Revenue])>0');book['Other'].add_data_validation(validation_rule);validation_rule.add('B1')
+    linked_chart=LineChart();linked_chart.add_data(Reference(book['Sales'],min_col=2,min_row=1,max_row=2),titles_from_data=True)
+    linked_chart.series[0].val.numRef.f='SalesTable[Revenue]';book['Other'].add_chart(linked_chart,'D2');book.save(referenced)
+    cached_chain=root/'referenced-cached.xlsx'
+    with zipfile.ZipFile(referenced) as before,zipfile.ZipFile(cached_chain,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/worksheets/sheet1.xml':
+                tree=etree.fromstring(data); ns='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                cell=next(item for item in tree.iter(ns+'c') if item.get('r')=='C2'); value=cell.find(ns+'v')
+                if value is None: value=etree.SubElement(cell,ns+'v')
+                value.text='240'; data=etree.tostring(tree)
+            elif entry.filename=='xl/_rels/workbook.xml.rels':
+                tree=etree.fromstring(data); rel=etree.SubElement(tree,'{http://schemas.openxmlformats.org/package/2006/relationships}Relationship')
+                rel.set('Id','rIdCalcChain');rel.set('Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain');rel.set('Target','calcChain.xml');data=etree.tostring(tree)
+            elif entry.filename=='[Content_Types].xml':
+                tree=etree.fromstring(data); item=etree.SubElement(tree,'{http://schemas.openxmlformats.org/package/2006/content-types}Override')
+                item.set('PartName','/xl/calcChain.xml');item.set('ContentType','application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml');data=etree.tostring(tree)
+            after.writestr(entry,data)
+        after.writestr('xl/calcChain.xml','<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="C2" i="1"/></calcChain>')
+    assert load_workbook(cached_chain,data_only=True)['Sales']['C2'].value==240
+    referenced=cached_chain
+    referenced_draft=root/'referenced-draft';session.start(referenced_draft,source=referenced)
+    ref_result=session.rename_table_column(referenced_draft,0,'Sales','SalesTable','Revenue','Net Revenue')
+    renamed_book=load_workbook(ref_result['file'])
+    assert ref_result['rewritten_references']==7 and renamed_book['Sales']['B1'].value=='Net Revenue'
+    assert renamed_book['Sales']['C2'].value=='=SUM(SalesTable[Net Revenue])'
+    assert renamed_book['Other']['A1'].value=='=SUM(SalesTable[Net Revenue])+SalesTable[Net Revenue]'
+    assert renamed_book.defined_names['RevenueRef'].attr_text=='SalesTable[Net Revenue]'
+    assert next(iter(renamed_book['Other'].conditional_formatting._cf_rules.values()))[0].formula==['SUM(SalesTable[Net Revenue])>0']
+    assert renamed_book['Other'].data_validations.dataValidation[0].formula1=='SUM(SalesTable[Net Revenue])>0'
+    assert renamed_book['Other']._charts[0].series[0].val.numRef.f=='SalesTable[Net Revenue]'
+
+    assert renamed_book.calculation.calcMode=='manual' and renamed_book.calculation.fullCalcOnLoad and renamed_book.calculation.forceFullCalc
+    assert load_workbook(ref_result['file'],data_only=True)['Sales']['C2'].value is None
+    with zipfile.ZipFile(ref_result['file']) as archive: assert 'xl/calcChain.xml' not in archive.namelist()
+    code, validation, _=officecli_backend.invoke('validate',ref_result['file']); assert code==0 and validation['success'],validation
+    assert load_workbook(referenced)['Sales']['C2'].value=='=SUM(SalesTable[Revenue])'
+    shared_formula=root/'shared-formula.xlsx'
+    with zipfile.ZipFile(referenced) as before,zipfile.ZipFile(shared_formula,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/worksheets/sheet1.xml':
+                tree=etree.fromstring(data);ns='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                formula=next(item for item in tree.iter(ns+'c') if item.get('r')=='C2').find(ns+'f')
+                formula.set('t','shared');formula.set('si','0');formula.set('ref','C2:D2');data=etree.tostring(tree)
+            after.writestr(entry,data)
+    shared_formula_draft=root/'shared-formula-draft';session.start(shared_formula_draft,source=shared_formula)
+    try: session.rename_table_column(shared_formula_draft,0,'Sales','SalesTable','Revenue','Amount')
+    except ValueError as exc: assert 'formula' in str(exc).lower()
+    else: raise AssertionError('Shared formula rewrite accepted')
+    assert session.info(shared_formula_draft)['latest_revision']==0
+    special_draft=root/'special-name-draft';session.start(special_draft,source=referenced)
+    try: session.rename_table_column(special_draft,0,'Sales','SalesTable','Revenue','X#Y')
+    except ValueError: pass
+    else: raise AssertionError('Unsupported structured reference name accepted')
+
     normal_formula=root/'normal-formula.xlsx'
     open_office_use.author({'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C1':'=B2*2'}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}},normal_formula)
     formula_draft=root/'normal-formula-draft';session.start(formula_draft,source=normal_formula)

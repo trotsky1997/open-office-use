@@ -303,3 +303,7 @@ Added bounded named Excel tables with built-in styles and filter controls, and p
 ### Excel table column rename
 
 Added revision-bound table column renaming with consistent header/metadata updates and conservative reference checks. Verified standard formulas, encoded structured references, shared relationships, collisions, stale revisions, CLI and MCP. Structured references are not rewritten; caches need review. Corrected shared-string count handling when grid edits change shared text to inline text.
+
+### Structured formula updates on table rename
+
+Extended table column rename to rewrite simple explicit structured references, invalidate changed cell caches, request recalculation and remove a supported calculation chain. Verified cross-sheet and defined-name formulas, LibreOffice recalculation, schema and rollback for complex references. Native Excel and complex reference forms remain unverified/unsupported.
