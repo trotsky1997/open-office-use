@@ -330,3 +330,5 @@ Bounded spreadsheet comparison resolves per-workbook direct style components bef
 The XLSX revision comparison viewer can request a bounded cell diff for the displayed revision pair. It rejects stale latest revisions and clears results when the pair or inputs change.
 
 The viewer preserves stale grid and element input in selectable read-only controls, confirms before replacing unsaved input, and warns before browser navigation with pending edits. Grid and element requests serialize their own loading and saving actions.
+
+Grid paste parses a bounded rectangular TSV block, validates all target cells before changing inputs, and uses the existing versioned save path. Embedded cell newlines are not supported.

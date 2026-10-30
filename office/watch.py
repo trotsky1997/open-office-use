@@ -60,7 +60,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <label>Number format <input id="grid-numberformat" maxlength="120" placeholder="Keep"></label>
 <button type="button" id="grid-format" disabled>Apply formatting</button></fieldset>
 <p>Formatting applies to the loaded range or a smaller range. Existing patterned fills keep their pattern; theme colors are not previewed in the grid.</p>
-<p>Up to 200 cells. Enter formulas beginning with =. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
+<p>Up to 200 cells. Paste tab-separated cells starting at the focused cell. Enter formulas beginning with =. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
 <p id="grid-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
@@ -187,6 +187,48 @@ document.getElementById('grid-load').addEventListener('click', async () => {
   document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=false; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
+});
+function parseGridPaste(text) {
+ const rows=[], row=[]; let field='', quoted=false, closed=false, atEnd=false;
+ for (let i=0; i<text.length; i++) {
+  const char=text[i]; atEnd=false;
+  if (quoted) {
+   if (char==='"') { if (text[i+1]==='"') { field+='"'; i++; } else { quoted=false; closed=true; } }
+   else if (char==='\\r' || char==='\\n') throw new Error('Multiline cell text is not supported.');
+   else field+=char;
+  } else if (closed && char!=='\\t' && char!=='\\r' && char!=='\\n') throw new Error('Invalid quoted clipboard text.');
+  else if (char==='"' && field==='' && !closed) quoted=true;
+  else if (char==='\\t') { row.push(field); field=''; closed=false; }
+  else if (char==='\\r' || char==='\\n') {
+   if (char==='\\r' && text[i+1]==='\\n') i++;
+   row.push(field); rows.push(row.splice(0)); field=''; closed=false; atEnd=true;
+  } else field+=char;
+ }
+ if (quoted) throw new Error('Unclosed quoted clipboard text.');
+ if (!atEnd) { row.push(field); rows.push(row); }
+ if (!rows.length || rows.some(row=>row.length!==rows[0].length)) throw new Error('Paste a rectangular range.');
+ return rows;
+}
+document.getElementById('grid-output').addEventListener('paste', event => {
+ const text=event.clipboardData?.getData('text/plain');
+ if (!text || !/[\\t\\r\\n]/.test(text)) return;
+ event.preventDefault();
+ try {
+  if (gridBusy || !gridLoaded || gridLoaded.revision!==current || pinned!==null || event.target.readOnly) throw new Error('Load the current range before pasting.');
+  if (new TextEncoder().encode(text).length > 20000) throw new Error('Clipboard data exceeds 20 KB.');
+  const pasted=parseGridPaste(text), start=event.target.closest('td'), row=start?.parentElement, body=row?.parentElement;
+  if (!start || body?.tagName!=='TBODY') throw new Error('Choose a cell in the grid.');
+  const firstRow=row.sectionRowIndex, firstCol=start.cellIndex-1, targets=[];
+  for (let r=0; r<pasted.length; r++) for (let c=0; c<pasted[r].length; c++) {
+   const input=body.rows[firstRow+r]?.cells[firstCol+c+1]?.querySelector('input'), value=pasted[r][c];
+   if (!input) throw new Error('Paste extends beyond the loaded range.');
+   if (input.readOnly || input.dataset.editable!=='true') throw new Error('Paste includes a protected cell.');
+   if (value.length>4000 || value.includes('\\0')) throw new Error('Cell text exceeds the supported limit or contains a null character.');
+   targets.push([input,value]);
+  }
+  for (const [input,value] of targets) { input.value=value; input.dispatchEvent(new Event('input',{bubbles:true})); }
+  document.getElementById('grid-status').textContent=`Pasted ${targets.length} cell(s). Review and save changes.`;
+ } catch(error) { document.getElementById('grid-status').textContent=`Paste error: ${error.message}`; }
 });
 document.getElementById('grid-form').addEventListener('submit', async event => {
  event.preventDefault(); if (gridBusy) return;

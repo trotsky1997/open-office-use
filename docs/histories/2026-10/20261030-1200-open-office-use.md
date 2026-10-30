@@ -49,3 +49,5 @@ Extended bounded cell comparison to direct formatting, resolving workbook-local 
 Connected bounded worksheet cell and formatting diffs to the visual revision comparison, including stale-result rejection and clearing.
 
 Protected unsaved grid and element input during reload and navigation; stale element text remains selectable and in-flight editor actions are serialized.
+
+Added rectangular TSV paste to the worksheet grid, with all-or-nothing bounds and formula-range checks.
