@@ -31,6 +31,7 @@ app.whenReady().then(async()=>{
       await sdk.clipboard.writeText('isolated fixture');assert.equal(await sdk.clipboard.readText(),'isolated fixture');
       await sdk.clipboard.write([{entries:[{mimeType:'text/plain',text:'plain fixture'},{mimeType:'text/html',text:'<b>rich fixture</b>'}]}]);
       const rich=await sdk.clipboard.read();assert.ok(rich.some(item=>item.entries.some(entry=>entry.mimeType==='text/plain' && entry.text==='plain fixture')));assert.ok(rich.some(item=>item.entries.some(entry=>entry.mimeType==='text/html' && entry.text.includes('rich fixture'))));
+      assert.equal(Buffer.from((await sdk.playwright.screenshot({fullPage:false})).toBase64(),'base64').subarray(1,4).toString(),'PNG');
       const png=(await sdk.getScreenshot()).toString('base64');await sdk.clipboard.write([{entries:[{mimeType:'image/png',base64:png}]}]);
       const image=(await sdk.clipboard.read()).flatMap(item=>item.entries).find(entry=>entry.mimeType==='image/png');assert.ok(image?.base64);assert.equal(Buffer.from(image.base64,'base64').subarray(1,4).toString(),'PNG');
     }

@@ -2341,6 +2341,14 @@ export class OpenBrowserUseTabPlaywright {
     domSnapshot() {
         return this.tab.domSnapshot();
     }
+    async screenshot(options = {}) {
+        return new OpenBrowserUseImage(await this.tab.getScreenshot(options));
+    }
+    waitForTimeout(timeoutMs) {
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+            throw new Error("Invalid timeout");
+        return new Promise(resolve => setTimeout(resolve, timeoutMs));
+    }
     frameLocator(selector) {
         return new OpenBrowserUseFrameLocator(this.tab, []).frameLocator(selector);
     }

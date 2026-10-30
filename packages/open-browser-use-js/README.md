@@ -366,6 +366,12 @@ observation, navigation, or a truncated baseline returns `textMode: "full"`.
 The line diff preserves order and may include unchanged lines between edits.
 If a diff itself is truncated, the next observation returns a full baseline.
 
+`await tab.playwright.screenshot({fullPage:false})` returns an image object with
+`toBase64()` that can also be passed to `nodeRepl.emitImage`; `clip` and
+`fullPage` follow the same limits as `tab.getScreenshot`. The Playwright-style
+`waitForTimeout(ms)` accepts 0–120,000 ms; prefer page and locator state waits
+when waiting for a specific condition.
+
 For visual interaction, `await tab.getViewport()` returns the CSS viewport size;
 `await tab.clickAt(x, y)` clicks, `await tab.hoverAt(x, y)` moves the pointer,
 and `await tab.scrollAt(x, y, deltaX, deltaY)` sends a wheel event at CSS

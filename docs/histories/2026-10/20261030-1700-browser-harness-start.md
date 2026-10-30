@@ -245,3 +245,5 @@ CSS locator 增加 isChecked、check、uncheck 和 setChecked，支持原生 che
 CSS locator 增加 selectOption，支持原生单选/多选及按值和标签选择，修改前复核定位、选项身份和唯一性，修改后检查结果；input/change 为合成事件。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证 shadow root 链式选择、重复选项拒绝、跨进程单选/多选、禁用选项、事件回调覆盖结果和不重复修改；Electron 44/Xvfb socket 验证跨进程单选。macOS/Windows 本轮未测。
 
 新增 getByTestId 精确匹配 data-testid，支持 tab、frame 和 CSS 链式作用域，特殊字符按 CSS 转义，限制长度并拒绝 NUL 与未配对代理项。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证空值、引号、反斜杠、换行、emoji、shadow root 可信点击与跨进程 frame；Electron 44/Xvfb socket 验证跨进程 frame。语义定位器作用域下的混合链仍待实现；macOS/Windows 本轮未测。
+
+新增 tab.playwright.screenshot 与 waitForTimeout；截图复用既有 viewport、裁剪和全页约束，返回支持 toBase64 的图像，可直接传给 REPL 图片输出。SDK 63 项通过，包含 REPL 图片和计时参数检查；Linux ARM64 Chromium 原生消息验证裁剪和全页 PNG，Electron 44/Xvfb socket 验证 viewport PNG。状态等待仍是优先选择；macOS/Windows 本轮未测。
