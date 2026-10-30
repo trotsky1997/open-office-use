@@ -56,3 +56,7 @@ Added text-based candidate lookup for visual selections via CLI and MCP. Tests c
 ## Revision restoration
 
 Added optimistic restore to a new revision through CLI, MCP and the local preview. Original revisions remain intact; cross-origin restrictions and version conflict checks apply. Verified three formats and real Chrome interaction. Direct canvas editing and live collaboration remain open.
+
+## Historical preview
+
+The local viewer can preview a selected historical revision before restoration, while showing the latest revision and restricting selection to the current version. Tested two Chrome tabs across a new commit, a historical preview and restoration. The viewer remains a rendered-page surface rather than a direct editing canvas.

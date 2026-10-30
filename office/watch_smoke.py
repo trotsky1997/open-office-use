@@ -47,6 +47,14 @@ with tempfile.TemporaryDirectory() as tmp:
         run('session', 'apply', directory, '--base', '0', '--spec', spec)
         second = json.loads(get(url + 'state'))
         assert second['revision'] == 1 and second['pages'] > 0
+        history = json.loads(get(url + 'revision/0/state'))
+        assert history['revision'] == 0 and history['pages'] > 0
+        assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
+        try:
+            get(url + 'revision/999/state')
+            raise AssertionError('Missing revision was served')
+        except urllib.error.HTTPError as error:
+            assert error.code == 404
         stale = urllib.request.Request(url + 'selection', data=json.dumps(selection).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         try:
             urllib.request.urlopen(stale)

@@ -25,3 +25,5 @@ Added selected-region PDF text and word geometry through CLI and MCP, retaining 
 Added text-based OfficeCLI candidate paths for visual selections with explicit uncertainty and revision context. Verified duplicate matches in three formats and stale selections.
 
 Added historical revision restoration as a new version through CLI, MCP and the local viewer, with conflict detection. Verified all three formats, MCP and browser interaction.
+
+Added historical revision previews to the local viewer, with latest-version status and selection restricted to current content. Verified concurrent Chrome views and restoration.

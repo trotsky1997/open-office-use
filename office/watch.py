@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import cast
@@ -29,7 +30,7 @@ input{width:4.5rem}button,select,input{font:inherit}button{cursor:pointer}form p
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
 <details><summary>Restore a previous revision</summary><form id="restore-form">
 <label for="restore-revision">Revision</label> <select id="restore-revision" required></select>
-<button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
+<button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
 <label>Left % <input name="left" type="number" min="0" max="100" step="0.1" required value="10"></label>
@@ -39,7 +40,7 @@ input{width:4.5rem}button,select,input{font:inherit}button{cursor:pointer}form p
 <button type="submit">Save selection</button></form></details>
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
-let current = -1, busy = false;
+let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false;
 async function saveSelection(revision, page, coordinates) {
  try {
   const response=await fetch('selection', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({revision,page,box:coordinates})});
@@ -57,7 +58,7 @@ document.getElementById('restore-form').addEventListener('submit', async event =
   const response = await fetch('restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:current, revision})});
   const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Restore failed');
   document.getElementById('restore-status').textContent = `Restored revision ${revision} as revision ${result.revision}`;
-  await refresh();
+  pinned=null; viewKey=''; await refresh();
  } catch (error) { document.getElementById('restore-status').textContent = `Restore error: ${error.message}`; }
  finally { button.disabled = false; }
 });
@@ -67,9 +68,10 @@ document.getElementById('selection-form').addEventListener('submit', event => {
  const coordinates = ['left','top','right','bottom'].map(key => Number(data.get(key))/100);
  saveSelection(current, page, coordinates);
 });
-function selectable(image, page, revision) {
+function selectable(image, page, revision, enabled) {
  const wrapper = document.createElement('div'); wrapper.className = 'page'; wrapper.dataset.page = String(page);
  const box = document.createElement('div'); box.className = 'box'; wrapper.append(image, box);
+ if (!enabled) { wrapper.style.cursor='default'; return wrapper; }
  let start = null;
  function point(event) {
   const rect = image.getBoundingClientRect();
@@ -91,24 +93,45 @@ function selectable(image, page, revision) {
  });
  return wrapper;
 }
+function display(state, live) {
+ const key = `${state.revision}:${live}`;
+ if (key === viewKey) return;
+ const fragment = document.createDocumentFragment();
+ for (let i=0; i<state.pages; i++) {
+  const image=document.createElement('img'); image.src=`page/${state.revision}/${i}`;
+  image.alt=`Revision ${state.revision}, page ${i+1}`; image.loading='lazy'; image.draggable=false;
+  fragment.appendChild(selectable(image, i+1, state.revision, live));
+ }
+ document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; viewKey=key;
+ document.getElementById('selection').textContent = live ? 'Drag on a page to save a selection for the agent.' : 'Selections are available on the latest revision.';
+ document.querySelectorAll('#selection-form input, #selection-form button').forEach(element => element.disabled=!live);
+}
+document.getElementById('preview-revision').addEventListener('click', async () => {
+ const revision=Number(document.getElementById('restore-revision').value); pinned=revision;
+ try {
+  const response=await fetch(`revision/${revision}/state`, {cache:'no-store'}); const state=await response.json();
+  if (!response.ok) throw new Error(state.error || 'Preview unavailable');
+  if (pinned !== revision) return;
+  display(state, false); document.getElementById('status').textContent=`Viewing revision ${revision} · latest ${current} · ${state.pages} page(s)`;
+ } catch (error) { pinned=null; document.getElementById('restore-status').textContent=`Preview error: ${error.message}`; refresh(); }
+});
+document.getElementById('show-latest').addEventListener('click', () => { pinned=null; viewKey=''; refresh(); });
 async function refresh() {
  if (busy) return; busy = true;
  try {
   const response = await fetch('state', {cache:'no-store'});
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
-  document.getElementById('status').textContent = `Revision ${state.revision} · ${state.pages} page(s)`;
   if (state.revision !== current) {
-   const select = document.getElementById('restore-revision'); const previous = select.value;
+   const select=document.getElementById('restore-revision'); const previous=select.value;
    select.replaceChildren(...state.revisions.map(revision => {const option=document.createElement('option'); option.value=revision; option.textContent=`Revision ${revision}`; return option;}));
    if (state.revisions.some(revision => String(revision) === previous)) select.value=previous;
-   const fragment = document.createDocumentFragment();
-   for (let i=0; i<state.pages; i++) {
-    const image = document.createElement('img'); image.src = `page/${state.revision}/${i}`;
-    image.alt = `Revision ${state.revision}, page ${i+1}`; image.loading = 'lazy'; image.draggable = false; fragment.appendChild(selectable(image, i+1, state.revision));
-   }
-   document.getElementById('pages').replaceChildren(fragment); current = state.revision;
-   document.getElementById('selection').textContent = 'Drag on a page to save a selection for the agent.';
+  }
+  current=state.revision;
+  if (pinned === null) {
+   display(state, true); document.getElementById('status').textContent=`Revision ${current} · ${state.pages} page(s)`;
+  } else if (displayed === pinned) {
+   document.getElementById('status').textContent=`Viewing revision ${displayed} · latest ${current}`;
   }
  } catch (error) { document.getElementById('status').textContent = `Preview error: ${error.message}`; }
  finally { busy = false; }
@@ -124,9 +147,19 @@ def serve(directory, preview, port=0):
     token = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(24)
     lock = threading.Lock()
-    cache = {'revision': -1, 'pages': []}
+    cache = OrderedDict()
     with tempfile.TemporaryDirectory(prefix='office-watch-') as tmp:
         root = Path(tmp)
+
+        def pages_for(state, revision):
+            source = session.revision_file(state, revision)
+            if revision not in cache:
+                cache[revision] = preview(source, root / f'rev-{revision}')
+                if len(cache) > 4:
+                    old, _ = cache.popitem(last=False)
+                    shutil.rmtree(root / f'rev-{old}', ignore_errors=True)
+            cache.move_to_end(revision)
+            return cache[revision]
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
@@ -159,7 +192,8 @@ def serve(directory, preview, port=0):
                     with lock:
                         if route.endswith('/selection'):
                             selection = session.validate_selection(payload)
-                            if selection['revision'] != cache['revision'] or selection['page'] > len(cache['pages']):
+                            pages = cache.get(selection['revision'])
+                            if pages is None or selection['page'] > len(pages):
                                 raise ValueError('Selection refers to an unavailable preview')
                             saved = session.set_selection(directory, selection)
                         else:
@@ -181,28 +215,31 @@ def serve(directory, preview, port=0):
                 route = path[len(prefix):]
                 if route == '':
                     self.send(200, PAGE.replace('NONCE', nonce).encode(), 'text/html; charset=utf-8'); return
-                if route == 'state':
+                history = re.fullmatch(r'revision/(\d{1,6})/state', route)
+                page_match = re.fullmatch(r'page/(\d{1,6})/(\d{1,6})', route)
+                if route == 'state' or history or page_match:
                     try:
                         with lock:
                             state = session.info(directory)
-                            rev = state['latest_revision']
-                            if rev != cache['revision']:
-                                pages = preview(session.revision_file(state, rev), root / f'rev-{rev}')
-                                old = cache['revision']
-                                cache.update(revision=rev, pages=pages)
-                                if old >= 0:
-                                    shutil.rmtree(root / f'rev-{old}', ignore_errors=True)
-                            data = {'revision': rev, 'pages': len(cache['pages']),
+                            if history:
+                                rev = int(history.group(1))
+                            elif page_match:
+                                rev = int(page_match.group(1))
+                            else:
+                                rev = state['latest_revision']
+                            if rev > state['latest_revision']:
+                                self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
+                            pages = pages_for(state, rev)
+                            if page_match:
+                                index = int(page_match.group(2))
+                                if index >= len(pages):
+                                    self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
+                                self.send(200, Path(pages[index]).read_bytes(), 'image/png'); return
+                            data = {'revision': rev, 'pages': len(pages),
                                     'revisions': [item['revision'] for item in state['revisions']]}
                         self.send(200, json.dumps(data).encode(), 'application/json'); return
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                         self.send(500, json.dumps({'error': str(exc)}).encode(), 'application/json'); return
-                match = re.fullmatch(r'page/(\d+)/(\d+)', route)
-                if match:
-                    with lock:
-                        rev, index = map(int, match.groups())
-                        if rev == cache['revision'] and index < len(cache['pages']):
-                            self.send(200, Path(cache['pages'][index]).read_bytes(), 'image/png'); return
                 self.send(404, b'Not found', 'text/plain; charset=utf-8')
 
         server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
