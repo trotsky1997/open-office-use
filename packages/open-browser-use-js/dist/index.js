@@ -1313,6 +1313,34 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
+    async scopeVisible(observation, index) {
+        const node = observation.nodes.find(item => item.index === index);
+        const frame = observation.frames?.find(item => item.id === (node?.frameId ?? observation.frames?.[0]?.id));
+        if (!node || !frame || !observation.frames)
+            throw new RetryablePreflightError("Filter scope is unavailable; observe again");
+        const sessionId = frame.sessionId;
+        const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "open-browser-use-selector" }, { sessionId });
+        if (!isObject(world) || typeof world.executionContextId !== "number")
+            throw new RetryablePreflightError("Selector context is unavailable; observe again");
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: node.backendNodeId, executionContextId: world.executionContextId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string")
+            throw new RetryablePreflightError("Filter scope is unavailable; observe again");
+        try {
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() { if(!this.isConnected)return null;const element=this.nodeType===3 ? this.parentElement : this;if(!(element instanceof Element))return null;const r=this.nodeType===3 ? (()=>{const range=document.createRange();range.selectNode(this);return range.getBoundingClientRect()})() : element.getBoundingClientRect();return getComputedStyle(element).visibility==='visible' && r.width>0 && r.height>0; }` }, { sessionId });
+            const visible = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (typeof visible !== "boolean")
+                throw new RetryablePreflightError("Filter scope changed; observe again");
+            const frameVisible = visible ? await this.cssFrameVisible(frame, observation.frames) : false;
+            if (await this.documentId() !== observation.documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(observation.frames))
+                throw new RetryablePreflightError("Frame tree changed; observe again");
+            return visible && frameVisible;
+        }
+        finally {
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+        }
+    }
+    /** @internal */
     async scopeText(observation, index) {
         const scope = observation.nodes.find(node => node.index === index);
         if (!scope)
@@ -2813,8 +2841,9 @@ export class OpenBrowserUseRoleLocator {
     getByAltText(text, options = {}) { return this.child(this.tab.playwright.getByAltText(text, options)); }
     getByPlaceholder(text, options = {}) { return this.child(this.tab.playwright.getByPlaceholder(text, options)); }
     filter(options) {
-        if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText", "has", "hasNot"].includes(key)) ||
-            (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined) ||
+        if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText", "has", "hasNot", "visible"].includes(key)) ||
+            (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined && options.visible === undefined) ||
+            (options.visible !== undefined && typeof options.visible !== "boolean") ||
             (options.hasText !== undefined && (typeof options.hasText === "string" ? options.hasText.length > 30_000 : !types.isRegExp(options.hasText))) ||
             (options.hasNotText !== undefined && (typeof options.hasNotText === "string" ? options.hasNotText.length > 30_000 : !types.isRegExp(options.hasNotText))))
             throw new Error("Invalid locator filter");
@@ -2843,7 +2872,7 @@ export class OpenBrowserUseRoleLocator {
             check(options.has, 2);
         if (options.hasNot !== undefined)
             check(options.hasNot, 2);
-        const filter = { ...(options.hasText !== undefined ? { hasText: copyMatcher(options.hasText) } : {}), ...(options.hasNotText !== undefined ? { hasNotText: copyMatcher(options.hasNotText) } : {}), ...(options.has !== undefined ? { has: options.has } : {}), ...(options.hasNot !== undefined ? { hasNot: options.hasNot } : {}) };
+        const filter = { ...(options.visible !== undefined ? { visible: options.visible } : {}), ...(options.hasText !== undefined ? { hasText: copyMatcher(options.hasText) } : {}), ...(options.hasNotText !== undefined ? { hasNotText: copyMatcher(options.hasNotText) } : {}), ...(options.has !== undefined ? { has: options.has } : {}), ...(options.hasNot !== undefined ? { hasNot: options.hasNot } : {}) };
         return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.position === undefined ? [...this.filtersBefore, filter] : this.filtersBefore, this.position === undefined ? this.filtersAfter : [...this.filtersAfter, filter], this.framePath, this.cssScope);
     }
     needsText() {
@@ -2907,6 +2936,12 @@ export class OpenBrowserUseRoleLocator {
                 const textFilters = filters.filter(filter => filter.hasText !== undefined || filter.hasNotText !== undefined);
                 if (textFilters.length && !matchesTextFilters(await this.tab.scopeText(observation, item.node.index), textFilters))
                     continue;
+                const visibilityFilters = filters.filter(filter => filter.visible !== undefined);
+                if (visibilityFilters.length) {
+                    const visible = await this.tab.scopeVisible(observation, item.node.index);
+                    if (visibilityFilters.some(filter => filter.visible !== visible))
+                        continue;
+                }
                 let matched = true;
                 const count = (locator) => locator instanceof OpenBrowserUseCssLocator ? locator.countWithin(observation, item.node.index) : locator.matches(observation, item.node.index).then(matches => matches.length);
                 for (const filter of filters) {

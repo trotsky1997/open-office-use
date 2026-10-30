@@ -126,6 +126,7 @@ type CssStep = {
     union?: readonly [readonly CssStep[], readonly CssStep[]];
 };
 type TextFilter = {
+    visible?: boolean;
     hasText?: TextMatcher;
     hasNotText?: TextMatcher;
     has?: OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator;
@@ -579,6 +580,7 @@ export declare class OpenBrowserUseRoleLocator {
         hasNotText?: TextMatcher;
         has?: OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator;
         hasNot?: OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator;
+        visible?: boolean;
     }): OpenBrowserUseRoleLocator;
     private needsText;
     private matches;

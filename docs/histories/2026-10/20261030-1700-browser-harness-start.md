@@ -277,3 +277,5 @@ locator(selector, options) 现在实际应用 hasText/hasNotText/has/hasNot，�
 语义 locator filter 增加 has/hasNot，内层语义定位相对每个候选容器和同一 frame 求值，位置、嵌套筛选参与独立重查；限制嵌套深度并拒绝不同 tab/frame 或 CSS 根作用域的内层语义定位器。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证每容器 nth、排除筛选、条件变化后阻止点击及跨 frame 检查；Electron 44/Xvfb socket 验证跨进程 frame。CSS/语义混合内层筛选及跨多 frame 的语义 CSS 容器仍待完善；macOS/Windows 本轮未测。
 
 语义 locator 的 has/hasNot 支持同 tab、同 frame 的 CSS 内层定位器，相对每个语义候选执行 CSS 查询，并在读取与输入前复核条件。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证 CSS 条件、相对 nth、frame 边界和条件变化时停止点击；Electron 44/Xvfb socket 验证跨进程 frame。CSS 外层的语义内层筛选和跨多 frame 的语义 CSS 容器仍待实现；macOS/Windows 本轮未测。
+
+语义 locator filter 增加 visible 条件，在隔离 world 检查候选元素或文本范围和 frame 宿主的可见性及非零尺寸，并在操作前重算。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证可见容器、跨进程 frame 零宽、非法选项和准备点击期间尺寸变化时停止输入；Electron 44/Xvfb socket 验证跨进程 frame。语义定位候选受可访问性树覆盖范围约束；macOS/Windows 本轮未测。

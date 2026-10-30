@@ -341,7 +341,8 @@ CSS locators from the same tab and frame. Each inner locator is evaluated relati
 to the candidate, including its position and nested filters; descendant frame
 documents are outside that inner match. Inner semantic locators rooted in CSS
 scopes and inner CSS locators rooted in semantic scopes are not supported. Filter
-nesting is limited to eight levels.
+nesting is limited to eight levels. Semantic `filter({visible: true/false})`
+checks candidate and frame bounds; the accessibility tree may omit hidden elements.
 The operation rejects a candidate when unindexed text may belong to it or
 the text relationship cannot be determined, when frames are inaccessible, or
 when the candidate contains more than 30,000 characters. Text is checked again before input and after focus; pages with many
