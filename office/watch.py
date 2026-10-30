@@ -14,6 +14,7 @@ from typing import cast
 from urllib.parse import urlsplit
 
 import review
+import visual
 import selection_candidates
 import session
 
@@ -33,7 +34,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 .comparison-page{position:relative;width:100%}.comparison-page img{display:block}.layout-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}.layout-overlay polygon{vector-effect:non-scaling-stroke;stroke-width:2}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
-#compare-sheet{width:min(14rem,70vw)}#compare-range{width:8rem}#cell-comparison-output td{max-width:24rem;overflow-wrap:anywhere}
+#visual-diff-image{display:block;max-width:100%;height:auto}#visual-diff-image[hidden]{display:none}#compare-sheet{width:min(14rem,70vw)}#compare-range{width:8rem}#cell-comparison-output td{max-width:24rem;overflow-wrap:anywhere}
 #word-find,#word-replacement{width:min(14rem,65vw)}#edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
 
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
@@ -88,6 +89,11 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Text is a bounded view; file-part changes may include formatting or metadata. Compare page appearance separately.</p>
 <button type="button" id="load-changes">Load changes</button><p id="changes-status" role="status"></p>
 <h2>Text</h2><pre id="comparison-text"></pre><h2>Changed file parts</h2><pre id="comparison-parts"></pre>
+<section id="visual-comparison"><h2>Visual page changes</h2>
+<p>Choose corresponding rendered pages. Red highlights show RGB differences of at least 16/255; page insertions and hidden slides can change numbering.</p>
+<form id="visual-diff-form"><label>Selected revision page <input id="visual-before-page" type="number" min="1" step="1" value="1" required></label>
+<label>Latest revision page <input id="visual-after-page" type="number" min="1" step="1" value="1" required></label><button id="visual-diff-button" type="submit">Compare pages visually</button></form>
+<p id="visual-diff-status" role="status"></p><a id="visual-diff-open" hidden target="_blank" rel="noopener">Open comparison at full size</a><img id="visual-diff-image" hidden alt="Visual comparison of the selected and latest revisions"></section>
 <section id="cell-comparison" hidden><h2>Worksheet changes</h2>
 <p>Compare values, formulas and direct formatting. Cached formula results may be stale; conditional formatting and theme changes need separate review.</p>
 <form id="cell-comparison-form"><label>Worksheet <input id="compare-sheet" required maxlength="31"></label>
@@ -97,7 +103,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -497,7 +503,28 @@ document.getElementById('layout-scan').addEventListener('click', async () => {
  } catch(error) { if (displayed===revision && layoutRevision===revision) document.getElementById('layout-status').textContent=`Layout error: ${error.message}`; }
  finally { layoutBusy=false; button.disabled=false; }
 });
+function clearVisualDiff() {
+ visualEpoch++; if (visualUrl) URL.revokeObjectURL(visualUrl); visualUrl=null;
+ const image=document.getElementById('visual-diff-image'); image.hidden=true; image.removeAttribute('src');
+ const link=document.getElementById('visual-diff-open'); link.hidden=true; link.removeAttribute('href');
+ document.getElementById('visual-diff-status').textContent='';
+}
+for (const id of ['visual-before-page','visual-after-page']) document.getElementById(id).addEventListener('input', clearVisualDiff);
+document.getElementById('visual-diff-form').addEventListener('submit', async event => {
+ event.preventDefault(); if (!comparing || pinned===null || comparedLatest<0) return;
+ clearVisualDiff(); const epoch=visualEpoch, before=pinned, after=comparedLatest, before_page=Number(document.getElementById('visual-before-page').value), after_page=Number(document.getElementById('visual-after-page').value);
+ const button=document.getElementById('visual-diff-button'), status=document.getElementById('visual-diff-status'); button.disabled=true; status.textContent='Comparing rendered pages…';
+ try {
+  const response=await fetch('visual-comparison',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({before,after,before_page,after_page})});
+  if (!response.ok) { const result=await response.json(); throw new Error(result.error || 'Visual comparison unavailable'); }
+  const blob=await response.blob(); if (epoch!==visualEpoch || !comparing || pinned!==before || comparedLatest!==after) return;
+  visualUrl=URL.createObjectURL(blob); const image=document.getElementById('visual-diff-image'); image.src=visualUrl; image.alt=`Revision ${before} page ${before_page} compared with revision ${after} page ${after_page}`; image.hidden=false; const link=document.getElementById('visual-diff-open'); link.href=visualUrl; link.hidden=false;
+  status.textContent=`Revision ${before} page ${before_page} compared with revision ${after} page ${after_page}.`;
+ } catch(error) { if (epoch===visualEpoch && comparing && pinned===before && comparedLatest===after) status.textContent=`Visual comparison error: ${error.message}`; }
+ finally { button.disabled=false; }
+});
 function display(state, live) {
+ if (!document.getElementById('comparison-details').hidden) clearVisualDiff();
  clearLayoutFor(state.revision);
  document.getElementById('comparison-details').hidden=true;
  const key = `${state.revision}:${live}`;
@@ -520,6 +547,7 @@ function displayComparison(state) {
  clearLayoutFor(state.revision);
  const key=`compare:${state.revision}:${state.latest_revision}`;
  if (key === viewKey) return;
+ clearVisualDiff(); document.getElementById('visual-before-page').max=state.pages; document.getElementById('visual-after-page').max=state.latest_pages;
  const grid=document.createElement('div'); grid.className='comparison';
  for (const [revision, count, label] of [[state.revision,state.pages,'Selected'], [state.latest_revision,state.latest_pages,'Latest']]) {
   const section=document.createElement('section'); const title=document.createElement('h2');
@@ -669,7 +697,7 @@ def serve(directory, preview, port=0, render=None):
                 self.send_header('Cache-Control', 'no-store')
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Referrer-Policy', 'no-referrer')
-                self.send_header('Content-Security-Policy', f"default-src 'none'; img-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; base-uri 'none'; frame-ancestors 'none'")
+                self.send_header('Content-Security-Policy', f"default-src 'none'; img-src 'self' blob:; connect-src 'self'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; base-uri 'none'; frame-ancestors 'none'")
                 self.end_headers()
                 self.wfile.write(body)
 
@@ -679,7 +707,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 20000
@@ -697,6 +725,22 @@ def serve(directory, preview, port=0, render=None):
                             raise ValueError('Formula operation requires base_revision')
                         saved = session.scan_formulas(directory, payload['base_revision']) if route.endswith('/formula-scan') else session.recalculate(directory, payload['base_revision'])
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
+                    if route.endswith('/visual-comparison'):
+                        if not isinstance(payload, dict) or set(payload) != {'before', 'after', 'before_page', 'after_page'}:
+                            raise ValueError('Visual comparison requires revisions and pages')
+                        if render is None:
+                            raise RuntimeError('Visual comparison rendering is unavailable')
+                        with lock:
+                            state = session.info(directory)
+                            before = session.revision_file(state, payload['before'])
+                            after = session.revision_file(state, payload['after'])
+                            if payload['after'] != state['latest_revision']:
+                                raise ValueError('Latest revision changed; compare again')
+                        data, _ = visual.compare_pages(before, after, payload['before_page'], payload['after_page'], render)
+                        with lock:
+                            if session.info(directory)['latest_revision'] != payload['after']:
+                                raise ValueError('Latest revision changed; compare again')
+                        self.send(200, data, 'image/png'); return
                     if route.endswith('/cell-comparison'):
                         if not isinstance(payload, dict) or set(payload) != {'before', 'after', 'sheet', 'cell_range'}:
                             raise ValueError('Cell comparison requires revisions, sheet and range')

@@ -89,6 +89,17 @@ with tempfile.TemporaryDirectory() as tmp:
         comparison = json.loads(get(url + 'comparison/0/state'))
         assert comparison['revision'] == 0 and comparison['latest_revision'] == 1
         assert comparison['pages'] > 0 and comparison['latest_pages'] > 0
+        visual_payload = {'before': 0, 'after': 1, 'before_page': 1, 'after_page': 1}
+        visual_request = urllib.request.Request(url + 'visual-comparison', data=json.dumps(visual_payload).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        assert urllib.request.urlopen(visual_request, timeout=60).read().startswith(b'\x89PNG\r\n\x1a\n')
+        for request_origin, payload, expected in [('http://evil.test', visual_payload, 403), (origin, dict(visual_payload, after=0), 400), (origin, dict(visual_payload, before_page=999), 400)]:
+            request = urllib.request.Request(url + 'visual-comparison', data=json.dumps(payload).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(request, timeout=60)
+                raise AssertionError('Invalid visual comparison accepted')
+            except urllib.error.HTTPError as error:
+                assert error.code == expected
+
         changes = json.loads(get(url + 'comparison/0/1/changes'))
         assert 'First' in str(changes['text_diff']) and 'Changed' in str(changes['text_diff']), changes
         assert changes['parts']['modified'], changes
