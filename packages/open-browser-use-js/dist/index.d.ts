@@ -756,8 +756,8 @@ export declare class OpenBrowserUseCssLocator {
     isDisabled(options?: {
         timeoutMs?: number;
     }): Promise<boolean>;
-    waitFor(options: {
-        state: "attached" | "detached" | "visible" | "hidden";
+    waitFor(options?: {
+        state?: "attached" | "detached" | "visible" | "hidden";
         timeoutMs?: number;
     }): Promise<void>;
     downloadMedia(options?: {
@@ -907,8 +907,8 @@ export declare class OpenBrowserUseRoleLocator {
     isDisabled(options?: {
         timeoutMs?: number;
     }): Promise<boolean>;
-    waitFor(options: {
-        state: "visible" | "hidden";
+    waitFor(options?: {
+        state?: "visible" | "hidden";
         timeoutMs?: number;
     }): Promise<void>;
     getAttribute(name: string, options?: {

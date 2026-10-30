@@ -1080,7 +1080,7 @@ test('locator waits for visible and hidden states without accepting ambiguous ma
   tab.locatorRead=async()=>visible;
   const locator=tab.playwright.getByRole('button',{name:'Later'});
   setTimeout(()=>{nodes=[{index:1,role:'button',name:'Later'}];},20);
-  await locator.waitFor({state:'visible',timeoutMs:500});
+  await locator.waitFor({timeoutMs:500});await locator.waitFor();
   visible=false;await locator.waitFor({state:'hidden',timeoutMs:0});
   visible=true;await assert.rejects(locator.waitFor({state:'hidden',timeoutMs:0}),/Timed out/);
   nodes.push({index:2,role:'button',name:'Later'});await assert.rejects(locator.waitFor({state:'visible',timeoutMs:0}),/matched 2/);
@@ -1623,6 +1623,7 @@ test('locator wait deadline bounds stalled browser reads',async()=>{
   tab.queryCss=()=>new Promise(()=>{});
   const css=tab.playwright.locator('button');
   await assert.rejects(css.waitFor({state:'attached',timeoutMs:20}),/Timed out/);
+  tab.queryCss=async()=>({ids:[1]});tab.readCss=async()=>true;await css.waitFor();
   tab.queryCss=async()=>({ids:[1]});tab.readCss=()=>new Promise(()=>{});
   await assert.rejects(css.waitFor({state:'visible',timeoutMs:20}),/Timed out/);
   const role=tab.playwright.getByRole('button');role.isVisible=()=>new Promise(()=>{});

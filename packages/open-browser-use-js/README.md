@@ -322,7 +322,7 @@ Single-target text, attribute, state, value and bounding-box reads use the same
 positive deadline for target lookup and reading. A timed-out read may finish later.
 Other locator action timeouts bound the initial target query; a timed-out query cannot
 issue a late action. Later action preparation and issued input may take longer.
-`waitFor()` bounds browser reads when `timeoutMs` is positive. Timed-out reads may finish later; `timeoutMs: 0` performs one read.
+`waitFor()` defaults to waiting for a visible match and bounds browser reads when `timeoutMs` is positive. Timed-out reads may finish later; `timeoutMs: 0` performs one read.
 `isEditable()` checks enabled and readonly states for native inputs, textarea,
 select, contenteditable elements, and supported ARIA roles, including implicit
 roles reported by the browser accessibility tree. Other elements raise an error. This state check does not guarantee that every input

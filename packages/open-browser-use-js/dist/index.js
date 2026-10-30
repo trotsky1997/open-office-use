@@ -4162,8 +4162,9 @@ export class OpenBrowserUseCssLocator {
     }
     async isHidden(options = {}) { return !(await this.isVisible(options)); }
     async isDisabled(options = {}) { return !(await this.isEnabled(options)); }
-    async waitFor(options) {
-        if (!options || !["attached", "detached", "visible", "hidden"].includes(options.state))
+    async waitFor(options = {}) {
+        const state = options?.state === undefined ? "visible" : options.state;
+        if (!options || !["attached", "detached", "visible", "hidden"].includes(state))
             throw new Error("Invalid locator wait state");
         const timeoutMs = options.timeoutMs ?? 5000;
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
@@ -4171,11 +4172,11 @@ export class OpenBrowserUseCssLocator {
         const deadline = performance.now() + timeoutMs;
         while (true) {
             try {
-                const snapshot = await locatorReadBeforeDeadline(this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope), timeoutMs, deadline, `Timed out waiting for locator to become ${options.state}`), ids = snapshot.ids;
+                const snapshot = await locatorReadBeforeDeadline(this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope), timeoutMs, deadline, `Timed out waiting for locator to become ${state}`), ids = snapshot.ids;
                 if (ids.length > 1)
                     throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
-                const matched = options.state === 'attached' || options.state === 'detached' ? ids.length > 0 : ids.length > 0 && await locatorReadBeforeDeadline(this.tab.readCss(snapshot, ids[0], "visible"), timeoutMs, deadline, `Timed out waiting for locator to become ${options.state}`) === true;
-                if (matched === (options.state === 'attached' || options.state === 'visible'))
+                const matched = state === 'attached' || state === 'detached' ? ids.length > 0 : ids.length > 0 && await locatorReadBeforeDeadline(this.tab.readCss(snapshot, ids[0], "visible"), timeoutMs, deadline, `Timed out waiting for locator to become ${state}`) === true;
+                if (matched === (state === 'attached' || state === 'visible'))
                     return;
             }
             catch (error) {
@@ -4184,7 +4185,7 @@ export class OpenBrowserUseCssLocator {
             }
             const remaining = deadline - performance.now();
             if (remaining <= 0)
-                throw new Error(`Timed out waiting for locator to become ${options.state}`);
+                throw new Error(`Timed out waiting for locator to become ${state}`);
             await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
         }
     }
@@ -4634,8 +4635,9 @@ export class OpenBrowserUseRoleLocator {
     }
     async isHidden(options = {}) { return !(await this.isVisible(options)); }
     async isDisabled(options = {}) { return !(await this.isEnabled(options)); }
-    async waitFor(options) {
-        if (!options || !["visible", "hidden"].includes(options.state))
+    async waitFor(options = {}) {
+        const state = options?.state === undefined ? "visible" : options.state;
+        if (!options || !["visible", "hidden"].includes(state))
             throw new Error("Locator wait supports visible and hidden states");
         const timeoutMs = options.timeoutMs ?? 5_000;
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
@@ -4643,7 +4645,7 @@ export class OpenBrowserUseRoleLocator {
         const deadline = performance.now() + timeoutMs;
         while (true) {
             try {
-                if (await locatorReadBeforeDeadline(this.isVisible({ timeoutMs: 0 }), timeoutMs, deadline, `Timed out waiting for locator to become ${options.state}`) === (options.state === "visible"))
+                if (await locatorReadBeforeDeadline(this.isVisible({ timeoutMs: 0 }), timeoutMs, deadline, `Timed out waiting for locator to become ${state}`) === (state === "visible"))
                     return;
             }
             catch (error) {
@@ -4652,7 +4654,7 @@ export class OpenBrowserUseRoleLocator {
             }
             const remaining = deadline - performance.now();
             if (remaining <= 0)
-                throw new Error(`Timed out waiting for locator to become ${options.state}`);
+                throw new Error(`Timed out waiting for locator to become ${state}`);
             await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
         }
     }
