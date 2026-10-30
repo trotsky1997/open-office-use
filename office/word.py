@@ -383,10 +383,44 @@ def find_paragraph(tree, path):
     return paragraph
 
 
+def field_overlap(paragraph):
+    """Detect fields intersecting a paragraph, including fields spanning paragraphs."""
+    scope = next((node for node in paragraph.iterancestors() if node.tag in (W + 'footnote', W + 'endnote', W + 'txbxContent')), paragraph.getroottree().getroot())
+    depth = 0; unknown = False; inside = False
+    for event, node in etree.iterwalk(scope, events=('start', 'end')):
+        if event == 'start':
+            if node is paragraph:
+                inside = True
+                if depth or unknown: return True
+            if node.tag == W + 'fldSimple':
+                if inside: return True
+                depth += 1
+            elif node.tag == W + 'fldChar':
+                if inside: return True
+                kind = node.get(W + 'fldCharType')
+                if kind == 'begin': depth += 1
+                elif kind == 'end':
+                    if depth: depth -= 1
+                    else: unknown = True
+                elif kind != 'separate' or not depth: unknown = True
+            elif inside and node.tag == W + 'instrText': return True
+        elif node is paragraph: return False
+        elif node.tag == W + 'fldSimple': depth -= 1
+    raise ValueError('Target paragraph is outside its story')
+
+
+def paragraph_has_field(file, path):
+    part = paragraph_part(file, path)
+    with zipfile.ZipFile(file) as archive:
+        tree = ooxml.parse_xml(archive.read(part))
+        return field_overlap(find_paragraph(tree, path))
+
+
 def anchor_runs(paragraph, anchor):
     """Find and split a unique literal range within adjacent simple paragraph runs."""
     from copy import deepcopy
 
+    if field_overlap(paragraph): raise ValueError('Paragraph intersects a Word field')
     groups = []; current = []
     def flush():
         if current:
@@ -462,6 +496,7 @@ def replace_text(source, output, path, find, replacement):
 
     def edit(tree, archive):
         paragraph = find_paragraph(tree, path)
+        if field_overlap(paragraph): raise ValueError('Paragraph intersects a Word field')
         groups, current = [], []
 
         def boundary():
@@ -763,6 +798,7 @@ def add_comment(source, output, path, text, author, anchor=None):
     def edit(tree, archive):
         nonlocal created_id
         paragraph = find_paragraph(tree, path)
+        if field_overlap(paragraph): raise ValueError('Paragraph intersects a Word field')
         if anchor is not None:
             first, last = anchor_runs(paragraph, anchor)
         else:

@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
 from pptx import Presentation
 
@@ -89,6 +91,26 @@ with tempfile.TemporaryDirectory() as tmp:
         result = execute(target['snapshot_sha256']); assert result['revision'] == 1
         if operation == 'comment': assert session.list_comments(draft, 1)['total_comments'] == 1
         else: assert session.tracked_changes(draft, 1)['records']
+    field_source = root/'field.docx'; doc = Document()
+    first = doc.add_paragraph(); marker = OxmlElement('w:fldChar'); marker.set(qn('w:fldCharType'), 'begin'); first.add_run()._r.append(marker)
+    doc.add_paragraph('Field result')
+    last = doc.add_paragraph(); marker = OxmlElement('w:fldChar'); marker.set(qn('w:fldCharType'), 'end'); last.add_run()._r.append(marker)
+    doc.add_paragraph('Outside field'); doc.save(field_source)
+    field_draft = root/'field-draft'; session.start(field_draft, source=field_source)
+    target = session.edit_target(field_draft, 0, '/body/p[2]')
+    assert target['read_only_reason'] == 'word_field' and not target['replace_text_path_supported'], target
+    assert session.edit_target(field_draft, 0, '/body/p[2]/r[1]')['read_only_reason'] == 'word_field'
+    for operation in (lambda: session.edit(field_draft, 0, '/body/p[2]', 'text', 'Corrupt'),
+                      lambda: session.edit(field_draft, 0, '/body/p[2]/r[1]', 'text', 'Corrupt'),
+                      lambda: session.replace_text(field_draft, 0, '/body/p[2]', 'Field', 'Corrupt'),
+                      lambda: session.track_replace_text(field_draft, 0, '/body/p[2]', 'Field', 'Corrupt', 'Reviewer'),
+                      lambda: session.add_comment(field_draft, 0, '/body/p[2]', 'Comment', 'Reviewer')):
+        try: operation()
+        except ValueError as exc: assert 'field' in str(exc).lower(), exc
+        else: raise AssertionError('A field result was editable')
+    assert session.info(field_draft)['latest_revision'] == 0
+    assert session.edit_target(field_draft, 0, '/body/p[4]')['read_only_reason'] is None
+    assert session.replace_text(field_draft, 0, '/body/p[4]', 'Outside', 'After')['revision'] == 1
     literal_source = root / 'literal.xlsx'; book = Workbook(); book.active['A1'] = '00123'; book.save(literal_source)
     literal_draft = root / 'literal'; session.start(literal_draft, source=literal_source)
     assert session.edit_target(literal_draft, 0, '/Sheet/A1')['mode'] == 'literal'

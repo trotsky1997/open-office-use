@@ -292,3 +292,5 @@ PowerPoint column, bar and line charts can show native value labels using source
 PowerPoint authoring supports single-series pie charts with slice colors, optional percentage labels and editable embedded data. LibreOffice rendering and chart-cache reconciliation were checked; native PowerPoint remains unverified.
 
 New Word documents support a native table-of-contents field with a readable heading cache and an update-on-open request. Page numbers and refreshed entries require an editor that updates the field; native Word behavior remains unverified.
+
+Word session target inspection and targeted text, tracked-change and comment edits protect paragraphs intersecting fields, including fields spanning paragraphs. Generic OfficeCLI batch actions have separate safety semantics.

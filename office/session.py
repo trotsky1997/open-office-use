@@ -446,7 +446,8 @@ def _edit_target(directory, base_revision, path, state, source):
         if len(text) > 4000: raise ValueError('Note paragraph exceeds the editor text limit')
         if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
         match = word.NOTE_PATH.fullmatch(path)
-        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': text, 'replace_text_path_supported': True, 'replace_only': True, 'note_impact': {'kind': match.group(1), 'id': match.group(2), 'part': part}}
+        field = word.field_overlap(target)
+        return {'read_only_reason': 'word_field' if field else None, 'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': text, 'replace_text_path_supported': not field, 'replace_only': True, 'note_impact': {'kind': match.group(1), 'id': match.group(2), 'part': part}}
     if state['format'] == 'docx' and word.STORY_PATH.fullmatch(path):
         inventory = word.list_stories(source)
         match = word.STORY_PATH.fullmatch(path)
@@ -460,8 +461,9 @@ def _edit_target(directory, base_revision, path, state, source):
         if len(text) > 4000: raise ValueError('Header or footer paragraph exceeds the editor text limit')
         paragraph = {'text': text}
         if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
+        field = word.field_overlap(target)
         links = [{'relationship_id': item['id'], **link} for item in inventory['stories'] if item['part'] == story['part'] for link in item['linked_sections']]
-        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': paragraph['text'], 'replace_text_path_supported': True, 'replace_only': True,
+        return {'read_only_reason': 'word_field' if field else None, 'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': paragraph['text'], 'replace_text_path_supported': not field, 'replace_only': True,
                 'story_impact': {'part': story['part'], 'linked_sections': links, 'same_part_ids': story['same_part_ids'], 'complete': inventory['reference_resolution_complete']}}
     note_match = slides.NOTES_PATH.fullmatch(path) if state['format'] == 'pptx' else None
     if note_match:
@@ -505,6 +507,10 @@ def _edit_target(directory, base_revision, path, state, source):
     if len(value) > 4000:
         raise ValueError('Element value exceeds the 4,000-character editor limit')
     read_only_reason = None
+    if state['format'] == 'docx' and item['type'] in ('paragraph', 'run'):
+        paragraph_path = item['path'] if item['type'] == 'paragraph' else item['path'].rsplit('/', 1)[0]
+        if not word.paragraph_path(paragraph_path): read_only_reason = 'unsupported_word_path'
+        elif word.paragraph_has_field(source, paragraph_path): read_only_reason = 'word_field'
     if state['format'] == 'xlsx':
         match = cell_text.PATH.fullmatch(item['path'])
         if not match or not cell_text.cell_path(item['path']):
@@ -518,7 +524,7 @@ def _edit_target(directory, base_revision, path, state, source):
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
             'format': state['format'], 'mode': mode, 'value': value, 'read_only_reason': read_only_reason,
-            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode in ('value', 'literal') and format_data.get('type') in {'String', 'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
+            'replace_text_path_supported': (state['format'] == 'docx' and read_only_reason is None and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode in ('value', 'literal') and format_data.get('type') in {'String', 'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
 
 
 def edit(directory, base_revision, path, mode, value, expected_sha256=None):
@@ -526,7 +532,7 @@ def edit(directory, base_revision, path, mode, value, expected_sha256=None):
         raise ValueError('Value must be text of at most 4,000 characters')
     target = edit_target(directory, base_revision, path)
     if expected_sha256 is not None and target['snapshot_sha256'] != expected_sha256: raise ValueError('Document snapshot changed; reload the target')
-    if target.get('read_only_reason'): raise ValueError(f"Cell cannot be edited: {target['read_only_reason']}")
+    if target.get('read_only_reason'): raise ValueError(f"Element cannot be edited: {target['read_only_reason']}")
     if target.get('replace_only'): raise ValueError('Use text replacement for this paragraph')
     if target['format'] == 'pptx' and target['type'] == 'tc':
         raise ValueError('Use text replacement to edit PowerPoint table cells')
