@@ -170,3 +170,7 @@ Basic Word blocks now support external HTTP(S)/mailto hyperlinks and aspect-pres
 ## PowerPoint chart creation
 
 Basic CLI/MCP slide specs support native column and line charts with bounded literal categories, series, colors, cached values and an embedded XLSX workbook. The generated workbook is checked for literal labels and preserved numbers. LibreOffice rendering and direct MCP authoring were verified; later chart-data editing and native PowerPoint fidelity remain open.
+
+## PowerPoint chart cache inspection
+
+CLI, MCP, session revisions and review bundles expose bounded PowerPoint chart cache inventories, source references and embedded-workbook metadata. Cache freshness and workbook contents are not reconciled; complex charts and scan limits are flagged. Targeted updates remain open.

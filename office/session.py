@@ -25,6 +25,7 @@ import spreadsheet
 import snapshot as snapshots
 import slides
 import slide_text_check
+import slide_charts
 import word
 
 FORMATS = ('.docx', '.xlsx', '.pptx')
@@ -169,6 +170,12 @@ def tracked_changes(directory, revision):
 def external_relationships(directory, revision):
     state = info(directory); source = revision_file(state, revision)
     return {'revision': revision, **review.external_relationships(source)}
+
+
+def inspect_slide_charts(directory, revision):
+    state = info(directory); source = revision_file(state, revision)
+    if state['format'] != 'pptx': raise ValueError('Slide chart inspection requires a PPTX session')
+    return {'revision': revision, **slide_charts.inspect(source)}
 
 
 def inspect_layout(directory, revision):

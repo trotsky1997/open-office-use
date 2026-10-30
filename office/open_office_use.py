@@ -42,6 +42,7 @@ from PIL import Image
 
 import layout
 import slide_text_check
+import slide_charts
 import chart_cache
 import notes
 import visual
@@ -671,6 +672,7 @@ def main():
     slide_search = commands.add_parser('search-slides'); slide_search.add_argument('file'); slide_search.add_argument('--query', required=True); slide_search.add_argument('--slide', type=int); slide_search.add_argument('--offset', type=int, default=0); slide_search.add_argument('--snapshot-sha256'); slide_search.add_argument('--scope', choices=('slides', 'notes'), default='slides')
     note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
+    slide_charts_read = commands.add_parser('inspect-slide-charts'); slide_charts_read.add_argument('file')
     external_read = commands.add_parser('external-links'); external_read.add_argument('file')
     slide_text_read = commands.add_parser('inspect-slide-text'); slide_text_read.add_argument('file')
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
@@ -726,6 +728,7 @@ def main():
     session_changes = sub.add_parser('tracked-changes'); session_changes.add_argument('directory'); session_changes.add_argument('--revision', type=int, required=True)
     session_stories = sub.add_parser('stories'); session_stories.add_argument('directory'); session_stories.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
+    session_charts = sub.add_parser('inspect-slide-charts'); session_charts.add_argument('directory'); session_charts.add_argument('--revision', type=int, required=True)
     session_external = sub.add_parser('external-links'); session_external.add_argument('directory'); session_external.add_argument('--revision', type=int, required=True)
     session_slide_text = sub.add_parser('inspect-slide-text'); session_slide_text.add_argument('directory'); session_slide_text.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True); session_calc.add_argument('--allow-dynamic-arrays', action='store_true')
@@ -825,6 +828,8 @@ def main():
                 result = session.inspect_slide_text(args.directory, args.revision, render)
             elif args.action == 'inspect-layout':
                 result = session.inspect_layout(args.directory, args.revision)
+            elif args.action == 'inspect-slide-charts':
+                result = session.inspect_slide_charts(args.directory, args.revision)
             elif args.action == 'external-links':
                 result = session.external_relationships(args.directory, args.revision)
             elif args.action == 'recalculate':
@@ -871,6 +876,8 @@ def main():
             result = slide_text_check.scan(args.file, render)
         elif args.command == 'inspect-layout':
             result = layout.inspect(args.file)
+        elif args.command == 'inspect-slide-charts':
+            result = slide_charts.inspect(args.file)
         elif args.command == 'external-links':
             result = review.external_relationships(args.file)
         elif args.command == 'author':

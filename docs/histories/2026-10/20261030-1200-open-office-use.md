@@ -231,3 +231,7 @@ Extended CLI/MCP Word blocks with hyperlinked runs and bounded, snapshot-checked
 ### PowerPoint native chart authoring
 
 Added positioned native column/line charts with literal embedded workbook data, cached chart values, optional title, legend, number formats and series colors. Validated embedded values and guarded formula/link conversion; checked invalid inputs, MCP creation and LibreOffice rendering. Targeted chart-data editing and native PowerPoint fidelity remain future work.
+
+### PowerPoint chart cache inspection
+
+Added snapshot-bound, bounded chart cache inventory through CLI, MCP, revision sessions and review bundles. Verified authored charts, missing and oversized caches, snapshot identity and MCP calls. The embedded workbook is identified but its data is not reconciled; targeted chart updates remain future work.

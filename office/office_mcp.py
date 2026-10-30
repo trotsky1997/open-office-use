@@ -21,6 +21,7 @@ import selection_text
 import selection_candidates
 import slides
 import slide_text_check
+import slide_charts
 from open_office_use import author, doctor, inspect, render, render_with_info
 
 server = FastMCP(
@@ -404,6 +405,18 @@ def session_replace_picture(directory: str, base_revision: int, path: str, image
 def session_apply(directory: str, base_revision: int, operations: list[dict[str, Any]]) -> dict[str, Any]:
     """Apply an OfficeCLI batch to the latest revision; reject concurrent or stale edits."""
     return session.apply(directory, base_revision, operations)
+
+
+@server.tool()
+def inspect_slide_charts(file: str) -> dict[str, Any]:
+    """Inspect bounded saved PowerPoint chart caches and embedded-workbook metadata; cache freshness is unknown."""
+    return slide_charts.inspect(file)
+
+
+@server.tool()
+def session_inspect_slide_charts(directory: str, revision: int) -> dict[str, Any]:
+    """Inspect PowerPoint chart caches in a session revision; embedded-workbook contents are not compared."""
+    return session.inspect_slide_charts(directory, revision)
 
 
 @server.tool()

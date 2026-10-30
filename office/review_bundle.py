@@ -12,6 +12,7 @@ import chart_cache
 import officecli_backend
 import spreadsheet
 import slide_text_check
+import slide_charts
 import visual
 import word
 
@@ -83,6 +84,10 @@ def create(source, destination, render, revision=None):
                 if not geometry['font_size']['complete']: flags.append('slide_font_size_scan_incomplete')
                 if not geometry['complete']: flags.append('slide_layout_incomplete')
                 if geometry['off_slide_count'] or geometry['overlap_count']: flags.append('slide_layout_candidates')
+            charts = check('slide_charts', lambda: slide_charts.inspect(snapshot))
+            if charts is not None:
+                if not charts['complete']: flags.append('slide_chart_inventory_incomplete')
+                if any(item.get('workbook', {}).get('status') == 'external' for item in charts['charts']): flags.append('slide_chart_external_workbook')
             note_inventory = check('speaker_notes', lambda: notes.inventory(snapshot))
             if note_inventory is not None:
                 if note_inventory['notes_slides']: flags.append('speaker_notes_parts_present')
