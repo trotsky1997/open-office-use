@@ -271,6 +271,26 @@ async function run() {
     await backend.finalizeTabs({session_id:"popup-scope",turn_id:"turn",keep:[]});assert.equal(state.tabs.has(opener),false);assert.equal(state.tabs.has(child),true);assert.equal(state.tabs.get(child).groupId,-1);assert.equal(state.tabs.has(external),true);
   }
 
+  // A tab can close after the group snapshot and before disposition.
+  {
+    const {chrome,state,helpers}=createChromeFake();const {BrowserBackend}=await loadBackground(bgSource,chrome);const backend=new BrowserBackend();await backend.store.ready;
+    const groupId=helpers.createGroup({windowId:1,title:"Closing"}),agent=helpers.createTab({windowId:1,groupId}),user=helpers.createTab({windowId:1,groupId}),survivor=helpers.createTab({windowId:1,groupId});
+    await seedSession(backend,chrome,{sessionId:"closing",groupId,tabOrigins:{[agent]:"agent",[user]:"user",[survivor]:"agent"},activeTabId:agent,attached:[]});
+    const remove=chrome.tabs.remove,ungroup=chrome.tabs.ungroup;
+    chrome.tabs.remove=async id=>{if(id===agent){state.tabs.delete(id);throw Error(`No tab with id: ${id}.`);}return remove(id);};
+    chrome.tabs.ungroup=async id=>{if(id===user){state.tabs.delete(id);throw Error(`No tab with id: ${id}.`);}return ungroup(id);};
+    await backend.finalizeTabs({session_id:"closing",turn_id:"turn",keep:[]});
+    assert.equal(state.tabs.has(survivor),false);assert.equal(backend.store.state.sessions.closing,undefined);
+  }
+
+  {
+    const {chrome,helpers}=createChromeFake();const {BrowserBackend}=await loadBackground(bgSource,chrome);const backend=new BrowserBackend();await backend.store.ready;
+    const groupId=helpers.createGroup({windowId:1,title:"Error"}),agent=helpers.createTab({windowId:1,groupId});
+    await seedSession(backend,chrome,{sessionId:"error",groupId,tabOrigins:{[agent]:"agent"},activeTabId:agent,attached:[]});
+    chrome.tabs.remove=async()=>{throw Error('permission failure');};
+    await assert.rejects(backend.finalizeTabs({session_id:"error",turn_id:"turn",keep:[]}),/permission failure/);
+  }
+
   console.log("\nAll finalizeTabs detach tests passed.");
 }
 

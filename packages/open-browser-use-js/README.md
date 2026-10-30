@@ -601,7 +601,8 @@ accepts a regular expression. Both forms inspect the current main document and
 work with history API route changes as well as document navigation. The default
 load state is `load` and the default timeout is 10 seconds; `timeoutMs: 0`
 checks once. URLs are sampled roughly every 100 ms, so transient intermediate
-URLs can be missed. A slow browser request can finish after the timeout.
+URLs can be missed. Positive timeouts bound each browser read; a read already
+issued can finish later. A zero-timeout single check waits for its browser read.
 
 To observe navigation triggered by an action, register the wait before the
 action runs:

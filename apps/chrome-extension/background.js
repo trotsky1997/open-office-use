@@ -532,12 +532,16 @@ class BrowserBackend {
       ...deliverableTabs,
       ...handoffTabs
     ]);
-    if (agentTabsToClose.length > 0) {
-      await chrome.tabs.remove(agentTabsToClose.length === 1 ? agentTabsToClose[0] : agentTabsToClose);
-    }
-    if (userTabsToRelease.length > 0 && chrome.tabs.ungroup) {
-      await chrome.tabs.ungroup(userTabsToRelease.length === 1 ? userTabsToRelease[0] : userTabsToRelease);
-    }
+    const dispose = async (tabIds, operation) => {
+      for (const tabId of tabIds) {
+        try { await operation(tabId); }
+        catch (error) {
+          if (!new RegExp(`^No tab with id: ${tabId}\\.?$`).test(String(error?.message ?? error))) throw error;
+        }
+      }
+    };
+    await dispose(agentTabsToClose, (tabId) => chrome.tabs.remove(tabId));
+    if (chrome.tabs.ungroup) await dispose(userTabsToRelease, (tabId) => chrome.tabs.ungroup(tabId));
     if (deliverableTabs.length > 0) {
       await this.moveToDeliverables(deliverableTabs);
     }

@@ -402,6 +402,13 @@ test('full-page screenshots use content dimensions and enforce size limits', asy
   assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
 });
 
+test('waitForURL bounds a stalled read without retrying it',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);let resolveRead,reads=0;
+  tab.browser.cdp.evaluate=async()=>{reads++;return await new Promise(resolve=>{resolveRead=resolve;});};
+  await assert.rejects(tab.waitForURL('https://example.test/done',{timeoutMs:10}),/Timed out waiting for URL/);assert.equal(reads,1);
+  resolveRead({href:'https://example.test/done',readyState:'complete'});await new Promise(resolve=>setImmediate(resolve));assert.equal(reads,1);
+});
+
 test('semantic match rechecks preserve the active observation and detect new matches',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'});let duplicate=false;
   client.request=async(method,params)=>{

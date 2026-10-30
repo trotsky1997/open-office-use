@@ -838,15 +838,25 @@ export class OpenBrowserUseTab {
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid URL timeout");
         const deadline = performance.now() + timeoutMs;
+        const timedOut = () => new Error(`Timed out waiting for URL after ${timeoutMs} ms`);
         while (true) {
-            let state = null;
+            if (timeoutMs > 0 && performance.now() >= deadline)
+                throw timedOut();
+            let state = null, timer;
             try {
-                state = await this.browser.cdp.evaluate(this.id, "({ href: window.location.href, readyState: document.readyState })");
+                const read = this.browser.cdp.evaluate(this.id, "({ href: window.location.href, readyState: document.readyState })");
+                state = timeoutMs === 0 ? await read : await Promise.race([read, new Promise((_, reject) => { timer = setTimeout(() => reject(timedOut()), Math.max(0, deadline - performance.now())); })]);
             }
             catch (error) {
                 if (!(error instanceof Error) || !/Execution context was destroyed|Cannot find context with specified id/i.test(error.message))
                     throw error;
             }
+            finally {
+                if (timer)
+                    clearTimeout(timer);
+            }
+            if (timeoutMs > 0 && performance.now() >= deadline)
+                throw timedOut();
             if (isObject(state) && typeof state.href === "string") {
                 if (matcher instanceof RegExp)
                     matcher.lastIndex = 0;
@@ -856,7 +866,7 @@ export class OpenBrowserUseTab {
             }
             const remaining = deadline - performance.now();
             if (remaining <= 0)
-                throw new Error(`Timed out waiting for URL after ${timeoutMs} ms`);
+                throw timedOut();
             await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
         }
     }
