@@ -76,3 +76,7 @@ Added bounded cell comparison via CLI and MCP, with formula/value/type differenc
 ## Visual revision comparison
 
 Added a side-by-side rendered comparison of a selected revision and latest revision to the viewer. The latest side updates after commits; editing and selection remain disabled while comparing. Tested two Chrome tabs with a new commit and restoration. Automatic visual change detection and pagination-aware alignment remain open.
+
+## Viewer change details
+
+Added on-demand text and OOXML part change details to the visual comparison viewer. The request identifies both revisions and the UI clears old results when the pair changes. Tested real Chrome display, version updates and invalid revision requests. Text views remain bounded and omit some semantics.

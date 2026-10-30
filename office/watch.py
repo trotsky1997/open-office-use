@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
+import review
 import selection_candidates
 import session
 
@@ -26,6 +27,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 .box{position:absolute;border:2px solid #0867c4;background:#087dd126;pointer-events:none;display:none;box-sizing:border-box}
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
+#comparison-text,#comparison-parts{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
 input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
@@ -53,6 +55,10 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <label>Right % <input name="right" type="number" min="0" max="100" step="0.1" required value="90"></label>
 <label>Bottom % <input name="bottom" type="number" min="0" max="100" step="0.1" required value="90"></label>
 <button type="submit">Save selection</button></form></details>
+<details id="comparison-details" hidden><summary>Text and file changes</summary>
+<p>Text is a bounded view; file-part changes may include formatting or metadata. Compare page appearance separately.</p>
+<button type="button" id="load-changes">Load changes</button><p id="changes-status" role="status"></p>
+<h2>Text</h2><pre id="comparison-text"></pre><h2>Changed file parts</h2><pre id="comparison-parts"></pre></details>
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
@@ -173,6 +179,7 @@ function selectable(image, page, revision, enabled) {
  return wrapper;
 }
 function display(state, live) {
+ document.getElementById('comparison-details').hidden=true;
  const key = `${state.revision}:${live}`;
  if (key === viewKey) return;
  const fragment = document.createDocumentFragment();
@@ -200,10 +207,27 @@ function displayComparison(state) {
   grid.appendChild(section);
  }
  document.getElementById('pages').replaceChildren(grid); displayed=state.revision; viewKey=key; clearCandidates();
+ document.getElementById('comparison-details').hidden=false;
+ document.getElementById('changes-status').textContent='';
+ document.getElementById('comparison-text').textContent=''; document.getElementById('comparison-parts').textContent='';
  document.getElementById('selection').textContent='Selections are available on the latest revision.';
  document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load').forEach(element => element.disabled=true);
  invalidateEdit('Return to the latest revision to edit.');
 }
+document.getElementById('load-changes').addEventListener('click', async () => {
+ if (!comparing || pinned === null || comparedLatest < 0) return;
+ const before=pinned, after=comparedLatest, button=document.getElementById('load-changes'); button.disabled=true;
+ document.getElementById('changes-status').textContent='Loading changes…';
+ try {
+  const response=await fetch(`comparison/${before}/${after}/changes`, {cache:'no-store'});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Changes unavailable');
+  if (!comparing || pinned !== before || comparedLatest !== after) return;
+  document.getElementById('comparison-text').textContent=result.text_diff.length ? result.text_diff.join('\\n') : 'No text changes in the bounded views.';
+  document.getElementById('comparison-parts').textContent=['added','removed','modified'].map(kind => `${kind}:\\n${result.parts[kind].join('\\n') || '(none)'}`).join('\\n\\n');
+  document.getElementById('changes-status').textContent=`Revision ${before} → ${after}. Text view may be truncated; ${result.text_diff_truncated ? 'diff output was truncated.' : 'diff output is within its limit.'}`;
+ } catch (error) { if (comparing && pinned === before && comparedLatest === after) document.getElementById('changes-status').textContent=`Changes error: ${error.message}`; }
+ finally { button.disabled=false; }
+});
 async function loadComparison(revision) {
  const response=await fetch(`comparison/${revision}/state`, {cache:'no-store'}); const state=await response.json();
  if (!response.ok) throw new Error(state.error || 'Comparison unavailable');
@@ -352,9 +376,20 @@ def serve(directory, preview, port=0, render=None):
                 route = path[len(prefix):]
                 if route == '':
                     self.send(200, PAGE.replace('NONCE', nonce).encode(), 'text/html; charset=utf-8'); return
+                changes = re.fullmatch(r'comparison/(\d{1,6})/(\d{1,6})/changes', route)
                 history = re.fullmatch(r'revision/(\d{1,6})/state', route)
                 comparison = re.fullmatch(r'comparison/(\d{1,6})/state', route)
                 page_match = re.fullmatch(r'page/(\d{1,6})/(\d{1,6})', route)
+                if changes:
+                    try:
+                        with lock:
+                            state = session.info(directory)
+                            before = session.revision_file(state, int(changes.group(1)))
+                            after = session.revision_file(state, int(changes.group(2)))
+                        data = review.compare(before, after)
+                        self.send(200, json.dumps(data, ensure_ascii=False).encode(), 'application/json'); return
+                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+                        self.send(400, json.dumps({'error': str(exc)}).encode(), 'application/json'); return
                 if route == 'state' or history or comparison or page_match:
                     try:
                         with lock:

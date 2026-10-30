@@ -35,3 +35,5 @@ Connected viewer selection to candidate lookup and explicit element loading. Ver
 Added range-based spreadsheet formula, value and cache comparison through CLI and MCP. Verified real recalculation and bounded output.
 
 Added side-by-side visual review of a historical and latest revision in the viewer, with live latest-side refresh. Verified browser interaction and two-tab updates.
+
+Connected bounded text and OOXML part comparison to the side-by-side viewer; verified browser display and clearing on a newer revision.

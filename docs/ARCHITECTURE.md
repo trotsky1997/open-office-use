@@ -320,3 +320,5 @@ Selection candidate lookup searches bounded text fragments against an OfficeCLI 
 The viewer can search a saved visual selection for text-based element candidates and explicitly load a chosen path. Selection identity and latest revision are checked before and after lookup; candidates remain subject to user verification.
 
 XLSX `compare-cells` and MCP `compare_cells` compare bounded saved-cell ranges, returning formula, value and type changes with unknown cache freshness. Styling and workbook-wide structure remain outside this view.
+
+The comparison viewer can request bounded text and OOXML part differences for its explicit revision pair; the client clears those results when the displayed pair changes.

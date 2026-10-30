@@ -74,6 +74,14 @@ with tempfile.TemporaryDirectory() as tmp:
         comparison = json.loads(get(url + 'comparison/0/state'))
         assert comparison['revision'] == 0 and comparison['latest_revision'] == 1
         assert comparison['pages'] > 0 and comparison['latest_pages'] > 0
+        changes = json.loads(get(url + 'comparison/0/1/changes'))
+        assert 'First' in str(changes['text_diff']) and 'Changed' in str(changes['text_diff']), changes
+        assert changes['parts']['modified'], changes
+        try:
+            get(url + 'comparison/0/999/changes')
+            raise AssertionError('Missing revision comparison was served')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
         try:
             get(url + 'revision/999/state')
