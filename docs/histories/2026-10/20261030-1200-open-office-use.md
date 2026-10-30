@@ -389,3 +389,5 @@ Added editable PowerPoint flowchart shapes with text, rich paragraphs, fill, opt
 Added native attached PowerPoint connectors between named shapes with geometry-specific connection-site indices; validated schema and LibreOffice rendering.
 
 Added horizontal PowerPoint bar charts with editable embedded data, cache validation, series colors and visual-axis titles.
+
+Added optional native value labels to authored PowerPoint charts; checked percentage labels in LibreOffice rendering.

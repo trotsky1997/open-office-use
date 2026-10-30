@@ -286,3 +286,5 @@ PowerPoint authoring supports editable text-bearing rectangle, rounded rectangle
 Straight connectors can reference earlier named shape nodes with cardinal connection sites, including ellipse-specific indices; native PowerPoint interaction remains unverified.
 
 PowerPoint authoring also supports horizontal bar charts with editable embedded data and visual-axis titles. Native PowerPoint rendering remains to be checked.
+
+PowerPoint column, bar and line charts can show native value labels using source number formatting. LibreOffice rendered percentage labels; native PowerPoint and dense-label layout need review.

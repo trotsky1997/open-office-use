@@ -415,7 +415,7 @@ def append_slides(presentation, slides):
             allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
                        'rectangle': geometry | {'fill'}, 'shape': geometry | {'id', 'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'connector': {'type', 'start', 'end', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
-                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title'}}
+                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
             if kind == 'connector':
                 ends = []
@@ -601,6 +601,7 @@ def append_slides(presentation, slides):
                 for key in ('x_axis_title', 'y_axis_title'):
                     if key in element and (not isinstance(element[key], str) or len(element[key]) > 255): raise ValueError('Chart axis titles must be text of at most 255 characters')
                 if not isinstance(legend, bool): raise ValueError('Chart legend must be a boolean')
+                if 'show_values' in element and not isinstance(element['show_values'], bool): raise ValueError('Chart show_values must be a boolean')
                 data = CategoryChartData(); data.categories = categories
                 for series in series_specs:
                     if not isinstance(series, dict) or set(series) - {'name', 'values', 'color', 'number_format'}: raise ValueError('Invalid chart series')
@@ -633,6 +634,11 @@ def append_slides(presentation, slides):
                 finally:
                     embedded.close()
                 chart.has_legend = legend
+                if element.get('show_values', False):
+                    chart.plots[0].has_data_labels = True
+                    labels = chart.plots[0].data_labels
+                    labels.show_value = True
+                    labels.show_category_name = False; labels.show_series_name = False; labels.show_legend_key = False; labels.show_percentage = False
                 if title is not None: chart.has_title = True; chart.chart_title.text_frame.text = title
                 for key, axis in (('x_axis_title', chart.value_axis), ('y_axis_title', chart.category_axis)) if chart_type == 'bar' else (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
                     if key in element: axis.has_title = True; axis.axis_title.text_frame.text = element[key]
