@@ -133,7 +133,7 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   for (const locator of [messageCss,messageRole]) { await evaluate(a.id,"document.querySelector('#increment').focus()");await locator.focus({timeoutMs:3000});assert.equal(await evaluate(a.id,"document.activeElement.id"),'message'); }
   assert.deepEqual(await evaluate(a.id,'window.focusProbe'),{clicks:0,keys:0});
   await evaluate(a.id,`(()=>{window.savedConnected=Object.getOwnPropertyDescriptor(Node.prototype,'isConnected');Object.defineProperty(Node.prototype,'isConnected',{configurable:true,get:()=>false});return true})()`);
-  try {await messageRole.focus();assert.equal(await evaluate(a.id,"document.activeElement.id"),'message');}
+  try {await messageRole.focus();assert.equal(await evaluate(a.id,"document.activeElement.id"),'message');assert.equal(await messageRole.isVisible(),true);assert.equal(await messageRole.isEnabled(),true);assert.equal(await messageRole.getAttribute('id'),'message');}
   finally {await evaluate(a.id,"Object.defineProperty(Node.prototype,'isConnected',window.savedConnected);true");}
 
   check('SDK locators: focus without mouse or key events');
@@ -208,6 +208,10 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.ok(Math.abs(feedbackPoint.x-feedbackPoint.left-localPoint.result.value.x)<1 && Math.abs(feedbackPoint.y-feedbackPoint.top-localPoint.result.value.y)<1);
   const frameInput=sdkTab.playwright.frameLocator('#cross-frame').getByRole('textbox',{name:'Cross-frame text'}),frameCss=sdkTab.playwright.frameLocator('#cross-frame').locator('input[aria-label="Cross-frame text"]');
   assert.equal(await frameInput.isEditable(),true);assert.equal(await frameCss.isEditable(),true);
+  await evaluate(a.id,`(()=>{window.savedFrameRect=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'getBoundingClientRect');HTMLIFrameElement.prototype.getBoundingClientRect=()=>({width:0,height:0});return true})()`);
+  try {assert.equal(await frameInput.isVisible(),true);}
+  finally {await evaluate(a.id,"if(window.savedFrameRect)Object.defineProperty(HTMLIFrameElement.prototype,'getBoundingClientRect',window.savedFrameRect);else delete HTMLIFrameElement.prototype.getBoundingClientRect;true");}
+
   await frameCss.focus();await frameInput.focus();
 
   await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:"document.querySelector('[aria-label=\"Cross-frame text\"]').readOnly=true",returnByValue:true},{sessionId:crossSession});

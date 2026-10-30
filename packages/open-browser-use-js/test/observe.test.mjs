@@ -193,9 +193,10 @@ test('locator innerText requires a unique current target and enforces its size l
   client.request=async(method,params)=>{
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'one',url:'https://example.test'}}};
     if(params.method==='Accessibility.getFullAXTree')return {nodes:Array.from({length:count},(_,i)=>({backendDOMNodeId:7+i,role:{value:'button'},name:{value:'Save'}}))};
-    if(params.method==='DOM.resolveNode')return {object:{objectId:'node'}};
+    if(params.method==='DOM.resolveNode'){assert.equal(params.commandParams.executionContextId,123);return {object:{objectId:'node'}};}
     if(params.method==='Runtime.callFunctionOn')return {result:{value:{value:['enabled','visible'].includes(params.commandParams.arguments[0].value) ? true : params.commandParams.arguments[0].value === 'attribute' ? params.commandParams.arguments[1].value === 'href' ? '/target' : null : text}}};
     if(params.method==='Runtime.releaseObject'){released++;return {};}
     return {};

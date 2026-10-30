@@ -1541,15 +1541,11 @@ export class OpenBrowserUseTab {
       await this.verifyLocatorScope(observation,target);
       return fresh.checked;
     }
-    let executionContextId:number | undefined;
-    if (mode === "inputValue" || mode === "editable") {
-      const frameId=target.frameId ?? observation.frames?.[0]?.id;
-      if (!frameId) throw new RetryablePreflightError("Target frame is unavailable; observe again");
-      const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId,worldName:"open-browser-use-selector"},{sessionId});
-      if (!isObject(world) || typeof world.executionContextId !== "number") throw new RetryablePreflightError("Target context is unavailable; observe again");
-      executionContextId=world.executionContextId;
-    }
-    const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:target.backendNodeId,...(executionContextId === undefined ? {} : {executionContextId})},{sessionId});
+    const frameId=target.frameId ?? observation.frames?.[0]?.id;
+    if (!frameId) throw new RetryablePreflightError("Target frame is unavailable; observe again");
+    const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId,worldName:"open-browser-use-selector"},{sessionId});
+    if (!isObject(world) || typeof world.executionContextId !== "number" || !Number.isSafeInteger(world.executionContextId)) throw new RetryablePreflightError("Target context is unavailable; observe again");
+    const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:target.backendNodeId,executionContextId:world.executionContextId},{sessionId});
     const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
     if (typeof objectId !== "string") throw new RetryablePreflightError("Target is unavailable; observe again");
     try {
@@ -1573,7 +1569,10 @@ export class OpenBrowserUseTab {
           const frame = target.frameChain![i], ownerSession = target.frameChain![i+1]?.sessionId;
           const owner = await this.browser.cdp.call(this.id,"DOM.getFrameOwner",{frameId:frame.id},{sessionId:ownerSession});
           if (!isObject(owner) || typeof owner.backendNodeId !== "number") throw new RetryablePreflightError("Frame owner is unavailable; observe again");
-          const result = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:owner.backendNodeId},{sessionId:ownerSession});
+          if(!frame.parentId)throw new RetryablePreflightError("Frame parent is unavailable; observe again");
+          const parentWorld=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId:frame.parentId,worldName:"open-browser-use-selector"},{sessionId:ownerSession});
+          if(!isObject(parentWorld) || typeof parentWorld.executionContextId!=="number" || !Number.isSafeInteger(parentWorld.executionContextId))throw new RetryablePreflightError("Frame context is unavailable; observe again");
+          const result = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:owner.backendNodeId,executionContextId:parentWorld.executionContextId},{sessionId:ownerSession});
           const ownerId = isObject(result) && isObject(result.object) ? result.object.objectId : undefined;
           if (typeof ownerId !== "string") throw new RetryablePreflightError("Frame owner is unavailable; observe again");
           try {
