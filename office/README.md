@@ -105,6 +105,14 @@ For basic Excel authoring, `sheet_options` can format a workbook in the same req
 
 Options apply to existing worksheets after values are written. Freeze panes accepts a single cell or `null`; auto-filter accepts a range of at most 10,000,000 cells or `null` and rejects replacement when existing filter criteria or sort state are present. Column widths use Excel character units (greater than 0 and at most 255); row heights use points (greater than 0 and at most 409.5). Format entries accept `bold`, `italic`, `font_size`, six-digit RGB `font_color` and `fill`, `number_format`, `horizontal` (`general`, `left`, `center`, `right`) and boolean `wrap`. Omitted properties retain their existing direct settings. Each format covers up to 10,000 cells; all formats together cover up to 20,000 cells, with at most 100 format entries per sheet and 200 dimension entries of each kind. Merged-cell placeholders are rejected. Formulas are stored without calculation; formula caches may be missing and LibreOffice previews may recalculate them. When modifying an existing workbook, library round-tripping can change unsupported features and formula caches; use the targeted session grid when preserving those matters.
 
+Add a local image as an editable worksheet drawing with `images` in `sheet_options`:
+
+```json
+{"sheets":{"Report":{"A1":"Revenue"}},"sheet_options":{"Report":{"images":[{"path":"/absolute/path/to/figure.png","anchor":"C3","width":320,"description":"Revenue trend"}]}}}
+```
+
+The image is snapshotted and embedded. PNG and JPEG are supported; `anchor` is a single cell and `width` is 1–4,096 pixels at 96 DPI. Height follows the pixel aspect ratio and must also be 1–4,096 pixels; EXIF orientation must be normalized. `description` supplies accessible alternative text up to 1,000 characters. Each image is limited to 20 MiB and 40 million pixels, with at most 20 images per sheet, 50 per request and 128 MiB across the request. The completed workbook is limited to 5,000 parts and 128 MiB both on disk and uncompressed. Spreadsheet rendering and print areas can affect visibility. Source-based authoring uses an openpyxl round trip, which can change unsupported workbook features and caches.
+
 For a printable worksheet, set `print_options` within the relevant `sheet_options`:
 
 ```json

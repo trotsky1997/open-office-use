@@ -283,3 +283,7 @@ Added proportional fixed table columns, header colors and table typography to st
 ### Spreadsheet print layout
 
 Added worksheet print area, repeating rows and columns, paper, orientation, margins and running text with page numbers to authoring. Validated schema, CLI/MCP, literal ampersands and a four-page LibreOffice PDF; small margins hid running text in the preview. Native Excel remains unverified.
+
+### Spreadsheet image authoring
+
+Added cell-anchored PNG/JPEG workbook drawings with bounded dimensions, snapshots and alternative descriptions. Checked existing drawing IDs, schema, CLI/MCP and LibreOffice PDF image output; openpyxl source round-tripping and native Excel rendering remain fidelity risks.

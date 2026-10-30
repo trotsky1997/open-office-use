@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -26,6 +27,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.drawing.image import Image as WorkbookImage
+from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing, _check_anchor
 from openpyxl.chart.data_source import AxDataSource, StrRef, StrData, StrVal, NumData, NumVal
 from openpyxl.styles import PatternFill
 from openpyxl.cell.cell import MergedCell
@@ -484,7 +487,7 @@ def append_slides(presentation, slides):
 def format_workbook(workbook, options):
     """Apply bounded presentation settings to an authored workbook."""
     if not isinstance(options, dict) or len(options) > 100: raise ValueError('Sheet options must be an object with at most 100 sheets')
-    total_cells = 0; chart_cache_bytes = 0; chart_cache_points = 0
+    total_cells = 0; chart_cache_bytes = 0; chart_cache_points = 0; image_bytes = 0; image_count = 0
     # shortcut: cache bounded, nonempty literal text or finite numbers; calculated and ambiguous values require recalculation.
     def chart_cache(cells, text):
         nonlocal chart_cache_bytes, chart_cache_points
@@ -525,7 +528,7 @@ def format_workbook(workbook, options):
         return 'FF' + value.upper()
     for name, setting in options.items():
         if name not in workbook.sheetnames: raise ValueError(f'Worksheet not found: {name}')
-        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options'}: raise ValueError('Invalid worksheet options')
+        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options', 'images'}: raise ValueError('Invalid worksheet options')
         sheet = workbook[name]
         if not isinstance(sheet, Worksheet): raise ValueError('Sheet options require a worksheet')
         if 'freeze_panes' in setting:
@@ -629,6 +632,34 @@ def format_workbook(workbook, options):
                         if 'wrap' in style: alignment.wrap_text = style['wrap']
                         cell.alignment = alignment
                     if 'number_format' in style: cell.number_format = style['number_format']
+        images = setting.get('images', []); added_images = []
+        if not isinstance(images, list) or len(images) > 20: raise ValueError('Images must be a list of at most 20 entries per sheet')
+        for spec in images:
+            image_count += 1
+            if image_count > 50: raise ValueError('At most 50 workbook images are supported per request')
+            if not isinstance(spec, dict) or set(spec) - {'path', 'anchor', 'width', 'description'}: raise ValueError('Invalid worksheet image specification')
+            path, anchor, width = spec.get('path'), spec.get('anchor'), spec.get('width')
+            description = spec.get('description', '')
+            if not isinstance(description, str) or len(description) > 1000: raise ValueError('Image description must be text of at most 1,000 characters')
+            if not isinstance(path, str): raise ValueError('Worksheet image requires a local path')
+            if not isinstance(anchor, str) or not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', anchor): raise ValueError('Image anchor must be a single cell')
+            bounds(anchor, 1)
+            width = amount(width, 'image width', 4096)
+            if width < 1: raise ValueError('Image width must be at least one pixel')
+            if Path(path).stat().st_size > 20 * 1024 * 1024: raise ValueError('Image exceeds 20 MiB')
+            with tempfile.TemporaryDirectory(prefix='office-workbook-image-') as tmp:
+                snapshot, _ = snapshots.copy(path, tmp); data = snapshot.read_bytes()
+            image_bytes += len(data)
+            if len(data) > 20 * 1024 * 1024 or image_bytes > 128 * 1024 * 1024: raise ValueError('Image size exceeds per-image or workbook limits')
+            with Image.open(io.BytesIO(data)) as image:
+                if image.format not in ('PNG', 'JPEG') or image.width * image.height > 40000000: raise ValueError('Image must be PNG or JPEG with at most 40 million pixels')
+                height = width * image.height / image.width
+                if not 1 <= height <= 4096: raise ValueError('Image aspect ratio produces an unsupported height')
+                image.verify()
+            with Image.open(io.BytesIO(data)) as image:
+                if image.getexif().get(274, 1) != 1: raise ValueError('Normalize image orientation before inserting it')
+            picture = WorkbookImage(io.BytesIO(data)); picture.width = width; picture.height = height
+            sheet.add_image(picture, anchor.upper()); added_images.append((picture, description))
         charts = setting.get('charts', [])
         if not isinstance(charts, list) or len(charts) > 20: raise ValueError('Charts must be a list of at most 20 entries')
         for chart_spec in charts:
@@ -683,6 +714,19 @@ def format_workbook(workbook, options):
             if 'width' in chart_spec: chart.width = amount(chart_spec['width'], 'chart width', 100)
             if 'height' in chart_spec: chart.height = amount(chart_spec['height'], 'chart height', 100)
             sheet.add_chart(chart, anchor.upper())
+        if added_images:
+            reserved = [len(sheet._charts) + len(sheet._images)]
+            for picture in sheet._images:
+                existing = getattr(picture.anchor, 'pic', None)
+                group = getattr(picture.anchor, 'groupShape', None)
+                if existing is None and group is not None: existing = group.pic
+                if existing is not None: reserved.append(existing.nvPicPr.cNvPr.id)
+            next_id = max(reserved) + 1
+            if next_id + len(added_images) - 1 > 2147483647: raise ValueError('Workbook drawing identifier limit reached')
+            for picture, description in added_images:
+                anchor = _check_anchor(picture); anchor.pic = SpreadsheetDrawing()._picture_frame(next_id)
+                anchor.pic.nvPicPr.cNvPr.descr = description
+                picture.anchor = anchor; next_id += 1
 
 
 def author(spec, output, source=None):
@@ -742,6 +786,11 @@ def author(spec, output, source=None):
         with tempfile.TemporaryDirectory(dir=out.parent) as tmp:
             candidate = Path(tmp) / out.name
             obj.save(candidate)
+            if suffix == '.xlsx' and any(setting.get('images') for setting in spec.get('sheet_options', {}).values() if isinstance(setting, dict)):
+                with zipfile.ZipFile(candidate) as archive:
+                    entries = archive.infolist()
+                    if candidate.stat().st_size > 128 * 1024 * 1024 or len(entries) > 5000 or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                        raise ValueError('Authored workbook with images exceeds package limits')
             os.link(candidate, out)
         return str(out.resolve())
 

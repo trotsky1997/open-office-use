@@ -2,9 +2,12 @@
 import tempfile
 import json
 import sys
+import zipfile
+from lxml import etree
 import subprocess
 from pathlib import Path
 from openpyxl import load_workbook
+from PIL import Image
 import open_office_use
 import officecli_backend
 import chart_cache
@@ -60,6 +63,36 @@ with tempfile.TemporaryDirectory() as tmp:
     pages=[page for page in text.split('\f') if page.strip()]; assert len(pages)>=2
     assert all('Metric' in page and 'R&D REPORT' in page and f'Page {index}' in page for index,page in enumerate(pages,1)),pages
     assert 'OUTSIDE PRINT AREA' not in text
+    image_path=root/'figure.png'; Image.new('RGB',(80,40),'#236B8E').save(image_path)
+    image_source=image_path.read_bytes(); image_book=root/'images.xlsx'
+    image_spec={'sheets':{'Data':{'A1':'Chart'}},'sheet_options':{'Data':{'images':[{'path':str(image_path),'anchor':'C3','width':200,'description':'Revenue graphic'}]}}}
+    image_spec_path=root/'image-spec.json';image_spec_path.write_text(json.dumps(image_spec));
+    result=subprocess.run([sys.executable,str(cli),'author','--spec',str(image_spec_path),'--out',str(image_book)],capture_output=True,text=True,check=True)
+    assert json.loads(result.stdout)['output']==str(image_book.resolve())
+    image_path.unlink(); loaded=load_workbook(image_book)['Data']; assert loaded['A1'].value=='Chart' and len(loaded._images)==1
+    picture=loaded._images[0]; assert picture._data()==image_source and picture.anchor._from.col==2 and picture.anchor._from.row==2
+    assert picture.anchor.ext.width==200*9525 and picture.anchor.ext.height==100*9525
+    assert picture.anchor.pic.nvPicPr.cNvPr.descr=='Revenue graphic'
+    code, validation, _=officecli_backend.invoke('validate',image_book); assert code==0 and validation['success'],validation
+    image_pdf=open_office_use.render(image_book,root/'image-render')
+    listed=subprocess.run(['pdfimages','-list',image_pdf],capture_output=True,text=True,check=True).stdout
+    assert any('image' in line and '80' in line and '40' in line for line in listed.splitlines()[2:]),listed
+    second_image=root/'second.jpg'; Image.new('RGB',(40,40),'#BA5A32').save(second_image)
+    mixed_book=root/'mixed-images.xlsx'
+    open_office_use.author({'sheets':{'Data':{'A2':1,'A3':2}},'sheet_options':{'Data':{'images':[{'path':str(second_image),'anchor':'D4','width':120,'description':'Second graphic'}],'charts':[{'type':'line','data':'A1:A3'}]}}},mixed_book,image_book)
+    mixed=load_workbook(mixed_book)['Data']; assert len(mixed._images)==2 and len(mixed._charts)==1
+    assert [image.anchor.pic.nvPicPr.cNvPr.descr for image in mixed._images]==['Revenue graphic','Second graphic']
+    with zipfile.ZipFile(mixed_book) as archive:
+        drawing=etree.fromstring(archive.read('xl/drawings/drawing1.xml'))
+        identifiers=drawing.xpath('//*[local-name()="cNvPr"]/@id')
+    assert len(identifiers)==3 and len(set(identifiers))==3, identifiers
+    code, validation, _=officecli_backend.invoke('validate',mixed_book); assert code==0 and validation['success'],validation
+    for index, image in enumerate([{'path':str(image_book),'anchor':'A1','width':100}, {'path':str(image_book),'anchor':'XFE1','width':100}, {'path':str(image_book),'anchor':'A1','width':True}]):
+        invalid=root/f'bad-image-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Data':{}},'sheet_options':{'Data':{'images':[image]}}},invalid)
+        except (ValueError, OSError): pass
+        else: raise AssertionError('Invalid worksheet image accepted')
+        assert not invalid.exists()
     before = output.read_bytes(); revised = root/'revised.xlsx'
     open_office_use.author({'sheet_options':{'Forecast':{'formats':[{'range':'A1','italic':True}]}}}, revised, output)
     revised_sheet = load_workbook(revised)['Forecast']; assert revised_sheet['A1'].font.bold and revised_sheet['A1'].font.italic and output.read_bytes() == before
