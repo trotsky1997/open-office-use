@@ -411,3 +411,5 @@ Added targeted CLI and MCP updates for existing PowerPoint object alternative te
 Added native workbook hyperlink cells with validated URL schemes, literal labels, preserved source styles and external-relationship audit coverage.
 
 Added worksheet hyperlink target mapping and coverage to session grids and viewer, including internal locations and ambiguous or unresolved links.
+
+Verified workbook hyperlink display and label editing in an in-app browser; added an inline reminder that value edits retain the link.

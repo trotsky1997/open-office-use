@@ -427,7 +427,7 @@ async function loadGrid(target=null) {
     const mode=document.createElement('select'); mode.setAttribute('aria-label', `${sheet} ${cell.cell} input type`);
     for (const [value,label] of [['default','Default'],['auto','Automatic'],['text','Literal text']]) { const option=document.createElement('option'); option.value=value; option.textContent=label; mode.appendChild(option); }
     mode.disabled=!cell.editable; td.append(input,mode);
-    if (cell.hyperlink) { const detail=document.createElement('small'); detail.style.display='block'; detail.style.overflowWrap='anywhere'; detail.textContent=`Link (${cell.hyperlink.status}): ${[cell.hyperlink.target,cell.hyperlink.location].filter(Boolean).join(' · ') || 'unresolved'}${cell.hyperlink.truncated ? ' [truncated]' : ''}`; td.appendChild(detail); }
+    if (cell.hyperlink) { const detail=document.createElement('small'); detail.style.display='block'; detail.style.overflowWrap='anywhere'; detail.textContent=`Link (${cell.hyperlink.status}): ${[cell.hyperlink.target,cell.hyperlink.location].filter(Boolean).join(' · ') || 'unresolved'}${cell.hyperlink.truncated ? ' [truncated]' : ''}${cell.editable ? ' · retained when editing the value' : ''}`; td.appendChild(detail); }
     if (data.conditional_formatting.rules.some(rule=>rule.cells.includes(cell.cell))) input.title+='; conditional formatting may change appearance';
     if (!data.conditional_formatting.complete) input.title+='; conditional formatting inspection incomplete';
     const choices=validationList(data.data_validation,cell.cell);

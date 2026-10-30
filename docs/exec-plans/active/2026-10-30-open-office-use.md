@@ -308,3 +308,5 @@ Existing slide object descriptions can be updated in snapshot-bound session revi
 Workbook authoring supports typed HTTP(S)/mailto hyperlinks with literal labels and visible default styling. Grid value edits retain links; external-relationship inspection exposes targets. Native Excel fidelity remains unverified.
 
 Workbook grid reads and viewer expose bounded cell hyperlink targets and locations without following them. Invalid, overlapping or unresolvable links and truncation are reported in coverage.
+
+The workbook viewer was exercised in a real in-app browser: link targets appeared, a label edit created a revision, and the target remained visible on reload. The grid now explicitly states that value edits retain the link.
