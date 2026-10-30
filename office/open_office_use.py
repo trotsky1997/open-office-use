@@ -14,9 +14,13 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.shared import Inches as DocxInches, RGBColor as DocxRGBColor
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook
@@ -112,6 +116,7 @@ def append_word_blocks(doc, blocks):
         raise ValueError('Word blocks must be a list of at most 200 items')
     if len(json.dumps(blocks, ensure_ascii=False)) > 2000000:
         raise ValueError('Word blocks exceed the 2,000,000-character limit')
+    image_bytes = 0
     for block in blocks:
         if not isinstance(block, dict): raise ValueError('Each Word block must be an object')
         kind = block.get('type')
@@ -139,6 +144,29 @@ def append_word_blocks(doc, blocks):
             if header:
                 properties = table.rows[0]._tr.get_or_add_trPr()
                 marker = OxmlElement('w:tblHeader'); marker.set(qn('w:val'), 'true'); properties.append(marker)
+        elif kind == 'image':
+            if set(block) - {'type', 'path', 'width', 'description', 'align'}: raise ValueError('Unsupported Word image property')
+            path, width = block.get('path'), block.get('width')
+            description, align = block.get('description', ''), block.get('align', 'left')
+            if not isinstance(path, str) or not isinstance(description, str) or len(description) > 1000: raise ValueError('Image requires a local path and optional short description')
+            if isinstance(width, bool) or not isinstance(width, (int, float)) or not 0.1 <= width <= 22 or not math.isfinite(width): raise ValueError('Image width must be 0.1 to 22 inches')
+            alignments = {'left': WD_ALIGN_PARAGRAPH.LEFT, 'center': WD_ALIGN_PARAGRAPH.CENTER, 'right': WD_ALIGN_PARAGRAPH.RIGHT}
+            if not isinstance(align, str) or align not in alignments: raise ValueError('Image alignment must be left, center or right')
+            if Path(path).stat().st_size > 20 * 1024 * 1024: raise ValueError('Image exceeds 20 MiB')
+            with tempfile.TemporaryDirectory(prefix='office-word-image-') as directory:
+                snapshot, _ = snapshots.copy(path, directory); data = snapshot.read_bytes()
+            image_bytes += len(data)
+            if len(data) > 20 * 1024 * 1024 or image_bytes > 128 * 1024 * 1024: raise ValueError('Image size exceeds per-image or document limits')
+            with Image.open(io.BytesIO(data)) as image:
+                if image.format not in ('PNG', 'JPEG') or image.width * image.height > 40000000: raise ValueError('Image must be PNG or JPEG with at most 40 million pixels')
+                height = width * image.height / image.width
+                if not 0.01 <= height <= 22: raise ValueError('Image aspect ratio produces an unsupported height')
+                image.verify()
+            with Image.open(io.BytesIO(data)) as image:
+                if image.getexif().get(274, 1) != 1: raise ValueError('Normalize image orientation before inserting it')
+            paragraph = doc.add_paragraph(); paragraph.alignment = alignments[align]
+            picture = paragraph.add_run().add_picture(io.BytesIO(data), width=DocxInches(width), height=DocxInches(height))
+            picture._inline.docPr.set('descr', description)
         elif kind == 'page_break':
             if set(block) != {'type'}: raise ValueError('A page-break block has no other properties')
             doc.add_page_break()
@@ -150,14 +178,25 @@ def append_word_blocks(doc, blocks):
             runs = [{'text': block['text']}] if 'text' in block else block['runs']
             if not isinstance(runs, list) or not 1 <= len(runs) <= 200: raise ValueError('Word runs must contain 1 to 200 items')
             for run in runs:
-                if not isinstance(run, dict) or set(run) - {'text', 'bold', 'italic', 'underline'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(key in run and not isinstance(run[key], bool) for key in ('bold', 'italic', 'underline')):
+                if not isinstance(run, dict) or set(run) - {'text', 'bold', 'italic', 'underline', 'url'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(key in run and not isinstance(run[key], bool) for key in ('bold', 'italic', 'underline')):
                     raise ValueError('Each run requires text and optional boolean bold, italic or underline')
+                if 'url' in run:
+                    url = run['url']
+                    if not isinstance(url, str) or len(url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in url): raise ValueError('Invalid hyperlink URL')
+                    try: parsed = urlsplit(url)
+                    except ValueError: raise ValueError('Invalid hyperlink URL') from None
+                    if parsed.scheme.lower() not in ('http', 'https', 'mailto') or (parsed.scheme.lower() in ('http', 'https') and not parsed.hostname) or (parsed.scheme.lower() == 'mailto' and not parsed.path): raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
             if kind == 'heading': paragraph = doc.add_heading(level=level)
             else: paragraph = doc.add_paragraph(style={'bullet': 'List Bullet', 'numbered': 'List Number'}.get(kind))
             for run in runs:
                 target = paragraph.add_run(run['text'])
+                if 'url' in run:
+                    target.font.color.rgb = DocxRGBColor.from_string('0563C1'); target.underline = True
                 for name in ('bold', 'italic', 'underline'):
                     if name in run: setattr(target, name, run[name])
+                if 'url' in run:
+                    link = OxmlElement('w:hyperlink'); link.set(qn('r:id'), doc.part.relate_to(run['url'], RELATIONSHIP_TYPE.HYPERLINK, is_external=True))
+                    link.append(target._r); paragraph._p.append(link)
         else:
             raise ValueError('Unsupported Word block type')
 

@@ -5,8 +5,11 @@ import sys
 import tempfile
 from pathlib import Path
 from docx import Document
+from PIL import Image
 from docx.oxml.ns import qn
 import open_office_use
+import session
+import review
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); output = root / 'brief.docx'
@@ -30,6 +33,23 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [item.tag.rsplit('}', 1)[-1] for item in body] == ['p','p','p','p','tbl','p','p','sectPr']
     assert body[5].find('.//' + qn('w:br')).get(qn('w:type')) == 'page'
     pdf = open_office_use.render(output, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    picture = root/'image.png'; Image.new('RGB',(80,40),'#348087').save(picture,dpi=(72,144))
+    linked = root/'linked.docx'; link_spec = {'blocks':[{'type':'paragraph','runs':[{'text':'See '},{'text':'source','url':'https://example.com/report','bold':True}]},{'type':'image','path':str(picture),'width':4,'align':'center','description':'Teal diagram'}]}
+    open_office_use.author(link_spec, linked); linked_doc = Document(linked)
+    assert linked_doc.paragraphs[0].text == 'See source' and linked_doc.paragraphs[0].hyperlinks[0].address == 'https://example.com/report'
+    run = linked_doc.paragraphs[0].hyperlinks[0].runs[0]; assert run.bold and run.underline
+    inline = linked_doc.inline_shapes[0]; assert inline.width.inches == 4 and inline.height.inches == 2 and inline._inline.docPr.get('descr') == 'Teal diagram'
+    assert review.external_relationships(linked)['external_count'] == 1
+    draft = root/'draft'; session.start(draft, source=linked)
+    edited = session.replace_text(draft, 0, '/body/p[1]', 'source', 'reference')
+    result_doc = Document(edited['file']); assert result_doc.paragraphs[0].hyperlinks[0].text == 'reference' and result_doc.paragraphs[0].hyperlinks[0].address == 'https://example.com/report'
+    assert Path(open_office_use.render(linked, root/'linked-render')).read_bytes().startswith(b'%PDF')
+    for index, url in enumerate(['javascript:alert(1)', 'https://', 'https://example.com/bad path']):
+        bad_file = root/f'bad-link{index}.docx'
+        try: open_office_use.author({'blocks':[{'type':'paragraph','runs':[{'text':'Link','url':url}]}]}, bad_file)
+        except ValueError: pass
+        else: raise AssertionError('Invalid hyperlink accepted')
+        assert not bad_file.exists()
     for i, bad in enumerate([{'blocks':[{'type':'table','rows':[['a'],['a','b']]}]}, {'blocks':[{'type':'heading','level':10,'text':'bad'}]}, {'blocks':[{'type':'paragraph','text':'a','runs':[]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','bold':'yes'}]}]}]):
         target = root/f'bad{i}.docx'
         try: open_office_use.author(bad, target)

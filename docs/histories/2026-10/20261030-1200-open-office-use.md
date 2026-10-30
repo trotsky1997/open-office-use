@@ -223,3 +223,7 @@ Added worksheet-referenced column/line charts and optional one-page-wide print s
 ### Literal chart caches
 
 Added bounded literal title, category and numeric value caches to basic workbook chart authoring. Verified the existing cache scanner reports matches for literal sources, missing cache for formulas and a mismatch after a subsequent grid edit. Excel rendering and formula evaluation remain unverified.
+
+### Word links and images
+
+Extended CLI/MCP Word blocks with hyperlinked runs and bounded, snapshot-checked inline PNG/JPEG images with accessibility descriptions. Verified the link relationship, formatting-preserving replacement, image aspect ratio despite unusual DPI, invalid URLs, MCP and LibreOffice preview. Native Word rendering and non-normalized EXIF orientation remain unverified/unsupported.

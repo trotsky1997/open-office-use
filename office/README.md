@@ -69,15 +69,16 @@ For ordered Word content, `author` and MCP `author_file` accept `blocks`:
 ```json
 {"blocks":[
   {"type":"heading","level":1,"text":"Quarterly review"},
-  {"type":"paragraph","runs":[{"text":"Revenue grew "},{"text":"18%","bold":true}]},
+  {"type":"paragraph","runs":[{"text":"Revenue grew "},{"text":"18%","bold":true},{"text":" (source)","url":"https://example.com/report"}]},
   {"type":"bullet","text":"Retention remained stable."},
   {"type":"numbered","text":"Prioritize onboarding."},
   {"type":"table","header":true,"style":"Light Shading Accent 1","rows":[["Metric","Value"],["Retention","92%"]]},
+  {"type":"image","path":"/absolute/path/to/figure.png","width":5.5,"align":"center","description":"Revenue trend"},
   {"type":"page_break"}
 ]}
 ```
 
-Text blocks accept either `text` or `runs`; runs accept boolean `bold`, `italic` and `underline`. Heading levels range from 1 to 9. A table's optional `header` bolds its first row and marks it as a repeating header; optional `style` must name a table style available in the document. Lists use the document's `List Bullet` and `List Number` styles. Blocks follow any legacy `paragraphs` entries and, with a source, are appended after existing content. Limits are 200 blocks, 200 runs per text block, 100 rows and 20 columns per table, 2,000 cells per table, 10,000 characters per run or cell, and 2,000,000 serialized characters for all blocks. Render and inspect the resulting document in the target application.
+Text blocks accept either `text` or `runs`; runs accept boolean `bold`, `italic` and `underline`. A run may specify a `url` with an HTTP, HTTPS or mailto link; it is styled blue and underlined by default, and `underline` can override that choice. Image blocks embed a local PNG or JPEG at the required width in inches, keeping its pixel aspect ratio; they accept `align` (`left`, `center`, `right`) and an accessibility `description`. Each image is snapshotted and limited to 20 MiB and 40 million pixels, with at most 128 MiB of images per request. Width must be 0.1–22 inches and resulting height 0.01–22 inches; EXIF orientation must be normalized. Heading levels range from 1 to 9. A table's optional `header` bolds its first row and marks it as a repeating header; optional `style` must name a table style available in the document. Lists use the document's `List Bullet` and `List Number` styles. Blocks follow any legacy `paragraphs` entries and, with a source, are appended after existing content. Limits are 200 blocks, 200 runs per text block, 100 rows and 20 columns per table, 2,000 cells per table, 10,000 characters per run or cell, and 2,000,000 serialized characters for all blocks. Render and inspect the resulting document in the target application.
 
 For basic Excel authoring, `sheet_options` can format a workbook in the same request:
 
