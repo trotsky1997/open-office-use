@@ -284,3 +284,5 @@ PowerPoint authoring supports editable straight lines and arrows with free-posit
 PowerPoint authoring supports editable text-bearing rectangle, rounded rectangle, ellipse and diamond nodes; inspect rendered text fit and connector placement.
 
 Straight connectors can reference earlier named shape nodes with cardinal connection sites, including ellipse-specific indices; native PowerPoint interaction remains unverified.
+
+PowerPoint authoring also supports horizontal bar charts with editable embedded data and visual-axis titles. Native PowerPoint rendering remains to be checked.

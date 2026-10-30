@@ -591,7 +591,7 @@ def append_slides(presentation, slides):
                 chart_count += 1
                 if chart_count > 20: raise ValueError('At most 20 slide charts are supported per request')
                 chart_type = element.get('chart_type'); categories = element.get('categories'); series_specs = element.get('series')
-                if chart_type not in ('column', 'line'): raise ValueError('Chart type must be column or line')
+                if chart_type not in ('column', 'bar', 'line'): raise ValueError('Chart type must be column, bar or line')
                 if not isinstance(categories, list) or not 1 <= len(categories) <= 200 or any(not isinstance(value, str) or not value or len(value) > 255 for value in categories): raise ValueError('Chart categories require 1 to 200 nonempty text values')
                 if not isinstance(series_specs, list) or not 1 <= len(series_specs) <= 20 or len(series_specs) * len(categories) > 2000: raise ValueError('Chart requires at most 20 series and 2,000 data points')
                 chart_points += len(series_specs) * len(categories)
@@ -611,7 +611,7 @@ def append_slides(presentation, slides):
                     if number_format is not None and (not isinstance(number_format, str) or not 1 <= len(number_format) <= 255): raise ValueError('Chart number format must be text of at most 255 characters')
                     if 'color' in series: color(series['color'])
                     data.add_series(name, values, number_format=number_format)
-                chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED if chart_type == 'column' else XL_CHART_TYPE.LINE, x, y, width, height, data).chart
+                chart = slide.shapes.add_chart({'column': XL_CHART_TYPE.COLUMN_CLUSTERED, 'bar': XL_CHART_TYPE.BAR_CLUSTERED, 'line': XL_CHART_TYPE.LINE}[chart_type], x, y, width, height, data).chart
                 # Chart axis IDs must be positive and cross-references must stay consistent.
                 axis_ids = {}
                 for axis_id in chart._element.xpath('.//c:axId | .//c:crossAx'):
@@ -634,11 +634,11 @@ def append_slides(presentation, slides):
                     embedded.close()
                 chart.has_legend = legend
                 if title is not None: chart.has_title = True; chart.chart_title.text_frame.text = title
-                for key, axis in (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
+                for key, axis in (('x_axis_title', chart.value_axis), ('y_axis_title', chart.category_axis)) if chart_type == 'bar' else (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
                     if key in element: axis.has_title = True; axis.axis_title.text_frame.text = element[key]
                 for chart_series, spec in zip(chart.series, series_specs):
                     if 'color' in spec:
-                        if chart_type == 'column': chart_series.format.fill.solid(); chart_series.format.fill.fore_color.rgb = color(spec['color'])
+                        if chart_type in ('column', 'bar'): chart_series.format.fill.solid(); chart_series.format.fill.fore_color.rgb = color(spec['color'])
                         else: chart_series.format.line.color.rgb = color(spec['color'])
             else:
                 path = element.get('path'); description = element.get('description', ''); fit = element.get('fit', 'stretch')

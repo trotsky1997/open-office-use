@@ -387,3 +387,5 @@ Added native PowerPoint straight line and arrow authoring with endpoint geometry
 Added editable PowerPoint flowchart shapes with text, rich paragraphs, fill, optional outline and shrink-to-fit; verified structure, targeted text editing, schema and LibreOffice rendering.
 
 Added native attached PowerPoint connectors between named shapes with geometry-specific connection-site indices; validated schema and LibreOffice rendering.
+
+Added horizontal PowerPoint bar charts with editable embedded data, cache validation, series colors and visual-axis titles.
