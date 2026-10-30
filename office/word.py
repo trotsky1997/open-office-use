@@ -10,12 +10,19 @@ from lxml import etree
 
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
+W14_PARAGRAPH_ID = '{http://schemas.microsoft.com/office/word/2010/wordml}paraId'
+INDEX = r'[1-9][0-9]{0,5}'
+PATH = re.compile(r'/body(?:(?:/(?:tbl|table)\[' + INDEX + r'\]/(?:tr|row)\[' + INDEX + r'\]/(?:tc|cell)\[' + INDEX + r'\])){0,8}/p(?:\[' + INDEX + r'\]|\[@paraId=[0-9A-Fa-f]{8}\])\Z')
+SEGMENT = re.compile(r'/(tbl|table|tr|row|tc|cell|p)\[([^]]+)\]')
+
+
+def paragraph_path(path):
+    return isinstance(path, str) and len(path) <= 512 and PATH.fullmatch(path) is not None
 
 
 def replace_text(source, output, path, find, replacement):
-    match = re.fullmatch(r'/body/p\[([1-9][0-9]{0,5})\]', path) if isinstance(path, str) else None
-    if not match:
-        raise ValueError('Target must be a direct body paragraph path such as /body/p[1]')
+    if not paragraph_path(path):
+        raise ValueError('Target must be a body or table paragraph path such as /body/p[1]')
     if not isinstance(find, str) or not find or len(find) > 4000:
         raise ValueError('Find text must contain 1 to 4,000 characters')
     if not isinstance(replacement, str) or len(replacement) > 4000:
@@ -47,10 +54,22 @@ def replace_text(source, output, path, find, replacement):
             body = tree.getroot().find(W + 'body')
             if body is None:
                 raise ValueError('Document has no body')
-            paragraphs = body.findall(W + 'p'); index = int(match.group(1)) - 1
-            if index >= len(paragraphs):
-                raise ValueError('Paragraph does not exist')
-            paragraph = paragraphs[index]
+            paragraph = body
+            aliases = {'table': 'tbl', 'row': 'tr', 'cell': 'tc'}
+            for tag, selector in SEGMENT.findall(path):
+                candidates = paragraph.findall(W + aliases.get(tag, tag))
+                if selector.startswith('@paraId='):
+                    requested = selector.partition('=')[2].upper()
+                    candidates = [item for item in candidates if item.get(W14_PARAGRAPH_ID, '').upper() == requested]
+                    if len(candidates) != 1:
+                        raise ValueError('Paragraph ID must identify exactly one paragraph in its container')
+                    paragraph = candidates[0]
+                else:
+                    index = int(selector) - 1
+                    if index >= len(candidates):
+                        raise ValueError('Target paragraph path does not exist')
+                    paragraph = candidates[index]
+
             if any(child.tag not in (W + 'pPr', W + 'r') for child in paragraph):
                 raise ValueError('Paragraph contains unsupported structures such as hyperlinks or annotations')
             nodes = []
@@ -73,12 +92,15 @@ def replace_text(source, output, path, find, replacement):
                         node.set(XML_SPACE, 'preserve')
                     inserted = True
                 offset = next_offset
-            declaration = document.lstrip().startswith(b'<?xml')
-            header = document.lstrip().split(b'?>', 1)[0] if declaration else b''
-            standalone = re.search(rb"\\bstandalone\\s*=\\s*(['\"])(yes|no)\\1", header)
+            prefix = document[:4096].decode(tree.docinfo.encoding or 'UTF-8', errors='ignore').lstrip('\ufeff \t\r\n')
+            declaration = prefix.startswith('<?xml')
+            header, separator, _ = prefix.partition('?>')
+            if declaration and not separator:
+                raise ValueError('Document XML declaration exceeds the supported limit')
+            standalone = re.search(r"\bstandalone\s*=\s*(['\"])(yes|no)\1", header) if declaration else None
             options = {'encoding': 'UTF-8', 'xml_declaration': declaration}
             if standalone:
-                options['standalone'] = standalone.group(2) == b'yes'
+                options['standalone'] = standalone.group(2) == 'yes'
             changed = etree.tostring(tree, **options)
             with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-word-') as tmp:
                 candidate = Path(tmp) / 'document.docx'

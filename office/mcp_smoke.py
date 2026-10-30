@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from openpyxl import Workbook
+from docx import Document
 from session import set_selection
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -37,6 +38,13 @@ async def main():
                 assert not word_started.isError, word_started
                 word_edit = await session.call_tool('session_replace_text', {'directory': str(word_draft), 'base_revision': 0, 'path': '/body/p[1]', 'find': 'MCP works', 'replacement': 'MCP changed'})
                 assert not word_edit.isError and word_edit.structuredContent['revision'] == 1, word_edit
+                table_source = root / 'table.docx'; table_doc = Document()
+                table_doc.add_table(rows=1, cols=1).cell(0, 0).text = 'table content'; table_doc.save(table_source)
+                table_draft = root / 'table-draft'
+                table_started = await session.call_tool('start_session', {'directory': str(table_draft), 'source': str(table_source)})
+                assert not table_started.isError, table_started
+                table_edit = await session.call_tool('session_replace_text', {'directory': str(table_draft), 'base_revision': 0, 'path': '/body/tbl[1]/tr[1]/tc[1]/p[1]', 'find': 'content', 'replacement': 'result'})
+                assert not table_edit.isError and Document(table_draft / 'revision-000001.docx').tables[0].cell(0, 0).text == 'table result', table_edit
                 directory = root / 'draft'
                 started = await session.call_tool('start_session', {'directory': str(directory), 'source': str(output)})
                 assert not started.isError and started.structuredContent['latest_revision'] == 0, started

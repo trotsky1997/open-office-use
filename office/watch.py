@@ -51,7 +51,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <label>Find text <input id="word-find" maxlength="4000"></label>
 <label>Replace with <input id="word-replacement" maxlength="4000"></label>
 <button type="button" id="word-replace">Replace once</button>
-<p>Requires one exact match in a simple body paragraph. Replacement takes the first matched run's formatting; fields, links and annotations require another workflow.</p></fieldset>
+<p>Requires one exact match in a simple body or table paragraph. Replacement takes the first matched run's formatting; fields, links and annotations require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
@@ -296,7 +296,7 @@ async function loadElement(path) {
   const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=false; value.value=target.value;
   editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=false;
-  document.getElementById('word-replace-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && (/^\\/body\\/p\\[[1-9][0-9]{0,5}\\]$/).test(target.path));
+  document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
   document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
  finally { editBusy=false; button.disabled = pinned !== null; }

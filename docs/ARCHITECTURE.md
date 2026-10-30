@@ -335,4 +335,4 @@ Grid paste parses a bounded rectangular TSV block, validates all target cells be
 
 The workbook formula scan streams saved worksheet XML across visible and hidden worksheets. It reports stored formula errors, literal errors and empty or missing caches, with bounded issue lists and an explicit incomplete flag at the cell limit; it does not calculate formulas or establish cache freshness.
 
-Word sessions can replace a unique literal match across simple direct-body text runs. The operation edits only text nodes, copies the other OOXML parts unchanged, and atomically publishes a new revision. Complex paragraph structures and signed packages are rejected; the replacement uses the first matched run formatting.
+Word sessions can replace a unique literal match across simple body and table-cell text runs, including nested tables. Paragraph IDs are resolved within their container and must be unique. The operation edits only text nodes, copies the other OOXML parts unchanged, and atomically publishes a new revision. Complex paragraph structures and signed packages are rejected; the replacement uses the first matched run formatting.

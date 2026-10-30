@@ -203,7 +203,8 @@ def edit_target(directory, base_revision, path):
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
-            'format': state['format'], 'mode': mode, 'value': value}
+            'format': state['format'], 'mode': mode, 'value': value,
+            'replace_text_path_supported': state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])}
 
 
 def edit(directory, base_revision, path, mode, value):

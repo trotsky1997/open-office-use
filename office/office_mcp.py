@@ -136,7 +136,7 @@ def session_edit(directory: str, base_revision: int, path: str, mode: Literal['t
 
 @server.tool()
 def session_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str) -> dict[str, Any]:
-    """Replace one unique text match across simple Word runs, retaining run formatting."""
+    """Replace one unique text match across simple Word body or table runs, retaining run formatting."""
     return session.replace_text(directory, base_revision, path, find, replacement)
 
 
