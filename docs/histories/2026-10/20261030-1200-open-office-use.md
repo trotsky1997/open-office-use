@@ -373,3 +373,5 @@ Bound element inspection and direct text edits to checked source snapshots; view
 Bound Word tracked insertion/replacement and new paragraph comments to checked source snapshots; the viewer and MCP accept the inspected target hash.
 
 Bound speaker-note reads and both note replacement operations to checked snapshots, with optional expected hashes through MCP and the viewer.
+
+Bound comment inventory, replies and resolved-state changes to checked snapshots; the viewer and MCP can use the inspected hash.

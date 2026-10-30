@@ -5,6 +5,7 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from docx import Document
 from docx.oxml import OxmlElement
@@ -52,7 +53,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [comment['resolved'] for comment in multi['comments']] == [True, True], multi
     assert session.info(draft)['latest_revision'] == 2
     resolve_draft = root / 'resolve-draft'; session.start(resolve_draft, source=first['file'])
-    resolved = session.resolve_comment(resolve_draft, 0, '0', True)
+    loaded_comments = session.list_comments(resolve_draft,0)
+    try: session.resolve_comment(resolve_draft,0,'0',True,expected_sha256='0'*64)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Stale comment resolution accepted')
+    resolved = session.resolve_comment(resolve_draft, 0, '0', True, expected_sha256=loaded_comments['snapshot_sha256'])
     resolved_data = session.list_comments(resolve_draft, 1)
     assert resolved_data['comments'][0]['resolved'] is True and resolved_data['comments'][0]['reply_parent_status'] == 'root', resolved_data
     assert Document(resolved['file']).paragraphs[0].text == 'Important text'
@@ -91,7 +96,20 @@ with tempfile.TemporaryDirectory() as tmp:
     listed_cli = subprocess.run([sys.executable, str(cli), 'session', 'comments', str(draft), '--revision', '2'], check=True, capture_output=True, text=True)
     assert json.loads(listed_cli.stdout)['total_comments'] == 2
     reply_draft = root / 'reply-draft'; session.start(reply_draft, source=first['file'])
-    reply = session.reply_comment(reply_draft, 0, '0', 'Thanks for reviewing\nWill revise', 'Editor')
+    live = reply_draft/'revision-000000.docx'; saved_live = live.read_bytes(); list_impl = word._list_comments
+    def mutate_live(frozen):
+        live.write_bytes(source.read_bytes())
+        return list_impl(frozen)
+    with patch.object(word, '_list_comments', side_effect=mutate_live): loaded_comments = session.list_comments(reply_draft,0)
+    assert loaded_comments['total_comments'] == 1
+    try: session.reply_comment(reply_draft,0,'0','Reply','Editor',expected_sha256=loaded_comments['snapshot_sha256'])
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Changed source accepted after comment read')
+    live.write_bytes(saved_live)
+    try: session.reply_comment(reply_draft,0,'0','Reply','Editor',expected_sha256='0'*64)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Stale comment reply accepted')
+    reply = session.reply_comment(reply_draft, 0, '0', 'Thanks for reviewing\nWill revise', 'Editor', expected_sha256=loaded_comments['snapshot_sha256'])
     assert reply['comment_id'] == 1 and reply['parent_id'] == '0'
     reply_listing = session.list_comments(reply_draft, 1); root_item, reply_item = reply_listing['comments']
     assert reply_item['reply_to_comment_id'] == '0' and reply_item['anchor_text'] == root_item['anchor_text'] == 'Important text', reply_listing

@@ -719,27 +719,33 @@ def replace_notes_text(directory, base_revision, slide, paragraph, find, replace
     return {'revision': base_revision + 1, 'file': str(output), 'slide': slide, 'paragraph': paragraph}
 
 
-def reply_comment(directory, base_revision, parent_id, text, author):
+def reply_comment(directory, base_revision, parent_id, text, author, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'docx': raise ValueError('Comment replies require a DOCX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
     try:
-        result = word.reply_comment(source, output, parent_id, text, author)
+        with tempfile.TemporaryDirectory(prefix='office-comment-source-') as tmp:
+            frozen, digest = snapshots.copy(source, tmp)
+            if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Document snapshot changed; reload comments')
+            result = word.reply_comment(frozen, output, parent_id, text, author)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, **result}
 
 
-def resolve_comment(directory, base_revision, comment_id, resolved):
+def resolve_comment(directory, base_revision, comment_id, resolved, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'docx': raise ValueError('Comment state requires a DOCX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
     try:
-        word.set_comment_resolved(source, output, comment_id, resolved)
+        with tempfile.TemporaryDirectory(prefix='office-comment-source-') as tmp:
+            frozen, digest = snapshots.copy(source, tmp)
+            if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Document snapshot changed; reload comments')
+            word.set_comment_resolved(frozen, output, comment_id, resolved)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'comment_id': comment_id, 'resolved': resolved}

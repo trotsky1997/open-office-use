@@ -15,3 +15,5 @@ For a new document, `author_file` accepts `page_setup` with A4 or Letter size, o
 Word table cells may contain multiple paragraphs with formatted runs and hyperlinks using `rows` cells shaped as `{"paragraphs":[{"runs":[...]}]}`. Render and review cell wrapping and layout.
 
 `session_edit_target` returns a snapshot hash; pass `expected_sha256` to tracked insertion, tracked replacement or paragraph comment creation to bind the action to the inspected document. The viewer supplies this hash for these actions.
+
+Comment inventories return `snapshot_sha256`. Supply it as `expected_sha256` for comment replies or resolved-state changes; the viewer binds these actions to its loaded comment list.

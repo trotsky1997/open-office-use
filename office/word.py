@@ -943,6 +943,13 @@ def comment_thread_metadata(archive, relationships, nodes):
 
 
 def list_comments(source):
+    """Read Word comments and bounded main-body anchor hints from one snapshot."""
+    with tempfile.TemporaryDirectory(prefix='office-comments-read-') as tmp:
+        frozen, digest = snapshots.copy(source, tmp)
+        return {**_list_comments(frozen), 'snapshot_sha256': digest}
+
+
+def _list_comments(source):
     """Read Word comments and bounded main-body anchor hints without modifying the file."""
     import posixpath
     import zipfile

@@ -331,11 +331,13 @@ async def main():
                 assert not modern_list.isError and modern_list.structuredContent['comments'][-1]['reply_to_comment_id'] == '0', modern_list
                 historic_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 0})
                 assert not historic_comments.isError and historic_comments.structuredContent['total_comments'] == 0, historic_comments
-                replied = await session.call_tool('session_reply_comment', {'directory': str(comment_draft), 'base_revision': 1, 'parent_id': '0', 'text': 'Acknowledged', 'author': 'Editor'})
+                current_comments = await session.call_tool('session_list_comments', {'directory':str(comment_draft),'revision':1})
+                assert (await session.call_tool('session_reply_comment', {'directory':str(comment_draft),'base_revision':1,'parent_id':'0','text':'Bad','author':'Editor','expected_sha256':'0'*64})).isError
+                replied = await session.call_tool('session_reply_comment', {'directory': str(comment_draft), 'base_revision': 1, 'parent_id': '0', 'text': 'Acknowledged', 'author': 'Editor', 'expected_sha256':current_comments.structuredContent['snapshot_sha256']})
                 assert not replied.isError and replied.structuredContent['revision'] == 2, replied
                 replied_listing = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 2})
                 assert not replied_listing.isError and replied_listing.structuredContent['comments'][1]['reply_to_comment_id'] == '0', replied_listing
-                resolved_comment = await session.call_tool('session_resolve_comment', {'directory': str(comment_draft), 'base_revision': 2, 'comment_id': '0', 'resolved': True})
+                resolved_comment = await session.call_tool('session_resolve_comment', {'directory': str(comment_draft), 'base_revision': 2, 'comment_id': '0', 'resolved': True, 'expected_sha256':replied_listing.structuredContent['snapshot_sha256']})
                 assert not resolved_comment.isError and resolved_comment.structuredContent['revision'] == 3, resolved_comment
                 resolved_listing = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 3})
                 assert not resolved_listing.isError and resolved_listing.structuredContent['comments'][0]['resolved'] is True, resolved_listing

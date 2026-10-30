@@ -418,15 +418,15 @@ def session_list_comments(directory: str, revision: int) -> dict[str, Any]:
 
 
 @server.tool()
-def session_reply_comment(directory: str, base_revision: int, parent_id: str, text: str, author: str) -> dict[str, Any]:
+def session_reply_comment(directory: str, base_revision: int, parent_id: str, text: str, author: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Reply to a supported open root Word comment and create a new revision."""
-    return session.reply_comment(directory, base_revision, parent_id, text, author)
+    return session.reply_comment(directory, base_revision, parent_id, text, author, expected_sha256)
 
 
 @server.tool()
-def session_resolve_comment(directory: str, base_revision: int, comment_id: str, resolved: bool) -> dict[str, Any]:
+def session_resolve_comment(directory: str, base_revision: int, comment_id: str, resolved: bool, expected_sha256: str | None = None) -> dict[str, Any]:
     """Resolve or reopen a root Word comment as a new revision; ambiguous metadata is rejected."""
-    return session.resolve_comment(directory, base_revision, comment_id, resolved)
+    return session.resolve_comment(directory, base_revision, comment_id, resolved, expected_sha256)
 
 
 @server.tool()

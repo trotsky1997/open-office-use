@@ -1011,6 +1011,7 @@ document.getElementById('comments-load').addEventListener('click', async () => {
   const response=await fetch('comments-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not read comments');
   if (epoch!==commentListEpoch || displayed!==revision || commentListRevision!==revision) return;
+  if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; reload comments');
   for (const comment of result.comments) {
    const row=document.createElement('li'); const location=comment.paragraph_paths.length ? comment.paragraph_paths.join(', ') : 'No body path found';
    const state=comment.resolved===true ? 'Resolved' : comment.resolved===false ? 'Open' : 'Status unknown';
@@ -1024,7 +1025,7 @@ document.getElementById('comments-load').addEventListener('click', async () => {
      if (commentsBusy || current!==revision || pinned!==null || displayed!==revision) return;
      commentsBusy=true; button.disabled=true; list.querySelectorAll('button').forEach(item=>item.disabled=true); status.textContent='Saving comment status…';
      try {
-      const response=await fetch('resolve-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,comment_id:comment.id,resolved})});
+      const response=await fetch('resolve-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,comment_id:comment.id,resolved,snapshot_sha256:result.snapshot_sha256})});
       const saved=await response.json(); if (!response.ok) throw new Error(saved.error || 'Could not update comment');
       await refresh(); status.textContent=`Comment ${comment.id} ${resolved ? 'resolved' : 'reopened'} in revision ${saved.revision}. Load comments to review.`;
      } catch(error) { status.textContent=`Comment status error: ${error.message}`; }
@@ -1033,7 +1034,7 @@ document.getElementById('comments-load').addEventListener('click', async () => {
     row.appendChild(document.createTextNode(' ')); row.appendChild(change);
     if (comment.resolved!==true && comment.anchor_status==='range' && result.anchor_scan_complete) {
      const reply=document.createElement('button'); reply.type='button'; reply.textContent='Reply'; reply.setAttribute('aria-label',`Reply to comment ${comment.id}`);
-     reply.addEventListener('click',()=>{if (current!==revision || pinned!==null || displayed!==revision || commentsBusy) return; replyTarget={revision,parent_id:comment.id}; document.getElementById('reply-target').textContent=`Replying to comment ${comment.id}`; document.getElementById('reply-text').value=''; document.getElementById('reply-panel').hidden=false;});
+     reply.addEventListener('click',()=>{if (current!==revision || pinned!==null || displayed!==revision || commentsBusy) return; replyTarget={revision,parent_id:comment.id,snapshot_sha256:result.snapshot_sha256}; document.getElementById('reply-target').textContent=`Replying to comment ${comment.id}`; document.getElementById('reply-text').value=''; document.getElementById('reply-panel').hidden=false;});
      row.appendChild(document.createTextNode(' ')); row.appendChild(reply);
     }
    }
@@ -1050,7 +1051,7 @@ document.getElementById('reply-send').addEventListener('click', async () => {
  if (!author.trim() || !text.trim()) { status.textContent='Enter an author and reply.'; return; }
  commentsBusy=true; button.disabled=true; load.disabled=true; document.querySelectorAll('#comments-list button').forEach(item=>item.disabled=true);
  try {
-  const response=await fetch('reply-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,parent_id:target.parent_id,text,author})});
+  const response=await fetch('reply-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,parent_id:target.parent_id,text,author,snapshot_sha256:target.snapshot_sha256})});
   const saved=await response.json(); if (!response.ok) throw new Error(saved.error || 'Could not save reply');
   await refresh(); status.textContent=`Reply saved in revision ${saved.revision}. Load comments to review.`;
  } catch(error) {status.textContent=`Reply error: ${error.message}`;}
@@ -1574,13 +1575,13 @@ def serve(directory, preview, port=0, render=None):
                             image_data = base64.b64decode(payload['image'], validate=True)
                             saved = session.replace_picture(directory, payload['base_revision'], payload['path'], image_data)
                         elif route.endswith('/reply-comment'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'parent_id', 'text', 'author'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'parent_id', 'text', 'author'}, {'base_revision', 'parent_id', 'text', 'author', 'snapshot_sha256'}):
                                 raise ValueError('Reply requires revision, parent ID, text and author')
-                            saved = session.reply_comment(directory, payload['base_revision'], payload['parent_id'], payload['text'], payload['author'])
+                            saved = session.reply_comment(directory, payload['base_revision'], payload['parent_id'], payload['text'], payload['author'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/resolve-comment'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'comment_id', 'resolved'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'comment_id', 'resolved'}, {'base_revision', 'comment_id', 'resolved', 'snapshot_sha256'}):
                                 raise ValueError('Comment state requires revision, comment ID and resolved')
-                            saved = session.resolve_comment(directory, payload['base_revision'], payload['comment_id'], payload['resolved'])
+                            saved = session.resolve_comment(directory, payload['base_revision'], payload['comment_id'], payload['resolved'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/add-comment'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'text', 'author'}, {'base_revision', 'path', 'text', 'author', 'anchor'}, {'base_revision', 'path', 'text', 'author', 'anchor', 'snapshot_sha256'}):
                                 raise ValueError('Comment requires revision, path, text and author')

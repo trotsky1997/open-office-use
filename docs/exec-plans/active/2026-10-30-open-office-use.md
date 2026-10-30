@@ -270,3 +270,5 @@ Element target inspection and direct/replacement edits support expected source h
 Tracked insertion/replacement and new paragraph comments can bind to the inspected target snapshot. Comment replies, resolution, notes and image workflows remain for consistency review.
 
 Speaker-note reads and replacements use checked snapshots; the viewer binds saves and targeted replacements to its loaded notes hash.
+
+Comment inventory and reply/resolution operations use checked snapshots, with expected hashes in MCP and viewer actions.
