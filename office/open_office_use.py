@@ -106,6 +106,7 @@ def author(spec, output, source=None):
         for name, cells in spec.get('sheets', {}).items():
             ws = obj[name] if name in obj.sheetnames else obj.create_sheet(name)
             for address, value in cells.items():
+                if not isinstance(value, str) or not value.startswith('='): spreadsheet.validate_cell_value(value)
                 ws[address] = value
         if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:
             del obj['Sheet']

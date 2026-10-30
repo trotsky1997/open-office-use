@@ -193,6 +193,11 @@ FORMULA_SCAN_MAX_CELLS = 1000000
 FORMULA_SCAN_MAX_ISSUES = 200
 
 
+def validate_cell_value(value):
+    if isinstance(value, str) and re.search(r'_x[0-9a-fA-F]{4}_', value):
+        raise ValueError('Cell text containing an Excel escape-like sequence is not supported by this editor')
+
+
 class UnverifiedSharedString(str):
     """A shared value whose displayed text cannot be verified from the package."""
 

@@ -229,6 +229,8 @@ These merged-cell and worksheet-protection checks apply to the session grid, sin
 
 Range reads use verified plain or rich shared strings from package XML where possible; string values with `text_complete: false` require review. Range reads copy the saved workbook once so formula and cached-value views use the same snapshot. They reject packages above 5,000 parts or 128 MiB uncompressed, as well as responses exceeding 1,000,000 estimated serialized cell-data characters. Request a smaller range when that limit is reached; the operation returns an error and no partial grid. The same limits apply to cell comparisons and grid reads. Save and close external editing sessions before reading.
 
+The grid, single-cell editor and `author` reject literal text containing an Excel escape-like sequence such as `_x0041_`; the tested writer emits unescaped syntax, so interpretation can vary by application. Formula expressions are not restricted by this check. Lower-level OfficeCLI batch operations pass through without this validation, so inspect their outputs in the destination application.
+
 ## Spreadsheet calculation
 
 Inspect a bounded rectangular range (at most 10,000 cells):

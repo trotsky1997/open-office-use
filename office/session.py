@@ -359,6 +359,7 @@ def edit(directory, base_revision, path, mode, value):
         raise ValueError('Choose formula mode for a value starting with =')
     if mode == 'formula' and (not value.startswith('=') or len(value) < 2):
         raise ValueError('A formula must start with = and contain an expression')
+    if target['format'] == 'xlsx' and mode == 'value': spreadsheet.validate_cell_value(value)
     return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])
 
 
@@ -557,6 +558,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
             raise ValueError('A formula requires an expression')
         seen.add(address)
         mode = 'formula' if value.startswith('=') else 'value'
+        if mode == 'value': spreadsheet.validate_cell_value(value)
         operations.append({'command': 'set', 'path': f'/{sheet}/{address}', 'props': {mode: value}})
     return apply(directory, base_revision, operations)
 
