@@ -150,18 +150,36 @@ func (r *Relay) readClientLoop(client *clientConn) {
 		_ = client.conn.Close()
 		r.mu.Lock()
 		delete(r.clients, client.id)
+		var cancelled []string
 		for requestID, pending := range r.pending {
 			if pending.client == client {
 				delete(r.pending, requestID)
+				cancelled = append(cancelled, requestID)
 			}
 		}
 		r.mu.Unlock()
+		for _, id := range cancelled {
+			r.cancelExtension(id)
+		}
 	}()
 
 	for {
 		payload, err := wire.ReadFrame(client.conn, wire.DefaultMaxFrame)
 		if err != nil {
 			return
+		}
+		var message struct {
+			Method string          `json:"method"`
+			ID     json.RawMessage `json:"id"`
+			Params struct {
+				ID any `json:"id"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(payload, &message) == nil && message.Method == "obu.cancel" {
+			if len(message.ID) == 0 {
+				r.cancelClientRequest(client, message.Params.ID)
+			}
+			continue
 		}
 		forwarded, hostID, originalID, err := r.rewriteClientRequest(payload)
 		if err != nil {
@@ -181,6 +199,33 @@ func (r *Relay) readClientLoop(client *clientConn) {
 			}
 			r.writeClientError(client, originalID, err)
 		}
+	}
+}
+
+func (r *Relay) cancelClientRequest(client *clientConn, originalID any) {
+	switch originalID.(type) {
+	case string, float64:
+	default:
+		return
+	}
+	var cancelled []string
+	r.mu.Lock()
+	for hostID, pending := range r.pending {
+		if pending.client == client && pending.originalID == originalID {
+			delete(r.pending, hostID)
+			cancelled = append(cancelled, hostID)
+		}
+	}
+	r.mu.Unlock()
+	for _, id := range cancelled {
+		r.cancelExtension(id)
+	}
+}
+
+func (r *Relay) cancelExtension(id string) {
+	payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "obu.cancel", "params": map[string]any{"id": id}})
+	if err == nil {
+		_ = r.writeExtension(payload)
 	}
 }
 

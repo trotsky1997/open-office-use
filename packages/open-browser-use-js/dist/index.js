@@ -295,11 +295,20 @@ export class OpenBrowserUseClient {
         };
         const payload = encodeFrame(message);
         const promise = new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.#pending.delete(id);
-                reject(new Error(`Open Browser Use request timed out: ${method}`));
-            }, requestTimeoutMs);
-            this.#pending.set(id, { resolve, reject, timeout });
+            const cleanup = () => signal?.removeEventListener("abort", abort);
+            const cancel = (error) => {
+                if (!this.#pending.delete(id))
+                    return;
+                clearTimeout(timeout);
+                cleanup();
+                if (!socket.destroyed)
+                    socket.write(encodeFrame({ jsonrpc: "2.0", method: "obu.cancel", params: { id } }));
+                reject(error);
+            };
+            const abort = () => cancel(new Error(`Open Browser Use request cancelled; outcome may be unknown: ${method}`));
+            const timeout = setTimeout(() => cancel(new Error(`Open Browser Use request timed out: ${method}`)), requestTimeoutMs);
+            this.#pending.set(id, { resolve, reject, timeout, cleanup });
+            signal?.addEventListener("abort", abort, { once: true });
         });
         socket.write(payload);
         return await promise;
@@ -422,6 +431,7 @@ export class OpenBrowserUseClient {
         }
         this.#pending.delete(id);
         clearTimeout(pending.timeout);
+        pending.cleanup();
         if (isObject(message.error)) {
             pending.reject(new Error(String(message.error.message ?? "Open Browser Use request failed")));
             return;
@@ -432,6 +442,7 @@ export class OpenBrowserUseClient {
         for (const [id, pending] of this.#pending) {
             this.#pending.delete(id);
             clearTimeout(pending.timeout);
+            pending.cleanup();
             pending.reject(error);
         }
     }

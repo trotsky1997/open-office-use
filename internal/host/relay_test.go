@@ -337,3 +337,52 @@ func TestRelayDropsLateResponsesAfterClientDisconnect(t *testing.T) {
 		t.Fatalf("unexpected response delivered to another client: %#v", received)
 	}
 }
+
+func TestRelayCancellationIsScopedToItsClient(t *testing.T) {
+	hostIn, hostOut := net.Pipe()
+	defer hostIn.Close()
+	defer hostOut.Close()
+	extensionIn, extensionOut := net.Pipe()
+	defer extensionIn.Close()
+	defer extensionOut.Close()
+	socketDir := shortSocketDir(t)
+	socketPath := filepath.Join(socketDir, "obu.sock")
+	relay := NewRelay(Config{SocketDir: socketDir, SocketPath: socketPath}, extensionIn, hostOut)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = relay.Serve(ctx) }()
+	waitForSocket(t, socketPath)
+	first, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	waitForClients(t, relay, 2)
+	if err := wire.WriteJSON(first, map[string]any{"jsonrpc": "2.0", "id": "first", "method": "executeCdp"}); err != nil {
+		t.Fatal(err)
+	}
+	var forwarded map[string]any
+	if err := wire.ReadJSON(hostIn, &forwarded); err != nil {
+		t.Fatal(err)
+	}
+	if err := wire.WriteJSON(second, map[string]any{"jsonrpc": "2.0", "method": "obu.cancel", "params": map[string]any{"id": "first"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wire.WriteJSON(first, map[string]any{"jsonrpc": "2.0", "method": "obu.cancel", "params": map[string]any{"id": "first"}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = hostIn.SetReadDeadline(time.Now().Add(time.Second))
+	var cancelled map[string]any
+	if err := wire.ReadJSON(hostIn, &cancelled); err != nil {
+		t.Fatal(err)
+	}
+	params, ok := cancelled["params"].(map[string]any)
+	if !ok || cancelled["method"] != "obu.cancel" || params["id"] != forwarded["id"] {
+		t.Fatalf("bad cancellation mapping: %#v", cancelled)
+	}
+}

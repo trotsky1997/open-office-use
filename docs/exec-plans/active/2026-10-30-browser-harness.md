@@ -121,4 +121,5 @@
 - [x] CSS 与语义 locator 的 selectOption 正数期限覆盖准备与提交；macOS Electron 实页验证迟到提交被取消及正常结果。
 - [x] Linux ARM64 Chromium 150 原生消息链路验证 CSS 与语义 locator 的 fill、press、check、selectOption 期限及恢复；跨进程 frame 验证 press 超时与后续 fill。
 - [x] Chrome relay 丢弃无匹配请求的扩展响应，防止连接断开后的迟到响应跨客户端传播；双客户端回归及 Linux 原生消息链路验证通过。
-- [ ] Chrome SDK、relay 和扩展贯穿请求取消，阻止已发送但仍在宿主或扩展准备阶段的迟到操作；已提交到浏览器的操作继续报告结果未知。
+- [x] Chrome SDK、relay 和扩展贯穿 CDP 请求取消；扩展准备阶段检查取消，已提交浏览器的操作报告结果可能未知。Linux ARM64 原生消息链路注入扩展延迟验证通过。
+- [ ] Chrome 非 CDP 请求的扩展端取消与资源清理，以及 Windows 实机验收。

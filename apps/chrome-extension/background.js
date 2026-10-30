@@ -40,6 +40,11 @@ class JsonRpcPeer {
   constructor(transport, handlers) {
     this.transport = transport;
     this.handlers = handlers;
+    this.inFlight = new Map();
+    this.transport.setDisconnectCallback?.(() => {
+      for (const controller of this.inFlight.values()) controller.abort();
+      this.inFlight.clear();
+    });
     this.transport.setMessageCallback((message) => {
       void this.handleMessage(message);
     });
@@ -49,18 +54,24 @@ class JsonRpcPeer {
     if (!message || typeof message !== "object" || typeof message.method !== "string") {
       return;
     }
+    if (message.method === "obu.cancel" && message.id === undefined) {
+      this.inFlight.get(message.params?.id)?.abort();
+      return;
+    }
     const id = message.id;
+    const controller = id !== undefined && message.method === "executeCdp" ? new AbortController() : undefined;
+    if (controller) this.inFlight.set(id, controller);
     try {
       const handler = this.handlers[message.method];
       if (typeof handler !== "function") {
         throw new Error(`No handler registered for method: ${message.method}`);
       }
-      const result = await handler.call(this.handlers, message.params ?? {});
-      if (id !== undefined) {
+      const result = await handler.call(this.handlers, message.params ?? {}, controller?.signal);
+      if (id !== undefined && !controller?.signal.aborted) {
         this.transport.sendMessage({ jsonrpc: "2.0", id, result: result ?? {} });
       }
     } catch (error) {
-      if (id !== undefined) {
+      if (id !== undefined && !controller?.signal.aborted) {
         this.transport.sendMessage({
           jsonrpc: "2.0",
           id,
@@ -70,6 +81,8 @@ class JsonRpcPeer {
           }
         });
       }
+    } finally {
+      if (controller && this.inFlight.get(id) === controller) this.inFlight.delete(id);
     }
   }
 
@@ -102,6 +115,8 @@ class NativeTransport {
     this.messageCallback = callback;
   }
 
+  setDisconnectCallback(callback) { this.disconnectCallback = callback; }
+
   sendMessage(message) {
     if (!this.port) {
       this.scheduleReconnect("native host disconnected");
@@ -124,6 +139,7 @@ class NativeTransport {
       });
       port.onDisconnect.addListener(() => {
         this.port = null;
+        this.disconnectCallback?.();
         this.scheduleReconnect(chrome.runtime.lastError?.message ?? "native host disconnected");
       });
     } catch (error) {
@@ -593,7 +609,7 @@ class BrowserBackend {
     await this.detachTab(tabId);
   }
 
-  async executeCdp(params) {
+  async executeCdp(params, signal) {
     await this.requireSession(params);
     const target = params.target && typeof params.target === "object" ? params.target : {};
     const tabId = target.tabId;
@@ -608,6 +624,7 @@ class BrowserBackend {
         ? params.timeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
     return await withTimeout(timeoutMs, async () => {
+      if (signal?.aborted) throw new Error("Command cancelled before dispatch");
       if (params.method === "Target.getTargets") {
         return { targetInfos: await chrome.debugger.getTargets() };
       }

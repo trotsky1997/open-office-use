@@ -166,3 +166,14 @@ test('interception setup failure still attempts to disable interception',async()
     assert.deepEqual(states,[true,false]);assert.equal(backend.fileChooserWaitersByTabId.size,0);
   } finally {chrome.debugger.sendCommand=original;}
 });
+
+test('cancelled CDP request does not dispatch after delayed tab authorization',async()=>{
+  const Peer=vm.runInNewContext(`${source.slice(0,end)}\nJsonRpcPeer;`,{chrome,crypto:webcrypto,Date,setTimeout,clearTimeout,AbortController});
+  const backend=new Backend();await backend.store.ready;backend.attachedTabs.add(1);let release;
+  backend.requireSession=async()=>({});backend.requireSessionTab=async()=>await new Promise(resolve=>{release=resolve;});
+  const sent=[],transport={setMessageCallback(){},sendMessage(message){sent.push(message);}},peer=new Peer(transport,backend);
+  const before=commands.length;const pending=peer.handleMessage({jsonrpc:'2.0',id:'host-1',method:'executeCdp',params:{target:{tabId:1},method:'Input.insertText'}});
+  while(!release)await new Promise(resolve=>setImmediate(resolve));
+  await peer.handleMessage({jsonrpc:'2.0',method:'obu.cancel',params:{id:'host-1'}});release();await pending;
+  assert.equal(commands.length,before);assert.equal(sent.length,0);assert.equal(peer.inFlight.size,0);
+});

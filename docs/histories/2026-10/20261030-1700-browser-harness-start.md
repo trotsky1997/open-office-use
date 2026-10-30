@@ -512,3 +512,5 @@ CSS 与语义 locator 的 selectOption 正数期限覆盖选项检查和提交�
 Linux ARM64 Chromium 150 隔离 profile 的扩展、原生消息 host 和 SDK 实测 CSS/语义 locator 的 fill、press、check 和 selectOption：延迟准备或提交后超时无迟到修改，恢复后正常操作并返回选中值；跨进程 frame 另验证 press 超时后无迟到按键及后续 fill。Windows 未测。
 
 Chrome 原生消息 relay 丢弃无对应请求的扩展响应，防止客户端断开后的迟到响应送往其他连接；双客户端回归覆盖迟到响应与正常通知。Go 全量 86 项检查和 Linux ARM64 Chromium 150 原生消息主文档及跨 frame 操作实测通过。Chrome 请求发出后的主动取消尚未贯穿宿主与扩展；Windows 未测。
+
+Chrome SDK 在超时或取消时通知 relay，relay 按连接映射请求并转发取消，扩展在 CDP 派发前检查信号；连接断开也取消未完成 CDP 请求，过期响应被丢弃。Go 87 项、SDK 105 项、扩展 31 项检查通过；Linux ARM64 Chromium 原生消息链路注入扩展授权准备延迟，验证取消阻止迟到输入及后续恢复。非 CDP 扩展操作尚未接入取消，已派发 CDP 的效果可能未知；Windows 未测。
