@@ -225,6 +225,12 @@ try {
  await tab.evaluate(`(()=>{const b=document.querySelector('#css-host').shadowRoot.querySelector('#css-action');window.cssSingles=0;window.cssDoubles=[];b.onclick=()=>{window.cssSingles++;b.id='after-first-click'}})()`);
  await assert.rejects(tab.playwright.locator('#css-action').dblclick({timeoutMs:0}),/changed after the first click/i);assert.equal(await tab.evaluate('window.cssSingles'),1);assert.deepEqual(await tab.evaluate('window.cssDoubles'),[]);
  await tab.evaluate(`(()=>{const b=document.querySelector('#css-host').shadowRoot.querySelector('#after-first-click');b.id='css-action';b.onclick=e=>window.cssClick=e.isTrusted})()`);
+ await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const e=document.createElement('input');e.type='checkbox';e.id='css-check';e.onchange=event=>{window.cssCheckEvents=(window.cssCheckEvents||[]).concat({value:e.checked,trusted:event.isTrusted})};r.append(e);const custom=document.createElement('button');custom.id='css-switch';custom.setAttribute('role','switch');custom.setAttribute('aria-checked','false');custom.onclick=()=>custom.setAttribute('aria-checked',custom.getAttribute('aria-checked')==='true'?'false':'true');r.append(custom)})()`);
+ const check=tab.playwright.locator('#css-host').locator('#css-check');assert.equal(await check.isChecked(),false);await check.check();await check.check();assert.equal(await check.isChecked(),true);await check.uncheck();assert.deepEqual(await tab.evaluate('window.cssCheckEvents'),[{value:true,trusted:true},{value:false,trusted:true}]);
+ await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const radio=document.createElement('input');radio.type='radio';radio.id='css-radio';r.append(radio);const mixed=document.createElement('input');mixed.type='checkbox';mixed.id='css-mixed';mixed.indeterminate=true;r.append(mixed)})()`);
+ await tab.playwright.locator('#css-radio').check();assert.equal(await tab.playwright.locator('#css-radio').isChecked(),true);await assert.rejects(tab.playwright.locator('#css-radio').uncheck({timeoutMs:0}),/radio cannot be unchecked/);await assert.rejects(tab.playwright.locator('#css-mixed').isChecked(),/binary checked state/);
+ const cssSwitch=tab.playwright.locator('#css-switch');await cssSwitch.check();assert.equal(await cssSwitch.isChecked(),true);await cssSwitch.uncheck();assert.equal(await cssSwitch.isChecked(),false);
+ await tab.evaluate(`(()=>{const e=document.querySelector('#css-host').shadowRoot.querySelector('#css-check');e.onclick=()=>{e.checked=false;window.cssRejectedClicks=(window.cssRejectedClicks||0)+1}})()`);await assert.rejects(check.check({timeoutMs:0}),/did not retain/);assert.equal(await tab.evaluate('window.cssRejectedClicks'),1);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const input=document.createElement('input');input.id='css-input';input.onkeydown=e=>window.cssKey={key:e.key,trusted:e.isTrusted};r.append(input)})()`);
  assert.throws(()=>tab.playwright.locator('#css-input').press(undefined),/Invalid key/);
  await tab.playwright.locator('#css-input').press('Enter');assert.deepEqual(await tab.evaluate('window.cssKey'),{key:'Enter',trusted:true});
@@ -247,7 +253,7 @@ try {
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const group=r.querySelector('.css-group');group.append(r.querySelector('#css-action'));window.cssClick=false;setTimeout(()=>{group.className='changed-group'},30)})()`);
  await assert.rejects(tab.playwright.locator('.css-group').first().locator('#css-action').click({timeoutMs:0}),/target unavailable|target changed/i);assert.equal(await tab.evaluate('window.cssClick'),false);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;r.append(r.querySelector('#css-action'))})()`);
- await tab.evaluate(`(()=>{window.cssClick=false;const b=document.querySelector('#css-host').shadowRoot.querySelector('button');setTimeout(()=>b.id='changed-css-action',30)})()`);
+ await tab.evaluate(`(()=>{window.cssClick=false;const b=document.querySelector('#css-host').shadowRoot.querySelector('#css-action');setTimeout(()=>b.id='changed-css-action',30)})()`);
  await assert.rejects(tab.playwright.locator('#css-action').click({timeoutMs:0}),/target unavailable|target changed/i);assert.equal(await tab.evaluate('window.cssClick'),false);
  await tab.evaluate(`document.querySelector('#css-host').remove()`);
  const shadow=await tab.observe();const shadowButton=shadow.nodes.find(node=>node.role==='button'&&node.name==='Shadow Action');assert.ok(shadowButton);
@@ -418,6 +424,7 @@ try {
  await tab.typeText(typeTarget.index,typeState.snapshotId,'hello');
  await tab.pressKey('ControlOrMeta+A');await tab.pressKey('Backspace');await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'',trusted:true});
+ const cssUpdates=crossFrame.locator('label > input[type=checkbox]');await cssUpdates.check();assert.equal(await cssUpdates.isChecked(),true);await new Promise(r=>setTimeout(r,40));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-check',value:true,trusted:true});await cssUpdates.uncheck();
  const updates=tab.playwright.getByLabel('Cross updates',{exact:true});await updates.check();await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-check',value:true,trusted:true});
  const messageCount=await tab.evaluate('window.frameMessages.length');await updates.check();await new Promise(r=>setTimeout(r,100));

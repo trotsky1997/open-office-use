@@ -429,6 +429,7 @@ export declare class OpenBrowserUseCssLocator {
     private perform;
     private read;
     isEnabled(): Promise<boolean>;
+    isChecked(): Promise<boolean>;
     isVisible(): Promise<boolean>;
     waitFor(options: {
         state: "attached" | "detached" | "visible" | "hidden";
@@ -441,6 +442,15 @@ export declare class OpenBrowserUseCssLocator {
         timeoutMs?: number;
     }): Promise<void>;
     hover(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    check(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    uncheck(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    setChecked(checked: boolean, options?: {
         timeoutMs?: number;
     }): Promise<void>;
     press(key: string, options?: {

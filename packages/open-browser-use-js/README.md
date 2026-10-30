@@ -267,7 +267,8 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
 `textContent`, `allTextContents`, `getAttribute`, `isVisible`, `isEnabled`,
-`waitFor`, `click`, `dblclick`, `hover`, `press` and `fill`. They search the selected document and its open
+`isChecked`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `check`,
+`uncheck` and `setChecked`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a
 `frameLocator` is selected. Matches are limited to 1,000 elements and single
 reads require a unique match. Selector evaluation uses an isolated world, and
@@ -277,7 +278,9 @@ visibility, hit testing and stable geometry before issuing trusted mouse input.
 `fill` supports text-like and number inputs, textareas, contenteditable elements,
 and native date, time, month, week and datetime-local inputs. Text input rechecks
 focus and selection before inserting. Double-click checks the target again after
-the first click. Batched text is limited to 1,000,000 characters. Date and time
+the first click. Check operations support native checkbox and radio inputs and
+binary ARIA checkbox, radio, switch and menuitem variants; an already selected
+radio cannot be unchecked directly. Batched text is limited to 1,000,000 characters. Date and time
 values are validated using
 the native input parser; their `input` and `change` events are synthetic
 (`isTrusted` is false). `locator()` chains descendant queries, and `first`,

@@ -886,9 +886,11 @@ export class OpenBrowserUseTab {
         if (typeof objectId !== "string")
             throw new RetryablePreflightError("Selector target is unavailable; observe again");
         try {
-            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; if(mode==='visible'){const r=this.getBoundingClientRect();return {value:getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0};} if(mode==='enabled'){for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return {value:false};return {value:true};} const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; if(mode==='visible'){const r=this.getBoundingClientRect();return {value:getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0};} if(mode==='checked'){if(this instanceof HTMLInputElement && ['checkbox','radio'].includes(this.type))return {value:this.indeterminate ? null : this.checked};const role=(this.getAttribute('role') || '').trim().split(/\\s+/)[0], checked=this.getAttribute('aria-checked');if(['checkbox','radio','switch','menuitemcheckbox','menuitemradio'].includes(role) && ['true','false'].includes(checked))return {value:checked==='true'};return {value:null};} if(mode==='enabled'){for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return {value:false};return {value:true};} const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
-            if (!isObject(payload) || (["visible", "enabled"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
+            if (isObject(payload) && mode === "checked" && payload.value === null)
+                throw new Error("Target does not have a binary checked state");
+            if (!isObject(payload) || (["visible", "enabled", "checked"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
                 throw new RetryablePreflightError("Selector target is unavailable; observe again");
             if (typeof payload.value === "string" && payload.value.length > 30_000)
                 throw new Error("Locator value exceeds the 30000 character limit");
@@ -932,7 +934,7 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
-    async actCss(snapshot, id, hover, key, text, doubleClick = false) {
+    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked) {
         if (key !== undefined)
             this.parseKey(key);
         const frame = snapshot.frame;
@@ -985,6 +987,32 @@ export class OpenBrowserUseTab {
             const fresh = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
             if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
                 throw new RetryablePreflightError("Selector target changed; observe again");
+            const checkedState = async () => {
+                const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() {
+          if (!this.isConnected) return null;
+          if (this instanceof HTMLInputElement && ['checkbox','radio'].includes(this.type)) return {value:this.indeterminate ? null : this.checked,radio:this.type==='radio'};
+          const role=(this.getAttribute('role') || '').trim().split(/\\s+/)[0], checked=this.getAttribute('aria-checked');
+          if (!['checkbox','radio','switch','menuitemcheckbox','menuitemradio'].includes(role) || !['true','false'].includes(checked)) return {value:null,radio:false};
+          return {value:checked==='true',radio:role==='radio' || role==='menuitemradio'};
+        }` }, { sessionId });
+                const value = isObject(result) && isObject(result.result) ? result.result.value : null;
+                if (!isObject(value) || typeof value.value !== "boolean" || typeof value.radio !== "boolean")
+                    throw new Error("Target does not have a binary checked state");
+                return { value: value.value, radio: value.radio };
+            };
+            if (checked !== undefined) {
+                const state = await checkedState();
+                const latest = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+                if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids))
+                    throw new RetryablePreflightError("Selector target changed; observe again");
+                const current = await checkedState();
+                if (current.value !== state.value || current.radio !== state.radio)
+                    throw new RetryablePreflightError("Checked state changed; observe again");
+                if (current.value === checked)
+                    return;
+                if (!checked && current.radio)
+                    throw new Error("A selected radio cannot be unchecked directly");
+            }
             if (text !== undefined) {
                 const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) {
           if (!this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly') === 'true') return 'unsupported';
@@ -1049,6 +1077,11 @@ export class OpenBrowserUseTab {
             else {
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...second.inputPoint, button: "left", buttons: 1, clickCount: 1 }, options);
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...second.inputPoint, button: "left", buttons: 0, clickCount: 1 }, options);
+                if (checked !== undefined) {
+                    const latest = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+                    if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids) || (await checkedState()).value !== checked)
+                        throw new Error("Target did not retain the requested checked state");
+                }
                 if (doubleClick) {
                     const after = await measure();
                     if (moving(second.geometry.x, after.geometry.x) || moving(second.geometry.y, after.geometry.y) || moving(second.geometry.width, after.geometry.width) || moving(second.geometry.height, after.geometry.height) || moving(second.point.x, after.point.x) || moving(second.point.y, after.point.y))
@@ -2391,6 +2424,7 @@ export class OpenBrowserUseCssLocator {
         return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, mode, name), timeoutMs);
     }
     isEnabled() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "enabled")); }
+    isChecked() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "checked")); }
     async isVisible() {
         const snapshot = await this.tab.queryCss(this.selector, this.framePath, this.scopes), ids = this.select(snapshot.ids);
         if (!ids.length)
@@ -2428,6 +2462,13 @@ export class OpenBrowserUseCssLocator {
     click(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false), options.timeoutMs); }
     dblclick(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, undefined, true), options.timeoutMs); }
     hover(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, true), options.timeoutMs); }
+    check(options = {}) { return this.setChecked(true, options); }
+    uncheck(options = {}) { return this.setChecked(false, options); }
+    setChecked(checked, options = {}) {
+        if (typeof checked !== "boolean")
+            throw new Error("Checked state must be a boolean");
+        return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked), options.timeoutMs);
+    }
     press(key, options = {}) {
         if (typeof key !== "string")
             throw new Error("Invalid key");
