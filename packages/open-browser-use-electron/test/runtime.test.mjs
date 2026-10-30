@@ -598,3 +598,13 @@ test('file chooser cancellation releases interception and preserves unrelated qu
   assert.equal(debug.isAttached(),true);release({});await busy;
   await new Promise(resolve=>setImmediate(resolve));assert.equal(debug.isAttached(),true);
 });
+
+test('WebMCP cancellation sends page abort and frees the tab queue',async t=>{
+  const {runtime,adapter}=setup(t),scope=runtime.scopes.open({id:'web-cancel',profileId:'work',webmcp:true}),tab=await scope.tabs.create();
+  const debug=adapter.views.at(-1).webContents.debugger,send=debug.sendCommand.bind(debug),calls=[];let release;
+  debug.sendCommand=async(method,params,session)=>{if(method==='Runtime.evaluate' && params.expression?.startsWith('new Promise(')){calls.push('invoke');return await new Promise(resolve=>{release=resolve;});}if(method==='Runtime.evaluate' && params.expression?.includes('action')){calls.push('cancel');return {};}return send(method,params,session);};
+  const controller=new AbortController();const pending=runtime.dispatch('web-cancel','webmcp_invoke_tool',{tabId:tab.id,tool_name:'tool',registration_id:'one',input:{}},['page.control'],()=>!controller.signal.aborted,controller.signal);
+  while(!release)await new Promise(resolve=>setImmediate(resolve));controller.abort();await assert.rejects(pending,/AUTH_REVOKED/);
+  await runtime.dispatch('web-cancel','executeCdp',{target:{tabId:tab.id},method:'Runtime.enable'},['page.control']);
+  assert.deepEqual(calls,['invoke','cancel']);release({result:{value:{result:{}}}});
+});

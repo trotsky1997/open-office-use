@@ -236,10 +236,14 @@ export class IabRuntime implements Backend {
       await done;
     }
   }
-  private async webMcpDeadline<T>(promise:Promise<T>,timeoutMs:number):Promise<T> {
-    let timer:ReturnType<typeof setTimeout> | undefined;
-    try {return await Promise.race([promise,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('IAB_WEBMCP_OUTCOME_UNKNOWN')),timeoutMs);})]);}
-    finally {if(timer)clearTimeout(timer);}
+  private async webMcpDeadline<T>(promise:Promise<T>,timeoutMs:number,signal?:AbortSignal,onAbort?:()=>void):Promise<T> {
+    let timer:ReturnType<typeof setTimeout> | undefined, abort:(()=>void) | undefined;
+    try {return await Promise.race([promise,new Promise<never>((_,reject)=>{
+      abort=()=>{onAbort?.();reject(new Error('IAB_AUTH_REVOKED'));};
+      if(signal?.aborted)abort();else signal?.addEventListener('abort',abort,{once:true});
+      timer=setTimeout(()=>{onAbort?.();reject(new Error('IAB_WEBMCP_OUTCOME_UNKNOWN'));},timeoutMs);
+    })]);}
+    finally {if(timer)clearTimeout(timer);if(abort)signal?.removeEventListener('abort',abort);}
   }
   private async setupWebMcp(tab:Tab,authorized:()=>boolean):Promise<void> {
     if(tab.webMcpReady)return;
@@ -255,7 +259,7 @@ export class IabRuntime implements Backend {
     if(!authorized())throw new Error('IAB_AUTH_REVOKED');
     tab.webMcpReady=true;
   }
-  private async webMcp(tab:Tab,method:string,params:Record<string,any>,authorized:()=>boolean):Promise<any> {
+  private async webMcp(tab:Tab,method:string,params:Record<string,any>,authorized:()=>boolean,signal?:AbortSignal):Promise<any> {
     if(!authorized())throw new Error('IAB_AUTH_REVOKED');
     if(!this.scope(tab.scopeId).webmcp)throw new Error('IAB_WEBMCP_DISABLED');
     const timeout=method==='webmcp_list_tools' ? 5000 : (params.timeout_ms ?? 10000);
@@ -265,7 +269,13 @@ export class IabRuntime implements Backend {
     if(!authorized())throw new Error('IAB_AUTH_REVOKED');
     const request={source:'open-browser-use-webmcp-bridge',requestId:randomUUID(),action:method==='webmcp_list_tools' ? 'list' : 'invoke',...(method==='webmcp_invoke_tool' ? {tool_name:params.tool_name.trim(),registration_id:params.registration_id.trim(),input:params.input,timeout_ms:timeout} : {})};
     const expression=`new Promise((resolve,reject)=>{const request=${JSON.stringify(request)};const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('WebMCP bridge timed out'))},${timeout+1500});function receive(event){const data=event.data;if(event.source!==window || data?.source!=='open-browser-use-webmcp-page' || data.requestId!==request.requestId)return;clearTimeout(timer);window.removeEventListener('message',receive);if(data.ok)resolve(data.result);else reject(new Error(String(data.error || 'WebMCP request failed')))}window.addEventListener('message',receive);window.postMessage(request,'*')})`;
-    const result=await this.webMcpDeadline(tab.contents.debugger.sendCommand('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true}),timeout+2000);
+    const epoch=tab.debuggerEpoch;
+    const cancel=()=>{
+      if(tab.contents.isDestroyed() || !tab.contents.debugger.isAttached() || tab.debuggerEpoch!==epoch)return;
+      const message={source:request.source,requestId:request.requestId,action:'cancel'};
+      try { void tab.contents.debugger.sendCommand('Runtime.evaluate',{expression:`window.postMessage(${JSON.stringify(message)},'*')`}).catch(()=>{}); } catch {}
+    };
+    const result=await this.webMcpDeadline(tab.contents.debugger.sendCommand('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true}),timeout+2000,signal,cancel);
     if(!authorized())throw new Error('IAB_AUTH_REVOKED');
     if(result?.exceptionDetails) {const message=result.exceptionDetails.exception?.description;throw new Error(typeof message==='string' && message.includes('WebMCP tool registration is stale') ? 'IAB_WEBMCP_STALE' : 'IAB_WEBMCP_FAILED');}
     const value=result?.result?.value;
@@ -689,7 +699,7 @@ export class IabRuntime implements Backend {
     if (method === 'waitForFileChooser') { need('files.upload'); return this.waitForFileChooser(scopeId,tab,params,authorized,signal); }
     if (method==='webmcp_list_tools' || method==='webmcp_invoke_tool') {
       need('page.control');tab.pending++;
-      const run=tab.queue.then(()=>this.webMcp(this.tab(scopeId,tab.id),method,params,authorized));tab.queue=run.catch(()=>{});
+      const run=tab.queue.then(()=>this.webMcp(this.tab(scopeId,tab.id),method,params,authorized,signal));tab.queue=run.catch(()=>{});
       try {return await run;} finally {tab.pending--;}
     }
     if (method === 'waitForDownload') { need('files.download'); return this.waitForDownload(scopeId,tab,params,authorized,signal); }

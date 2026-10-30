@@ -127,3 +127,4 @@
 - [x] Chrome 下载完成路径等待响应取消并移除监听器；Linux ARM64 原生消息链路通过测试探针验证。
 - [x] Chrome WebMCP 桥接准备响应取消，已调用页面工具收到 AbortSignal；Linux ARM64 原生消息链路实测。页面工具可忽略信号，已派发效果可能未知。
 - [x] Chrome WebMCP 延迟或已取消的旧列表不会覆盖新工具注册；Linux ARM64 原生消息实测新注册仍可调用。
+- [x] Electron WebMCP 同步 Chrome 页面桥，取消时向已调用工具发送 AbortSignal 并释放标签队列；macOS Electron 实页验证。

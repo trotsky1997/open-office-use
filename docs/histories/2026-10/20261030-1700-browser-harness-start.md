@@ -522,3 +522,5 @@ Chrome 下载完成路径等待接入请求取消，移除完成监听器；扩�
 Chrome WebMCP 请求响应取消：桥接准备结束后检查期限，已发送的调用通过内容桥传递取消并触发页面工具 AbortSignal；扩展 35 项检查通过。Linux ARM64 Chromium 150 原生消息链路实测页面工具收到取消信号，后续主文档与跨 frame 操作通过。页面工具可能忽略信号或已产生效果；Windows 未测。
 
 Chrome WebMCP 列表结果按请求代次和工具变更校验；取消或过期列表不会覆盖更新的注册结果，取消时清除请求控制器。扩展 36 项检查和 Linux ARM64 Chromium 150 原生消息实测通过：延迟旧列表被取消后，新列表的工具仍可调用。Windows 未测。
+
+同步 Electron WebMCP 生成源码并接入请求取消：已派发的页面工具收到 AbortSignal，取消后释放标签队列，过期调试会话不会接收迟到取消。macOS Electron socket 实页验证页面工具收到信号、后续列表可用。页面工具可能忽略信号或已产生效果；Linux 和 Windows 本轮未测。
