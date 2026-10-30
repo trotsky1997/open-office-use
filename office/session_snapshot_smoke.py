@@ -6,6 +6,7 @@ from unittest.mock import patch
 from docx import Document
 from openpyxl import Workbook
 import officecli_backend
+import chart_cache
 import ooxml
 import session
 import snapshot
@@ -54,6 +55,8 @@ with tempfile.TemporaryDirectory() as tmp:
     reject(source, lambda: ooxml.edit_xml(source, output, lambda file: 'word/document.xml', lambda tree, archive: None))
     assert not output.exists()
     book = Workbook(); book.active['A1'] = 'Original'; workbook = root/'source.xlsx'; book.save(workbook)
+    workbook_check = root/'chart-scan-source.xlsx'; workbook_check.write_bytes(workbook.read_bytes())
+    reject(workbook_check, lambda: chart_cache.scan(workbook_check))
     book.active['A1'] = 'Changed'; changed = root/'changed.xlsx'; book.save(changed)
     real_read_grid = session.read_grid
     for mode in ('edit', 'format'):

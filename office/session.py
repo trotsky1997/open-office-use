@@ -184,13 +184,13 @@ def inspect_slide_charts(directory, revision):
     return {'revision': revision, **slide_charts.inspect(source)}
 
 
-def sync_slide_chart_cache(directory, base_revision, part, reference, allow_formula_caches=False):
+def sync_slide_chart_cache(directory, base_revision, part, reference, allow_formula_caches=False, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Slide chart cache sync requires a PPTX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
-    try: result = slide_charts.sync(source, output, part, reference, allow_formula_caches)
+    try: result = slide_charts.sync(source, output, part, reference, allow_formula_caches, expected_sha256)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, **result}
 
@@ -354,13 +354,13 @@ def scan_chart_caches(directory, revision):
     return {'revision': revision, **chart_cache.scan(source)}
 
 
-def sync_chart_cache(directory, base_revision, part, reference, allow_formula_caches=False):
+def sync_chart_cache(directory, base_revision, part, reference, allow_formula_caches=False, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'xlsx': raise ValueError('Chart cache sync requires an XLSX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
-    try: result = chart_cache.sync(source, output, part, reference, allow_formula_caches)
+    try: result = chart_cache.sync(source, output, part, reference, allow_formula_caches, expected_sha256)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, **result}
 

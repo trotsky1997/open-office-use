@@ -218,7 +218,7 @@ def inspect(file):
         return result
 
 
-def sync(source, output, part, reference, allow_formula_caches=False):
+def sync(source, output, part, reference, allow_formula_caches=False, expected_sha256=None):
     """Synchronize one verified chart reference from its saved embedded workbook."""
     if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from slide chart inspection')
     if isinstance(reference, bool) or not isinstance(reference, int) or reference < 1: raise ValueError('Provide a positive reference index')
@@ -227,6 +227,7 @@ def sync(source, output, part, reference, allow_formula_caches=False):
     if output.exists() or output.is_symlink(): raise FileExistsError(f'Output already exists: {output}')
     with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-slide-chart-sync-') as tmp:
         snapshot, digest = snapshots.copy(source, tmp)
+        if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Presentation snapshot changed; rescan chart caches')
         inventory = inspect(snapshot)
         charts = [chart for chart in inventory['charts'] if chart.get('chart_part') == part]
         if not charts or any(chart['workbook']['status'] != 'embedded' for chart in charts): raise ValueError('Chart with embedded workbook was not available in the bounded inventory')

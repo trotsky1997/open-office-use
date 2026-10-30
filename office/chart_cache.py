@@ -1,7 +1,6 @@
 """Compare bounded chart caches with stored worksheet values in an XLSX snapshot."""
 import math
 import re
-import shutil
 import tempfile
 import zipfile
 from decimal import Decimal, InvalidOperation
@@ -13,6 +12,7 @@ from openpyxl.utils.cell import get_column_letter, range_boundaries
 from lxml import etree
 
 import ooxml
+import snapshot as snapshots
 import spreadsheet
 
 C = '{http://schemas.openxmlformats.org/drawingml/2006/chart}'
@@ -72,7 +72,7 @@ def scan(file):
     if source.suffix.lower() != '.xlsx': raise ValueError('Chart cache inspection requires an XLSX file')
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
     with tempfile.TemporaryDirectory(prefix='office-chart-cache-') as tmp:
-        snapshot = Path(tmp) / 'workbook.xlsx'; shutil.copyfile(source, snapshot)
+        snapshot, digest = snapshots.copy(source, tmp)
         if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
         try:
             with zipfile.ZipFile(snapshot) as archive:
@@ -196,7 +196,7 @@ def scan(file):
                         if limit_hit: break
                     if len(chart_parts) > 50: complete = False
                     refs = [ref for chart in results for ref in chart['references']]
-                    return {'charts': results, 'chart_parts_total': len(chart_parts), 'complete': complete,
+                    return {'snapshot_sha256': digest, 'charts': results, 'chart_parts_total': len(chart_parts), 'complete': complete,
                             'mismatch_references': sum(ref['status']=='mismatch' for ref in refs),
                             'missing_caches': sum(ref['status']=='missing_cache' for ref in refs),
                             'unverified_references': sum(ref['status']=='unverified' or ref.get('unverified_points', 0)>0 for ref in refs), 'source_cells_read': points_read,
@@ -206,7 +206,7 @@ def scan(file):
             raise ValueError(f'Invalid workbook package: {exc}') from exc
 
 
-def sync(source, output, part, reference, allow_formula_caches=False):
+def sync(source, output, part, reference, allow_formula_caches=False, expected_sha256=None):
     """Synchronize mismatched cache points from stored worksheet values."""
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
     if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx': raise ValueError('Chart cache sync requires XLSX input and output')
@@ -216,7 +216,8 @@ def sync(source, output, part, reference, allow_formula_caches=False):
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
     if output.exists() or output.is_symlink(): raise FileExistsError(f'Output already exists: {output}')
     with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-chart-sync-') as tmp:
-        snapshot = Path(tmp) / 'source.xlsx'; shutil.copyfile(source, snapshot)
+        snapshot, digest = snapshots.copy(source, tmp)
+        if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Workbook snapshot changed; rescan chart caches')
         result = scan(snapshot)
         matches = [item for item in result['charts'] if item['part'] == part]
         if len(matches) != 1 or matches[0]['status'] != 'scanned': raise ValueError('Chart part was not available in the bounded scan')
@@ -296,5 +297,5 @@ def sync(source, output, part, reference, allow_formula_caches=False):
                     node_value.text = new; updated += 1
             if updated != ref['mismatch_count']: raise ValueError('Chart source or cache did not match the scan')
         ooxml.edit_xml(snapshot, output, lambda _: part, edit)
-    return {'output': str(output), 'part': part, 'reference': reference, 'source_sheet': sheet, 'source_range': cell_range,
+    return {'output': str(output), 'snapshot_sha256': digest, 'part': part, 'reference': reference, 'source_sheet': sheet, 'source_range': cell_range,
             'updated_points': updated, 'source_formula_cells': formula_count, 'formula_cache_freshness': 'unknown'}

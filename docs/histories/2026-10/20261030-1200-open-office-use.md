@@ -379,3 +379,5 @@ Bound comment inventory, replies and resolved-state changes to checked snapshots
 Bound tracked-change acceptance/rejection to the inspected snapshot hash through MCP and the viewer.
 
 Bound PowerPoint picture replacement to inspected presentation hashes, and read CLI/MCP image inputs through checked snapshots.
+
+Chart-cache scanning uses checked snapshots; XLSX and PPTX syncs accept inspected source hashes, and the workbook viewer binds cache repairs to its preview.

@@ -590,3 +590,5 @@ Comment inventories return `snapshot_sha256`; pass it as `expected_sha256` to co
 Tracked-change inventories return `snapshot_sha256`. Pass it to `session_resolve_tracked_runs` as `expected_sha256` to bind acceptance or rejection to the inspected file. The viewer checks its displayed snapshot and sends the inventory hash.
 
 PowerPoint picture replacement accepts `expected_sha256` (CLI: `--expected-sha256`) from the inspected presentation or selection; the viewer binds it to the selected preview. CLI and MCP read replacement images from a checked local snapshot.
+
+XLSX chart cache scans and PPTX chart inventories return a source snapshot hash. Pass `expected_sha256` to the corresponding session sync operation (CLI: `--expected-sha256`) to bind repair to that inspection. The workbook viewer does this automatically. Formula-source cache freshness still requires independent calculation and review.

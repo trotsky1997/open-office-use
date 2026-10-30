@@ -30,7 +30,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert mismatch['role']=='cat' and mismatch['mismatches'][0]['cell']=='A2' and mismatch['mismatches'][0]['stored_value']=='March' and mismatch['mismatches'][0]['cached_value']=='Jan'
     assert session.scan_chart_caches(draft,0)['mismatch_references']==0
     assert load_workbook(changed['file'])['Sales Data']['A2'].value=='March'
-    synced=session.sync_chart_cache(draft,1,result['charts'][0]['part'],mismatch['index'])
+    try: session.sync_chart_cache(draft,1,result['charts'][0]['part'],mismatch['index'],expected_sha256='0'*64)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Wrong workbook chart snapshot accepted')
+    assert session.info(draft)['latest_revision']==1
+    synced=session.sync_chart_cache(draft,1,result['charts'][0]['part'],mismatch['index'],expected_sha256=result['snapshot_sha256'])
     assert synced['revision']==2 and synced['updated_points']==1 and synced['source_formula_cells']==0
     assert session.scan_chart_caches(draft,2)['mismatch_references']==0
     with zipfile.ZipFile(changed['file']) as before,zipfile.ZipFile(synced['output']) as after:
@@ -66,7 +70,7 @@ with tempfile.TemporaryDirectory() as tmp:
     cli=Path(__file__).with_name('open_office_use.py'); output=subprocess.run([sys.executable,str(cli),'session','scan-chart-caches',str(draft),'--revision','1'],capture_output=True,text=True,check=True)
     assert json.loads(output.stdout)['mismatch_references']==1
     cli_draft=root/'cli-draft'; session.start(cli_draft,source=changed['file'])
-    cli_result=subprocess.run([sys.executable,str(cli),'session','sync-chart-cache',str(cli_draft),'--base','0','--part',result['charts'][0]['part'],'--reference',str(mismatch['index'])],capture_output=True,text=True,check=True)
+    cli_result=subprocess.run([sys.executable,str(cli),'session','sync-chart-cache',str(cli_draft),'--base','0','--part',result['charts'][0]['part'],'--reference',str(mismatch['index']),'--expected-sha256',result['snapshot_sha256']],capture_output=True,text=True,check=True)
     assert json.loads(cli_result.stdout)['updated_points']==1
     # Missing caches and unsupported external references must be visible as incomplete coverage.
     def rewrite(name, mutate):

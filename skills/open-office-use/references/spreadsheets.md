@@ -44,3 +44,5 @@ Daily line and column chart categories use a native date axis when date values a
 Chart specifications accept `series_colors` as one six-digit RGB string per Y series, `legend`, `show_gridlines`, and `show_values` (numeric data labels) as booleans, and finite numeric `y_min` / `y_max` with the minimum below the maximum. Line and scatter series use straight segments. Inspect the rendered output in the target application.
 
 Grid reads return `snapshot_sha256`. Pass it as `expected_sha256` to `session_edit_grid` or `session_format_grid` when editing a previously inspected grid; a changed source is rejected. The same option is available for `session_merge_cells`, `session_freeze_panes`, and `session_resize_grid`; the viewer passes the loaded hash for all five operations.
+
+Chart cache scans return `snapshot_sha256`; pass it as `expected_sha256` to session cache synchronization to bind the repair to inspected workbook bytes.

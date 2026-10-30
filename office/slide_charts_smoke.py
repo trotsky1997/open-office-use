@@ -163,7 +163,12 @@ with tempfile.TemporaryDirectory() as tmp:
     assert mismatch_report['status']=='mismatch' and mismatch_report['mismatch_count']>=1
     changed_reference=next(item['index'] for item in mismatch_report['references'] if item['status']=='mismatch')
     sync_draft=root/'sync-draft';session.start(sync_draft,source=mismatch)
-    synced=session.sync_slide_chart_cache(sync_draft,0,chart['chart_part'],changed_reference)
+    before_sync=session.inspect_slide_charts(sync_draft,0)
+    try: session.sync_slide_chart_cache(sync_draft,0,chart['chart_part'],changed_reference,expected_sha256='0'*64)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Wrong presentation chart snapshot accepted')
+    assert session.info(sync_draft)['latest_revision']==0
+    synced=session.sync_slide_chart_cache(sync_draft,0,chart['chart_part'],changed_reference,expected_sha256=before_sync['snapshot_sha256'])
     assert synced['updated_points']==1 and synced['revision']==1
     assert session.inspect_slide_charts(sync_draft,1)['charts'][0]['reconciliation']['status']=='match'
     with zipfile.ZipFile(mismatch) as before, zipfile.ZipFile(synced['output']) as after:

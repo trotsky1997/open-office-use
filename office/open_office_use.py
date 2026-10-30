@@ -1280,13 +1280,13 @@ def main():
     session_stories = sub.add_parser('stories'); session_stories.add_argument('directory'); session_stories.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_charts = sub.add_parser('inspect-slide-charts'); session_charts.add_argument('directory'); session_charts.add_argument('--revision', type=int, required=True)
-    slide_chart_sync = sub.add_parser('sync-slide-chart-cache'); slide_chart_sync.add_argument('directory'); slide_chart_sync.add_argument('--base', type=int, required=True); slide_chart_sync.add_argument('--part', required=True); slide_chart_sync.add_argument('--reference', type=int, required=True); slide_chart_sync.add_argument('--allow-formula-caches', action='store_true')
+    slide_chart_sync = sub.add_parser('sync-slide-chart-cache'); slide_chart_sync.add_argument('directory'); slide_chart_sync.add_argument('--base', type=int, required=True); slide_chart_sync.add_argument('--part', required=True); slide_chart_sync.add_argument('--reference', type=int, required=True); slide_chart_sync.add_argument('--allow-formula-caches', action='store_true'); slide_chart_sync.add_argument('--expected-sha256')
     session_external = sub.add_parser('external-links'); session_external.add_argument('directory'); session_external.add_argument('--revision', type=int, required=True)
     session_slide_text = sub.add_parser('inspect-slide-text'); session_slide_text.add_argument('directory'); session_slide_text.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True); session_calc.add_argument('--allow-dynamic-arrays', action='store_true')
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
     session_chart_scan = sub.add_parser('scan-chart-caches'); session_chart_scan.add_argument('directory'); session_chart_scan.add_argument('--revision', type=int, required=True)
-    session_chart_sync = sub.add_parser('sync-chart-cache'); session_chart_sync.add_argument('directory'); session_chart_sync.add_argument('--base', type=int, required=True); session_chart_sync.add_argument('--part', required=True); session_chart_sync.add_argument('--reference', type=int, required=True); session_chart_sync.add_argument('--allow-formula-caches', action='store_true')
+    session_chart_sync = sub.add_parser('sync-chart-cache'); session_chart_sync.add_argument('directory'); session_chart_sync.add_argument('--base', type=int, required=True); session_chart_sync.add_argument('--part', required=True); session_chart_sync.add_argument('--reference', type=int, required=True); session_chart_sync.add_argument('--allow-formula-caches', action='store_true'); session_chart_sync.add_argument('--expected-sha256')
     session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     session_search = sub.add_parser('search-cells'); session_search.add_argument('directory'); session_search.add_argument('--revision', type=int, required=True); session_search.add_argument('--query', required=True)
     session_search.add_argument('--sheet'); session_search.add_argument('--offset', type=int, default=0); session_search.add_argument('--snapshot-sha256')
@@ -1391,7 +1391,7 @@ def main():
             elif args.action == 'inspect-slide-charts':
                 result = session.inspect_slide_charts(args.directory, args.revision)
             elif args.action == 'sync-slide-chart-cache':
-                result = session.sync_slide_chart_cache(args.directory, args.base, args.part, args.reference, args.allow_formula_caches)
+                result = session.sync_slide_chart_cache(args.directory, args.base, args.part, args.reference, args.allow_formula_caches, args.expected_sha256)
             elif args.action == 'external-links':
                 result = session.external_relationships(args.directory, args.revision)
             elif args.action == 'recalculate':
@@ -1401,7 +1401,7 @@ def main():
             elif args.action == 'scan-chart-caches':
                 result = session.scan_chart_caches(args.directory, args.revision)
             elif args.action == 'sync-chart-cache':
-                result = session.sync_chart_cache(args.directory, args.base, args.part, args.reference, args.allow_formula_caches)
+                result = session.sync_chart_cache(args.directory, args.base, args.part, args.reference, args.allow_formula_caches, args.expected_sha256)
             elif args.action == 'inspect-workbook':
                 result = session.inspect_workbook(args.directory, args.revision)
             elif args.action == 'search-cells':

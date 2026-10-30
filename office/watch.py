@@ -946,6 +946,7 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
   const response=await fetch('chart-cache-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Chart cache check failed');
   if (epoch!==chartCacheEpoch || displayed!==revision) return;
+  if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; rescan chart caches');
   status.textContent=`Revision ${revision}: ${result.chart_parts_total} chart part(s), ${result.mismatch_references} mismatch candidate(s), ${result.missing_caches} missing cache(s), ${result.unverified_references} unverified reference(s). ${result.complete ? 'Supported checks completed.' : 'Coverage incomplete.'}`;
   document.getElementById('chart-cache-output').textContent=JSON.stringify(result, null, 2);
   const list=document.getElementById('chart-cache-actions');
@@ -954,10 +955,10 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
    const row=document.createElement('li'); row.appendChild(document.createTextNode(`${chart.part} · reference ${ref.index} · ${ref.formula} · ${ref.mismatch_count} mismatch(es) `));
    const sync=document.createElement('button'); sync.type='button'; sync.textContent='Sync cache as new revision'; sync.disabled=revision!==current || pinned!==null;
    sync.addEventListener('click', async () => {
-    if (revision!==current || pinned!==null || displayed!==revision || chartCacheRevision!==revision) { status.textContent='Version changed; check the latest revision again.'; return; }
+    if (revision!==current || pinned!==null || displayed!==revision || chartCacheRevision!==revision || result.snapshot_sha256!==displayedHash) { status.textContent='Version changed; check the latest revision again.'; return; }
     sync.disabled=true; button.disabled=true; status.textContent='Syncing stored values into this chart cache…';
     try {
-     const response=await fetch('chart-cache-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part:chart.part,reference:ref.index})});
+     const response=await fetch('chart-cache-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part:chart.part,reference:ref.index,snapshot_sha256:result.snapshot_sha256})});
      const saved=await response.json(); if (!response.ok) throw new Error(saved.error || 'Cache sync failed');
      list.replaceChildren(); await refresh(); status.textContent=`Synced ${saved.updated_points} point(s) as revision ${saved.revision}. Recheck the chart and render.`;
     } catch(error) { status.textContent=`Chart cache sync error: ${error.message}`; if (revision===current && pinned===null && displayed===revision) sync.disabled=false; }
@@ -1552,8 +1553,8 @@ def serve(directory, preview, port=0, render=None):
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
                     with lock:
                         if route.endswith('/chart-cache-sync'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'part', 'reference'}: raise ValueError('Chart cache sync requires revision, part and reference')
-                            saved = session.sync_chart_cache(directory, payload['base_revision'], payload['part'], payload['reference'])
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'part', 'reference'}, {'base_revision', 'part', 'reference', 'snapshot_sha256'}): raise ValueError('Chart cache sync requires revision, part and reference')
+                            saved = session.sync_chart_cache(directory, payload['base_revision'], payload['part'], payload['reference'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/notes-replace-text'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'slide', 'paragraph', 'find', 'replacement'}, {'base_revision', 'slide', 'paragraph', 'find', 'replacement', 'snapshot_sha256'}):
                                 raise ValueError('Notes text replacement requires revision, slide, paragraph, find and replacement')

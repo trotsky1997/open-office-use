@@ -41,3 +41,5 @@ In the local viewer, the Slide order panel loads the displayed revision's slide 
 Speaker-note reads return `snapshot_sha256`. Pass it as `expected_sha256` when replacing full notes or a notes paragraph; the viewer binds these operations to the displayed snapshot.
 
 For picture replacement, pass the selected presentation `snapshot_sha256` as `expected_sha256` to bind the operation to the inspected source. The viewer submits the selection snapshot automatically; local replacement images are read from checked snapshots.
+
+Slide chart inventories return `snapshot_sha256`; pass it as `expected_sha256` to slide chart cache synchronization to bind repair to the inspected presentation.

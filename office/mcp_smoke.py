@@ -74,7 +74,9 @@ async def main():
                 date_edit=await session.call_tool('session_edit_grid',{'directory':str(date_chart_draft),'base_revision':0,'sheet':'Data','cell_range':'A2','changes':[{'cell':'A2','value':'2026-11-02'}]});assert not date_edit.isError,date_edit
                 date_report=await session.call_tool('session_scan_chart_caches',{'directory':str(date_chart_draft),'revision':1});date_cat=next(item for item in date_report.structuredContent['charts'][0]['references'] if item['role']=='cat')
                 assert date_cat['status']=='mismatch' and date_cat['unverified_points']==0,date_report
-                date_sync=await session.call_tool('session_sync_chart_cache',{'directory':str(date_chart_draft),'base_revision':1,'part':date_report.structuredContent['charts'][0]['part'],'reference':date_cat['index']});assert not date_sync.isError and date_sync.structuredContent['updated_points']==1,date_sync
+                date_args={'directory':str(date_chart_draft),'base_revision':1,'part':date_report.structuredContent['charts'][0]['part'],'reference':date_cat['index']}
+                assert (await session.call_tool('session_sync_chart_cache',{**date_args,'expected_sha256':'0'*64})).isError
+                date_sync=await session.call_tool('session_sync_chart_cache',{**date_args,'expected_sha256':date_report.structuredContent['snapshot_sha256']});assert not date_sync.isError and date_sync.structuredContent['updated_points']==1,date_sync
                 scatter_file=root/'mcp-scatter.xlsx'
                 scatter_spec={'ranges':{'Data':[{'start':'A1','values':[['Time','Value'],[{'type':'datetime','value':'2026-10-31T08:00:00'},20],[{'type':'datetime','value':'2026-10-31T09:00:00'},30],[{'type':'datetime','value':'2026-10-31T15:00:00'},40]]}]},'sheet_options':{'Data':{'charts':[{'type':'scatter','data':'B1:B4','categories':'A2:A4','date_format':'hh:mm'}]}}}
                 scatter_created=await session.call_tool('author_file',{'spec':scatter_spec,'output':str(scatter_file)});assert not scatter_created.isError,scatter_created
@@ -135,7 +137,9 @@ async def main():
                 mismatch_inspect = await session.call_tool('session_inspect_slide_charts', {'directory':str(mismatch_draft),'revision':0})
                 mismatch_chart = mismatch_inspect.structuredContent['charts'][0]
                 ref = next(item['index'] for item in mismatch_chart['reconciliation']['references'] if item['status'] == 'mismatch')
-                repaired = await session.call_tool('session_sync_slide_chart_cache', {'directory':str(mismatch_draft),'base_revision':0,'part':mismatch_chart['chart_part'],'reference':ref})
+                slide_sync_args = {'directory':str(mismatch_draft),'base_revision':0,'part':mismatch_chart['chart_part'],'reference':ref}
+                assert (await session.call_tool('session_sync_slide_chart_cache',{**slide_sync_args,'expected_sha256':'0'*64})).isError
+                repaired = await session.call_tool('session_sync_slide_chart_cache', {**slide_sync_args,'expected_sha256':mismatch_inspect.structuredContent['snapshot_sha256']})
                 assert not repaired.isError and repaired.structuredContent['updated_points'] == 1, repaired
                 verified = await session.call_tool('session_inspect_slide_charts', {'directory':str(mismatch_draft),'revision':1})
                 assert verified.structuredContent['charts'][0]['reconciliation']['status'] == 'match', verified

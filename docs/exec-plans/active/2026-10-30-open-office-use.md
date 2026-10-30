@@ -276,3 +276,5 @@ Comment inventory and reply/resolution operations use checked snapshots, with ex
 Tracked-change resolution can enforce the inventory snapshot hash; the viewer validates its preview and supplies the hash.
 
 Picture replacement accepts a source snapshot hash; viewer selections bind the hash, and local image inputs use checked snapshots.
+
+Chart-cache inspection and sync support snapshot-bound repair in XLSX and PPTX; formula-cache freshness remains unknown.
