@@ -1845,7 +1845,9 @@ export class OpenBrowserUseTab {
                 };
                 await verifyFocus();
                 if (key !== undefined) {
-                    await this.sendKey(key, sessionId);
+                    if (sequential)
+                        sequenceCheck();
+                    await this.sendKey(key, sessionId, sequential ? sequenceSignal : undefined);
                     return;
                 }
                 if (text === undefined)
@@ -2472,9 +2474,9 @@ export class OpenBrowserUseTab {
             await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
         }
     }
-    async press(index, snapshotId, key, expectedGeneration) {
+    async press(index, snapshotId, key, expectedGeneration, mark = () => undefined, signal, check = () => { }) {
         this.parseKey(key);
-        await this.act(index, snapshotId, undefined, false, undefined, undefined, false, key, false, undefined, false, undefined, undefined, undefined, undefined, false, undefined, undefined, undefined, undefined, expectedGeneration);
+        await this.act(index, snapshotId, undefined, false, undefined, undefined, false, key, false, undefined, false, undefined, undefined, undefined, check, true, mark, check, signal, undefined, expectedGeneration);
     }
     async hoverAt(x, y, modifiers = 0) {
         this.#observation = undefined;
@@ -2820,10 +2822,10 @@ export class OpenBrowserUseTab {
             throw new Error("Text must be a string");
         await this.act(index, snapshotId, text, true);
     }
-    async setChecked(index, snapshotId, checked, force = false) {
+    async setChecked(index, snapshotId, checked, force = false, mark = () => undefined, signal, check) {
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be boolean");
-        await this.act(index, snapshotId, undefined, false, checked, undefined, false, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(force ? { force: true } : {}) });
+        await this.act(index, snapshotId, undefined, false, checked, undefined, false, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(force ? { force: true } : {}) }, false, undefined, mark, signal, check);
     }
     async selectOption(index, snapshotId, values) {
         const specs = selectSpecs(values);
@@ -3105,7 +3107,7 @@ export class OpenBrowserUseTab {
             }
             if (key !== undefined) {
                 inputIssued = true;
-                await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId: targetSession, expectedGeneration: inputGeneration });
+                await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId: targetSession, expectedGeneration: inputGeneration, signal: sequential ? sequenceMark() : undefined });
                 const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                     objectId, returnByValue: true,
                     functionDeclaration: `function() { return this.isConnected && this.getRootNode().activeElement === this; }`
@@ -3115,7 +3117,9 @@ export class OpenBrowserUseTab {
                 if (node.frameChain)
                     await this.validateFrames(node.frameChain);
                 await this.verifyLocatorScope(observation, node);
-                await this.sendKey(key, targetSession, undefined, inputGeneration);
+                if (sequential)
+                    sequenceCheck();
+                await this.sendKey(key, targetSession, sequential ? sequenceSignal : undefined, inputGeneration);
                 return;
             }
             const inputOptions = mouse.force ? {} : { sessionId: targetSession, ...(targetSession ? { visualPoint: { x: point.x, y: point.y } } : {}) };
@@ -4110,13 +4114,13 @@ export class OpenBrowserUseCssLocator {
         validateCheckOptions(options);
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be a boolean");
-        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(options.force ? { force: true } : {}) }); }, options.timeoutMs);
+        return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark, signal, check) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(options.force ? { force: true } : {}) }, undefined, undefined, false, undefined, mark, signal, check); }, options.timeoutMs ?? 5000, deadline, "Check"), options.timeoutMs);
     }
     focus(options = {}) { return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, undefined, undefined, false, undefined, undefined, undefined, true, mark); }, options.timeoutMs ?? 5000, deadline, "Focus"), options.timeoutMs); }
     press(key, options = {}) {
         if (typeof key !== "string")
             throw new Error("Invalid key");
-        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, key); }, options.timeoutMs);
+        return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark, signal, check) => { await this.tab.actCss(snapshot, id, false, key, undefined, false, undefined, undefined, false, undefined, undefined, undefined, false, undefined, undefined, undefined, check, true, mark, check, signal); }, options.timeoutMs ?? 5000, deadline, "Press"), options.timeoutMs);
     }
     clear(options = {}) { return this.fill("", options); }
     fill(text, options = {}) {
@@ -4612,7 +4616,7 @@ export class OpenBrowserUseRoleLocator {
     async dblclick(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.dblclick(node.index, id, mouse, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Double click"), options.timeoutMs); }
     async hover(options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.hover(node.index, id, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Hover"), options.timeoutMs); }
     async focus(options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline(mark => this.tab.focus(node.index, id, mark), options.timeoutMs ?? 5000, deadline, "Focus"), options.timeoutMs); }
-    async press(key, options = {}) { await this.perform((node, id) => this.tab.press(node.index, id, key), options.timeoutMs); }
+    async press(key, options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.press(node.index, id, key, undefined, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Press"), options.timeoutMs); }
     clear(options = {}) { return this.fill("", options); }
     async fill(text, options = {}) { await this.perform((node, id) => this.tab.fill(node.index, id, text), options.timeoutMs); }
     async type(text, options = {}) { await this.perform((node, id) => this.tab.typeText(node.index, id, text), options.timeoutMs); }
@@ -4626,7 +4630,7 @@ export class OpenBrowserUseRoleLocator {
         validateCheckOptions(options);
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be a boolean");
-        await this.perform((node, id) => this.tab.setChecked(node.index, id, checked, options.force), options.timeoutMs);
+        await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.setChecked(node.index, id, checked, options.force, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Check"), options.timeoutMs);
     }
     async selectOption(values, options = {}) { return this.perform((node, id) => this.tab.selectOption(node.index, id, values), options.timeoutMs); }
 }

@@ -116,3 +116,4 @@
 - [x] Electron 客户端取消和超时通知宿主，阻止排队中的迟到输入；已派发操作报告结果可能未知。
 - [x] Electron 文件选择等待响应取消并释放拦截；队列中尚未开始的等待取消时保留其他命令。macOS Electron 实页验证取消、重试与授权上传。
 - [x] CSS 和语义 locator 的 check/uncheck 正数期限覆盖点击准备；派发后提示结果未知。macOS Electron 实页验证超时后无迟到点击及正常恢复。
+- [x] CSS 和语义 locator 的 press 正数期限覆盖准备、聚焦与按键；超时停止后续按键并释放已按下按键。macOS Electron 实页验证延迟聚焦后无迟到输入。

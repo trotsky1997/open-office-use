@@ -83,7 +83,7 @@ async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number,
     return result;
   } finally { if (timer) clearTimeout(timer); }
 }
-async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover" | "Sequential typing" | "Check"):Promise<void> {
+async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover" | "Sequential typing" | "Check" | "Press"):Promise<void> {
   if(timeoutMs===0)return action(()=>undefined);
   const controller=new AbortController();
   let expired=false,issued=false,timer:ReturnType<typeof setTimeout> | undefined;
@@ -1546,7 +1546,7 @@ export class OpenBrowserUseTab {
           if (!isObject(focused) || !isObject(focused.result) || focused.result.value!==true) throw new Error("Target lost focus or is not editable; observe again");
         };
         await verifyFocus();
-        if (key !== undefined) { await this.sendKey(key,sessionId); return; }
+        if (key !== undefined) { if(sequential)sequenceCheck(); await this.sendKey(key,sessionId,sequential ? sequenceSignal : undefined); return; }
         if (text === undefined) throw new Error("Text is unavailable");
         if (sequential) { await this.sendSequentialText(text,sessionId,verifyFocus,sequenceCheck,sequenceSignal); return; }
         if (append) { if(text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId}); return; }
@@ -2027,9 +2027,9 @@ export class OpenBrowserUseTab {
     } finally {await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});}
   }
 
-  async press(index: number, snapshotId: string, key: string, expectedGeneration?:number): Promise<void> {
+  async press(index: number, snapshotId: string, key: string, expectedGeneration?:number, mark:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check:()=>void = ()=>{}): Promise<void> {
     this.parseKey(key);
-    await this.act(index,snapshotId,undefined,false,undefined,undefined,false,key,false,undefined,false,undefined,undefined,undefined,undefined,false,undefined,undefined,undefined,undefined,expectedGeneration);
+    await this.act(index,snapshotId,undefined,false,undefined,undefined,false,key,false,undefined,false,undefined,undefined,undefined,check,true,mark,check,signal,undefined,expectedGeneration);
   }
 
   async hoverAt(x: number, y: number, modifiers = 0): Promise<void> {
@@ -2534,7 +2534,7 @@ export class OpenBrowserUseTab {
       }
       if (key !== undefined) {
         inputIssued = true;
-        await this.browser.cdp.call(this.id, "DOM.focus", {objectId}, {sessionId:targetSession,expectedGeneration:inputGeneration});
+        await this.browser.cdp.call(this.id, "DOM.focus", {objectId}, {sessionId:targetSession,expectedGeneration:inputGeneration,signal:sequential ? sequenceMark() : undefined});
         const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
           objectId, returnByValue:true,
           functionDeclaration:`function() { return this.isConnected && this.getRootNode().activeElement === this; }`
@@ -2542,7 +2542,8 @@ export class OpenBrowserUseTab {
         if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true || await this.documentId() !== observation.documentId) throw new Error("Target lost focus; observe again");
         if (node.frameChain) await this.validateFrames(node.frameChain);
         await this.verifyLocatorScope(observation,node);
-        await this.sendKey(key,targetSession,undefined,inputGeneration);
+        if(sequential)sequenceCheck();
+        await this.sendKey(key,targetSession,sequential ? sequenceSignal : undefined,inputGeneration);
         return;
       }
       const inputOptions = mouse.force ? {} : {sessionId: targetSession, ...(targetSession ? {visualPoint: {x: point.x as number, y: point.y as number}} : {})};
@@ -3274,7 +3275,7 @@ export class OpenBrowserUseCssLocator {
   focus(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async mark=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,undefined,undefined,undefined,true,mark);},options.timeoutMs ?? 5000,deadline,"Focus"),options.timeoutMs); }
   press(key: string, options: {timeoutMs?: number} = {}): Promise<void> {
     if (typeof key !== "string") throw new Error("Invalid key");
-    return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,key);},options.timeoutMs);
+    return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,key,undefined,false,undefined,undefined,false,undefined,undefined,undefined,false,undefined,undefined,undefined,check,true,mark,check,signal);},options.timeoutMs ?? 5000,deadline,"Press"),options.timeoutMs);
   }
   clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
   fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> {
@@ -3640,7 +3641,7 @@ export class OpenBrowserUseRoleLocator {
   async dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.dblclick(node.index,id,mouse,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Double click"), options.timeoutMs); }
   async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.hover(node.index,id,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Hover"), options.timeoutMs); }
   async focus(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline(mark=>this.tab.focus(node.index,id,mark),options.timeoutMs ?? 5000,deadline,"Focus"),options.timeoutMs); }
-  async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }
+  async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.press(node.index,id,key,undefined,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Press"), options.timeoutMs); }
   clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
   async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }
   async type(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.typeText(node.index,id,text), options.timeoutMs); }

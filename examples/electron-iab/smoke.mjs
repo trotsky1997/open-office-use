@@ -269,6 +269,18 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#deadline-check').remove()");
   check('SDK check deadline: no late input for CSS and semantic locators');
 
+  await evaluate(a.id,`(()=>{window.pressDeadlineKeys=0;const el=document.createElement('input');el.id='press-deadline';el.setAttribute('aria-label','Press deadline');el.addEventListener('keydown',()=>window.pressDeadlineKeys++);document.body.append(el)})()`);
+  for(const locator of [sdkTab.playwright.locator('#press-deadline'),sdkTab.playwright.getByRole('textbox',{name:'Press deadline',exact:true})]) {
+    let unblockPressFocus;
+    sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.focus'){const result=await originalCdpCall(...args);await new Promise(resolve=>{unblockPressFocus=resolve});return result;}return originalCdpCall(...args);};
+    try {
+      await assert.rejects(locator.press('Enter',{timeoutMs:700}),/outcome is unknown/i);assert.ok(unblockPressFocus);unblockPressFocus();await new Promise(resolve=>setTimeout(resolve,200));assert.equal(await evaluate(a.id,'window.pressDeadlineKeys'),0);
+    } finally {unblockPressFocus?.();sdkTab.browser.cdp.call=originalCdpCall;}
+    await locator.press('Enter');assert.ok(await evaluate(a.id,'window.pressDeadlineKeys')>0);await evaluate(a.id,'window.pressDeadlineKeys=0');
+  }
+  await evaluate(a.id,"document.querySelector('#press-deadline').remove()");
+  check('SDK press deadline: no late key after delayed focus');
+
   await evaluate(a.id,`(()=>{window.doubleDeadlineClicks=0;const el=document.createElement('button');el.id='double-deadline';el.textContent='Double deadline';el.onclick=()=>window.doubleDeadlineClicks++;document.body.append(el)})()`);
   for (const locator of [sdkTab.playwright.locator('#double-deadline'),sdkTab.playwright.getByRole('button',{name:'Double deadline',exact:true})]) {
     let unblockFirstRelease,pressed=0;

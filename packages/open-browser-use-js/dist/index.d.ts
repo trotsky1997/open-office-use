@@ -410,7 +410,7 @@ export declare class OpenBrowserUseTab {
         suffix?: string;
         selectionType?: "text" | "cursor_before" | "cursor_after";
     }): Promise<void>;
-    press(index: number, snapshotId: string, key: string, expectedGeneration?: number): Promise<void>;
+    press(index: number, snapshotId: string, key: string, expectedGeneration?: number, mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     hoverAt(x: number, y: number, modifiers?: number): Promise<void>;
     private dispatchClick;
     clickAt(x: number, y: number, options?: {
@@ -450,7 +450,7 @@ export declare class OpenBrowserUseTab {
     }>;
     typeText(index: number, snapshotId: string, text: string): Promise<void>;
     fill(index: number, snapshotId: string, text: string): Promise<void>;
-    setChecked(index: number, snapshotId: string, checked: boolean, force?: boolean): Promise<void>;
+    setChecked(index: number, snapshotId: string, checked: boolean, force?: boolean, mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     selectOption(index: number, snapshotId: string, values: SelectOption | SelectOption[]): Promise<string[]>;
     private act;
     private documentId;
