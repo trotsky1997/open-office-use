@@ -100,14 +100,18 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     assert.equal((await js("throw new Error('failure')")).isError, true);
     assert.equal((await js("await Promise.reject(new Error('async failure'))")).isError, true);
     await js("setTimeout(() => nodeRepl.write('late output'), 10)");
+    await js(`globalThis.lateInspected=false; setTimeout(()=>nodeRepl.write({[Symbol.for('nodejs.util.inspect.custom')](){globalThis.lateInspected=true;return 'late'}}),10)`);
     const isolated = await js("await new Promise(resolve => setTimeout(resolve, 30)); nodeRepl.write('current output')");
     assert.deepEqual(isolated.content, [{ type: "text", text: "current output" }]);
+    assert.equal((await js('nodeRepl.write(lateInspected)')).content[0].text,'false');
     assert.equal((await js("nodeRepl.write(tab.id)")).content[0].text, "42");
-    const timed=await js("nodeRepl.write('before'); await new Promise(resolve => setTimeout(resolve, 200)); nodeRepl.write('after')",{timeout_ms:20,title:'Timed work'});
+    await js("globalThis.timeoutInspected=false");
+    const timed=await js("nodeRepl.write('before'); await new Promise(resolve => setTimeout(resolve, 200)); nodeRepl.write({[Symbol.for('nodejs.util.inspect.custom')](){globalThis.timeoutInspected=true;return 'after'}})",{timeout_ms:20,title:'Timed work'});
     assert.equal(timed.isError,true);assert.equal(timed.content[0].text,'before');assert.match(timed.content[1].text,/timed out/);
     const busy=await js("nodeRepl.write('must not run')");assert.equal(busy.isError,true);assert.match(busy.content[0].text,/still running/);
     const busyReset=await call('tools/call',{name:'js_reset',arguments:{}});assert.equal(busyReset.isError,true);assert.match(busyReset.content[0].text,/still running/);
     await new Promise(resolve=>setTimeout(resolve,250));const recovered=await js("nodeRepl.write(tab.id)");assert.deepEqual(recovered.content,[{type:'text',text:'42'}]);
+    assert.equal((await js('nodeRepl.write(timeoutInspected)')).content[0].text,'false');
     assert.equal((await js("1",{timeout_ms:-1})).isError,true);
     const workId=++id,pingId=++id,resetId=++id,busyId=++id;
     for (const request of [

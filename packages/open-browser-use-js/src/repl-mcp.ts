@@ -20,7 +20,7 @@ output.resume();
 const repl = start({ input, output, terminal: false, prompt: "" });
 const browsers = new Set<OpenBrowserUseBrowser>();
 const browserIds = new Map<OpenBrowserUseBrowser, string>();
-const outputs = new AsyncLocalStorage<Array<Record<string, string>>>();
+const outputs = new AsyncLocalStorage<{content:Array<Record<string,string>>; open:boolean}>();
 const defaultSessionId = `obu-repl-${randomUUID()}`;
 let hostBrowser: OpenBrowserUseBrowser | undefined;
 let hostPending: Promise<OpenBrowserUseBrowser> | undefined;
@@ -146,12 +146,13 @@ Object.assign(repl.context, {
   connectBrowser,
   agent: {browsers: browserRegistry},
   nodeRepl: {
-    write: (value: unknown) => { outputs.getStore()?.push({ type: "text", text: typeof value === "string" ? value : inspect(value, { depth: 5 }) }); },
+    write: (value: unknown) => { const target=outputs.getStore();if(target?.open)target.content.push({ type: "text", text: typeof value === "string" ? value : inspect(value, { depth: 5 }) }); },
     emitImage: (bytes: Uint8Array, mimeType = "image/png") => {
+      const target=outputs.getStore();if(!target?.open)return;
       if (!types.isUint8Array(bytes) || !["image/png", "image/jpeg", "image/webp"].includes(mimeType)) {
         throw new Error("emitImage requires PNG, JPEG, or WebP bytes and a matching MIME type");
       }
-      outputs.getStore()?.push({ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType });
+      target.content.push({ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType });
     }
   }
 });
@@ -206,7 +207,7 @@ async function handle(request: any, signal?: AbortSignal): Promise<unknown> {
         return {content:[{type:"text",text:"JavaScript bindings cleared; browser sessions are retained"}]};
       }
       if (request.params?.name !== "js" || typeof request.params?.arguments?.code !== "string") throw new Error("Expected js with a string code argument");
-      const content: Array<Record<string, string>> = [];
+      const content: Array<Record<string, string>> = [], outputContext={content,open:true};
       let timer:ReturnType<typeof setTimeout> | undefined;
       let onCancel: (()=>void) | undefined;
       try {
@@ -214,16 +215,16 @@ async function handle(request: any, signal?: AbortSignal): Promise<unknown> {
         if(!Number.isSafeInteger(timeoutMs) || timeoutMs<1 || timeoutMs>600_000)throw new Error("Invalid JavaScript timeout");
         if(request.params.arguments.title!==undefined && typeof request.params.arguments.title!=="string")throw new Error("Invalid JavaScript title");
         if(activeEvaluation)throw new Error("Previous JavaScript execution is still running; wait for it to finish before retrying");
-        const evaluation=outputs.run(content, () => evaluate(request.params.arguments.code));
+        const evaluation=outputs.run(outputContext, () => evaluate(request.params.arguments.code));
         activeEvaluation=evaluation;
         void evaluation.then(()=>{if(activeEvaluation===evaluation)activeEvaluation=undefined;},()=>{if(activeEvaluation===evaluation)activeEvaluation=undefined;});
         const cancelled=new Promise<never>((_,reject)=>{onCancel=()=>reject(new Error("JavaScript cancellation requested; it may still be running and can have side effects"));if(signal?.aborted)onCancel();else signal?.addEventListener("abort",onCancel,{once:true});});
         const result=await Promise.race([evaluation,cancelled,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("JavaScript execution timed out; it may still be running and can have side effects")),timeoutMs);})]);
         if (result !== undefined) content.push({ type: "text", text: inspect(result, { depth: 5 }) });
-        return { content: content.length ? content : [{ type: "text", text: "" }] };
+        return { content: content.length ? [...content] : [{ type: "text", text: "" }] };
       } catch (error) {
         return { content: [...content, { type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
-      } finally {if(timer)clearTimeout(timer);if(onCancel)signal?.removeEventListener("abort",onCancel);}
+      } finally {outputContext.open=false;content.length=0;if(timer)clearTimeout(timer);if(onCancel)signal?.removeEventListener("abort",onCancel);}
     }
     default: throw new Error(`Unknown method: ${request.method}`);
   }

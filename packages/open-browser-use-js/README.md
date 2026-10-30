@@ -775,6 +775,8 @@ still have side effects; the session stays busy until execution settles. Once th
 accepted requests have settled, built-in browser connection helpers reject new
 connections; already running arbitrary code can still have other effects.
 
+Output emitted after an execution settles, times out or is cancelled is discarded.
+
 Protocol requests can complete independently while asynchronous JavaScript is
 running. `ping` remains responsive; additional `js` and `js_reset` calls report
 that the session is busy. Synchronous JavaScript still blocks the event loop.
