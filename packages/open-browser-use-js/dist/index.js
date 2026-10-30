@@ -3081,7 +3081,15 @@ export class OpenBrowserUseTabPlaywright {
         }
         if (arg !== undefined && serialized === undefined)
             throw new Error("Evaluation argument must be JSON serializable");
-        const input = serialized === undefined ? "undefined" : `JSON.parse(${JSON.stringify(serialized)})`;
+        // Computed keys preserve __proto__ as data without using the page’s JSON.parse.
+        const encode = (value) => Array.isArray(value) ? `[${value.map(encode).join(",")}]` : value !== null && typeof value === "object" ? `{${Object.entries(value).map(([key, item]) => `[${JSON.stringify(key)}]:${encode(item)}`).join(",")}}` : JSON.stringify(value);
+        let input;
+        try {
+            input = serialized === undefined ? "undefined" : encode(JSON.parse(serialized));
+        }
+        catch {
+            throw new Error("Evaluation argument must be JSON serializable");
+        }
         return this.tab.evaluate(`(${Function.prototype.toString.call(pageFunction)})(${input})`, { awaitPromise: true });
     }
     async screenshot(options = {}) {

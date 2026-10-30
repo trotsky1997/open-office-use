@@ -333,3 +333,5 @@ Playwright 风格入口新增 evaluate，接受函数和单个 JSON 参数或表
 直线拖拽在鼠标按下请求结果未知时尝试释放按钮，保留原错误；普通滚动、修饰键滚动和 Electron 后台滚动超时统一提示结果未知并要求观察后再操作，不重发滚轮。SDK 70 项通过，覆盖按下失败、普通滚动与 Electron 超时；Linux ARM64 Chromium 原生扩展和 Electron 44 完整实页回归通过。释放请求本身可能失败；macOS 和 Windows 本轮未测。
 
 页面 evaluate 检查 CDP 远程值：undefined 返回 null，NaN、BigInt 等 CDP 标记为不可序列化的结果明确报错，缺失结果的协议响应也报错。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 以及 Linux ARM64 Chromium 原生扩展实页验证 undefined、NaN、BigInt 和正常异步对象。Windows 未测；嵌套对象采用浏览器 CDP 的按值序列化规则。
+
+Playwright evaluate 的 JSON 参数使用带计算属性的安全字面量编码，页面覆盖 JSON.parse 时参数保持原值，__proto__ 作为普通数据键保留。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 及 Linux ARM64 Chromium 原生扩展实页均验证页面篡改、特殊键和异步求值。参数依旧遵循 JSON.stringify 转换规则，Windows 未测。
