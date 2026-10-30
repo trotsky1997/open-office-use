@@ -881,6 +881,77 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
+    async actCss(snapshot, id, hover) {
+        const frame = snapshot.frame;
+        if (!frame || !snapshot.ids.includes(id))
+            throw new RetryablePreflightError("Selector target changed; observe again");
+        const sessionId = frame.sessionId;
+        const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "open-browser-use-selector" }, { sessionId });
+        const contextId = isObject(world) ? world.executionContextId : undefined;
+        if (typeof contextId !== "number")
+            throw new RetryablePreflightError("Selector context is unavailable; observe again");
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: id, executionContextId: contextId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string")
+            throw new RetryablePreflightError("Selector target is unavailable; observe again");
+        let inputIssued = false;
+        try {
+            const chain = frameAncestry(frame, snapshot.frames);
+            const measure = async () => {
+                const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: hover }], functionDeclaration: `function(allowDisabled) {
+          if (!this.isConnected) return null;
+          if (!allowDisabled) for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return null;
+          this.scrollIntoView({block:'center',inline:'center'});
+          const r=this.getBoundingClientRect(), x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2, y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;
+          if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
+          let target=this, root=target.getRootNode();
+          while (true) { const hit=root.elementFromPoint(x,y); if (!hit || (hit!==target && !target.contains(hit))) return null; if (!(root instanceof ShadowRoot)) return {x,y,width:r.width,height:r.height}; target=root.host; root=target.getRootNode(); }
+        }` }, { sessionId });
+                const value = isObject(result) && isObject(result.result) ? result.result.value : null;
+                if (!isObject(value) || ![value.x, value.y, value.width, value.height].every(v => typeof v === "number" && Number.isFinite(v)) || value.width <= 0 || value.height <= 0)
+                    throw new RetryablePreflightError("Target is hidden, disabled, or covered; observe again");
+                const geometry = { x: value.x, y: value.y, width: value.width, height: value.height };
+                let point = { x: geometry.x, y: geometry.y }, inputPoint = point;
+                for (let i = 0; i < chain.length; i++) {
+                    const ownerSession = chain[i + 1]?.sessionId;
+                    point = await this.framePoint(chain[i].id, point.x, point.y, ownerSession);
+                    if (ownerSession === sessionId)
+                        inputPoint = point;
+                }
+                await this.validateFrames(chain);
+                if (await this.documentId() !== snapshot.documentId)
+                    throw new RetryablePreflightError("Page changed; observe again");
+                return { geometry, point, inputPoint };
+            };
+            const first = await measure();
+            await new Promise(resolve => setTimeout(resolve, 75));
+            const second = await measure();
+            const moving = (a, b) => Math.abs(a - b) > 0.25;
+            if (moving(first.geometry.x, second.geometry.x) || moving(first.geometry.y, second.geometry.y) || moving(first.geometry.width, second.geometry.width) || moving(first.geometry.height, second.geometry.height) || moving(first.point.x, second.point.x) || moving(first.point.y, second.point.y))
+                throw new RetryablePreflightError("Target is moving; observe again");
+            const fresh = await this.queryCss(snapshot.selector, snapshot.framePath);
+            if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
+                throw new RetryablePreflightError("Selector target changed; observe again");
+            this.#observation = undefined;
+            const options = { sessionId, ...(sessionId ? { visualPoint: second.point } : {}) };
+            inputIssued = true;
+            if (hover)
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", ...second.inputPoint, button: "none", buttons: 0 }, options);
+            else {
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...second.inputPoint, button: "left", buttons: 1, clickCount: 1 }, options);
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...second.inputPoint, button: "left", buttons: 0, clickCount: 1 }, options);
+            }
+        }
+        catch (error) {
+            if (inputIssued && error instanceof RetryablePreflightError)
+                throw new Error(error.message, { cause: error });
+            throw error;
+        }
+        finally {
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+        }
+    }
+    /** @internal */
     async locatorText(snapshotId, index) {
         const observation = this.#observation;
         if (!observation || observation.id !== snapshotId)
@@ -2140,7 +2211,7 @@ export class OpenBrowserUseCssLocator {
     select(ids) { return this.position === undefined ? ids : this.position === -1 ? ids.slice(-1) : ids.slice(this.position, this.position + 1); }
     async count() { return this.select((await this.tab.queryCss(this.selector, this.framePath)).ids).length; }
     async all() { return Array.from({ length: await this.count() }, (_, i) => this.nth(i)); }
-    async read(mode, name = "", timeoutMs = 5000) {
+    async perform(action, timeoutMs = 5000) {
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid locator timeout");
         const deadline = performance.now() + timeoutMs;
@@ -2151,7 +2222,7 @@ export class OpenBrowserUseCssLocator {
                 if (ids.length > 1)
                     throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
                 if (ids.length)
-                    return await this.tab.readCss(snapshot, ids[0], mode, name);
+                    return await action(snapshot, ids[0]);
             }
             catch (error) {
                 if (!(error instanceof RetryablePreflightError))
@@ -2163,6 +2234,11 @@ export class OpenBrowserUseCssLocator {
             await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
         }
     }
+    read(mode, name = "", timeoutMs = 5000) {
+        return this.perform((snapshot, id) => this.tab.readCss(snapshot, id, mode, name), timeoutMs);
+    }
+    click(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false), options.timeoutMs); }
+    hover(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, true), options.timeoutMs); }
     async innerText(options = {}) {
         const value = await this.read("innerText", "", options.timeoutMs);
         if (value === null)

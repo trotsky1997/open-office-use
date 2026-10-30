@@ -211,7 +211,14 @@ try {
  await tab.evaluate(`(()=>{const host=document.createElement('div');host.id='css-host';const shadow=host.attachShadow({mode:'open'});shadow.innerHTML='<span data-test="first">First</span><span data-test="second" hidden>Second</span>';document.body.append(host);window.savedQuery=Document.prototype.querySelectorAll;Document.prototype.querySelectorAll=()=>[]})()`);
  const css=tab.playwright.locator('[data-test]');assert.equal(await css.count(),2);assert.equal(await css.first().innerText(),'First');assert.equal(await css.last().textContent(),'Second');assert.equal(await css.nth(1).getAttribute('data-test'),'second');assert.equal(await css.nth(9).count(),0);
  await assert.rejects(css.textContent({timeoutMs:0}),/matched 2 elements/);await assert.rejects(tab.playwright.locator('[').count(),/Invalid CSS selector/);
- await tab.evaluate(`(()=>{Document.prototype.querySelectorAll=window.savedQuery;document.querySelector('#css-host').remove()})()`);
+ await tab.evaluate(`(()=>{Document.prototype.querySelectorAll=window.savedQuery;const h=document.querySelector('#css-host');h.shadowRoot.innerHTML+='<button id="css-action">Act</button>';const b=h.shadowRoot.querySelector('button');b.onmouseenter=e=>window.cssHover=e.isTrusted;b.onclick=e=>window.cssClick=e.isTrusted})()`);
+ await tab.playwright.locator('#css-action').hover();await tab.playwright.locator('#css-action').click();assert.equal(await tab.evaluate('window.cssHover'),true);assert.equal(await tab.evaluate('window.cssClick'),true);
+ await tab.evaluate(`(()=>{window.cssClick=false;document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=true})()`);
+ await assert.rejects(tab.playwright.locator('#css-action').click({timeoutMs:0}),/target unavailable/i);assert.equal(await tab.evaluate('window.cssClick'),false);
+ await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=false`);
+ await tab.evaluate(`(()=>{window.cssClick=false;const b=document.querySelector('#css-host').shadowRoot.querySelector('button');setTimeout(()=>b.id='changed-css-action',30)})()`);
+ await assert.rejects(tab.playwright.locator('#css-action').click({timeoutMs:0}),/target unavailable|target changed/i);assert.equal(await tab.evaluate('window.cssClick'),false);
+ await tab.evaluate(`document.querySelector('#css-host').remove()`);
  const shadow=await tab.observe();const shadowButton=shadow.nodes.find(node=>node.role==='button'&&node.name==='Shadow Action');assert.ok(shadowButton);
  await tab.playwright.getByRole('dialog',{name:'Shadow container',exact:true}).filter({hasText:'Shadow Action'}).getByRole('button',{name:'Shadow Action',exact:true}).click();assert.equal(await tab.evaluate('window.shadowTrusted'),true);
  const framed=await tab.observe({includeFrames:true});const frameButton=framed.nodes.find(node=>node.role==='button'&&node.name==='Frame action');assert.ok(frameButton?.frameId);
@@ -223,7 +230,7 @@ try {
  await new Promise(r=>setTimeout(r,500));
  const crossState=await tab.observe({includeFrames:true});const cross=crossState.nodes.find(node=>node.name==='Cross-process action');assert.ok(cross?.frameId,JSON.stringify(crossState));assert.equal(crossState.frameCoverage,'cross-process');
  await tab.evaluate(`(()=>{window.savedMatches=Element.prototype.matches;Element.prototype.matches=()=>true})()`);
- const crossFrame=tab.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.locator('button').first().textContent(),'Cross-process action');assert.equal(await crossFrame.frameLocator('iframe').locator('button').count(),1);assert.equal(await crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
+ const crossFrame=tab.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.locator('button').first().textContent(),'Cross-process action');await crossFrame.locator('button').first().click();await new Promise(r=>setTimeout(r,50));assert.ok((await tab.evaluate('window.frameMessages')).some(e=>e.kind==='cross-click'&&e.trusted));await tab.evaluate('window.frameMessages=[]');assert.equal(await crossFrame.frameLocator('iframe').locator('button').count(),1);assert.equal(await crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
  assert.equal(await crossFrame.frameLocator('iframe').getByRole('button',{name:'Nested action',exact:true}).count(),1);
  assert.equal(await tab.playwright.frameLocator('iframe.missing').getByRole('button').count(),0);
  await assert.rejects(tab.playwright.frameLocator('[').getByRole('button').count(),/Invalid frame selector/);

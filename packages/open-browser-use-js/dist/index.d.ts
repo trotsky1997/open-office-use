@@ -417,7 +417,14 @@ export declare class OpenBrowserUseCssLocator {
     private select;
     count(): Promise<number>;
     all(): Promise<OpenBrowserUseCssLocator[]>;
+    private perform;
     private read;
+    click(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    hover(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
     innerText(options?: {
         timeoutMs?: number;
     }): Promise<string>;
