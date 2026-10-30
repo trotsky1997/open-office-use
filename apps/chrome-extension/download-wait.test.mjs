@@ -248,3 +248,33 @@ test('ungrouping distinguishes tab closure from ownership loss',async()=>{
     backend.sessionByTabId.set(9,'a');backend.handleTabGroupChange(9,-1);backend.handleTabGroupChange(9,1);release({id:9,groupId:1});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(lost,[{tab:8,session:'a'},{tab:9,session:'a'}]);assert.equal(backend.sessionByTabId.get(9),'a');
   } finally{chrome.tabs=previous;}
 });
+
+test('ownership loss promptly cancels a pending tab request',async()=>{
+  const Peer=vm.runInNewContext(`${source.slice(0,end)}\nJsonRpcPeer;`,{chrome,crypto:webcrypto,Date,setTimeout,clearTimeout,AbortController});
+  const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};backend.store.state.sessions.b={chromeGroupId:2};backend.sessionByTabId.set(7,'a');
+  backend.requireSessionTab=async()=>{};let release,dispatched=0;backend.requireWebMcpEnabled=async()=>await new Promise(resolve=>{release=resolve;});backend.ensureWebMcpContentScripts=async()=>{};
+  const previous=chrome.tabs;chrome.tabs={sendMessage:async()=>{dispatched++;return {ok:true,result:{tools:[]}};}};
+  const sent=[],peer=new Peer({setMessageCallback(){},sendMessage(message){sent.push(message);}},backend);
+  try {
+    const pending=peer.handleMessage({jsonrpc:'2.0',id:'req',method:'webmcp_list_tools',params:{session_id:'a',tabId:7}});
+    while(!release)await new Promise(resolve=>setImmediate(resolve));backend.handleTabGroupChange(7,2);
+    assert.equal(sent.length,1);assert.match(sent[0].error.message,/ownership changed/i);release();await pending;
+    assert.equal(dispatched,0);assert.equal(sent.length,1);assert.equal(peer.inFlight.size,0);
+  } finally {chrome.tabs=previous;}
+});
+
+test('ownership loss cancels clipboard operations before dispatch and before returning data',async()=>{
+  const Peer=vm.runInNewContext(`${source.slice(0,end)}\nJsonRpcPeer;`,{chrome,crypto:webcrypto,Date,setTimeout,clearTimeout,AbortController});
+  for (const method of ['writeClipboardText','readClipboardText']) {
+    const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};backend.store.state.sessions.b={chromeGroupId:2};backend.sessionByTabId.set(7,'a');backend.requireSessionTab=async()=>{};
+    let release,dispatched=0;
+    if(method==='writeClipboardText') backend.attach=async()=>await new Promise(resolve=>{release=resolve;});
+    else backend.attachedTabs.add(7);
+    backend.evaluateJavascript=async()=>{dispatched++;if(method==='readClipboardText')await new Promise(resolve=>{release=resolve;});return 'private';};
+    const sent=[],peer=new Peer({setMessageCallback(){},sendMessage(message){sent.push(message);}},backend);
+    const pending=peer.handleMessage({jsonrpc:'2.0',id:'req',method,params:{session_id:'a',tabId:7,text:'test'}});
+    while(!release)await new Promise(resolve=>setImmediate(resolve));backend.handleTabGroupChange(7,2);
+    assert.equal(sent.length,1);assert.match(sent[0].error.message,/ownership changed/i);release();await pending;
+    assert.equal(dispatched,method==='writeClipboardText'?0:1);assert.equal(sent.length,1);assert.equal(peer.inFlight.size,0);
+  }
+});

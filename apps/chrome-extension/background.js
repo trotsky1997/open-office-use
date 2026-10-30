@@ -42,8 +42,15 @@ class JsonRpcPeer {
     this.handlers = handlers;
     this.inFlight = new Map();
     this.transport.setDisconnectCallback?.(() => {
-      for (const controller of this.inFlight.values()) controller.abort();
+      for (const request of this.inFlight.values()) request.controller.abort();
       this.inFlight.clear();
+    });
+    this.handlers.ownershipLostListeners?.add((tabId, sessionId) => {
+      for (const [id, request] of this.inFlight) {
+        if (request.tabId !== tabId || request.sessionId !== sessionId) continue;
+        this.inFlight.delete(id); request.controller.abort();
+        try { this.transport.sendMessage({jsonrpc:"2.0",id,error:{code:-32000,message:"Tab ownership changed; outcome may be unknown"}}); } catch {}
+      }
     });
     this.transport.setMessageCallback((message) => {
       void this.handleMessage(message);
@@ -55,12 +62,14 @@ class JsonRpcPeer {
       return;
     }
     if (message.method === "obu.cancel" && message.id === undefined) {
-      this.inFlight.get(message.params?.id)?.abort();
+      this.inFlight.get(message.params?.id)?.controller.abort();
       return;
     }
     const id = message.id;
-    const controller = id !== undefined && ["attach", "executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath", "webmcp_list_tools", "webmcp_invoke_tool"].includes(message.method) ? new AbortController() : undefined;
-    if (controller) this.inFlight.set(id, controller);
+    const controller = id !== undefined && ["attach", "executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath", "webmcp_list_tools", "webmcp_invoke_tool", "readClipboardText", "writeClipboardText", "readClipboard", "writeClipboard", "setFileChooserFiles"].includes(message.method) ? new AbortController() : undefined;
+    const rawTabId = message.params?.tabId ?? message.params?.tab_id ?? message.params?.target?.tabId ?? this.handlers.fileChoosersById?.get(message.params?.fileChooserId)?.tabId;
+    const request = controller ? {controller,tabId:typeof rawTabId === "string" && /^\d+$/.test(rawTabId) ? Number(rawTabId) : rawTabId,sessionId:message.params?.session_id} : undefined;
+    if (request) this.inFlight.set(id, request);
     try {
       const handler = this.handlers[message.method];
       if (typeof handler !== "function") {
@@ -82,7 +91,7 @@ class JsonRpcPeer {
         });
       }
     } finally {
-      if (controller && this.inFlight.get(id) === controller) this.inFlight.delete(id);
+      if (request && this.inFlight.get(id) === request) this.inFlight.delete(id);
     }
   }
 
@@ -688,7 +697,8 @@ class BrowserBackend {
       tabId,
       { action: "list" },
       DEFAULT_WEBMCP_LIST_TIMEOUT_MS + WEBMCP_TIMEOUT_GRACE_MS,
-      signal
+      signal,
+      () => this.checkTabOwner(tabId, params.session_id)
     );
     if (!result || typeof result !== "object" || !Array.isArray(result.tools)) {
       throw new Error("WebMCP list response did not include tools");
@@ -727,7 +737,8 @@ class BrowserBackend {
         timeout_ms: timeoutMs
       },
       timeoutMs + WEBMCP_TIMEOUT_GRACE_MS,
-      signal
+      signal,
+      () => this.checkTabOwner(tabId, params.session_id)
     );
     if (!result || typeof result !== "object" || !Object.hasOwn(result, "result")) {
       throw new Error("WebMCP invoke response did not include result");
@@ -818,7 +829,7 @@ class BrowserBackend {
     }
   }
 
-  async setFileChooserFiles(params) {
+  async setFileChooserFiles(params, signal) {
     await this.requireSession(params);
     if (typeof params.fileChooserId !== "string" || params.fileChooserId === "") {
       throw new Error("setFileChooserFiles requires fileChooserId");
@@ -840,6 +851,7 @@ class BrowserBackend {
     if (!chooser.isMultiple && files.length > 1) {
       throw new Error("File chooser does not accept multiple files");
     }
+    if (signal?.aborted) throw new Error("Command cancelled");
     if (this.fileChoosersById.get(params.fileChooserId) !== chooser) throw new Error("File chooser is no longer available");
     this.fileChoosersById.delete(params.fileChooserId);
     await chrome.debugger.sendCommand({ tabId: chooser.tabId, ...(chooser.sessionId ? { sessionId: chooser.sessionId } : {}) }, "DOM.setFileInputFiles", {
@@ -915,34 +927,38 @@ class BrowserBackend {
     return { path: download.status === "complete" ? download.filename ?? null : null };
   }
 
-  async readClipboardText(params) {
+  async readClipboardText(params, signal) {
     await this.requireSessionTab(params, "readClipboardText");
     const tabId = requireTabId(params, "readClipboardText");
     if (!this.attachedTabs.has(tabId)) {
-      await this.attach(params);
+      await this.attach(params, signal);
     }
+    this.checkTabRequest(tabId, params.session_id, signal);
     const text = await this.evaluateJavascript(tabId, "navigator.clipboard.readText()", true);
+    this.checkTabRequest(tabId, params.session_id, signal);
     return { text: typeof text === "string" ? text : "" };
   }
 
-  async writeClipboardText(params) {
+  async writeClipboardText(params, signal) {
     await this.requireSessionTab(params, "writeClipboardText");
     const tabId = requireTabId(params, "writeClipboardText");
     if (typeof params.text !== "string") {
       throw new Error("writeClipboardText requires text");
     }
     if (!this.attachedTabs.has(tabId)) {
-      await this.attach(params);
+      await this.attach(params, signal);
     }
+    this.checkTabRequest(tabId, params.session_id, signal);
     await this.evaluateJavascript(tabId, `navigator.clipboard.writeText(${JSON.stringify(params.text)})`, true);
   }
 
-  async readClipboard(params) {
+  async readClipboard(params, signal) {
     await this.requireSessionTab(params, "readClipboard");
     const tabId = requireTabId(params, "readClipboard");
     if (!this.attachedTabs.has(tabId)) {
-      await this.attach(params);
+      await this.attach(params, signal);
     }
+    this.checkTabRequest(tabId, params.session_id, signal);
     const items = await this.evaluateJavascript(
       tabId,
       `((async () => {
@@ -966,18 +982,20 @@ class BrowserBackend {
       })())`,
       true
     );
+    this.checkTabRequest(tabId, params.session_id, signal);
     return { items: Array.isArray(items) ? items : [] };
   }
 
-  async writeClipboard(params) {
+  async writeClipboard(params, signal) {
     await this.requireSessionTab(params, "writeClipboard");
     const tabId = requireTabId(params, "writeClipboard");
     if (!Array.isArray(params.items)) {
       throw new Error("writeClipboard requires items");
     }
     if (!this.attachedTabs.has(tabId)) {
-      await this.attach(params);
+      await this.attach(params, signal);
     }
+    this.checkTabRequest(tabId, params.session_id, signal);
     await this.evaluateJavascript(
       tabId,
       `((async (items) => {
@@ -1455,10 +1473,21 @@ class BrowserBackend {
     }
   }
 
-  async sendWebMcpRequest(tabId, request, timeoutMs, signal) {
+  checkTabRequest(tabId, sessionId, signal) {
+    if (signal?.aborted) throw new Error("Command cancelled");
+    this.checkTabOwner(tabId, sessionId);
+  }
+
+  checkTabOwner(tabId, sessionId) {
+    if (this.sessionByTabId.get(tabId) !== sessionId) throw new Error("Tab ownership changed");
+  }
+
+  async sendWebMcpRequest(tabId, request, timeoutMs, signal, checkOwner = () => {}) {
     if (signal?.aborted) throw new Error("WebMCP request canceled");
-    await this.ensureWebMcpContentScripts(tabId, signal);
+    checkOwner();
+    await this.ensureWebMcpContentScripts(tabId, signal, checkOwner);
     if (signal?.aborted) throw new Error("WebMCP request canceled");
+    checkOwner();
     const requestId = crypto.randomUUID();
     const abort = () => { void chrome.tabs.sendMessage(tabId, {type:"OPEN_BROWSER_USE_WEBMCP_CANCEL", requestId}).catch(() => {}); };
     signal?.addEventListener("abort", abort, {once:true});
@@ -1480,8 +1509,8 @@ class BrowserBackend {
     return response.result;
   }
 
-  async ensureWebMcpContentScripts(tabId, signal) {
-    const check = () => { if (signal?.aborted) throw new Error("WebMCP request canceled"); };
+  async ensureWebMcpContentScripts(tabId, signal, checkOwner = () => {}) {
+    const check = () => { if (signal?.aborted) throw new Error("WebMCP request canceled"); checkOwner(); };
     check();
     try {
       const response = await chrome.tabs.sendMessage(tabId, {
