@@ -34,6 +34,18 @@ with tempfile.TemporaryDirectory() as tmp:
         except urllib.error.HTTPError as exc: assert exc.code == 400
         else: raise AssertionError('Stale revision accepted')
         assert session.info(draft)['latest_revision'] == 1
+        actions = post('slide-navigation-read',{'revision':1}); assert actions['complete'] and not actions['actions']
+        edited_deck = Presentation(result['file']); shape_id = edited_deck.slides[1].shapes.title.shape_id
+        navigation = {'base_revision':1,'snapshot_sha256':actions['snapshot_sha256'],'path':f'/slide[2]/shape[@id={shape_id}]','target_slide':1}
+        for bad in (dict(navigation,snapshot_sha256='0'*64),dict(navigation,snapshot_sha256=None)):
+            try: post('slide-navigation-save',bad)
+            except urllib.error.HTTPError as exc: assert exc.code == 400
+            else: raise AssertionError('Invalid navigation snapshot accepted')
+        nav_saved = post('slide-navigation-save',navigation); assert nav_saved['revision'] == 2
+        updated = post('slide-navigation-read',{'revision':2}); assert updated['actions'][0]['target_slide'] == 1
+        removed = post('slide-navigation-save',{'base_revision':2,'snapshot_sha256':updated['snapshot_sha256'],'path':navigation['path'],'target_slide':None})
+        assert removed['revision'] == 3 and not post('slide-navigation-read',{'revision':3})['actions']
+
     finally:
         server.terminate(); server.wait(timeout=10)
 print('Slide order viewer routes passed: inventory, reorder, source, origin and revision checks')

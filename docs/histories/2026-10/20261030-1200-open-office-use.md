@@ -423,3 +423,5 @@ Added workbook-internal hyperlink authoring and session/viewer editing with targ
 Added native shape-to-slide navigation and bounded shape-click action inspection, including forward references and source-deck slide positions.
 
 Added targeted CLI/MCP setting and removal of existing PowerPoint shape navigation, with shared-relationship and snapshot checks.
+
+Added a snapshot-bound viewer panel for inspecting and editing slide navigation, with stale-path and pending-edit protection.

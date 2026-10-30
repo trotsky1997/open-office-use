@@ -320,3 +320,5 @@ Workbook authors, sessions and the viewer support internal single-cell links to 
 Positioned PowerPoint elements support click navigation to a one-based final slide position; shape-level click actions can be inspected through CLI/MCP. Reordering retained target slide identities, and LibreOffice PDF export preserved an internal jump. Run links and master actions remain outside this inventory.
 
 Existing PowerPoint shape-to-slide click actions can be set or removed in snapshot-bound revisions; shared relationships are preserved. LibreOffice PDF export resolved an edited jump. External and complex existing click actions are rejected.
+
+The viewer inspects shape click actions and can set or remove supported slide jumps against the displayed snapshot. It requires path re-selection after a revision changes and blocks pending edits; browser and endpoint checks cover the workflow.
