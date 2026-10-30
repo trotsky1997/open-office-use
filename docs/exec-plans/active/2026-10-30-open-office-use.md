@@ -294,3 +294,5 @@ PowerPoint authoring supports single-series pie charts with slice colors, option
 New Word documents support a native table-of-contents field with a readable heading cache and an update-on-open request. Page numbers and refreshed entries require an editor that updates the field; native Word behavior remains unverified.
 
 Word session target inspection and targeted text, tracked-change and comment edits protect paragraphs intersecting fields, including fields spanning paragraphs. Generic OfficeCLI batch actions have separate safety semantics.
+
+Word body, header/footer and note searches flag matches inside fields, including fields spanning paragraphs, and mark field text incomplete and ineligible for targeted replacement.

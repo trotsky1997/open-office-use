@@ -401,7 +401,7 @@ def session_search_word_stories(directory: str, revision: int, query: str, offse
 
 @server.tool()
 def session_search_word_body(directory: str, revision: int, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
-    """Search an exact Word revision; check coverage and validate paths before editing."""
+    """Search an exact Word revision; check coverage, in_field and validate paths before editing."""
     return session.search_body(directory, revision, query, offset, snapshot_sha256)
 
 

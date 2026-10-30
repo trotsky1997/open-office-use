@@ -212,21 +212,22 @@ def search_paragraphs(source, query, offset, snapshot_sha256, scope):
                 complex_tags = {W + name for name in ('fldChar', 'fldSimple', 'instrText', 'drawing', 'object', 'del', 'ins', 'sdt', 'tab', 'br', 'cr', 'sym', 'softHyphen', 'noBreakHyphen', 'footnoteReference', 'endnoteReference')}
                 def candidates():
                     for prefix, part, root in roots():
-                        for path, paragraph in paragraphs(root, prefix, 0): yield path, part, paragraph
-                for path, part, paragraph in candidates():
+                        fields = field_paragraphs(root)
+                        for path, paragraph in paragraphs(root, prefix, 0): yield path, part, paragraph, paragraph in fields
+                for path, part, paragraph, in_field in candidates():
                     if skipped < offset: skipped += 1; continue
                     if scanned >= 10000 or len(matches) >= 100:
                         scan_complete = False; stop_reason = 'match_limit' if len(matches) >= 100 else 'paragraph_limit'; break
                     scanned += 1
                     text_nodes = [node for node in paragraph.iter(W + 't') if next(node.iterancestors(W + 'p'), None) is paragraph]
                     text = ''.join(node.text or '' for node in text_nodes)
-                    text_complete = not any(node.tag in complex_tags or node.tag == W + 'p' and node is not paragraph for node in paragraph.iter())
+                    text_complete = not in_field and not any(node.tag in complex_tags or node.tag == W + 'p' and node is not paragraph for node in paragraph.iter())
                     if not text_complete: uncertain += 1
                     if query in text:
                         index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
                         matches.append({'path': path, 'excerpt': text[start:end], 'excerpt_start': start, 'text_length': len(text),
                                         'occurrences': sum(1 for _ in re.finditer('(?=' + re.escape(query) + ')', text)), 'text_complete': text_complete,
-                                        'replace_text_path_supported': replacement_path(path), **({'part': part} if part else {})})
+                                        'replace_text_path_supported': not in_field and replacement_path(path), 'in_field': in_field, **({'part': part} if part else {})})
                 if skipped < offset: raise ValueError('Search offset exceeds the paragraph count')
                 return {'scope': scope, 'query': query, 'case_sensitive': True, 'snapshot_sha256': digest, 'offset': offset,
                         'next_offset': offset + scanned if not scan_complete else None, 'stop_reason': stop_reason,
@@ -381,6 +382,33 @@ def find_paragraph(tree, path):
                 raise ValueError('Target paragraph path does not exist')
             paragraph = candidates[index]
     return paragraph
+
+
+def field_paragraphs(scope):
+    """Find paragraphs intersecting complex or simple fields in one story."""
+    fields = set(); depth = 0; unknown = False; paragraphs = []; nested = []
+    for event, node in etree.iterwalk(scope, events=('start', 'end')):
+        if event == 'start':
+            if node.tag == W + 'txbxContent':
+                nested.append((depth, unknown, paragraphs)); depth = 0; unknown = False; paragraphs = []
+            if node.tag == W + 'p':
+                paragraphs.append(node)
+                if depth or unknown: fields.add(node)
+            if node.tag == W + 'fldSimple':
+                fields.update(paragraphs); depth += 1
+            elif node.tag == W + 'fldChar':
+                fields.update(paragraphs); kind = node.get(W + 'fldCharType')
+                if kind == 'begin': depth += 1
+                elif kind == 'end':
+                    if depth: depth -= 1
+                    else: unknown = True
+                elif kind != 'separate' or not depth: unknown = True
+            elif node.tag == W + 'instrText': fields.update(paragraphs)
+        else:
+            if node.tag == W + 'p': paragraphs.pop()
+            elif node.tag == W + 'fldSimple': depth -= 1
+            elif node.tag == W + 'txbxContent': depth, unknown, paragraphs = nested.pop()
+    return fields
 
 
 def field_overlap(paragraph):

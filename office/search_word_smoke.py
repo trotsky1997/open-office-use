@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from docx import Document
 from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 import session
 import word
 
@@ -30,6 +31,17 @@ with tempfile.TemporaryDirectory() as tmp:
     wrapper = root / 'wrapper.docx'; wrapper_doc.save(wrapper)
     wrapper_result = word.search_body(wrapper, 'needle')
     assert not wrapper_result['complete'] and 'container_structure' in wrapper_result['unsupported_structure']
+    fields_doc = Document(); start = fields_doc.add_paragraph(); begin = OxmlElement('w:fldChar'); begin.set(qn('w:fldCharType'),'begin'); start.add_run()._r.append(begin)
+    fields_doc.add_paragraph('needle in field'); end = fields_doc.add_paragraph(); finish = OxmlElement('w:fldChar'); finish.set(qn('w:fldCharType'),'end'); end.add_run()._r.append(finish)
+    fields_doc.add_paragraph('needle outside')
+    header = fields_doc.sections[0].header.paragraphs[0]; simple = OxmlElement('w:fldSimple'); simple.set(qn('w:instr'),' PAGE '); run = OxmlElement('w:r'); value = OxmlElement('w:t'); value.text = 'header needle'; run.append(value); simple.append(run); header._p.append(simple)
+    field_file = root/'fields.docx'; fields_doc.save(field_file)
+    field_result = word.search_body(field_file,'needle'); inside, outside = field_result['matches']
+    assert inside['in_field'] and not inside['text_complete'] and not inside['replace_text_path_supported'], inside
+    assert not outside['in_field'] and outside['text_complete'] and outside['replace_text_path_supported'], outside
+    assert field_result['unverified_paragraphs'] == 3 and not field_result['complete'], field_result
+    header_match = word.search_stories(field_file,'header needle')['matches'][0]
+    assert header_match['in_field'] and not header_match['replace_text_path_supported'], header_match
     session.start(draft, source=source)
     candidate = session.search_body(draft, 0, 'nested needle')['matches'][0]
     edited = session.replace_text(draft, 0, candidate['path'], 'nested needle', 'replaced')

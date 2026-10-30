@@ -397,3 +397,5 @@ Added native PowerPoint pie charts with embedded data, slice colors and percenta
 Added Word table-of-contents authoring with cached heading text, configurable levels and a field update request; verified OOXML schema and preview.
 
 Protected Word field results from session text, tracked-change and comment edits, including cross-paragraph fields; exposed field read-only status in target inspection.
+
+Word search now detects field context across paragraphs in each story and reports field matches as incomplete and read-only candidates.

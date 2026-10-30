@@ -49,6 +49,8 @@ async def main():
                 toc_result = await session.call_tool('author_file', {'spec':{'blocks':[{'type':'table_of_contents'},{'type':'heading','text':'Overview'}]},'output':str(toc_file)})
                 assert not toc_result.isError and 'Overview' in Document(toc_file).paragraphs[0].text, toc_result
                 toc_draft = root/'toc-draft'; assert not (await session.call_tool('start_session', {'directory':str(toc_draft),'source':str(toc_file)})).isError
+                toc_search = await session.call_tool('session_search_word_body', {'directory':str(toc_draft),'revision':0,'query':'Overview'})
+                assert toc_search.structuredContent['matches'][0]['in_field'] and not toc_search.structuredContent['matches'][0]['replace_text_path_supported'], toc_search
                 toc_target = await session.call_tool('session_edit_target', {'directory':str(toc_draft),'base_revision':0,'path':'/body/p[1]'})
                 assert toc_target.structuredContent['read_only_reason'] == 'word_field' and not toc_target.structuredContent['replace_text_path_supported'], toc_target
                 blocked_toc = await session.call_tool('session_edit', {'directory':str(toc_draft),'base_revision':0,'path':'/body/p[1]','mode':'text','value':'Changed'})
