@@ -103,6 +103,14 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.equal(changedState.textMode,'diff');
   assert.match(changedState.text, /\+ .*"2"/);
   check('SDK observation: indexed trusted click and stale snapshot rejection');
+
+  await evaluate(a.id,"window.readOnlyProbe=0;document.querySelector('#increment').addEventListener('click',()=>window.readOnlyProbe++)");
+  assert.equal(await sdkTab.playwright.evaluate(()=>document.querySelector('#increment').id),'increment');
+  for(const expression of ["window.readOnlyProbe=9","document.querySelector('#increment').click()","Promise.resolve().then(()=>{window.readOnlyProbe=9})"])await assert.rejects(sdkTab.playwright.evaluate(expression),/side.effect/i);
+  assert.equal(await evaluate(a.id,'window.readOnlyProbe'),0);
+  await assert.rejects(sdkTab.playwright.evaluate(()=>{while(true){}},undefined,{timeoutMs:100}),/timed out|terminated|side.effect/i);
+  assert.equal(await sdkTab.playwright.evaluate(()=>document.querySelector('#increment').id),'increment');
+  check('SDK read-only evaluate: DOM reads and mutation rejection');
   await evaluate(a.id,`(()=>{window.semanticIsolationClicks=0;const button=document.createElement('button');button.id='semantic-isolation-button';button.textContent='Isolation action';button.onclick=e=>{if(e.isTrusted)window.semanticIsolationClicks++};const input=document.createElement('input');input.id='semantic-isolation-input';input.setAttribute('aria-label','Isolation field');document.body.append(button,input);window.savedSemanticConnected=Object.getOwnPropertyDescriptor(Node.prototype,'isConnected');Object.defineProperty(Node.prototype,'isConnected',{configurable:true,get:()=>false});return true})()`);
   try {
     const isolatedState=await sdkTab.observe(),isolatedButton=isolatedState.nodes.find(node=>node.name==='Isolation action');assert.ok(isolatedButton);await sdkTab.click(isolatedButton.index,isolatedState.snapshotId);

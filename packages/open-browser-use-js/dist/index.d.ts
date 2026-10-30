@@ -571,7 +571,9 @@ export declare class OpenBrowserUseTabPlaywright {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseTab>;
     domSnapshot(): Promise<string>;
-    evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((arg: T) => unknown), arg?: T): Promise<JsonValue>;
+    evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((arg: T) => unknown), arg?: T, options?: {
+        timeoutMs?: number;
+    }): Promise<JsonValue>;
     screenshot(options?: {
         clip?: {
             x: number;
@@ -925,6 +927,8 @@ export declare class OpenBrowserUseCdp {
     }): Promise<JsonValue>;
     evaluate(tabId: number, expression: string, options?: {
         awaitPromise?: boolean;
+        throwOnSideEffect?: boolean;
+        timeoutMs?: number;
     }): Promise<JsonValue>;
     navigate(tabId: number, url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     waitForLoadState(tabId: number, options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;

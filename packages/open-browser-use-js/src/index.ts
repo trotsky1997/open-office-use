@@ -2895,10 +2895,13 @@ export class OpenBrowserUseTabPlaywright {
     return this.tab.domSnapshot();
   }
 
-  evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((arg:T) => unknown), arg?:T): Promise<JsonValue> {
+  evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((arg:T) => unknown), arg?:T, options:{timeoutMs?:number} = {}): Promise<JsonValue> {
+    if(!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>key!=="timeoutMs") || (options.timeoutMs!==undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs<0 || options.timeoutMs>120000)))throw new Error("Invalid evaluation timeout");
+    const timeoutMs=options.timeoutMs ?? 5000,deadline=performance.now()+timeoutMs;
+    const read=(expression:string)=>locatorReadBeforeDeadline(this.tab.browser.cdp.evaluate(this.tab.id,expression,{awaitPromise:true,throwOnSideEffect:true,timeoutMs:timeoutMs || 5000}),timeoutMs,deadline,"Evaluation timed out");
     if (typeof pageFunction === "string") {
       if (arg !== undefined) throw new Error("An evaluation argument requires a function");
-      return this.tab.evaluate(pageFunction,{awaitPromise:true});
+      return read(pageFunction);
     }
     if (typeof pageFunction !== "function") throw new Error("Evaluation requires a function or expression");
     let serialized: string | undefined;
@@ -2914,7 +2917,7 @@ export class OpenBrowserUseTabPlaywright {
     const encode=(value:JsonValue):string => Array.isArray(value) ? `[${value.map(encode).join(",")}]` : value !== null && typeof value === "object" ? `{${Object.entries(value).map(([key,item])=>`[${JSON.stringify(key)}]:${encode(item)}`).join(",")}}` : JSON.stringify(value);
     let input:string;
     try { input=serialized === undefined ? "undefined" : encode(JSON.parse(serialized) as JsonValue); } catch { throw new Error("Evaluation argument must be JSON serializable"); }
-    return this.tab.evaluate(`(${Function.prototype.toString.call(pageFunction)})(${input})`,{awaitPromise:true});
+    return read(`(${Function.prototype.toString.call(pageFunction)})(${input})`);
   }
 
   async screenshot(options: {clip?: {x:number; y:number; width:number; height:number}; fullPage?: boolean} = {}): Promise<OpenBrowserUseImage> {
@@ -3705,14 +3708,17 @@ export class OpenBrowserUseCdp {
     return result;
   }
 
-  async evaluate(tabId: number, expression: string, options: { awaitPromise?: boolean } = {}): Promise<JsonValue> {
+  async evaluate(tabId: number, expression: string, options: { awaitPromise?: boolean; throwOnSideEffect?:boolean; timeoutMs?:number } = {}): Promise<JsonValue> {
     const result = await this.call(tabId, "Runtime.evaluate", {
       expression,
       returnByValue: true,
-      ...(options.awaitPromise === undefined ? {} : { awaitPromise: options.awaitPromise })
-    });
+      ...(options.awaitPromise === undefined ? {} : { awaitPromise: options.awaitPromise }),
+      ...(options.throwOnSideEffect ? {throwOnSideEffect:true} : {}),
+      ...(options.timeoutMs === undefined ? {} : {timeout:Math.max(1,Math.ceil(options.timeoutMs))})
+    },options.timeoutMs === undefined ? {} : {timeoutMs:options.timeoutMs});
     if (isObject(result) && isObject(result.exceptionDetails)) {
-      throw new Error(String(result.exceptionDetails.text ?? "Open Browser Use evaluation failed"));
+      const exception=result.exceptionDetails.exception;
+      throw new Error(isObject(exception) && typeof exception.description === "string" ? exception.description : String(result.exceptionDetails.text ?? "Open Browser Use evaluation failed"));
     }
     if (!isObject(result) || !isObject(result.result)) throw new Error("Invalid browser evaluation response");
     const remote=result.result;

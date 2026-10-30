@@ -104,3 +104,4 @@
 - [x] 文本选择检查只读祖先；macOS Electron 实页验证只读目标、Shadow DOM 富文本及跨进程 frame 选择后可信替换。
 - [x] CSS 与语义 locator 支持 pressSequentially，逐键检查焦点、超时后停止后续输入；macOS Electron 实页覆盖 Unicode、焦点变化及跨进程 frame。
 - [x] Linux ARM64 Chromium 150 原生消息实测文本选择、焦点内替换及逐字符输入，覆盖主文档与跨进程 frame；修复空上下文参数传输。
+- [x] playwright.evaluate 启用 Chromium 副作用检查与有界执行；macOS Electron 和 Linux ARM64 Chromium 原生链路验证 DOM 读取、同步/异步修改拒绝及执行超时。

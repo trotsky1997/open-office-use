@@ -131,8 +131,10 @@ are rejected before sending the request. Objects with `toJSON` follow their JSON
 conversion. `undefined` is
 returned as `null`; non-JSON CDP results such as `NaN` and `BigInt` raise an error.
 The function
-runs in the page context without access to its caller’s closures; like
-`tab.evaluate`, it can modify the page.
+runs in the page context without access to its caller’s closures. Chromium
+rejects operations it considers to have side effects; some otherwise harmless
+expressions may also be rejected. Its default timeout is five seconds; an optional
+third argument accepts `timeoutMs`. For explicit page mutation, use `tab.evaluate`.
 
 `domSnapshot()` returns a bounded accessibility snapshot with roles, names,
 states and readable frame content. Indentation follows the reported accessibility
