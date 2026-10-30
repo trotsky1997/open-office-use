@@ -496,11 +496,35 @@ def validate_tracked_context(tree, targets):
                     raise ValueError('Tracked paragraph, table or row properties are not supported')
 
 
+def tracked_change_elements(tree, archive, author, kinds):
+    import secrets
+    from datetime import datetime, timezone
+    used = set()
+    for name in archive.namelist():
+        if not name.startswith('word/') or not name.endswith('.xml'): continue
+        part_tree = tree if name == 'word/document.xml' else ooxml.parse_xml(archive.read(name))
+        for item in part_tree.iter():
+            value = item.get(W + 'id')
+            if value:
+                value = value.strip()
+                if re.fullmatch(r'[+-]?[0-9]+', value):
+                    digits = value.lstrip('+-').lstrip('0') or '0'
+                    if len(digits) <= 10: used.add(-int(digits) if value.startswith('-') else int(digits))
+    ids = []
+    while len(ids) < len(kinds):
+        value = secrets.randbelow(2147483647)
+        if value not in used: ids.append(value); used.add(value)
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    def change(kind, identifier):
+        element = etree.Element(W + kind)
+        element.set(W + 'id', str(identifier)); element.set(W + 'author', author); element.set(W + 'date', timestamp)
+        return element
+    return [change(kind, identifier) for kind, identifier in zip(kinds, ids)]
+
+
 def track_replace_text(source, output, path, find, replacement, author):
     """Replace a unique body text range with Word insertion and deletion records."""
     import copy
-    import secrets
-    from datetime import datetime, timezone
 
     if not paragraph_path(path) or Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
         raise ValueError('Target must be a DOCX body or table paragraph path')
@@ -522,28 +546,9 @@ def track_replace_text(source, output, path, find, replacement, author):
             if node is last: break
             node = node.getnext()
         if not selected or selected[-1] is not last: raise ValueError('Tracked replacement range is inconsistent')
-        used = set()
-        for name in archive.namelist():
-            if not name.startswith('word/') or not name.endswith('.xml'): continue
-            part_tree = tree if name == 'word/document.xml' else ooxml.parse_xml(archive.read(name))
-            for item in part_tree.iter():
-                value = item.get(W + 'id')
-                if value:
-                    value = value.strip()
-                    if re.fullmatch(r'[+-]?[0-9]+', value):
-                        digits = value.lstrip('+-').lstrip('0') or '0'
-                        if len(digits) <= 10: used.add(-int(digits) if value.startswith('-') else int(digits))
-        ids = []
-        while len(ids) < (2 if replacement else 1):
-            value = secrets.randbelow(2147483647)
-            if value not in used: ids.append(value); used.add(value)
-        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        def change(kind, identifier):
-            element = etree.Element(W + kind)
-            element.set(W + 'id', str(identifier)); element.set(W + 'author', author); element.set(W + 'date', timestamp)
-            return element
-        deleted = change('del', ids[0]); first.addprevious(deleted)
-        inserted = change('ins', ids[1]) if replacement else None
+        changes = tracked_change_elements(tree, archive, author, ('del', 'ins') if replacement else ('del',))
+        deleted = changes[0]; first.addprevious(deleted)
+        inserted = changes[1] if replacement else None
         if inserted is not None:
             run = etree.SubElement(inserted, W + 'r'); properties = first.find(W + 'rPr')
             if properties is not None: run.append(copy.deepcopy(properties))
@@ -554,6 +559,34 @@ def track_replace_text(source, output, path, find, replacement, author):
             for text in run.findall(W + 't'): text.tag = W + 'delText'
             deleted.append(run)
     return ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
+
+
+def track_insert_text(source, output, path, anchor, text, position, author):
+    """Insert a tracked run adjacent to a unique body text anchor."""
+    import copy
+    if not paragraph_path(path) or Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
+        raise ValueError('Target must be a DOCX body or table paragraph path')
+    if not isinstance(author, str) or not author.strip() or len(author) > 100 or any(ord(c) < 32 for c in author):
+        raise ValueError('Author must contain 1 to 100 characters without control characters')
+    if position not in ('before', 'after'): raise ValueError('Position must be before or after')
+    ooxml.match_index(anchor, anchor, text)
+    if not text: raise ValueError('Insertion text must not be empty')
+    identifier = None
+    def edit(tree, archive):
+        nonlocal identifier
+        first, last = anchor_runs(find_paragraph(tree, path), anchor)
+        validate_tracked_context(tree, (first, last))
+        inserted = tracked_change_elements(tree, archive, author, ('ins',))[0]
+        identifier = inserted.get(W + 'id')
+        reference = first if position == 'before' else last
+        run = etree.SubElement(inserted, W + 'r'); properties = reference.find(W + 'rPr')
+        if properties is not None: run.append(copy.deepcopy(properties))
+        node = etree.SubElement(run, W + 't'); node.text = text
+        if text.startswith(' ') or text.endswith(' '): node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+        if position == 'before': first.addprevious(inserted)
+        else: last.addnext(inserted)
+    result = ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
+    return {'file': result, 'id': identifier}
 
 
 def resolve_tracked_runs(source, output, part, ids, accept):

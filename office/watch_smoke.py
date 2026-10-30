@@ -45,6 +45,10 @@ with tempfile.TemporaryDirectory() as tmp:
         request = urllib.request.Request(url + 'track-replace-text', data=json.dumps(tracked).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
         try: urllib.request.urlopen(request); raise AssertionError('Cross-origin tracked edit accepted')
         except urllib.error.HTTPError as error: assert error.code == 403
+        insertion = {'base_revision': 0, 'path': '/body/p[1]', 'anchor': 'First', 'text': 'New ', 'position': 'before', 'author': 'Reviewer'}
+        request = urllib.request.Request(url + 'track-insert-text', data=json.dumps(insertion).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
+        try: urllib.request.urlopen(request); raise AssertionError('Cross-origin tracked insertion accepted')
+        except urllib.error.HTTPError as error: assert error.code == 403
         resolution = {'base_revision': 0, 'part': 'word/document.xml', 'ids': ['1'], 'accept': True}
         request = urllib.request.Request(url + 'tracked-resolve', data=json.dumps(resolution).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
         try: urllib.request.urlopen(request); raise AssertionError('Cross-origin revision resolution accepted')

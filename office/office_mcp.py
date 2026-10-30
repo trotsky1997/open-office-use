@@ -197,6 +197,12 @@ def session_track_replace_text(directory: str, base_revision: int, path: str, fi
 
 
 @server.tool()
+def session_track_insert_text(directory: str, base_revision: int, path: str, anchor: str, text: str, position: Literal['before', 'after'], author: str) -> dict[str, Any]:
+    """Insert a Word tracked run before or after one unique body text anchor, retaining adjacent formatting."""
+    return session.track_insert_text(directory, base_revision, path, anchor, text, position, author)
+
+
+@server.tool()
 def session_resolve_tracked_runs(directory: str, base_revision: int, part: str, ids: list[str], accept: bool) -> dict[str, Any]:
     """Accept or reject selected simple Word insertion/deletion run records in one part; create a new revision."""
     return session.resolve_tracked_runs(directory, base_revision, part, ids, accept)

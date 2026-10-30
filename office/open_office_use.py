@@ -222,6 +222,7 @@ def main():
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
     track_replace = sub.add_parser('track-replace-text'); track_replace.add_argument('directory'); track_replace.add_argument('--base', type=int, required=True); track_replace.add_argument('--path', required=True); track_replace.add_argument('--find', required=True); track_replace.add_argument('--replace', required=True, dest='replacement'); track_replace.add_argument('--author', required=True)
+    track_insert = sub.add_parser('track-insert-text'); track_insert.add_argument('directory'); track_insert.add_argument('--base', type=int, required=True); track_insert.add_argument('--path', required=True); track_insert.add_argument('--anchor', required=True); track_insert.add_argument('--text', required=True); track_insert.add_argument('--position', choices=('before', 'after'), required=True); track_insert.add_argument('--author', required=True)
     track_resolve = sub.add_parser('resolve-tracked-runs'); track_resolve.add_argument('directory'); track_resolve.add_argument('--base', type=int, required=True); track_resolve.add_argument('--part', required=True); track_resolve.add_argument('--id', action='append', required=True, dest='ids'); track_resolve.add_argument('--decision', choices=['accept', 'reject'], required=True)
     note_session = sub.add_parser('notes'); note_session.add_argument('directory'); note_session.add_argument('--revision', type=int, required=True); note_session.add_argument('--slide', type=int, required=True)
     note_compare = sub.add_parser('compare-notes'); note_compare.add_argument('directory'); note_compare.add_argument('--before', type=int, required=True); note_compare.add_argument('--after', type=int, required=True); note_compare.add_argument('--before-slide', type=int, required=True); note_compare.add_argument('--after-slide', type=int, required=True)
@@ -279,6 +280,8 @@ def main():
                 result = selection_candidates.candidates(args.directory, render)
             elif args.action == 'replace-text':
                 result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
+            elif args.action == 'track-insert-text':
+                result = session.track_insert_text(args.directory, args.base, args.path, args.anchor, args.text, args.position, args.author)
             elif args.action == 'track-replace-text':
                 result = session.track_replace_text(args.directory, args.base, args.path, args.find, args.replacement, args.author)
             elif args.action == 'resolve-tracked-runs':
