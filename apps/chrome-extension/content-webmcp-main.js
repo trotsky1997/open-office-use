@@ -13,6 +13,7 @@
     nextRegistrationId: 1,
     registrations: new Map(),
     invocations: new Map(),
+    listEpoch: 0,
     toolChangeListener: null
   };
   Object.defineProperty(globalThis, STATE_KEY, {
@@ -29,8 +30,13 @@
       return;
     }
     const requestId = event.data.requestId;
-    if (event.data.action === "cancel") { state.invocations.get(requestId)?.abort(); return; }
-    void handleRequest(event.data)
+    if (event.data.action === "cancel") {
+      const controller = state.invocations.get(requestId);
+      state.invocations.delete(requestId); controller?.abort(); return;
+    }
+    const listController = event.data.action === "list" ? new AbortController() : undefined;
+    if (listController) state.invocations.set(requestId, listController);
+    void handleRequest(event.data, listController?.signal)
       .then((result) => {
         window.postMessage({ source: RESPONSE_SOURCE, requestId, ok: true, result }, "*");
       })
@@ -44,13 +50,15 @@
           },
           "*"
         );
+      }).finally(() => {
+        if (listController && state.invocations.get(requestId) === listController) state.invocations.delete(requestId);
       });
   });
 
-  async function handleRequest(request) {
+  async function handleRequest(request, signal) {
     switch (request.action) {
       case "list":
-        return await listTools();
+        return await listTools(signal);
       case "invoke":
         return await invokeTool(request);
       default:
@@ -58,32 +66,22 @@
     }
   }
 
-  async function listTools() {
+  async function listTools(signal) {
     const modelContext = document.modelContext;
     observeModelContext(modelContext);
-    state.registrations.clear();
-    if (!modelContext || typeof modelContext.getTools !== "function") {
-      return { tools: [] };
-    }
-
-    const registeredTools = await modelContext.getTools();
-    if (!Array.isArray(registeredTools)) {
-      throw new Error("document.modelContext.getTools() did not return an array");
-    }
-
-    const tools = [];
+    const epoch = ++state.listEpoch;
+    const registeredTools = modelContext && typeof modelContext.getTools === "function" ? await modelContext.getTools() : [];
+    if (signal?.aborted) throw new Error("WebMCP request canceled");
+    if (epoch !== state.listEpoch || document.modelContext !== modelContext) throw new Error("WebMCP tool list changed; list tools again");
+    if (!Array.isArray(registeredTools)) throw new Error("document.modelContext.getTools() did not return an array");
+    const tools = [], registrations = new Map();
     for (const registeredTool of registeredTools) {
-      if (!registeredTool || typeof registeredTool.name !== "string" || !registeredTool.name.trim()) {
-        continue;
-      }
+      if (!registeredTool || typeof registeredTool.name !== "string" || !registeredTool.name.trim()) continue;
       const registrationId = createRegistrationId();
-      state.registrations.set(registrationId, {
-        modelContext,
-        name: registeredTool.name,
-        tool: registeredTool
-      });
+      registrations.set(registrationId, {modelContext, name:registeredTool.name, tool:registeredTool});
       tools.push(toWireTool(registeredTool, registrationId));
     }
+    state.registrations = registrations;
     return { tools };
   }
 
@@ -272,10 +270,12 @@
       state.modelContext.removeEventListener("toolchange", state.toolChangeListener);
     }
     state.modelContext = modelContext ?? null;
+    state.listEpoch++;
     state.registrations.clear();
     state.toolChangeListener = null;
     if (modelContext && typeof modelContext.addEventListener === "function") {
       const listener = () => {
+        state.listEpoch++;
         state.registrations.clear();
       };
       modelContext.addEventListener("toolchange", listener);

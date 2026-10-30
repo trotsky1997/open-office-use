@@ -469,3 +469,15 @@ test('WebMCP cancellation during preparation prevents page dispatch',async()=>{
   const controller=new AbortController();const pending=backend.webmcp_list_tools({tabId:1},controller.signal);
   while(!release)await new Promise(resolve=>setImmediate(resolve));controller.abort();release();await assert.rejects(pending,/canceled/);
 });
+
+test('canceled delayed tool list cannot replace newer registrations',async()=>{
+  let release, calls=0;const tool={name:'stable',inputSchema:{type:'object'},async __execute(){return {ok:true};}};
+  const model=createModelContext([tool]);model.getTools=async()=>{calls++;if(calls===1)await new Promise(resolve=>{release=resolve;});return [tool];};
+  const {runtime}=await loadBridgeHarness({modelContext:model});
+  const older=runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_REQUEST',requestId:'old-list',action:'list'});
+  while(!release)await new Promise(resolve=>setImmediate(resolve));
+  const latest=await runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_REQUEST',action:'list'});assert.equal(latest.ok,true);
+  await runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_CANCEL',requestId:'old-list'});assert.match((await older).error,/canceled/);release();await new Promise(resolve=>setImmediate(resolve));
+  const selected=latest.result.tools[0];const result=await runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_REQUEST',action:'invoke',tool_name:selected.name,registration_id:selected.registration_id,input:{},timeout_ms:1000});
+  assert.equal(result.ok,true);assert.equal(result.result.result.ok,true);
+});
