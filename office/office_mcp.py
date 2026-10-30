@@ -99,6 +99,18 @@ def session_selection_image(directory: str) -> Image:
 
 
 @server.tool()
+def session_edit_target(directory: str, base_revision: int, path: str) -> dict[str, Any]:
+    """Read one editable element in the latest revision before editing it."""
+    return session.edit_target(directory, base_revision, path)
+
+
+@server.tool()
+def session_edit(directory: str, base_revision: int, path: str, mode: Literal['text', 'value', 'formula'], value: str) -> dict[str, Any]:
+    """Set one element's text, cell value, or formula in a new revision; replacing text may change formatting."""
+    return session.edit(directory, base_revision, path, mode, value)
+
+
+@server.tool()
 def session_apply(directory: str, base_revision: int, operations: list[dict[str, Any]]) -> dict[str, Any]:
     """Apply an OfficeCLI batch to the latest revision; reject concurrent or stale edits."""
     return session.apply(directory, base_revision, operations)

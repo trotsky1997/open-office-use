@@ -79,6 +79,26 @@ with tempfile.TemporaryDirectory() as tmp:
         except urllib.error.HTTPError as error:
             assert error.code == 400
         assert (directory / 'revision-000002.docx').read_bytes() == source.read_bytes()
+        element = urllib.request.Request(url + 'element', data=json.dumps({'base_revision': 2, 'path': '/body/p[1]'}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        target = json.loads(urllib.request.urlopen(element).read())
+        assert target['value'] == 'First' and target['revision'] == 2
+        edit_data = {'base_revision': 2, 'path': target['path'], 'mode': 'text', 'value': 'User edit'}
+        forbidden_edit = urllib.request.Request(url + 'edit', data=json.dumps(edit_data).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(forbidden_edit)
+            raise AssertionError('Unexpected cross-origin edit')
+        except urllib.error.HTTPError as error:
+            assert error.code == 403
+        edit = urllib.request.Request(url + 'edit', data=json.dumps(edit_data).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        assert json.loads(urllib.request.urlopen(edit).read())['revision'] == 3
+        assert Document(directory / 'revision-000003.docx').paragraphs[0].text == 'User edit'
+        stale_edit = urllib.request.Request(url + 'edit', data=json.dumps(edit_data).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(stale_edit)
+            raise AssertionError('Unexpected stale edit')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400
+
 
         for address, headers, status in [(url.replace('/state', '') + '../state', {}, 404), (url + 'state', {'Host': 'example.com'}, 403)]:
             try:

@@ -60,3 +60,7 @@ Added optimistic restore to a new revision through CLI, MCP and the local previe
 ## Historical preview
 
 The local viewer can preview a selected historical revision before restoration, while showing the latest revision and restricting selection to the current version. Tested two Chrome tabs across a new commit, a historical preview and restoration. The viewer remains a rendered-page surface rather than a direct editing canvas.
+
+## Element editing
+
+Added limited element editing through the viewer and MCP: load one target at a specified latest revision, review content, and save a new revision. Tested Word text, spreadsheet formulas, PowerPoint titles, stale writes, cross-origin rejection and real Chrome interaction. Direct canvas editing, collaborative synchronization and advanced formatting remain open.

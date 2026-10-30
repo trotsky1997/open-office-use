@@ -162,3 +162,54 @@ def get_selection(directory):
     revision_file(state, selection['revision'])
     return {**selection, 'latest_revision': state['latest_revision'],
             'stale': selection['revision'] != state['latest_revision']}
+
+
+def edit_target(directory, base_revision, path):
+    if not isinstance(path, str) or not path.startswith('/') or len(path) > 512 or '\x00' in path:
+        raise ValueError('Provide a valid element path of at most 512 characters')
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    result = officecli_backend.read(source, 'get', path)
+    if not isinstance(result, dict) or result.get('matches') != 1 or not isinstance(result.get('results'), list) or len(result['results']) != 1:
+        raise ValueError('The path must identify exactly one editable element')
+    item = result['results'][0]
+    supported = {'docx': {'paragraph', 'run'}, 'xlsx': {'cell'},
+                 'pptx': {'title', 'shape', 'textbox', 'placeholder', 'paragraph', 'run'}}
+    if not isinstance(item, dict) or item.get('type') not in supported[state['format']] or not isinstance(item.get('path'), str):
+        raise ValueError('Element type is not supported by this editor')
+    format_data = item.get('format')
+    if not isinstance(format_data, dict):
+        format_data = {}
+    formula = format_data.get('formula') if state['format'] == 'xlsx' else None
+    text = item.get('text')
+    if text is not None and not isinstance(text, str):
+        text = str(text)
+    if isinstance(formula, str):
+        mode = 'formula'
+        value = formula if formula.startswith('=') else '=' + formula
+    else:
+        mode = 'value' if state['format'] == 'xlsx' else 'text'
+        value = text or ''
+    if len(value) > 4000:
+        raise ValueError('Element value exceeds the 4,000-character editor limit')
+    latest = info(directory)['latest_revision']
+    if base_revision != latest:
+        raise ValueError(f'Revision conflict: latest revision is {latest}')
+    return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
+            'format': state['format'], 'mode': mode, 'value': value}
+
+
+def edit(directory, base_revision, path, mode, value):
+    if not isinstance(value, str) or len(value) > 4000:
+        raise ValueError('Value must be text of at most 4,000 characters')
+    target = edit_target(directory, base_revision, path)
+    allowed = {'xlsx': {'value', 'formula'}, 'docx': {'text'}, 'pptx': {'text'}}
+    if mode not in allowed[target['format']]:
+        raise ValueError('Edit mode is not supported for this format')
+    if mode == 'value' and value.lstrip().startswith('='):
+        raise ValueError('Choose formula mode for a value starting with =')
+    if mode == 'formula' and (not value.startswith('=') or len(value) < 2):
+        raise ValueError('A formula must start with = and contain an expression')
+    return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])

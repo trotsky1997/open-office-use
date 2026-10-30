@@ -25,12 +25,21 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 .box{position:absolute;border:2px solid #0867c4;background:#087dd126;pointer-events:none;display:none;box-sizing:border-box}
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
-input{width:4.5rem}button,select,input{font:inherit}button{cursor:pointer}form p{flex-basis:100%}
+input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}
+#edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
 
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
 <details><summary>Restore a previous revision</summary><form id="restore-form">
 <label for="restore-revision">Revision</label> <select id="restore-revision" required></select>
 <button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
+<details><summary>Edit an element</summary><form id="edit-form">
+<label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
+<button type="button" id="edit-load">Load element</button>
+<label>Kind <select id="edit-mode" disabled></select></label>
+<label>Content <textarea id="edit-value" maxlength="4000" disabled></textarea></label>
+<button type="submit" id="edit-save" disabled>Save as new revision</button>
+<p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
+<p id="edit-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
 <label>Left % <input name="left" type="number" min="0" max="100" step="0.1" required value="10"></label>
@@ -40,7 +49,7 @@ input{width:4.5rem}button,select,input{font:inherit}button{cursor:pointer}form p
 <button type="submit">Save selection</button></form></details>
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
-let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false;
+let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null;
 async function saveSelection(revision, page, coordinates) {
  try {
   const response=await fetch('selection', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({revision,page,box:coordinates})});
@@ -51,6 +60,38 @@ async function saveSelection(revision, page, coordinates) {
   if (selected) Object.assign(selected.style, {display:'block', left:`${coordinates[0]*100}%`, top:`${coordinates[1]*100}%`, width:`${(coordinates[2]-coordinates[0])*100}%`, height:`${(coordinates[3]-coordinates[1])*100}%`});
  } catch (error) { document.getElementById('selection').textContent = `Selection error: ${error.message}`; }
 }
+function invalidateEdit(message) {
+ loaded=null; document.getElementById('edit-save').disabled=true;
+ document.getElementById('edit-mode').disabled=true; document.getElementById('edit-value').disabled=true;
+ if (message) document.getElementById('edit-status').textContent=message;
+}
+document.getElementById('edit-path').addEventListener('input', () => invalidateEdit('Load the element before saving.'));
+document.getElementById('edit-load').addEventListener('click', async () => {
+ const button=document.getElementById('edit-load'); button.disabled=true; invalidateEdit('Loading…');
+ try {
+  const path=document.getElementById('edit-path').value;
+  const response=await fetch('element', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:current,path})});
+  const target=await response.json(); if (!response.ok) throw new Error(target.error || 'Could not load element');
+  if (target.revision !== current || pinned !== null || document.getElementById('edit-path').value !== path) throw new Error('Version or path changed; load the element again.');
+  loaded=target; document.getElementById('edit-path').value=target.path;
+  const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula'] : ['text'];
+  mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind;return option;}));
+  mode.value=target.mode; mode.disabled=false;
+  const value=document.getElementById('edit-value'); value.disabled=false; value.value=target.value;
+  document.getElementById('edit-save').disabled=false;
+  document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
+ } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
+ finally { button.disabled = pinned !== null; }
+});
+document.getElementById('edit-form').addEventListener('submit', async event => {
+ event.preventDefault(); if (!loaded || pinned !== null || loaded.revision !== current) { invalidateEdit('Version changed; load the element again.'); return; }
+ const button=document.getElementById('edit-save'); button.disabled=true;
+ try {
+  const response=await fetch('edit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:loaded.revision,path:loaded.path,mode:document.getElementById('edit-mode').value,value:document.getElementById('edit-value').value})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Edit failed');
+  invalidateEdit(`Saved as revision ${result.revision}.`); await refresh();
+ } catch (error) { document.getElementById('edit-status').textContent=`Edit error: ${error.message}`; button.disabled=false; }
+});
 document.getElementById('restore-form').addEventListener('submit', async event => {
  event.preventDefault(); const button = event.currentTarget.querySelector('button'); button.disabled = true;
  try {
@@ -104,7 +145,8 @@ function display(state, live) {
  }
  document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; viewKey=key;
  document.getElementById('selection').textContent = live ? 'Drag on a page to save a selection for the agent.' : 'Selections are available on the latest revision.';
- document.querySelectorAll('#selection-form input, #selection-form button').forEach(element => element.disabled=!live);
+ document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load').forEach(element => element.disabled=!live);
+ if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 document.getElementById('preview-revision').addEventListener('click', async () => {
  const revision=Number(document.getElementById('restore-revision').value); pinned=revision;
@@ -123,6 +165,7 @@ async function refresh() {
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   if (state.revision !== current) {
+   if (loaded) invalidateEdit('Version changed; load the element again.');
    const select=document.getElementById('restore-revision'); const previous=select.value;
    select.replaceChildren(...state.revisions.map(revision => {const option=document.createElement('option'); option.value=revision; option.textContent=`Revision ${revision}`; return option;}));
    if (state.revisions.some(revision => String(revision) === previous)) select.value=previous;
@@ -182,10 +225,10 @@ def serve(directory, preview, port=0):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
-                if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 4 or not 0 < int(length) <= 4096:
+                if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
@@ -196,12 +239,20 @@ def serve(directory, preview, port=0):
                             if pages is None or selection['page'] > len(pages):
                                 raise ValueError('Selection refers to an unavailable preview')
                             saved = session.set_selection(directory, selection)
-                        else:
+                        elif route.endswith('/restore'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'revision'}:
                                 raise ValueError('Restore requires base_revision and revision')
                             saved = session.restore(directory, payload['base_revision'], payload['revision'])
+                        elif route.endswith('/element'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path'}:
+                                raise ValueError('Element requires base_revision and path')
+                            saved = session.edit_target(directory, payload['base_revision'], payload['path'])
+                        else:
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'mode', 'value'}:
+                                raise ValueError('Edit requires base_revision, path, mode and value')
+                            saved = session.edit(directory, payload['base_revision'], payload['path'], payload['mode'], payload['value'])
                     self.send(200, json.dumps(saved).encode(), 'application/json')
-                except (ValueError, OSError, json.JSONDecodeError) as exc:
+                except (ValueError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
                     self.send(400, json.dumps({'error': str(exc)}).encode(), 'application/json')
 
             def do_GET(self):
