@@ -2379,6 +2379,12 @@ export class OpenBrowserUseTabDomCUA {
         if(typeof objectId!=='string')throw new RetryablePreflightError('DOM target changed; observe again');
         objects.push({id,objectId});
       }
+      if(objects.length && !visibilityIncomplete) {
+        const state=await this.tab.browser.cdp.call(this.tab.id,'Runtime.callFunctionOn',{objectId:objects[0].objectId,returnByValue:true,functionDeclaration:`function(){return this.ownerDocument.visibilityState}`},{sessionId});
+        const value=isObject(state) && isObject(state.result) ? state.result.value : undefined;
+        if(value!=='hidden' && value!=='visible')throw new RetryablePreflightError('DOM visibility unavailable; observe again');
+        if(value==='hidden')visibilityIncomplete=true;
+      }
       const observeIntersections=async():Promise<boolean[]>=>{
         if(!objects.length)return [];
         if(visibilityIncomplete)return objects.map(()=>true);

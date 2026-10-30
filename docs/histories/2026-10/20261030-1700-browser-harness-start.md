@@ -321,3 +321,5 @@ DOM CUA 跨进程 frame 的节点滚动沿 frame 会话派发可信滚轮，沿�
 跨进程 DOM 滚动的绘制等待使用目标 frame 的隔离 world，页面覆盖 requestAnimationFrame 时仍能完成；等待命令限制为三秒，异常时提示滚轮已发送并要求先观察。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 socket 实页，以及 Linux ARM64 Chromium 原生扩展实页均验证滚动和页面覆盖。隔离 Linux Chromium 150 后台标签探针中，焦点模拟后截图可返回且 wheel 事件可信，但滚动位移仍为零，合成手势三秒超时；仍需解决后台呈现。
 
 语义定位器新增 isChecked，读取经过目标、状态及作用域重核的可访问性勾选状态；混合状态和无二元勾选状态的目标报错。SDK 70 项通过；Linux ARM64 Chromium 原生扩展验证跨进程复选框变化、混合状态与非勾选控件，macOS 和 Linux ARM64 Electron 44 socket 实页验证跨进程复选框。Windows 未测。
+
+DOM CUA 在 frame 文档报告 hidden 时直接采用既有几何回退并标记 visibility_incomplete，跳过可能因后台节流延迟三秒的 IntersectionObserver；可见文档保持原有观察和变化检查。SDK 70 项通过；Linux ARM64 Chromium 原生扩展后台专项验证无交叉观察调用及不完整标记，完整原生 smoke 通过；macOS 与 Linux ARM64 Electron 44 完整 socket smoke 通过。后台回退仍无法过滤 overflow 祖先裁剪，Windows 未测。
