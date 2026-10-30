@@ -109,6 +109,7 @@ type CssTextFilter = {
     hasNotText?: CssMatcher;
     has?: readonly CssStep[];
     hasNot?: readonly CssStep[];
+    visible?: boolean;
 };
 type CssStep = {
     selector: string;
@@ -244,6 +245,7 @@ export declare class OpenBrowserUseTab {
         includeText?: boolean;
     }): Promise<InteractiveState>;
     private readAXValues;
+    private cssFrameVisible;
     private scopeText;
     private freshFilterObservation;
     private scopeContains;
@@ -459,6 +461,7 @@ export declare class OpenBrowserUseCssLocator {
         hasNotText?: TextMatcher;
         has?: OpenBrowserUseCssLocator;
         hasNot?: OpenBrowserUseCssLocator;
+        visible?: boolean;
     }): OpenBrowserUseCssLocator;
     count(): Promise<number>;
     all(): Promise<OpenBrowserUseCssLocator[]>;

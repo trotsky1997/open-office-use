@@ -822,17 +822,21 @@ export class OpenBrowserUseTab {
         const frame = frames.find(item => item.id === frameId);
         if (!frame)
             throw new RetryablePreflightError("Frame tree changed; observe again");
+        const needsVisibility = (steps) => steps.some(step => [...(step.before ?? []), ...(step.after ?? [])].some(filter => filter.visible !== undefined || (filter.has ? needsVisibility(filter.has) : false) || (filter.hasNot ? needsVisibility(filter.hasNot) : false)));
+        const checkVisibility = needsVisibility([...scopes, step]);
+        const frameVisible = checkVisibility ? await this.cssFrameVisible(frame, frames) : true;
         const sessionId = frame.sessionId;
         const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "open-browser-use-selector" }, { sessionId });
         const contextId = isObject(world) ? world.executionContextId : undefined;
         if (typeof contextId !== "number" || !Number.isSafeInteger(contextId))
             throw new RetryablePreflightError("Selector context is unavailable; observe again");
         const expression = `(() => {
-      const steps=${JSON.stringify([...scopes, step])}, output=[]; let total=0, visited=0;
+      const steps=${JSON.stringify([...scopes, step])}, output=[], frameVisible=${JSON.stringify(frameVisible)}; let total=0, visited=0;
       const guarded=steps.some(step=>[...(step.before || []),...(step.after || [])].some(filter=>filter.has || filter.hasNot));
       const normalize=text=>text.replace(/\\s+/g,' ').trim();
       const textOf=element=>{let text='',stack=[element];while(stack.length){const node=stack.pop();if(node.nodeType===Node.TEXT_NODE){text+=node.nodeValue || '';if(text.length>30000)throw new Error('Filter text exceeds the 30000 character limit');continue;}if(node.nodeType===Node.ELEMENT_NODE && ['SCRIPT','STYLE','NOSCRIPT'].includes(node.tagName))continue;if(node.shadowRoot)stack.push(node.shadowRoot);const children=node.childNodes;for(let j=children.length-1;j>=0;j--)stack.push(children[j]);}return normalize(text);};
       const apply=(items,filters)=>!filters?.length ? items : items.filter(element=>filters.every(filter=>{
+        if(filter.visible!==undefined){const r=element.getBoundingClientRect(),visible=frameVisible && getComputedStyle(element).visibility==='visible' && r.width>0 && r.height>0;if(visible!==filter.visible)return false;}
         if(filter.hasText!==undefined || filter.hasNotText!==undefined){const text=textOf(element),match=pattern=>typeof pattern==='string' ? text.toLowerCase().includes(normalize(pattern).toLowerCase()) : new RegExp(pattern.source,pattern.flags).test(text);if(filter.hasText!==undefined && !match(filter.hasText))return false;if(filter.hasNotText!==undefined && match(filter.hasNotText))return false;}
         if(filter.has && !resolve([element],filter.has,false).length)return false;
         if(filter.hasNot && resolve([element],filter.hasNot,false).length)return false;
@@ -892,6 +896,8 @@ export class OpenBrowserUseTab {
                     throw new RetryablePreflightError("Selector target changed; observe again");
                 stages[stages.length - 1].push(node.backendNodeId);
             }
+            if (checkVisibility && await this.cssFrameVisible(frame, frames) !== frameVisible)
+                throw new RetryablePreflightError("Frame visibility changed; observe again");
             if (stages.length !== scopes.length + 1 || await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames))
                 throw new RetryablePreflightError("Frame tree changed; observe again");
             return { step, scopes, scopeIds: stages.slice(0, -1), framePath, frame, frames, documentId, ids: stages[stages.length - 1] };
@@ -901,6 +907,34 @@ export class OpenBrowserUseTab {
                 await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
             await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId: arrayId }, { sessionId }).catch(() => { });
         }
+    }
+    async cssFrameVisible(frame, frames) {
+        const chain = frameAncestry(frame, frames);
+        for (let i = 0; i < chain.length; i++) {
+            const child = chain[i], ownerSession = chain[i + 1]?.sessionId;
+            const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: child.id }, { sessionId: ownerSession });
+            if (!isObject(owner) || typeof owner.backendNodeId !== "number")
+                throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+            const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: child.parentId, worldName: "open-browser-use-selector" }, { sessionId: ownerSession });
+            if (!isObject(world) || typeof world.executionContextId !== "number")
+                throw new RetryablePreflightError("Selector context is unavailable; observe again");
+            const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId, executionContextId: world.executionContextId }, { sessionId: ownerSession });
+            const ownerId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+            if (typeof ownerId !== "string")
+                throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+            try {
+                const state = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId: ownerId, returnByValue: true, functionDeclaration: `function() { if(!this.isConnected)return null;const r=this.getBoundingClientRect();return getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0; }` }, { sessionId: ownerSession });
+                const value = isObject(state) && isObject(state.result) ? state.result.value : undefined;
+                if (typeof value !== "boolean")
+                    throw new RetryablePreflightError("Frame owner changed; observe again");
+                if (!value)
+                    return false;
+            }
+            finally {
+                await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId: ownerId }, { sessionId: ownerSession }).catch(() => { });
+            }
+        }
+        return true;
     }
     /** @internal */
     async readCss(snapshot, id, mode, attribute = "") {
@@ -925,36 +959,7 @@ export class OpenBrowserUseTab {
                 throw new RetryablePreflightError("Selector target is unavailable; observe again");
             if (typeof payload.value === "string" && payload.value.length > 30_000)
                 throw new Error("Locator value exceeds the 30000 character limit");
-            let frameVisible = true;
-            if (mode === "visible" && payload.value === true) {
-                const chain = frameAncestry(frame, snapshot.frames);
-                for (let i = 0; i < chain.length; i++) {
-                    const child = chain[i], ownerSession = chain[i + 1]?.sessionId;
-                    const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: child.id }, { sessionId: ownerSession });
-                    if (!isObject(owner) || typeof owner.backendNodeId !== "number")
-                        throw new RetryablePreflightError("Frame owner is unavailable; observe again");
-                    const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: child.parentId, worldName: "open-browser-use-selector" }, { sessionId: ownerSession });
-                    if (!isObject(world) || typeof world.executionContextId !== "number")
-                        throw new RetryablePreflightError("Selector context is unavailable; observe again");
-                    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId, executionContextId: world.executionContextId }, { sessionId: ownerSession });
-                    const ownerId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
-                    if (typeof ownerId !== "string")
-                        throw new RetryablePreflightError("Frame owner is unavailable; observe again");
-                    try {
-                        const state = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId: ownerId, returnByValue: true, functionDeclaration: `function() { if(!this.isConnected)return null;const r=this.getBoundingClientRect();return getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0; }` }, { sessionId: ownerSession });
-                        const value = isObject(state) && isObject(state.result) ? state.result.value : undefined;
-                        if (typeof value !== "boolean")
-                            throw new RetryablePreflightError("Frame owner changed; observe again");
-                        if (!value) {
-                            frameVisible = false;
-                            break;
-                        }
-                    }
-                    finally {
-                        await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId: ownerId }, { sessionId: ownerSession }).catch(() => { });
-                    }
-                }
-            }
+            const frameVisible = mode === "visible" && payload.value === true ? await this.cssFrameVisible(frame, snapshot.frames) : true;
             const fresh = await this.queryCss(snapshot.step, snapshot.framePath, snapshot.scopes);
             if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
                 throw new RetryablePreflightError("Selector target changed; observe again");
@@ -2461,8 +2466,8 @@ export class OpenBrowserUseCssLocator {
     getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     step() { return { selector: this.selector, ...(this.position !== undefined ? { position: this.position } : {}), before: this.before, after: this.after }; }
     filter(options) {
-        if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText", "has", "hasNot"].includes(key)) ||
-            (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined) || [options.hasText, options.hasNotText].some(value => value !== undefined && (typeof value === "string" ? value.length > 30_000 : !types.isRegExp(value))))
+        if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText", "has", "hasNot", "visible"].includes(key)) ||
+            (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined && options.visible === undefined) || (options.visible !== undefined && typeof options.visible !== "boolean") || [options.hasText, options.hasNotText].some(value => value !== undefined && (typeof value === "string" ? value.length > 30_000 : !types.isRegExp(value))))
             throw new Error("Invalid locator filter");
         const encode = (value) => typeof value === "string" ? value : { source: value.source, flags: value.flags };
         const inner = (value) => {
@@ -2483,7 +2488,7 @@ export class OpenBrowserUseCssLocator {
             depth(steps, 2);
             return steps;
         };
-        const filter = { ...(options.hasText !== undefined ? { hasText: encode(options.hasText) } : {}), ...(options.hasNotText !== undefined ? { hasNotText: encode(options.hasNotText) } : {}), ...(options.has !== undefined ? { has: inner(options.has) } : {}), ...(options.hasNot !== undefined ? { hasNot: inner(options.hasNot) } : {}) };
+        const filter = { ...(options.hasText !== undefined ? { hasText: encode(options.hasText) } : {}), ...(options.hasNotText !== undefined ? { hasNotText: encode(options.hasNotText) } : {}), ...(options.has !== undefined ? { has: inner(options.has) } : {}), ...(options.hasNot !== undefined ? { hasNot: inner(options.hasNot) } : {}), ...(options.visible !== undefined ? { visible: options.visible } : {}) };
         return new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, this.position, this.scopes, this.position === undefined ? [...this.before, filter] : this.before, this.position === undefined ? this.after : [...this.after, filter]);
     }
     async count() { return (await this.tab.queryCss(this.step(), this.framePath, this.scopes)).ids.length; }

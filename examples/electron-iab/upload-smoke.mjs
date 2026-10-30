@@ -89,6 +89,9 @@ app.whenReady().then(async()=>{
     await crossFrame.locator('input[placeholder]').first().press('Enter');assert.deepEqual(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.cssKey',returnByValue:true},{sessionId:session}).then(r=>r.result.value),{key:'Enter',trusted:true});
     await crossFrame.locator('button').first().dblclick();assert.deepEqual(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.childDouble',returnByValue:true},{sessionId:session}).then(r=>r.result.value),{trusted:true,detail:2});
     await crossFrame.locator('button').first().click();assert.equal(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.crossTrusted',returnByValue:true},{sessionId:session}).then(r=>r.result.value),true);
+    assert.equal(await crossFrame.locator('h3').filter({visible:true}).count(),1);
+    await sdk.evaluate(`Object.assign(document.querySelector('#cross').style,{width:'0px',border:'0'})`);assert.equal(await crossFrame.locator('h3').filter({visible:false}).count(),1);await sdk.evaluate(`Object.assign(document.querySelector('#cross').style,{width:'500px',border:''})`);
+    await crossFrame.locator('h3').waitFor({state:'visible',timeoutMs:5000});
     assert.equal(await crossFrame.locator('h3').isVisible(),true);assert.equal(await crossFrame.locator('button').first().isEnabled(),true);
     assert.equal(await crossFrame.locator('body').filter({hasText:/child heading/i}).locator('h3').textContent(),'Child heading');
     assert.equal(await crossFrame.locator('body').filter({has:crossFrame.locator('h3')}).count(),1);assert.equal(await crossFrame.locator('body').filter({hasNot:crossFrame.locator('h4')}).count(),1);
