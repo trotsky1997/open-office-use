@@ -77,6 +77,8 @@ try {
 
 `tab.playwright.expectPopup(() => action(), {timeoutMs})` returns a newly
 created session tab whose reported opener is `tab`; the action is sent once.
+The tab can be returned before navigation finishes, so its URL may initially
+be empty; wait for the destination before relying on it.
 `browser.tabs.list()` exposes an `openerTabId` when both tabs are in the
 same session and the backend knows the opener.
 It polls owned tabs, so a popup closed before observation or without an opener

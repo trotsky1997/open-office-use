@@ -355,3 +355,5 @@ CSS 和语义定位器新增 boundingBox，返回主 frame CSS 视口坐标，�
 DOM CUA 单击和双击在目标仍位于可见匹配集时允许无关节点变化，继续重核文档、frame、目标身份、状态、稳定位置和命中；普通 CSS 定位器仍要求匹配集合一致。隔离 Linux ARM64 Chromium 原生扩展在 TodoMVC React 实页完成全选、取消、DOM 双击编辑、旧 ID 拒绝和键盘输入；此前滚动导致无关按钮出现使双击失败。SDK 72 项通过；macOS 与 Linux ARM64 Electron 44、Linux ARM64 Chromium 原生扩展实页验证双击期间无关节点出现及旧目标拒绝。目标语义上下文仍可能在重查后变化；Windows 未测。
 
 Chrome 与 Electron 的会话标签列表提供作用域内 openerTabId；新增 tab.playwright.expectPopup，动作前记录已有标签，轮询匹配打开者，动作完成后复核结果，同一 browser 实例同一打开者只允许一个等待。SDK 73 项与 Electron 52 项通过，覆盖歧义、并发、超时和关闭；Chrome 扩展专项验证不暴露其他会话的 opener，Linux ARM64 Chromium 原生扩展及 macOS/Linux Electron 44 实页验证新标签导航与关闭。快速关闭或缺少 opener 元数据的标签可能超时；Chrome 来源未知的新标签在最终清理时释放而非关闭，Windows 未测。
+
+隔离 Linux ARM64 Chromium 原生扩展在 MDN HTML 文档点击“View this page on GitHub”，expectPopup 识别新标签，随后确认目标 GitHub URL 并关闭标签。新标签返回时 URL 曾为空，导航完成后才可读取；SDK 文档已说明这一时序。
