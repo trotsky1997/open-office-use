@@ -216,8 +216,12 @@ func (r *Relay) dispatchExtensionPayload(payload []byte) error {
 	if err := json.Unmarshal(payload, &message); err != nil {
 		return err
 	}
-	id, hasID := message["id"].(string)
+	value, hasID := message["id"]
 	if hasID {
+		id, ok := value.(string)
+		if !ok {
+			return nil
+		}
 		r.mu.Lock()
 		pending, ok := r.pending[id]
 		if ok {
@@ -232,6 +236,7 @@ func (r *Relay) dispatchExtensionPayload(payload []byte) error {
 			}
 			return pending.client.write(rewritten)
 		}
+		return nil
 	}
 	r.broadcast(payload)
 	return nil

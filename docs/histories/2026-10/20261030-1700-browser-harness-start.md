@@ -510,3 +510,5 @@ CSS 与语义 locator 的 fill、clear 和 type 正数期限覆盖准备、聚�
 CSS 与语义 locator 的 selectOption 正数期限覆盖选项检查和提交；超时停止迟到提交，已开始提交时报结果未知，并保留正常返回值。SDK 105 项检查通过，macOS Electron 实页验证取消后不改变选项及恢复后正常选择。Linux 和 Windows 本轮未验证。
 
 Linux ARM64 Chromium 150 隔离 profile 的扩展、原生消息 host 和 SDK 实测 CSS/语义 locator 的 fill、press、check 和 selectOption：延迟准备或提交后超时无迟到修改，恢复后正常操作并返回选中值；跨进程 frame 另验证 press 超时后无迟到按键及后续 fill。Windows 未测。
+
+Chrome 原生消息 relay 丢弃无对应请求的扩展响应，防止客户端断开后的迟到响应送往其他连接；双客户端回归覆盖迟到响应与正常通知。Go 全量 86 项检查和 Linux ARM64 Chromium 150 原生消息主文档及跨 frame 操作实测通过。Chrome 请求发出后的主动取消尚未贯穿宿主与扩展；Windows 未测。

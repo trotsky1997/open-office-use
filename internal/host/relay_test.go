@@ -288,3 +288,52 @@ func shortSocketDir(t *testing.T) string {
 	})
 	return dir
 }
+
+func TestRelayDropsLateResponsesAfterClientDisconnect(t *testing.T) {
+	hostIn, hostOut := net.Pipe()
+	defer hostIn.Close()
+	defer hostOut.Close()
+	extensionIn, extensionOut := net.Pipe()
+	defer extensionIn.Close()
+	defer extensionOut.Close()
+	socketDir := shortSocketDir(t)
+	socketPath := filepath.Join(socketDir, "obu.sock")
+	relay := NewRelay(Config{SocketDir: socketDir, SocketPath: socketPath}, extensionIn, hostOut)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = relay.Serve(ctx) }()
+	waitForSocket(t, socketPath)
+	first, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	waitForClients(t, relay, 2)
+	if err := wire.WriteJSON(first, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "getInfo"}); err != nil {
+		t.Fatal(err)
+	}
+	var request map[string]any
+	if err := wire.ReadJSON(hostIn, &request); err != nil {
+		t.Fatal(err)
+	}
+	_ = first.Close()
+	waitForClients(t, relay, 1)
+	if err := wire.WriteJSON(extensionOut, map[string]any{"jsonrpc": "2.0", "id": request["id"], "result": map[string]any{"secret": "private"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wire.WriteJSON(extensionOut, map[string]any{"jsonrpc": "2.0", "method": "onTabUpdated", "params": map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = second.SetReadDeadline(time.Now().Add(time.Second))
+	var received map[string]any
+	if err := wire.ReadJSON(second, &received); err != nil {
+		t.Fatal(err)
+	}
+	if received["method"] != "onTabUpdated" {
+		t.Fatalf("unexpected response delivered to another client: %#v", received)
+	}
+}
