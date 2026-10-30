@@ -129,3 +129,4 @@
 - [x] Chrome WebMCP 延迟或已取消的旧列表不会覆盖新工具注册；Linux ARM64 原生消息实测新注册仍可调用。
 - [x] Electron WebMCP 同步 Chrome 页面桥，取消时向已调用工具发送 AbortSignal 并释放标签队列；macOS Electron 实页验证。
 - [x] Linux ARM64 Electron 44.7 socket 实测 WebMCP 工具取消及挂起列表取消后的新注册调用。
+- [x] Chrome WebMCP 内容桥及后台内部等待超时向页面传播取消；Linux ARM64 原生消息实测挂起列表超时与恢复。

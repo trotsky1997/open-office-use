@@ -59,6 +59,7 @@
     const responsePromise = new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
         pending.delete(requestId);
+        window.postMessage({source:REQUEST_SOURCE,requestId,action:"cancel"}, "*");
         resolve({ ok: false, error: `WebMCP page bridge timed out after ${timeoutMs}ms` });
       }, timeoutMs);
       pending.set(requestId, { resolve, timeoutId });

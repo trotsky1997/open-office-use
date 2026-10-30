@@ -162,6 +162,7 @@ async function loadBrowserBackend() {
     context,
     { filename: BACKGROUND_PATH }
   );
+  context.__BrowserBackend.testChrome = chrome;
   return context.__BrowserBackend;
 }
 
@@ -480,4 +481,11 @@ test('canceled delayed tool list cannot replace newer registrations',async()=>{
   await runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_CANCEL',requestId:'old-list'});assert.match((await older).error,/canceled/);release();await new Promise(resolve=>setImmediate(resolve));
   const selected=latest.result.tools[0];const result=await runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_REQUEST',action:'invoke',tool_name:selected.name,registration_id:selected.registration_id,input:{},timeout_ms:1000});
   assert.equal(result.ok,true);assert.equal(result.result.result.ok,true);
+});
+
+test('WebMCP internal bridge timeout sends cancellation',async()=>{
+  const Backend=await loadBrowserBackend(),backend=new Backend(),messages=[];backend.ensureWebMcpContentScripts=async()=>{};
+  Backend.testChrome.tabs={sendMessage(_tab,message){messages.push(message);if(message.type==='OPEN_BROWSER_USE_WEBMCP_REQUEST')return new Promise(()=>{});return Promise.resolve({ok:true});}};
+  await assert.rejects(backend.sendWebMcpRequest(1,{action:'list'},15),/timed out/i);
+  assert.deepEqual(messages.map(message=>message.type),['OPEN_BROWSER_USE_WEBMCP_REQUEST','OPEN_BROWSER_USE_WEBMCP_CANCEL']);assert.equal(messages[0].requestId,messages[1].requestId);
 });

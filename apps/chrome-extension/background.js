@@ -1406,7 +1406,7 @@ class BrowserBackend {
 
   async sendWebMcpRequest(tabId, request, timeoutMs, signal) {
     if (signal?.aborted) throw new Error("WebMCP request canceled");
-    await this.ensureWebMcpContentScripts(tabId);
+    await this.ensureWebMcpContentScripts(tabId, signal);
     if (signal?.aborted) throw new Error("WebMCP request canceled");
     const requestId = crypto.randomUUID();
     const abort = () => { void chrome.tabs.sendMessage(tabId, {type:"OPEN_BROWSER_USE_WEBMCP_CANCEL", requestId}).catch(() => {}); };
@@ -1419,7 +1419,8 @@ class BrowserBackend {
           ...request
         });
       });
-    } finally { signal?.removeEventListener("abort", abort); }
+    } catch (error) { abort(); throw error; }
+    finally { signal?.removeEventListener("abort", abort); }
     if (response?.ok !== true) {
       throw new Error(
         typeof response?.error === "string" ? response.error : "WebMCP page bridge request failed"
@@ -1428,7 +1429,9 @@ class BrowserBackend {
     return response.result;
   }
 
-  async ensureWebMcpContentScripts(tabId) {
+  async ensureWebMcpContentScripts(tabId, signal) {
+    const check = () => { if (signal?.aborted) throw new Error("WebMCP request canceled"); };
+    check();
     try {
       const response = await chrome.tabs.sendMessage(tabId, {
         type: "OPEN_BROWSER_USE_WEBMCP_PING"
@@ -1437,6 +1440,7 @@ class BrowserBackend {
         return;
       }
     } catch {}
+    check();
 
     try {
       await chrome.scripting.executeScript({
@@ -1444,6 +1448,7 @@ class BrowserBackend {
         target: { tabId },
         world: "MAIN"
       });
+      check();
       await chrome.scripting.executeScript({
         files: ["content-webmcp-bridge.js"],
         target: { tabId },
@@ -1455,6 +1460,7 @@ class BrowserBackend {
       );
     }
 
+    check();
     try {
       const response = await chrome.tabs.sendMessage(tabId, {
         type: "OPEN_BROWSER_USE_WEBMCP_PING"
@@ -1463,6 +1469,7 @@ class BrowserBackend {
         return;
       }
     } catch {}
+    check();
     throw new Error(`WebMCP bridge is unavailable in tab ${tabId}`);
   }
 
