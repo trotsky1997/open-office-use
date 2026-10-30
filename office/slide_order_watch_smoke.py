@@ -14,6 +14,7 @@ import session
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root/'deck.pptx'; draft = root/'draft'
     open_office_use.author({'slides':[{'title':'One'}, {'title':'Two'}]}, source)
+    linked_deck = Presentation(source); linked_deck.slides[0].shapes.title.text_frame.paragraphs[0].runs[0].hyperlink.address = 'https://example.com/source'; linked_deck.save(source)
     session.start(draft, source=source)
     server = subprocess.Popen([sys.executable, str(Path(open_office_use.__file__)), 'watch', str(draft)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
@@ -34,7 +35,7 @@ with tempfile.TemporaryDirectory() as tmp:
         except urllib.error.HTTPError as exc: assert exc.code == 400
         else: raise AssertionError('Stale revision accepted')
         assert session.info(draft)['latest_revision'] == 1
-        actions = post('slide-navigation-read',{'revision':1}); assert actions['complete'] and not actions['actions']
+        actions = post('slide-navigation-read',{'revision':1}); assert actions['complete'] and len(actions['actions']) == 1 and actions['actions'][0]['kind'] == 'text_run' and actions['actions'][0]['target_url'] == 'https://example.com/source'
         edited_deck = Presentation(result['file']); shape_id = edited_deck.slides[1].shapes.title.shape_id
         navigation = {'base_revision':1,'snapshot_sha256':actions['snapshot_sha256'],'path':f'/slide[2]/shape[@id={shape_id}]','target_slide':1}
         for bad in (dict(navigation,snapshot_sha256='0'*64),dict(navigation,snapshot_sha256=None)):
@@ -42,9 +43,10 @@ with tempfile.TemporaryDirectory() as tmp:
             except urllib.error.HTTPError as exc: assert exc.code == 400
             else: raise AssertionError('Invalid navigation snapshot accepted')
         nav_saved = post('slide-navigation-save',navigation); assert nav_saved['revision'] == 2
-        updated = post('slide-navigation-read',{'revision':2}); assert updated['actions'][0]['target_slide'] == 1
+        updated = post('slide-navigation-read',{'revision':2}); assert [item['target_slide'] for item in updated['actions'] if item['kind'] == 'shape'] == [1]
         removed = post('slide-navigation-save',{'base_revision':2,'snapshot_sha256':updated['snapshot_sha256'],'path':navigation['path'],'target_slide':None})
-        assert removed['revision'] == 3 and not post('slide-navigation-read',{'revision':3})['actions']
+        after_remove = post('slide-navigation-read',{'revision':3})
+        assert removed['revision'] == 3 and len(after_remove['actions']) == 1 and after_remove['actions'][0]['kind'] == 'text_run' and after_remove['actions'][0]['target_url'] == 'https://example.com/source'
 
     finally:
         server.terminate(); server.wait(timeout=10)

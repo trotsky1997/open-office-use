@@ -257,7 +257,7 @@ def reorder(source, output, order, expected_sha256=None):
     return ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
 
 def inspect_navigation(file):
-    """Inspect shape-level click actions without following their targets."""
+    """Inspect shape and text-run click/hover actions without following targets."""
     source = Path(file).resolve(strict=True)
     if source.suffix.lower() != '.pptx' or source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Navigation inspection requires a PPTX up to 128 MiB')
     with tempfile.TemporaryDirectory(prefix='office-slide-navigation-') as tmp:
@@ -265,12 +265,50 @@ def inspect_navigation(file):
         with zipfile.ZipFile(frozen) as archive:
             entries = archive.infolist()
             if len(entries) > 5000 or len({item.filename for item in entries}) != len(entries) or sum(item.file_size for item in entries) > 128 * 1024 * 1024: raise ValueError('Presentation exceeds package limits or contains duplicate parts')
-        presentation = Presentation(frozen); all_slides = presentation.slides; positions = {}; issues = set(); actions = []; scanned = 0
+        presentation = Presentation(frozen); all_slides = presentation.slides; positions = {}; issues = set(); actions = []; scanned = 0; runs_scanned = 0
         for number, slide in enumerate(all_slides, 1):
             part = str(slide.part.partname)
             if part in positions: issues.add('shared_slide_part')
             positions[part] = number
         if len(all_slides) > 1000: issues.add('slide_limit')
+        def record(link, shape, slide_number, shape_id, path, kind, trigger, text=None):
+            if len(actions) >= 200: issues.add('action_limit'); return
+            action = link.get('action', ''); identity = link.get(R + 'id')
+            entry = {'slide':slide_number, 'shape_id':shape_id, 'path':path, 'kind':kind, 'trigger':trigger, 'action':action[:500], 'status':'unresolved', 'target_slide':None, 'target_url':None}
+            if text is not None:
+                entry['text'] = text[:500]; entry['text_truncated'] = len(text) > 500
+                if entry['text_truncated']: issues.add('text_truncated')
+            if len(action) > 500: issues.add('action_truncated')
+            if identity:
+                try: relation = shape.part.rels[identity]
+                except KeyError: issues.add('missing_action_relationship')
+                else:
+                    if relation.is_external:
+                        target = relation.target_ref; entry['target_url'] = target[:2048]; entry['status'] = 'external'
+                        if len(target) > 2048: issues.add('target_truncated')
+                    elif relation.reltype == RELATIONSHIP_TYPE.SLIDE and action == 'ppaction://hlinksldjump':
+                        entry['target_slide'] = positions.get(str(relation.target_part.partname)); entry['status'] = 'slide' if entry['target_slide'] is not None else 'unresolved'
+                        if entry['target_slide'] is None: issues.add('target_slide_unavailable')
+                    else: issues.add('unsupported_action_relationship')
+            else: issues.add('unsupported_action')
+            actions.append(entry)
+        def text_actions(frame, shape, slide_number, shape_id, prefix):
+            nonlocal runs_scanned
+            known = set()
+            for paragraph_index, paragraph in enumerate(frame.paragraphs, 1):
+                for run_index, run in enumerate(paragraph._p.findall(A + 'r'), 1):
+                    if runs_scanned >= 100000: issues.add('text_run_limit'); return
+                    runs_scanned += 1
+                    properties = run.findall(A + 'rPr')
+                    if len(properties) > 1: issues.add('ambiguous_run_properties')
+                    if not properties: continue
+                    path = f'{prefix}/paragraph[{paragraph_index}]/run[{run_index}]'
+                    text = run.findtext(A + 't', default='')
+                    for tag, trigger in (('hlinkClick','click'), ('hlinkMouseOver','hover')):
+                        links = properties[0].findall(A + tag); known.update(links)
+                        if len(links) > 1: issues.add('ambiguous_text_actions')
+                        for link in links[:1]: record(link, shape, slide_number, shape_id, path, 'text_run', trigger, text)
+            if any(node.tag in (A + 'hlinkClick', A + 'hlinkMouseOver') and node not in known for node in frame._txBody.iter()): issues.add('unsupported_text_action')
         def walk(shapes, slide_number, prefix, depth):
             nonlocal scanned
             seen_ids = set()
@@ -287,32 +325,23 @@ def inspect_navigation(file):
                 seen_ids.add(shape_id)
                 path = f'{prefix}/{kind}[@id={shape_id}]'
                 metadata = next(shape._element.iter(P + 'cNvPr'), None)
-                links = metadata.findall(A + 'hlinkClick') if metadata is not None else []
-                if len(links) > 1: issues.add('ambiguous_click_actions')
-                for link in links[:1]:
-                    if len(actions) >= 200: issues.add('action_limit'); break
-                    action = link.get('action', ''); identity = link.get(R + 'id'); entry = {'slide':slide_number, 'shape_id':shape_id, 'path':path, 'action':action[:500], 'status':'unresolved', 'target_slide':None, 'target_url':None}
-                    if len(action) > 500: issues.add('action_truncated')
-                    if identity:
-                        try: relation = shape.part.rels[identity]
-                        except KeyError: issues.add('missing_action_relationship')
-                        else:
-                            if relation.is_external:
-                                target = relation.target_ref; entry['target_url'] = target[:2048]; entry['status'] = 'external'
-                                if len(target) > 2048: issues.add('target_truncated')
-                            elif relation.reltype == RELATIONSHIP_TYPE.SLIDE and action == 'ppaction://hlinksldjump':
-                                entry['target_slide'] = positions.get(str(relation.target_part.partname)); entry['status'] = 'slide' if entry['target_slide'] is not None else 'unresolved'
-                                if entry['target_slide'] is None: issues.add('target_slide_unavailable')
-                            else: issues.add('unsupported_action_relationship')
-                    else: issues.add('unsupported_action')
-                    actions.append(entry)
+                if metadata is not None:
+                    for tag, trigger in (('hlinkClick','click'), ('hlinkHover','hover')):
+                        links = metadata.findall(A + tag)
+                        if len(links) > 1: issues.add('ambiguous_shape_actions')
+                        for link in links[:1]: record(link, shape, slide_number, shape_id, path, 'shape', trigger)
+                if shape.has_text_frame: text_actions(shape.text_frame, shape, slide_number, shape_id, path)
+                if kind == 'table':
+                    for row_index, row in enumerate(shape.table.rows, 1):
+                        for cell_index, cell in enumerate(row.cells, 1):
+                            text_actions(cell.text_frame, shape, slide_number, shape_id, f'{path}/tr[{row_index}]/tc[{cell_index}]')
                 if kind == 'group':
                     if depth >= 8: issues.add('group_depth')
                     else: walk(shape.shapes, slide_number, path, depth + 1)
         for number, slide in enumerate(all_slides, 1):
             if number > 1000 or scanned >= 10000: break
             walk(slide.shapes, number, f'/slide[{number}]', 0)
-        return {'snapshot_sha256':digest, 'slides_total':len(all_slides), 'shapes_scanned':scanned, 'actions':actions, 'complete':not issues, 'issues':sorted(issues), 'scope':'Shape-level click actions; text-run links, slide masters and mouse-over actions are excluded.'}
+        return {'snapshot_sha256':digest, 'slides_total':len(all_slides), 'shapes_scanned':scanned, 'text_runs_scanned':runs_scanned, 'actions':actions, 'complete':not issues, 'issues':sorted(issues), 'scope':'Slide shape and regular text-run click/hover actions, including table cells; notes, masters, layouts and other text constructs are excluded.'}
 
 
 def find_paragraph(tree, path):

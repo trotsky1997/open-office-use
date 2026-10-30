@@ -474,13 +474,13 @@ def session_apply(directory: str, base_revision: int, operations: list[dict[str,
 
 @server.tool()
 def inspect_slide_navigation(file: str) -> dict[str, Any]:
-    """Inspect shape-level PowerPoint click actions and their slide or external targets."""
+    """Inspect slide shape and regular text-run click/hover actions and their slide or external targets."""
     return slides.inspect_navigation(file)
 
 
 @server.tool()
 def session_inspect_slide_navigation(directory: str, revision: int) -> dict[str, Any]:
-    """Inspect shape-level click actions in a saved PowerPoint session revision."""
+    """Inspect slide shape and regular text-run click/hover actions in a PowerPoint session revision."""
     return session.inspect_slide_navigation(directory, revision)
 
 

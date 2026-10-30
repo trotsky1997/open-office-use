@@ -425,3 +425,5 @@ Added native shape-to-slide navigation and bounded shape-click action inspection
 Added targeted CLI/MCP setting and removal of existing PowerPoint shape navigation, with shared-relationship and snapshot checks.
 
 Added a snapshot-bound viewer panel for inspecting and editing slide navigation, with stale-path and pending-edit protection.
+
+Extended PowerPoint navigation inventory to text-run and hover actions and kept viewer editing restricted to shape click jumps.

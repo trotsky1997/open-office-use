@@ -11,6 +11,8 @@ from pptx import Presentation
 from pptx.util import Inches
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.opc.constants import RELATIONSHIP_TYPE
+from lxml import etree
 import open_office_use
 import officecli_backend
 import slide_text_check
@@ -96,6 +98,20 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('External click action silently replaced')
     assert session.info(external_draft)['latest_revision'] == 0
+    text_nav = root/'text-navigation.pptx'
+    text_spec = {'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':5,'height':1,'target_slide':2,'paragraphs':[{'runs':[{'text':'Source','url':'https://example.org/source'},{'text':'Internal'}]}]},{'type':'table','x':1,'y':2,'width':4,'height':1,'rows':[[{'paragraphs':[{'runs':[{'text':'Table link','url':'https://example.org/table'}]}]}]]}]},{'title':'Destination'}]}
+    open_office_use.author(text_spec,text_nav); editable = Presentation(text_nav); shape = editable.slides[0].shapes[0]; frame = shape.text_frame.paragraphs[0]
+    a = '{http://schemas.openxmlformats.org/drawingml/2006/main}'; r = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+    hover_id = shape.part.relate_to('https://example.org/hover',RELATIONSHIP_TYPE.HYPERLINK,is_external=True)
+    hover = etree.SubElement(shape._element.nvSpPr.cNvPr,a+'hlinkHover'); hover.set(r+'id',hover_id)
+    run_hover = etree.SubElement(frame.runs[0]._r.get_or_add_rPr(),a+'hlinkMouseOver'); run_hover.set(r+'id',hover_id)
+    internal_id = shape.part.relate_to(editable.slides[1].part,RELATIONSHIP_TYPE.SLIDE)
+    run_internal = etree.SubElement(frame.runs[1]._r.get_or_add_rPr(),a+'hlinkClick'); run_internal.set(r+'id',internal_id); run_internal.set('action','ppaction://hlinksldjump')
+    editable.save(text_nav)
+    action_report = slides.inspect_navigation(text_nav); assert action_report['complete'], action_report
+    assert [(item['kind'],item['trigger'],item['status']) for item in action_report['actions']] == [('shape','click','slide'),('shape','hover','external'),('text_run','click','external'),('text_run','hover','external'),('text_run','click','slide'),('text_run','click','external')], action_report
+    assert action_report['actions'][4]['target_slide'] == 2 and action_report['actions'][5]['path'].endswith('/tr[1]/tc[1]/paragraph[1]/run[1]')
+    code, validation, _ = officecli_backend.invoke('validate',text_nav); assert code == 0 and validation['success'],validation
     nav_draft = root/'navigation-draft'; session.start(nav_draft,source=nav_file)
     reordered = session.reorder_slides(nav_draft,0,[2,1],expected_sha256=nav['snapshot_sha256'])
     after_nav = session.inspect_slide_navigation(nav_draft,1)
