@@ -184,6 +184,87 @@ FORMULA_SCAN_MAX_CELLS = 1000000
 FORMULA_SCAN_MAX_ISSUES = 200
 
 
+def search_cells(file, query):
+    """Search stored worksheet text and formula text in a saved XLSX snapshot."""
+    if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
+        raise ValueError('Search text must contain 1 to 200 characters without control characters')
+    source = Path(file).resolve(strict=True)
+    if source.suffix.lower() != '.xlsx': raise ValueError('Cell search requires an XLSX file')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+    with tempfile.TemporaryDirectory(prefix='office-cell-search-') as tmp:
+        snapshot = Path(tmp) / 'workbook.xlsx'; shutil.copyfile(source, snapshot)
+        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+        try:
+            with zipfile.ZipFile(snapshot) as archive:
+                entries = archive.infolist(); names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+                workbook = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
+                try:
+                    sheets = [(s.title, s.sheet_state, s._worksheet_path, s._shared_strings) for s in workbook.worksheets]
+                    chartsheets = len(workbook.sheetnames) - len(sheets)
+                    matches, scanned, unverified, scanned_sheets = [], 0, 0, []
+                    complete = True; match_count = 0
+                    ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                    for name, state, path, strings in sheets:
+                        if path not in names: raise ValueError(f'Cannot locate worksheet XML: {name}')
+                        with archive.open(path) as stream:
+                            stack, sheet_data = [], None
+                            for event, element in ET.iterparse(stream, events=('start', 'end')):
+                                tag = element.tag[len(ns):] if isinstance(element.tag, str) and element.tag.startswith(ns) else ''
+                                if event == 'start':
+                                    if not stack and element.tag != ns + 'worksheet': raise ValueError(f'Invalid worksheet XML: {name}')
+                                    if tag == 'sheetData' and stack[-1:] == ['worksheet']:
+                                        if sheet_data is not None: raise ValueError(f'Duplicate worksheet data: {name}')
+                                        sheet_data = element
+                                    stack.append(tag); continue
+                                if stack[-3:] == ['sheetData', 'row', 'c']:
+                                    if scanned >= 100000: complete = False; break
+                                    scanned += 1; children = {child.tag: child for child in element}
+                                    formula, value, inline = children.get(ns + 'f'), children.get(ns + 'v'), children.get(ns + 'is')
+                                    kind, text, uncertain = None, None, False
+                                    if formula is not None:
+                                        kind = 'formula'; text = '=' + formula.text if formula.text else None
+                                        uncertain = text is None
+                                    elif element.get('t') == 's':
+                                        raw = value.text if value is not None else None
+                                        if raw is None or not raw.isdecimal() or len(raw) > 10 or int(raw) >= len(strings): raise ValueError(f'Invalid shared string index in {name}')
+                                        kind, text, uncertain = 'text', strings[int(raw)], True
+                                    elif element.get('t') == 'inlineStr' and inline is not None:
+                                        kind = 'text'; text = ''.join(node.text or '' for child in inline for node in ([child] if child.tag == ns + 't' else child.findall(ns + 't') if child.tag == ns + 'r' else []))
+                                        uncertain = any(child.tag not in (ns + 't', ns + 'r') or child.tag == ns + 'r' and any(item.tag not in (ns + 't', ns + 'rPr') for item in child) for child in inline)
+                                    elif element.get('t') == 'inlineStr':
+                                        uncertain = True
+                                    elif element.get('t') == 'str' and value is not None:
+                                        kind, text = 'text', value.text or ''
+                                    if text is not None and (re.search(r'_x[0-9a-fA-F]{4}_', text) or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', element.get('r', ''))): uncertain = True
+                                    if uncertain: unverified += 1
+                                    if text is not None and query in text:
+                                        match_count += 1
+                                        if len(matches) < 200:
+                                            index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
+                                            matches.append({'sheet': name, 'sheet_state': state, 'cell': element.get('r'), 'kind': kind,
+                                                            'excerpt': text[start:end], 'excerpt_start': start, 'text_length': len(text), 'text_complete': not uncertain})
+                                    element.clear()
+                                elif stack[-2:] == ['sheetData', 'row']:
+                                    element.clear()
+                                    if sheet_data is not None: sheet_data.remove(element)
+                                stack.pop()
+                            if sheet_data is None: raise ValueError(f'Worksheet has no sheet data: {name}')
+                        scanned_sheets.append({'sheet': name, 'complete': complete})
+                        if not complete: break
+                    return {'query': query, 'case_sensitive': True, 'matches': matches, 'match_count': match_count,
+                            'matches_truncated': match_count > len(matches), 'stored_cells_scanned': scanned,
+                            'sheets': scanned_sheets, 'total_worksheets': len(sheets), 'chartsheets_omitted': chartsheets,
+                            'complete': complete and unverified == 0, 'scan_complete': complete, 'unverified_text_cells': unverified,
+                            'limits': {'stored_cells': 100000, 'matches': 200},
+                            'notes': ['Search covers stored text and formula text, not calculated values or chart content.',
+                                      'Shared strings, shared formula followers and Excel escape sequences may be unverified.']}
+                finally: workbook.close()
+        except (zipfile.BadZipFile, ET.ParseError) as exc:
+            raise ValueError(f'Invalid workbook package or worksheet XML: {exc}') from exc
+
+
 def scan_formulas(file):
     """Inspect stored formula caches and error cells across saved worksheets."""
     source = Path(file).resolve(strict=True)

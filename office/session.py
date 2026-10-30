@@ -198,6 +198,11 @@ def inspect_workbook(directory, revision):
     return {'revision': revision, **spreadsheet.inspect_workbook(source)}
 
 
+def search_cells(directory, revision, query):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **spreadsheet.search_cells(source, query)}
+
+
 def scan_chart_caches(directory, revision):
     state = info(directory); source = revision_file(state, revision)
     return {'revision': revision, **chart_cache.scan(source)}

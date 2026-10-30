@@ -52,6 +52,18 @@ def session_inspect_workbook(directory: str, revision: int) -> dict[str, Any]:
 
 
 @server.tool()
+def search_cells(file: str, query: str) -> dict[str, Any]:
+    """Search saved XLSX worksheet text and formulas; check scan and text completeness."""
+    return spreadsheet.search_cells(file, query)
+
+
+@server.tool()
+def session_search_cells(directory: str, revision: int, query: str) -> dict[str, Any]:
+    """Search worksheet text and formulas in an exact saved XLSX revision."""
+    return session.search_cells(directory, revision, query)
+
+
+@server.tool()
 def scan_chart_caches(file: str) -> dict[str, Any]:
     """Compare supported chart caches with stored worksheet values; check completeness and formula freshness."""
     return chart_cache.scan(file)
