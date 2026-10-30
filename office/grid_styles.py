@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
 import officecli_backend
 import ooxml
+import snapshot as snapshots
 
 X = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
 REL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
@@ -138,7 +139,14 @@ def prepare_cells(root, addresses):
     return found
 
 
-def apply(source, output, sheet, addresses, operations):
+def apply(source, output, sheet, addresses, operations, expected_sha256=None):
+    with tempfile.TemporaryDirectory(prefix='office-grid-source-') as tmp:
+        frozen, digest = snapshots.copy(source, tmp)
+        if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Workbook snapshot changed; reload the grid')
+        return _apply(frozen, output, sheet, addresses, operations)
+
+
+def _apply(source, output, sheet, addresses, operations):
     source = Path(source); output = Path(output)
     with zipfile.ZipFile(source) as archive:
         if any(name.startswith('_xmlsignatures/') for name in archive.namelist()): raise ValueError('Digitally signed workbooks are not supported for formatting')

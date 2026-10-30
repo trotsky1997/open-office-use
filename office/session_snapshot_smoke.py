@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from docx import Document
+from openpyxl import Workbook
 import officecli_backend
 import ooxml
 import session
@@ -52,4 +53,19 @@ with tempfile.TemporaryDirectory() as tmp:
     output = root/'ooxml-rejected.docx'; source.write_bytes(original.read_bytes())
     reject(source, lambda: ooxml.edit_xml(source, output, lambda file: 'word/document.xml', lambda tree, archive: None))
     assert not output.exists()
+    book = Workbook(); book.active['A1'] = 'Original'; workbook = root/'source.xlsx'; book.save(workbook)
+    book.active['A1'] = 'Changed'; changed = root/'changed.xlsx'; book.save(changed)
+    real_read_grid = session.read_grid
+    for mode in ('edit', 'format'):
+        draft = root/('grid-' + mode); session.start(draft, source=workbook)
+        revision = draft/'revision-000000.xlsx'
+        def read_then_change(*args):
+            result = real_read_grid(*args); revision.write_bytes(changed.read_bytes()); return result
+        with patch.object(session, 'read_grid', side_effect=read_then_change):
+            try:
+                if mode == 'edit': session.edit_grid(draft, 0, 'Sheet', 'A1', [{'cell':'A1','value':'Updated'}])
+                else: session.format_grid(draft, 0, 'Sheet', 'A1', 'A1', {'bold':True})
+            except ValueError as exc: assert 'snapshot changed' in str(exc)
+            else: raise AssertionError('Changed grid source accepted')
+        assert session.info(draft)['latest_revision'] == 0
 print('Session snapshot smoke passed: start, batch, apply, restore and export')

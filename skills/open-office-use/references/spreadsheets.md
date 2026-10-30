@@ -42,3 +42,5 @@ Chart authoring caches literal date sources using the workbook epoch. Cache scan
 Daily line and column chart categories use a native date axis when date values are detected; `category_type: "date"` enables it for whole-day serials or formula sources, and `date_format` controls axis labels. For sub-day timelines use `type: "scatter"` with datetime X values and an appropriate `date_format`; numerical scatter plots also use a numeric X axis.
 
 Chart specifications accept `series_colors` as one six-digit RGB string per Y series, `legend`, `show_gridlines`, and `show_values` (numeric data labels) as booleans, and finite numeric `y_min` / `y_max` with the minimum below the maximum. Line and scatter series use straight segments. Inspect the rendered output in the target application.
+
+Grid reads return `snapshot_sha256`. Pass it as `expected_sha256` to `session_edit_grid` or `session_format_grid` when editing a previously inspected grid; a changed source is rejected. The viewer uses this check for value and formatting edits.

@@ -17,6 +17,7 @@ import cell_text
 import grid_styles
 import officecli_backend
 import ooxml
+import snapshot as snapshots
 import spreadsheet
 
 X = grid_styles.X
@@ -272,7 +273,14 @@ def remove_calculation_chain(archive, manifest):
     return {rel_path: ooxml.serialize_xml(rel_tree, rel_raw), '[Content_Types].xml': ooxml.serialize_xml(manifest, archive.read('[Content_Types].xml')), path: None}, 'removed'
 
 
-def apply(source, output, sheet, changes, operations):
+def apply(source, output, sheet, changes, operations, expected_sha256=None):
+    with tempfile.TemporaryDirectory(prefix='office-grid-source-') as tmp:
+        frozen, digest = snapshots.copy(source, tmp)
+        if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Workbook snapshot changed; reload the grid')
+        return _apply(frozen, output, sheet, changes, operations)
+
+
+def _apply(source, output, sheet, changes, operations):
     source = Path(source); output = Path(output); targets = {change['cell']: change['value'] for change in changes}
     literal = {change['cell'] for change in changes if change.get('type') == 'text'}
     old_dynamic = unexpanded_dynamic_anchors(source, sheet, set(targets))

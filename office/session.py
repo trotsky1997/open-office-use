@@ -935,15 +935,18 @@ def resolve_grid_lists(source, sheet, validation):
 
 
 def read_grid(directory, base_revision, sheet, cell_range):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx': raise ValueError('Grid editing requires an XLSX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    with tempfile.TemporaryDirectory(prefix='office-grid-read-') as tmp:
+        frozen, digest = snapshots.copy(source, tmp)
+        return {**_read_grid(directory, base_revision, sheet, cell_range, frozen), 'snapshot_sha256': digest}
+
+
+def _read_grid(directory, base_revision, sheet, cell_range, source):
     if not isinstance(sheet, str) or not sheet or '/' in sheet or '\x00' in sheet:
         raise ValueError('Invalid sheet name')
     min_col, min_row, max_col, max_row = grid_bounds(cell_range)
-    state = info(directory)
-    source = revision_file(state, base_revision)
-    if state['format'] != 'xlsx':
-        raise ValueError('Grid editing requires an XLSX session')
-    if base_revision != state['latest_revision']:
-        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     constraints = spreadsheet.worksheet_constraints(source, sheet, (min_col, min_row, max_col, max_row), True, True)
     result = spreadsheet.read_range(source, sheet, cell_range, include_style=True)
     complex_addresses = {f'{get_column_letter(min_col + col_index)}{min_row + row_index}' for row_index, row in enumerate(result['rows']) for col_index, cell in enumerate(row) if isinstance(cell.get('formula'), dict)}
@@ -1223,10 +1226,11 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
             'old_name': old_name, 'new_name': new_name, 'snapshot_sha256': digest, 'rewritten_references': rewrite_count, 'formula_cache_effect': result['formula_cache_effect'], 'chart_cache_effect': 'may_be_stale'}
 
 
-def edit_grid(directory, base_revision, sheet, cell_range, changes):
+def edit_grid(directory, base_revision, sheet, cell_range, changes, expected_sha256=None):
     if not isinstance(changes, list) or not changes or len(changes) > 200:
         raise ValueError('Provide 1 to 200 changed cells')
     grid = read_grid(directory, base_revision, sheet, cell_range)
+    if expected_sha256 is not None and grid['snapshot_sha256'] != expected_sha256: raise ValueError('Workbook snapshot changed; reload the grid')
     min_col, min_row, max_col, max_row = grid_bounds(cell_range)
     original = {cell['cell']: cell for row in grid['rows'] for cell in row}
     seen, operations, normalized = set(), [], []
@@ -1262,12 +1266,12 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
-    try: result = grid_values.apply(source, output, sheet, normalized, operations)
+    try: result = grid_values.apply(source, output, sheet, normalized, operations, expected_sha256=grid['snapshot_sha256'])
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True, 'calculation_chain': result['calculation_chain'], 'dynamic_formula_cells': result['dynamic_formula_cells'], 'data_validation': {'evaluated': False, 'coverage_complete': grid['data_validation']['complete'], 'affected_cells': sorted(seen & {address for rule in grid['data_validation']['rules'] for address in rule['cells']})}}
 
 
-def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):
+def format_grid(directory, base_revision, sheet, cell_range, style_range, properties, expected_sha256=None):
     allowed = {'bold', 'italic', 'underline', 'font_name', 'font_size', 'font_color', 'fill', 'horizontal', 'vertical', 'wrap', 'numberformat', 'border', 'border_color', 'border_top', 'border_bottom', 'border_left', 'border_right', 'border_scope', 'border_top_color', 'border_bottom_color', 'border_left_color', 'border_right_color'}
     if not isinstance(properties, dict) or not properties or not set(properties) <= allowed:
         raise ValueError('Provide supported cell formatting properties')
@@ -1318,6 +1322,7 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
             raise ValueError('Number format must contain 1 to 120 characters')
         props['numberformat'] = value
     grid = read_grid(directory, base_revision, sheet, cell_range)
+    if expected_sha256 is not None and grid['snapshot_sha256'] != expected_sha256: raise ValueError('Workbook snapshot changed; reload the grid')
     if grid['sheet_protected']: raise ValueError('Grid formatting is unavailable for protected worksheets')
     c1, r1, c2, r2 = grid_bounds(cell_range)
     sc1, sr1, sc2, sr2 = grid_bounds(style_range)
@@ -1346,7 +1351,7 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
-    try: result = grid_styles.apply(source, output, sheet, [op['path'].rsplit('/', 1)[1] for op in operations], operations)
+    try: result = grid_styles.apply(source, output, sheet, [op['path'].rsplit('/', 1)[1] for op in operations], operations, expected_sha256=grid['snapshot_sha256'])
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect']}
 

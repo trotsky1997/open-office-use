@@ -260,3 +260,5 @@ Slide inventory exposes revision-bound positions and supported section membershi
 The PPTX viewer supports inspecting slide order and saving a complete new order; snapshot and revision checks protect the request, and package/section limits apply.
 
 Shared OOXML part selection and rewriting use one checked snapshot; slide reorder relationships and viewer hash checks bind to that snapshot. Preprocessing outside this helper and external writers still need independent consistency review.
+
+Grid read, value edit and formatting now use snapshot-bound checks and allow an expected hash; viewer value/style edits bind to the loaded grid. Other grid mutations remain to be reviewed.

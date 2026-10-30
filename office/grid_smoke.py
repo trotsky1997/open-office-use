@@ -134,7 +134,11 @@ with tempfile.TemporaryDirectory() as tmp:
             with urllib.request.urlopen(request, timeout=60) as response:
                 return json.loads(response.read())
         assert post('sheets', {'base_revision': 1})['sheets'] == ['Sales Data']
-        assert post('grid', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2'})['rows'][1][1]['formula'] == '=B1*3'
+        loaded_grid = post('grid', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2'})
+        assert loaded_grid['rows'][1][1]['formula'] == '=B1*3'
+        try: post('grid-edit', {'base_revision':1,'sheet':'Sales Data','cell_range':'A1:C2','changes':[{'cell':'A1','value':'X'}],'snapshot_sha256':'0'*64})
+        except urllib.error.HTTPError as error: assert error.code == 400
+        else: raise AssertionError('Stale grid snapshot accepted')
         payload = {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'changes': [{'cell': 'A1', 'value': 'Updated'}]}
         try:
             post('grid-edit', payload, 'http://evil.test')
@@ -144,10 +148,11 @@ with tempfile.TemporaryDirectory() as tmp:
         sizing = {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'target_range': 'B1', 'column_width': 20, 'row_height': 28}
         try: post('grid-resize', sizing, 'http://evil.test'); raise AssertionError('Cross-origin sizing accepted')
         except urllib.error.HTTPError as error: assert error.code == 403
-        assert post('grid-format', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'style_range': 'B1', 'properties': {'bold': True, 'border': 'thin', 'border_scope': 'outline', 'border_color': '336699'}})['revision'] == 2
+        assert post('grid-format', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'style_range': 'B1', 'properties': {'bold': True, 'border': 'thin', 'border_scope': 'outline', 'border_color': '336699'}, 'snapshot_sha256':loaded_grid['snapshot_sha256']})['revision'] == 2
         formatted = load_workbook(draft / 'revision-000002.xlsx').active['B1']
         assert formatted.border.left.style == 'thin' and formatted.border.left.color.rgb[-6:] == '336699'
         payload['base_revision'] = 2
+        payload['snapshot_sha256'] = post('grid', {'base_revision':2,'sheet':'Sales Data','cell_range':'A1:C2'})['snapshot_sha256']
         assert post('grid-edit', payload)['revision'] == 3
         assert load_workbook(draft / 'revision-000003.xlsx').active['A1'].value == 'Updated'
         request = {'before': 0, 'after': 3, 'sheet': 'Sales Data', 'cell_range': 'A1:C2'}

@@ -220,15 +220,15 @@ def session_rename_table_column(directory: str, base_revision: int, sheet: str, 
 
 
 @server.tool()
-def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
+def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]], expected_sha256: str | None = None) -> dict[str, Any]:
     """Edit grid values; each change may set type to text. Unrelated caches are retained; dynamic formula anchors are returned for spill review, validation rules are not evaluated, and recalculation is requested."""
-    return session.edit_grid(directory, base_revision, sheet, cell_range, changes)
+    return session.edit_grid(directory, base_revision, sheet, cell_range, changes, expected_sha256)
 
 
 @server.tool()
-def session_format_grid(directory: str, base_revision: int, sheet: str, cell_range: str, style_range: str, properties: dict[str, Any]) -> dict[str, Any]:
+def session_format_grid(directory: str, base_revision: int, sheet: str, cell_range: str, style_range: str, properties: dict[str, Any], expected_sha256: str | None = None) -> dict[str, Any]:
     """Apply supported formatting while retaining formula caches; unsupported styles, protected sheets and merged placeholders are rejected."""
-    return session.format_grid(directory, base_revision, sheet, cell_range, style_range, properties)
+    return session.format_grid(directory, base_revision, sheet, cell_range, style_range, properties, expected_sha256)
 
 
 @server.tool()

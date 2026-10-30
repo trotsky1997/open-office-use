@@ -390,7 +390,7 @@ async function loadGrid(target=null) {
  try {
   const response=await fetch('grid', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,sheet,cell_range})});
   const data=await response.json(); if (!response.ok) throw new Error(data.error || 'Could not load range');
-  if (data.revision !== current || pinned !== null || sheet !== document.getElementById('grid-sheet').value || cell_range !== document.getElementById('grid-range').value) throw new Error('Version or range changed; load again.');
+  if (data.revision !== current || data.snapshot_sha256 !== displayedHash || pinned !== null || sheet !== document.getElementById('grid-sheet').value || cell_range !== document.getElementById('grid-range').value) throw new Error('Version or range changed; load again.');
   const table=document.createElement('table'); const head=document.createElement('thead'), header=document.createElement('tr');
   header.appendChild(document.createElement('th'));
   for (const cell of data.rows[0]) { const th=document.createElement('th'); th.scope='col'; th.textContent=cell.cell.replace(/[0-9]+$/, ''); header.appendChild(th); }
@@ -440,7 +440,7 @@ async function loadGrid(target=null) {
    }
    body.appendChild(tr);
   }
-  table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range,sheet_protected:data.sheet_protected};
+  table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range,snapshot_sha256:data.snapshot_sha256,sheet_protected:data.sheet_protected};
   document.getElementById('grid-merge').disabled=data.sheet_protected; document.getElementById('grid-unmerge').disabled=data.sheet_protected; document.getElementById('grid-merge-range').value=cell_range;
   const pane=data.worksheet_view.pane;
   document.getElementById('grid-freeze').disabled=false; document.getElementById('grid-unfreeze').disabled=false;
@@ -500,7 +500,7 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
  const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output textarea')];
  const changes=inputs.filter(input=>input.dataset.editable==='true' && gridChanged(input)).map(input=>{const choice=input.parentElement.querySelector('select').value, mode=choice==='default' ? document.getElementById('grid-input-type').value : choice; return {cell:input.dataset.cell,value:input.value,...(mode==='text' && input.value ? {type:'text'} : {})};});
  if (!changes.length) { document.getElementById('grid-status').textContent='No changed cells.'; return; }
- const body=JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,changes});
+ const body=JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,changes,snapshot_sha256:loaded.snapshot_sha256});
  if (new TextEncoder().encode(body).length > 20000) { document.getElementById('grid-status').textContent='Changes exceed 20 KB; save fewer cells at a time.'; return; }
  gridBusy=true; const button=document.getElementById('grid-save'); button.disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; lockGridInputs(inputs,true);
  try {
@@ -542,7 +542,7 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  if (!Object.keys(properties).length) { document.getElementById('grid-status').textContent='Choose a formatting change.'; return; }
  gridBusy=true; const button=document.getElementById('grid-format'), fields=document.getElementById('grid-format-fields'); button.disabled=true; fields.disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-save').disabled=true; lockGridInputs(inputs,true);
  try {
-  const response=await fetch('grid-format', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,style_range:document.getElementById('grid-style-range').value,properties})});
+  const response=await fetch('grid-format', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,style_range:document.getElementById('grid-style-range').value,properties,snapshot_sha256:loaded.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Formatting failed');
   resetGridFormatting(); invalidateGrid(`Formatting saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
@@ -1623,13 +1623,13 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Grid sizing requires revision, sheet, ranges, width and height')
                             saved = session.resize_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['target_range'], payload['column_width'], payload['row_height'])
                         elif route.endswith('/grid-format'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'style_range', 'properties'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell_range', 'style_range', 'properties'}, {'base_revision', 'sheet', 'cell_range', 'style_range', 'properties', 'snapshot_sha256'}):
                                 raise ValueError('Grid formatting requires revision, sheet, ranges and properties')
-                            saved = session.format_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['style_range'], payload['properties'])
+                            saved = session.format_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['style_range'], payload['properties'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/grid-edit'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'changes'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell_range', 'changes'}, {'base_revision', 'sheet', 'cell_range', 'changes', 'snapshot_sha256'}):
                                 raise ValueError('Grid edit requires base_revision, sheet, cell_range and changes')
-                            saved = session.edit_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['changes'])
+                            saved = session.edit_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['changes'], expected_sha256=payload.get('snapshot_sha256'))
                         else:
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'mode', 'value'}:
                                 raise ValueError('Edit requires base_revision, path, mode and value')
