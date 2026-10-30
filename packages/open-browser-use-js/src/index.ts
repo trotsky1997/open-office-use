@@ -1248,7 +1248,7 @@ export class OpenBrowserUseTab {
       const moving=(a:number,b:number)=>Math.abs(a-b)>0.25;
       if (moving(first.geometry.x,second.geometry.x) || moving(first.geometry.y,second.geometry.y) || moving(first.geometry.width,second.geometry.width) || moving(first.geometry.height,second.geometry.height) || moving(first.point.x,second.point.x) || moving(first.point.y,second.point.y)) throw new RetryablePreflightError("Target is moving; observe again");
       const fresh=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);
-      if (fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
+      if (fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || (domIdentity ? !fresh.ids.includes(id) : JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids))) throw new RetryablePreflightError("Selector target changed; observe again");
       const checkedState = async () => {
         const result=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function() {
           if (!this.isConnected) return null;
@@ -1377,7 +1377,7 @@ export class OpenBrowserUseTab {
           const after=await measure();
           if (moving(second.geometry.x,after.geometry.x) || moving(second.geometry.y,after.geometry.y) || moving(second.geometry.width,after.geometry.width) || moving(second.geometry.height,after.geometry.height) || moving(second.point.x,after.point.x) || moving(second.point.y,after.point.y)) throw new Error("Target moved after the first click; observe again");
           const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);
-          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after the first click; observe again");
+          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || (domIdentity ? !latest.ids.includes(id) : JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids))) throw new Error("Selector target changed after the first click; observe again");
           await verifyDomIdentity();
           await this.dispatchClick(second.inputPoint,mouse,2,options);
         }

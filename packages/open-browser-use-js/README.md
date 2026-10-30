@@ -945,7 +945,7 @@ snapshot or DOM CUA action invalidates old IDs. Tab handles from the same
 browser share DOM CUA state; concurrent snapshots supersede earlier ones, and
 reconnecting invalidates node IDs. New snapshots and actions are rejected while
 a DOM CUA input is in progress. Before clicking, the SDK rechecks
-node identity, form state, its visible match set, geometry and hit target; an outdated or
+node identity, form state, membership in the visible match set, geometry and hit target; an outdated or
 changed target fails and requires another snapshot. Downloads use the separate download workflow.
 
 ## Waiting for a download

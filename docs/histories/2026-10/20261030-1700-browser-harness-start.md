@@ -351,3 +351,5 @@ CSS 和语义定位器新增 boundingBox，返回主 frame CSS 视口坐标，�
 语义输入支持可编辑 combobox；原生 select 或只读组合框在鼠标输入前拒绝文本。隔离 Linux ARM64 Chromium 原生扩展完成 MDN 真实页面观察、标题定位、截图、搜索框填写并读取结果、跳转、返回和标签清理；此前搜索框因 combobox 角色被拒绝。SDK 72 项通过；macOS 和 Linux ARM64 Electron 44、Linux ARM64 Chromium 原生扩展实页验证跨进程可编辑 combobox 可信输入及原生 select 无鼠标输入拒绝。页面布局可能变化，Windows 未测。
 
 语义 hasText/hasNotText 筛选按可访问性树顺序纳入祖先归属明确的生成文字，并保留归属无法确定时的拒绝。隔离 Linux ARM64 Chromium 原生扩展完成 TodoMVC React 真实页面新增、勾选、筛选、编辑和清理；原实现遇到生成文字时拒绝列表项筛选。SDK 72 项通过；macOS 和 Linux ARM64 Electron 44 与 Linux ARM64 Chromium 原生扩展验证跨进程 frame 伪元素文字、组合匹配和动态变化。部分无法确定祖先的文本仍会报错；Windows 未测。
+
+DOM CUA 单击和双击在目标仍位于可见匹配集时允许无关节点变化，继续重核文档、frame、目标身份、状态、稳定位置和命中；普通 CSS 定位器仍要求匹配集合一致。隔离 Linux ARM64 Chromium 原生扩展在 TodoMVC React 实页完成全选、取消、DOM 双击编辑、旧 ID 拒绝和键盘输入；此前滚动导致无关按钮出现使双击失败。SDK 72 项通过；macOS 与 Linux ARM64 Electron 44、Linux ARM64 Chromium 原生扩展实页验证双击期间无关节点出现及旧目标拒绝。目标语义上下文仍可能在重查后变化；Windows 未测。
