@@ -58,3 +58,5 @@ Use `session_set_chart_literal_category` with a scanned literal category referen
 Chart-cache scans expose bounded plot and series indices and direct literal series names. Use `session_set_chart_literal_series_name` to rename an inspected literal series in a single plot; referenced names require changing their source cells.
 
 The viewer’s Chart cache checks panel can select inspected fixed-data samples or literal series names and save a revision. It shows up to 200 candidates and rejects large integers outside JavaScript’s exact range. CLI/MCP reject integer values that cannot be represented exactly as binary64; client and Excel precision can be more limited.
+
+Use `session_set_chart_literal_values` to update up to 100 fixed numeric points in one atomic chart revision. Inspect static category text separately, especially labels that contain percentages.

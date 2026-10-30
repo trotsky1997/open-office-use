@@ -362,3 +362,5 @@ Workbook chart scans expose bounded series names and indices. Direct literal nam
 The workbook viewer can select and edit fixed chart numeric points, shared categories and literal series names from bounded scan results. Browser interaction on the OfficeCLI reference saved and re-inspected three revisions; route checks covered stale snapshots and cross-origin requests.
 
 Workbook and slide literal chart edits preserve integral CLI/MCP input until validation and reject integers not exactly representable as binary64. Verified adjacent values around 2^53 and scientific notation; client and native Office precision can impose further limits.
+
+Workbook literal chart points support atomic multi-point edits in a single revision, including final pie-value validation. A reference bar chart rendered updated values; LibreOffice failed to draw the source reference pie slices both before and after editing, and its percentage-bearing category labels stayed static. Native Excel remains unverified.

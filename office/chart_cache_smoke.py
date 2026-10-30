@@ -96,6 +96,24 @@ with tempfile.TemporaryDirectory() as tmp:
     session.edit_grid(static_draft,0,'Sales Data','B2',[{'cell':'B2','value':'99'}])
     after_static=session.scan_chart_caches(static_draft,1)
     assert after_static['literal_sources']==1 and after_static['mismatch_references']==0
+    batch_draft=root/'static-batch-draft'; session.start(batch_draft,source=static_source)
+    batch=[{'reference':static_ref['index'],'point':1,'value':11},{'reference':static_ref['index'],'point':2,'value':22}]
+    for bad in (batch+[batch[0]], [batch[0],dict(batch[1],point=3)], [batch[0],dict(batch[1],value=9007199254740993)]):
+        try: session.set_chart_literal_values(batch_draft,0,static_scan['charts'][0]['part'],bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid literal batch accepted')
+        assert session.info(batch_draft)['latest_revision']==0
+    try: session.set_chart_literal_values(batch_draft,0,static_scan['charts'][0]['part'],batch,'0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale literal batch accepted')
+    batched=session.set_chart_literal_values(batch_draft,0,static_scan['charts'][0]['part'],batch,static_scan['snapshot_sha256'])
+    assert [item['old_value'] for item in batched['changes']]==[10,20] and [item['old_value_raw'] for item in batched['changes']]==['10','20'] and batched['revision']==1
+    values=next(item for item in session.scan_chart_caches(batch_draft,1)['charts'][0]['references'] if item['kind']=='numLit')['examples']
+    assert [item['value'] for item in values]==['11','22']
+    with zipfile.ZipFile(static_source) as before,zipfile.ZipFile(batched['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=static_scan['charts'][0]['part'])
+    command=[sys.executable,str(cli),'session','set-chart-literal-values',str(batch_draft),'--base','1','--part',static_scan['charts'][0]['part'],'--changes',json.dumps(batch)]
+    assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2
     literal_draft=root/'static-point-draft'; session.start(literal_draft,source=static_source)
     for point,value in ((0,20),(3,20),(1,True),(1,float('inf'))):
         try: session.set_chart_literal_value(literal_draft,0,static_scan['charts'][0]['part'],static_ref['index'],point,value)
