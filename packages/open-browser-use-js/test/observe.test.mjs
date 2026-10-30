@@ -1717,3 +1717,12 @@ test('click deadline prevents late input and reports issued outcomes',async()=>{
   let signal;tab.click=async(_index,_snapshot,_mouse,mark)=>{signal=mark();await new Promise(resolve=>{resolveRole=resolve});};
   await assert.rejects(role.click({timeoutMs:20}),/Click timed out; outcome is unknown/);assert.equal(signal.aborted,true);resolveRole();
 });
+
+test('sequential typing timeout prevents late preparation and input',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}),tab=browser.tab(1);
+  const frame={id:'root',loaderId:'v1',url:'https://example.test'},snapshot={frame,frames:[frame],ids:[7],documentId:1,scopeIds:[]};
+  tab.queryCss=async()=>snapshot;let releaseWorld,measurements=0,inputs=0;
+  browser.cdp.call=async(_id,method)=>{if(method==='Page.createIsolatedWorld')return await new Promise(resolve=>{releaseWorld=resolve});if(method==='DOM.resolveNode')return {object:{objectId:'target'}};if(method==='Runtime.callFunctionOn')measurements++;if(method==='DOM.focus' || method==='Input.dispatchKeyEvent')inputs++;return {};};
+  await assert.rejects(tab.playwright.locator('input').pressSequentially('a',{timeoutMs:20}),/preparation timed out/);
+  releaseWorld({executionContextId:1});await new Promise(resolve=>setImmediate(resolve));assert.equal(measurements,0);assert.equal(inputs,0);
+});

@@ -1567,7 +1567,10 @@ export class OpenBrowserUseTab {
             }
             const chain = frameAncestry(frame, snapshot.frames);
             const measure = async () => {
-                checkClick();
+                if (sequential)
+                    sequenceCheck();
+                else
+                    checkClick();
                 const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: hover }, { value: !!mouse.force }], functionDeclaration: `function(allowDisabled,force) {
           if (!this.isConnected) return null;
           if (!allowDisabled) for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return null;
@@ -1577,7 +1580,7 @@ export class OpenBrowserUseTab {
           if(force)return {x,y,width:r.width,height:r.height};
           let target=this, root=target.getRootNode();
           while (true) { const hit=root.elementFromPoint(x,y); if (!hit || (hit!==target && !target.contains(hit))) return null; if (!(root instanceof ShadowRoot)) return {x,y,width:r.width,height:r.height}; target=root.host; root=target.getRootNode(); }
-        }` }, { sessionId, signal: clickSignal });
+        }` }, { sessionId, signal: sequential ? sequenceSignal : clickSignal });
                 const value = isObject(result) && isObject(result.result) ? result.result.value : null;
                 if (!isObject(value) || ![value.x, value.y, value.width, value.height].every(v => typeof v === "number" && Number.isFinite(v)) || value.width <= 0 || value.height <= 0)
                     throw new RetryablePreflightError("Target is hidden, disabled, or covered; observe again");
@@ -2324,14 +2327,15 @@ export class OpenBrowserUseTab {
             if (node.frameId && observation.frames && !await this.targetFrameFocused(node.frameId, node.backendNodeId, observation.frames))
                 throw new Error("Target lost focus; observe again");
             await this.verifyLocatorScope(observation, node);
-            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }, { value: options.prefix ?? null }, { value: options.suffix ?? null }, { value: options.selectionType ?? "text" }], functionDeclaration: `function(text,prefix,suffix,kind){
+            // Chrome native messaging may omit null-valued CDP arguments.
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }, { value: options.prefix ?? "" }, { value: options.suffix ?? "" }, { value: options.selectionType ?? "text" }], functionDeclaration: `function(text,prefix,suffix,kind){
         if(!this.isConnected || !(this instanceof Element))return 'unavailable';
         let element=this;while(true){const root=element.getRootNode();if(root.activeElement!==element)return 'focus';if(!(root instanceof ShadowRoot))break;element=root.host;}
         for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null))if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true' || el.getAttribute('aria-readonly')==='true')return 'disabled';
         const native=(this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','tel','url','password'].includes(this.type))) && !this.readOnly && this.getAttribute('aria-readonly')!=='true';
         if(!native && (!this.isContentEditable || this.getAttribute('aria-readonly')==='true'))return 'unsupported';
         const value=native ? this.value : this.textContent;if(typeof value!=='string' || value.length>1048576)return 'unavailable';
-        const hits=[];for(let at=value.indexOf(text);at!==-1;at=value.indexOf(text,at+1)){if((prefix===null || (at>=prefix.length && value.slice(at-prefix.length,at)===prefix)) && (suffix===null || value.slice(at+text.length,at+text.length+suffix.length)===suffix)){hits.push(at);if(hits.length>1)break;}}
+        const hits=[];for(let at=value.indexOf(text);at!==-1;at=value.indexOf(text,at+1)){if((prefix==='' || (at>=prefix.length && value.slice(at-prefix.length,at)===prefix)) && (suffix==='' || value.slice(at+text.length,at+text.length+suffix.length)===suffix)){hits.push(at);if(hits.length>1)break;}}
         if(!hits.length)return 'missing';if(hits.length>1)return 'ambiguous';
         let start=hits[0],end=start+text.length;if(kind==='cursor_before')end=start;else if(kind==='cursor_after')start=end;
         if(native){this.setSelectionRange(start,end);return this.selectionStart===start && this.selectionEnd===end ? 'ok' : 'failed';}
