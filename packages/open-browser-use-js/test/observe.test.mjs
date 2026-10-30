@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import assert from "node:assert/strict";
 import test from "node:test";
 const pngFixture=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==","base64");
-import { OpenBrowserUseBrowser, OpenBrowserUseClient, OpenBrowserUseFileChooser, OpenBrowserUseTabDomCUA } from "../dist/index.js";
+import { OpenBrowserUseBrowser, OpenBrowserUseClient, OpenBrowserUseDownloadWait, OpenBrowserUseFileChooser, OpenBrowserUseTabDomCUA } from "../dist/index.js";
 
 test('DOM CUA rejects superseded snapshots and snapshots during input',async()=>{
   const frame={id:'root'},frames=[frame],snapshot={frame,frames,documentId:1,ids:[]};let unblock,blocked=false,releaseInput;
@@ -504,7 +504,7 @@ test('prepared download waits for registration and retains the eventual result',
   await new Promise(resolve=>setImmediate(resolve));assert.equal(prepared,false);
   for(const handler of handlers)handler({method:'onDownloadWaitReady',params:{waitId}});
   const wait=await preparing;assert.equal(handlers.size,1);
-  complete({downloadId:'123',url:'https://example.test/file'});const download=await wait.wait();assert.equal(download.id,'123');assert.equal(download.url,'https://example.test/file');assert.equal(await download.path(),'/tmp/fixture');
+  complete({downloadId:'123',url:'https://example.test/file',attribution:'browser'});const download=await wait.wait();assert.equal(download.id,'123');assert.equal(download.url,'https://example.test/file');assert.equal(download.attribution,'browser');assert.equal(await download.path(),'/tmp/fixture');
   client.request=()=>{throw new Error('connection unavailable');};
   await assert.rejects(tab.prepareDownload(),/connection unavailable/);assert.equal(handlers.size,1);
 });
@@ -1798,4 +1798,12 @@ test('select deadline prevents late changes and returns successful values',async
   let release,signal;tab.selectOption=async(_index,_snapshot,_values,mark,_signal,check)=>{signal=mark();await new Promise(resolve=>{release=resolve});check();changes++;return ['b'];};
   await assert.rejects(role.selectOption('b',{timeoutMs:20}),/Select timed out; outcome is unknown/);assert.equal(signal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(changes,0);
   tab.selectOption=async()=>['b'];assert.deepEqual(await role.selectOption('b',{timeoutMs:100}),['b']);
+});
+
+
+test('download attribution is explicit and validates backend metadata',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});
+  for (const attribution of ['tab','browser','unknown']) {const wait=new OpenBrowserUseDownloadWait(client,Promise.resolve({downloadId:'id',attribution}));assert.equal((await wait.wait()).attribution,attribution);}
+  assert.equal((await new OpenBrowserUseDownloadWait(client,Promise.resolve({downloadId:'id'})).wait()).attribution,'unknown');
+  await assert.rejects(new OpenBrowserUseDownloadWait(client,Promise.resolve({downloadId:'id',attribution:['tab']})).wait(),/invalid download attribution/);
 });

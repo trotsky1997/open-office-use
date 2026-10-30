@@ -722,7 +722,7 @@ export class OpenBrowserUseDialog {
 }
 
 export class OpenBrowserUseDownload {
-  constructor(private client: OpenBrowserUseClient, readonly id: string, readonly url: string | null = null) {}
+  constructor(private client: OpenBrowserUseClient, readonly id: string, readonly url: string | null = null, readonly attribution: "tab" | "browser" | "unknown" = "unknown") {}
   async path(timeoutMs?: number): Promise<string | null> {
     const result = await this.client.downloadPath(this.id, timeoutMs);
     if (!isObject(result) || (typeof result.path !== "string" && result.path !== null)) throw new Error("Browser returned an invalid download path");
@@ -736,7 +736,8 @@ export class OpenBrowserUseDownloadWait {
     const result = await this.result;
     if (!isObject(result) || typeof result.downloadId !== "string" || !result.downloadId) throw new Error("Browser returned an invalid download ID");
     if (result.url !== undefined && result.url !== null && typeof result.url !== "string") throw new Error("Browser returned an invalid download URL");
-    return new OpenBrowserUseDownload(this.client, result.downloadId, result.url ?? null);
+    if (result.attribution !== undefined && (typeof result.attribution !== "string" || !["tab", "browser", "unknown"].includes(result.attribution))) throw new Error("Browser returned invalid download attribution");
+    return new OpenBrowserUseDownload(this.client, result.downloadId, result.url ?? null, (result.attribution ?? "unknown") as "tab" | "browser" | "unknown");
   }
 }
 

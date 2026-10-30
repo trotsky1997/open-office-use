@@ -309,7 +309,8 @@ export declare class OpenBrowserUseDownload {
     private client;
     readonly id: string;
     readonly url: string | null;
-    constructor(client: OpenBrowserUseClient, id: string, url?: string | null);
+    readonly attribution: "tab" | "browser" | "unknown";
+    constructor(client: OpenBrowserUseClient, id: string, url?: string | null, attribution?: "tab" | "browser" | "unknown");
     path(timeoutMs?: number): Promise<string | null>;
 }
 export declare class OpenBrowserUseDownloadWait {

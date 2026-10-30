@@ -832,7 +832,7 @@ class BrowserBackend {
       const download = await waiting;
       if (wait.controller.signal.aborted) throw new Error("Download wait canceled");
       this.downloadOwnersById.set(download.id, params.session_id);
-      return { downloadId: download.id, url: download.url || null };
+      return { downloadId: download.id, url: download.url || null, attribution: "browser" };
     } finally {
       signal?.removeEventListener("abort", abort);
       if (this.downloadStartWait === wait) this.downloadStartWait = null;

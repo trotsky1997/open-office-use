@@ -1164,6 +1164,7 @@ before triggering the page action:
 const ready = await tab.prepareDownload({timeoutMs: 30000});
 await tab.playwright.getByRole("link", {name: "Download", exact: true}).click();
 const download = await ready.wait();
+console.log(download.attribution); // "tab", "browser", or "unknown"
 const path = await download.path(30000); // null if the download failed or was cancelled
 ```
 
@@ -1197,7 +1198,9 @@ concurrent download may satisfy the wait. Verify the download identity before
 using its path. Chrome permits path lookup only in the session that received
 the download handle; handles are held in extension memory. Electron matches
 the originating tab and requires the host to configure a directory and grant
-`files.download` with `page.control`.
+`files.download` with `page.control`. `download.attribution` reports `"tab"`
+for a verified tab association, `"browser"` for the next browser-wide download,
+and `"unknown"` when the backend does not report attribution.
 
 ## Notifications
 

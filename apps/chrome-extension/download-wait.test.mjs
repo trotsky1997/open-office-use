@@ -34,7 +34,7 @@ test('download wait observes the next start while paths retain completed results
   backend.emitDownloadChange({id:'old',status:'in_progress',filename:'/tmp/old'});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
   backend.emitDownloadChange({id:'new',status:'started',filename:'/tmp/new',url:'https://example.test/file'});
-  const download=await pending;assert.equal(download.downloadId,'new');assert.equal(download.url,'https://example.test/file');
+  const download=await pending;assert.equal(download.downloadId,'new');assert.equal(download.url,'https://example.test/file');assert.equal(download.attribution,'browser');
   backend.emitDownloadChange({id:'new',status:'complete',filename:'/tmp/new'});
   assert.equal((await backend.downloadPath({session_id:'owner',downloadId:'new'})).path,'/tmp/new');
   await assert.rejects(backend.waitForDownload({tabId:1,timeoutMs:10}),/Timed out/);

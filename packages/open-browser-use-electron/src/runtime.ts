@@ -443,7 +443,7 @@ export class IabRuntime implements Backend {
     waiter.resolve({downloadId:id,url:url || null});
   }
 
-  private async waitForDownload(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<{downloadId: string; url: string | null}> {
+  private async waitForDownload(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<{downloadId: string; url: string | null; attribution:'tab'}> {
     const timeoutMs=params.timeoutMs ?? 10_000, scope=this.scope(scopeId);
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000 || (params.waitId !== undefined && (typeof params.waitId !== 'string' || !/^[0-9a-f-]{36}$/.test(params.waitId)))) throw new Error('Invalid download wait');
     if (!scope.download) throw new Error('IAB_DOWNLOAD_NOT_CONFIGURED');
@@ -459,7 +459,7 @@ export class IabRuntime implements Backend {
     const timer=setTimeout(()=>waiter.reject(new Error('IAB_DOWNLOAD_TIMEOUT')),timeoutMs);
     try {
       if (params.waitId) this.emit(scopeId,'onDownloadWaitReady',{waitId:params.waitId});
-      return await result;
+      return {...await result, attribution:'tab'};
     } finally {
       clearTimeout(timer); signal?.removeEventListener('abort',abort);
       if (this.downloadWaits.get(tab.id) === waiter) this.downloadWaits.delete(tab.id);

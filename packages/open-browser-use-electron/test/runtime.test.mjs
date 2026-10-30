@@ -198,7 +198,7 @@ test('authorized socket client receives the correct page download and grant revo
   const ready=await client.browser().tab(tab.id).prepareDownload({timeoutMs:1000});
   const item=fakeDownload('fixture.txt'),wc=adapter.views[0].webContents;
   wc.session.emit('will-download',{preventDefault(){throw new Error('unexpected rejection');}},item,wc);
-  const download=await ready.wait();assert.ok(download.id);
+  const download=await ready.wait();assert.ok(download.id);assert.equal(download.attribution,'tab');
   runtime.connections.revoke(grant.grantId);await new Promise(resolve=>setImmediate(resolve));assert.equal(item.cancelled,true);
 });
 
