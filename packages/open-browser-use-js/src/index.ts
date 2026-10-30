@@ -2045,11 +2045,13 @@ export class OpenBrowserUseTabPlaywright {
     return new Promise(resolve=>setTimeout(resolve,timeoutMs));
   }
 
-  waitForEvent(event: "download", options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownload> {
-    if (event !== "download") throw new Error("Unsupported browser event");
-    const preparing=this.tab.prepareDownload(options);
+  waitForEvent(event: "download", options?: {timeoutMs?: number}): Promise<OpenBrowserUseDownload>;
+  waitForEvent(event: "filechooser", options?: {timeoutMs?: number}): Promise<OpenBrowserUseFileChooser>;
+  waitForEvent(event: "download" | "filechooser", options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownload | OpenBrowserUseFileChooser> {
+    if (event !== "download" && event !== "filechooser") throw new Error("Unsupported browser event");
+    const preparing: Promise<OpenBrowserUseDownloadWait | OpenBrowserUseFileChooserWait> = event === "download" ? this.tab.prepareDownload(options) : this.tab.prepareFileChooser(options);
     this.tab.browser.cdp.blockUntilPrepared(this.tab.id,preparing);
-    return preparing.then(wait=>wait.wait());
+    return preparing.then(async wait=>await wait.wait());
   }
 
   frameLocator(selector: string): OpenBrowserUseFrameLocator {
@@ -2586,7 +2588,8 @@ export class OpenBrowserUseCdp {
     options: { timeoutMs?: number; sessionId?: string; visualPoint?: {x: number; y: number}; expectedGeneration?: number } = {}
   ): Promise<JsonValue> {
     const preparations=this.#eventPreparations.get(tabId);
-    if (preparations?.size) await Promise.all([...preparations]);
+    // Frame attachment and log setup must finish before a chooser can be registered.
+    if (preparations?.size && !["Target.setAutoAttach","Runtime.enable","Log.enable"].includes(method)) await Promise.all([...preparations]);
     await this.ensureAttached(tabId);
     if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration) throw new Error("Connection changed; observe again");
     const result = await this.client.request("executeCdp", {

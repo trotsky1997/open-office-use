@@ -386,6 +386,9 @@ export declare class OpenBrowserUseTabPlaywright {
     waitForEvent(event: "download", options?: {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseDownload>;
+    waitForEvent(event: "filechooser", options?: {
+        timeoutMs?: number;
+    }): Promise<OpenBrowserUseFileChooser>;
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
     locator(selector: string): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;

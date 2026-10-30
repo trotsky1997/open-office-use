@@ -52,7 +52,7 @@ app.whenReady().then(async()=>{
     await sdk.evaluate(`document.querySelector('#double-fixture').remove()`);await double.waitFor({state:'hidden',timeoutMs:5000});
     await sdk.playwright.expectNavigation(()=>sdk.evaluate(`history.pushState({},'', '#socket-nav')`),{url:fixture.url+'/#socket-nav',timeoutMs:5000});
     await sdk.evaluate(`(()=>{const e=document.createElement('input');e.type='file';e.id='upload';Object.assign(e.style,{position:'fixed',left:'20px',top:'150px',width:'250px',height:'40px',zIndex:'9999'});document.body.append(e)})()`);
-    const armed=await sdk.prepareFileChooser({timeoutMs:20000});const choosing=armed.wait();void choosing.catch(()=>{});
+    const choosing=sdk.playwright.waitForEvent("filechooser",{timeoutMs:20000});void choosing.catch(()=>{});
     const clicking=sdk.clickAt(40,158);void clicking.catch(()=>{});const chooser=await choosing;await chooser.setFiles(file);await clicking;
     assert.deepEqual(await sdk.evaluate("Array.from(document.querySelector('#upload').files,f=>f.name)"),['fixture.txt']);
     await sdk.evaluate(`(()=>{const a=document.createElement('a');a.href='/download-fixture';a.textContent='Download fixture';a.id='fixture-download';Object.assign(a.style,{position:'fixed',left:'20px',top:'100px',zIndex:'9999'});document.body.append(a)})()`);
@@ -103,7 +103,7 @@ app.whenReady().then(async()=>{
     await crossFrame.getByLabel('Cross-frame text',{exact:true}).press('a');await sdk.cua.keypress({keys:['b']});await sdk.cua.type({text:'中🙂'});
     assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`({value:document.querySelector('[aria-label="Cross-frame text"]').value,events:window.keyInput})`,returnByValue:true},{sessionId:session})).result.value,{value:'ab中🙂',events:[true,true,true]});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const e=document.createElement('input');e.type='file';e.id='child-upload';e.setAttribute('aria-label','Child upload');document.body.prepend(e)})()`},{sessionId:session});
-    const childReady=await sdk.prepareFileChooser({timeoutMs:20000});const childWait=childReady.wait();void childWait.catch(()=>{});
+    const childWait=sdk.playwright.waitForEvent("filechooser",{timeoutMs:20000});void childWait.catch(()=>{});
     const childClick=sdk.playwright.getByRole('button',{name:'Child upload',exact:true}).click({timeoutMs:20000});void childClick.catch(()=>{});
     const childChooser=await childWait;await childChooser.setFiles(file);await childClick;
     const selected=await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:"Array.from(document.querySelector('#child-upload').files,f=>f.name)",returnByValue:true},{sessionId:session});

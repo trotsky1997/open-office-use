@@ -361,6 +361,31 @@ test('download event registration blocks browser input until ready',async()=>{
   await new Promise(resolve=>setImmediate(resolve));fail(new Error('registration failed'));await Promise.all([rejectedWait,rejectedInput]);assert.deepEqual(calls,['waitForDownload','attach','executeCdp','waitForDownload']);
 });
 
+test('file chooser wait permits frame setup while blocking input until registration',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set(),commands=[];let complete,waitId,emitted=false;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=(method,params)=>{
+    if(method==='waitForFileChooser'){waitId=params.waitId;return new Promise(resolve=>{complete=resolve;});}
+    if(method==='attach')return Promise.resolve({});
+    if(method==='executeCdp'){
+      commands.push(params.method+':'+(params.target.sessionId ?? 'root'));
+      if(params.method==='Target.setAutoAttach' && params.commandParams.autoAttach && !params.target.sessionId && !emitted){
+        emitted=true;for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method:'Target.attachedToTarget',params:{sessionId:'child',targetInfo:{type:'iframe',targetId:'frame',parentFrameId:'root'}}}});
+      }
+      return Promise.resolve({});
+    }
+    throw new Error('Unexpected request');
+  };
+  const browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1);
+  const waiting=tab.playwright.waitForEvent('filechooser',{timeoutMs:1000});
+  const input=browser.cdp.call(1,'Input.dispatchMouseEvent',{type:'mousePressed',x:1,y:1});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(waitId);assert.ok(commands.includes('Target.setAutoAttach:child'));assert.ok(!commands.includes('Input.dispatchMouseEvent:root'));
+  for(const handler of handlers)handler({method:'onFileChooserWaitReady',params:{waitId}});
+  await input;assert.ok(commands.includes('Input.dispatchMouseEvent:root'));
+  complete({fileChooserId:'chooser',isMultiple:true});assert.equal((await waiting).isMultiple(),true);
+});
+
 test('prepared file chooser validates paths and permits one file decision',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let complete,waitId,chosen;
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};

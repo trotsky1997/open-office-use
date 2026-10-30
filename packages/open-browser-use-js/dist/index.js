@@ -2350,11 +2350,11 @@ export class OpenBrowserUseTabPlaywright {
         return new Promise(resolve => setTimeout(resolve, timeoutMs));
     }
     waitForEvent(event, options = {}) {
-        if (event !== "download")
+        if (event !== "download" && event !== "filechooser")
             throw new Error("Unsupported browser event");
-        const preparing = this.tab.prepareDownload(options);
+        const preparing = event === "download" ? this.tab.prepareDownload(options) : this.tab.prepareFileChooser(options);
         this.tab.browser.cdp.blockUntilPrepared(this.tab.id, preparing);
-        return preparing.then(wait => wait.wait());
+        return preparing.then(async (wait) => await wait.wait());
     }
     frameLocator(selector) {
         return new OpenBrowserUseFrameLocator(this.tab, []).frameLocator(selector);
@@ -3006,7 +3006,8 @@ export class OpenBrowserUseCdp {
     }
     async call(tabId, method, commandParams = {}, options = {}) {
         const preparations = this.#eventPreparations.get(tabId);
-        if (preparations?.size)
+        // Frame attachment and log setup must finish before a chooser can be registered.
+        if (preparations?.size && !["Target.setAutoAttach", "Runtime.enable", "Log.enable"].includes(method))
             await Promise.all([...preparations]);
         await this.ensureAttached(tabId);
         if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration)

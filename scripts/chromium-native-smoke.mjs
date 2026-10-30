@@ -104,8 +104,8 @@ try {
  await tab.evaluate(`document.querySelector('button span').remove()`);
  const fixtureFile=join(dir,'upload-fixture.txt');await writeFile(fixtureFile,'isolated fixture');
  await tab.evaluate(`(()=>{const input=document.createElement('input');input.id='chooser-fixture';input.type='file';Object.assign(input.style,{position:'fixed',left:'20px',top:'150px',width:'250px',height:'40px',zIndex:'999999'});document.body.append(input)})()`);
- const preparedChooser=await tab.prepareFileChooser({timeoutMs:20000});const choosing=preparedChooser.wait();void choosing.catch(()=>{});
  const chooserRect=await tab.evaluate(`(()=>{const r=document.querySelector('#chooser-fixture').getBoundingClientRect();return {x:r.x+20,y:r.y+8}})()`);
+ const choosing=tab.playwright.waitForEvent('filechooser',{timeoutMs:20000});void choosing.catch(()=>{});
  const chooserClick=tab.clickAt(chooserRect.x,chooserRect.y);void chooserClick.catch(()=>{});
  const chooser=await choosing;assert.equal(chooser.isMultiple(),false);await chooser.setFiles(fixtureFile);await chooserClick;
  assert.deepEqual(await tab.evaluate(`Array.from(document.querySelector('#chooser-fixture').files,f=>f.name)`),['upload-fixture.txt']);

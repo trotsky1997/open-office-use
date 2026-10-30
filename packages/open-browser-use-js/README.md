@@ -767,6 +767,21 @@ await chooser.setFiles("/absolute/path/to/file.txt");
 await click;
 ```
 
+The Playwright-style event API also registers before subsequent SDK input:
+
+```js
+const choosing = tab.playwright.waitForEvent("filechooser", {timeoutMs: 30000});
+const click = tab.playwright.locator('input[type="file"]').click();
+void click.catch(() => {});
+const chooser = await choosing;
+await chooser.setFiles("/absolute/path/to/file.txt");
+await click;
+```
+
+Keep the click in flight until the chooser decision is issued. Registration
+failure rejects subsequent SDK CDP commands that are waiting on it; low-level
+client requests and actions outside the SDK bypass this coordination.
+
 `prepareFileChooser` returns after the extension enables interception. `setFiles`
 accepts an absolute path or an array of absolute paths and permits one decision
 per chooser. Frame navigation or debugger detachment invalidates outstanding
@@ -797,7 +812,7 @@ await tab.playwright.getByRole("link", {name: "Download", exact: true}).click();
 const download = await waiting;
 ```
 
-SDK CDP commands issued after `waitForEvent` wait for registration confirmation;
+SDK CDP page operations issued after `waitForEvent` wait for registration confirmation;
 registration failure rejects those pending commands. Direct low-level client
 requests and actions outside this SDK do not use that barrier. Attach a rejection
 handler to the waiting promise if the triggering action may fail.

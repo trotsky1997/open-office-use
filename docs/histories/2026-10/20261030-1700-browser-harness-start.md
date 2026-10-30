@@ -249,3 +249,5 @@ CSS locator 增加 selectOption，支持原生单选/多选及按值和标签选
 新增 tab.playwright.screenshot 与 waitForTimeout；截图复用既有 viewport、裁剪和全页约束，返回支持 toBase64 的图像，可直接传给 REPL 图片输出。SDK 63 项通过，包含 REPL 图片和计时参数检查；Linux ARM64 Chromium 原生消息验证裁剪和全页 PNG，Electron 44/Xvfb socket 验证 viewport PNG。状态等待仍是优先选择；macOS/Windows 本轮未测。
 
 新增 tab.playwright.waitForEvent("download")；同步登记准备屏障，使后续 SDK CDP 操作等到宿主确认监听注册，失败时阻止排队输入。SDK 64 项通过，包含延迟确认与注册失败的竞态；Linux ARM64 Chromium 原生消息和 Electron 44/Xvfb socket 实测先启动等待、立即点击并读取下载文件。Chrome 下载事件仍缺少可靠标签关联，低层 client 和外部操作绕过屏障；macOS/Windows 本轮未测。
+
+新增 tab.playwright.waitForEvent("filechooser")，等待注册时放行 frame 自动附着与日志初始化命令，其余页面操作等待监听就绪，防止初始化和屏障相互等待。SDK 65 项通过，包含子 frame 附着及输入等待的竞态；Linux ARM64 Chromium 原生消息验证立即点击后设置文件，Electron 44/Xvfb socket 验证主页面及跨进程 frame 文件选择。低层 client 与 SDK 外操作绕过屏障；macOS/Windows 本轮未测。
