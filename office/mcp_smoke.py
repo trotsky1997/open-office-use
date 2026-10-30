@@ -42,9 +42,9 @@ async def main():
                     refused = await session.call_tool('author_file', {'spec':spec, 'output':str(path)})
                     assert refused.isError
                 structured_word = root / 'blocks.docx'
-                blocks = [{'type':'heading','text':'Summary'}, {'type':'paragraph','runs':[{'text':'Growth '},{'text':'18%','bold':True,'url':'https://example.com/report'}]}, {'type':'table','header':True,'rows':[['Metric','Value'],['Growth','18%']]}]
+                blocks = [{'type':'heading','text':'Summary'}, {'type':'paragraph','align':'center','runs':[{'text':'Growth '},{'text':'18%','bold':True,'url':'https://example.com/report','font_size':16,'color':'236B8E'}]}, {'type':'table','header':True,'rows':[['Metric','Value'],['Growth','18%']]}]
                 authored_blocks = await session.call_tool('author_file', {'spec':{'blocks':blocks}, 'output':str(structured_word)})
-                assert not authored_blocks.isError and Document(structured_word).paragraphs[1].hyperlinks[0].runs[0].bold and Document(structured_word).paragraphs[1].hyperlinks[0].address == 'https://example.com/report' and Document(structured_word).tables[0].cell(1,1).text == '18%', authored_blocks
+                assert not authored_blocks.isError and Document(structured_word).paragraphs[1].hyperlinks[0].runs[0].bold and Document(structured_word).paragraphs[1].hyperlinks[0].runs[0].font.size.pt == 16 and Document(structured_word).paragraphs[1].alignment == 1 and Document(structured_word).paragraphs[1].hyperlinks[0].address == 'https://example.com/report' and Document(structured_word).tables[0].cell(1,1).text == '18%', authored_blocks
                 formatted_book = root / 'formatted.xlsx'
                 book_spec = {'sheets':{'Data':{'A1':'Revenue','A2':120}}, 'sheet_options':{'Data':{'freeze_panes':'A2','column_widths':{'A':20},'formats':[{'range':'A1','bold':True,'fill':'236B8E'}], 'charts':[{'type':'column','data':'A1:A2','anchor':'C2'}], 'fit_to_page':True}}}
                 authored_book = await session.call_tool('author_file', {'spec':book_spec, 'output':str(formatted_book)})

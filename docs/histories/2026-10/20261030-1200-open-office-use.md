@@ -267,3 +267,7 @@ Normalized generated PowerPoint chart axis IDs and cross-references to positive 
 ### Chart blanks and cache synchronization
 
 Added literal blank-cell comparison and cache point removal to spreadsheet and PowerPoint chart workflows. Validated filling and clearing embedded chart values in atomic revisions, preserving unknown status for uncached formulas and merged ranges, and OfficeCLI validation. Blank rendering depends on chart settings.
+
+### Word typography and paragraph layout
+
+Added font, size, RGB color, alignment, spacing and pagination properties to structured Word blocks, including hyperlink runs and East Asian font slots. Fixed generated repeating-table-header markup and checked schema plus a four-page LibreOffice render.

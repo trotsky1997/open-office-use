@@ -190,3 +190,5 @@ Chart cache synchronization can add missing points when saved source values are 
 New PowerPoint chart authoring normalizes axis IDs to positive values, preserving cross-axis references. Column and line chart examples pass OfficeCLI schema validation and LibreOffice rendering.
 
 Chart cache checks and sync handle verified literal blank cells, including filling and clearing points during atomic PowerPoint grid edits. Formula cells with no stored result and blank cells in merged or multi-cell formula ranges stay unverified.
+
+Word block authoring supports run font, size and color plus paragraph alignment, spacing and pagination controls. Generated table header flags use schema-valid markup; OfficeCLI validation and multipage LibreOffice rendering were checked.

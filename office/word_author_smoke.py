@@ -5,9 +5,11 @@ import sys
 import tempfile
 from pathlib import Path
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PIL import Image
 from docx.oxml.ns import qn
 import open_office_use
+import officecli_backend
 import session
 import review
 
@@ -15,7 +17,7 @@ with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); output = root / 'brief.docx'
     spec = {'blocks': [
         {'type':'heading','level':1,'text':'Quarterly review'},
-        {'type':'paragraph','runs':[{'text':'Revenue grew '},{'text':'18%','bold':True},{'text':' year over year.'}]},
+        {'type':'paragraph','align':'justify','space_before':6,'space_after':8,'line_spacing':1.5,'keep_with_next':True,'keep_together':True,'runs':[{'text':'Revenue grew '},{'text':'18%','bold':True,'font':'Arial','font_size':16,'color':'236B8E'},{'text':' year over year.'}]},
         {'type':'bullet','text':'Retention was stable'},
         {'type':'numbered','text':'Prioritize onboarding'},
         {'type':'table','header':True,'style':'Light Shading Accent 1','rows':[['Metric','Value'],['Retention','92%']]},
@@ -26,7 +28,12 @@ with tempfile.TemporaryDirectory() as tmp:
     assert json.loads(result.stdout)['output'] == str(output.resolve())
     doc = Document(output); assert [p.text for p in doc.paragraphs] == ['Quarterly review','Revenue grew 18% year over year.','Retention was stable','Prioritize onboarding','','Next steps']
     assert doc.paragraphs[0].style.name == 'Heading 1' and doc.paragraphs[2].style.name == 'List Bullet' and doc.paragraphs[3].style.name == 'List Number'
-    assert doc.paragraphs[1].runs[1].bold and doc.tables[0].cell(1,1).text == '92%'
+    paragraph=doc.paragraphs[1]; formatted=paragraph.runs[1]
+    assert formatted.bold and formatted.font.name=='Arial' and formatted.font.size.pt==16 and str(formatted.font.color.rgb)=='236B8E'
+    assert formatted._r.rPr.rFonts.get(qn('w:eastAsia'))=='Arial' and paragraph.alignment==WD_ALIGN_PARAGRAPH.JUSTIFY
+    assert paragraph.paragraph_format.space_before.pt==6 and paragraph.paragraph_format.space_after.pt==8 and paragraph.paragraph_format.line_spacing==1.5 and paragraph.paragraph_format.keep_with_next and paragraph.paragraph_format.keep_together
+    assert doc.tables[0].cell(1,1).text == '92%'
+    code, validation, _=officecli_backend.invoke('validate',output); assert code==0 and validation['success'],validation
     assert doc.tables[0].rows[0]._tr.trPr.find(qn('w:tblHeader')) is not None and doc.tables[0].cell(0,0).paragraphs[0].runs[0].bold
     assert doc.tables[0].style.name == 'Light Shading Accent 1'
     body = list(doc._element.body)
@@ -34,10 +41,10 @@ with tempfile.TemporaryDirectory() as tmp:
     assert body[5].find('.//' + qn('w:br')).get(qn('w:type')) == 'page'
     pdf = open_office_use.render(output, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
     picture = root/'image.png'; Image.new('RGB',(80,40),'#348087').save(picture,dpi=(72,144))
-    linked = root/'linked.docx'; link_spec = {'blocks':[{'type':'paragraph','runs':[{'text':'See '},{'text':'source','url':'https://example.com/report','bold':True}]},{'type':'image','path':str(picture),'width':4,'align':'center','description':'Teal diagram'}]}
+    linked = root/'linked.docx'; link_spec = {'blocks':[{'type':'paragraph','runs':[{'text':'See '},{'text':'source','url':'https://example.com/report','bold':True,'font':'Arial','font_size':14,'color':'BA5A32'}]},{'type':'image','path':str(picture),'width':4,'align':'center','description':'Teal diagram'}]}
     open_office_use.author(link_spec, linked); linked_doc = Document(linked)
     assert linked_doc.paragraphs[0].text == 'See source' and linked_doc.paragraphs[0].hyperlinks[0].address == 'https://example.com/report'
-    run = linked_doc.paragraphs[0].hyperlinks[0].runs[0]; assert run.bold and run.underline
+    run = linked_doc.paragraphs[0].hyperlinks[0].runs[0]; assert run.bold and run.underline and run.font.name=='Arial' and run.font.size.pt==14 and str(run.font.color.rgb)=='BA5A32'
     inline = linked_doc.inline_shapes[0]; assert inline.width.inches == 4 and inline.height.inches == 2 and inline._inline.docPr.get('descr') == 'Teal diagram'
     assert review.external_relationships(linked)['external_count'] == 1
     draft = root/'draft'; session.start(draft, source=linked)
@@ -50,7 +57,7 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid hyperlink accepted')
         assert not bad_file.exists()
-    for i, bad in enumerate([{'blocks':[{'type':'table','rows':[['a'],['a','b']]}]}, {'blocks':[{'type':'heading','level':10,'text':'bad'}]}, {'blocks':[{'type':'paragraph','text':'a','runs':[]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','bold':'yes'}]}]}]):
+    for i, bad in enumerate([{'blocks':[{'type':'table','rows':[['a'],['a','b']]}]}, {'blocks':[{'type':'heading','level':10,'text':'bad'}]}, {'blocks':[{'type':'paragraph','text':'a','runs':[]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','bold':'yes'}]}]}, {'blocks':[{'type':'paragraph','align':'bad','text':'a'}]}, {'blocks':[{'type':'paragraph','line_spacing':0,'text':'a'}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':True}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':12.1}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','color':'oops'}]}]}]):
         target = root/f'bad{i}.docx'
         try: open_office_use.author(bad, target)
         except ValueError: pass
