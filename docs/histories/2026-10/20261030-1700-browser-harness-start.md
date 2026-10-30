@@ -427,3 +427,5 @@ CSS 与语义定位器的 allTextContents/allInnerTexts 正数期限覆盖查询
 macOS Electron 44.7 完整 smoke 补充验证：测试 ID 包含 emoji、引号与反斜杠时可在页面和 CSS 作用域中匹配，孤立代理项被拒绝；title 属性变化后原定位器重新查询并反映新值。Linux 和 Windows 本轮未测。
 
 CSS 与语义定位器的操作和单目标读取使用正数期限约束首次目标查询；查询超时后迟到结果不会触发操作。SDK 91 项测试及 macOS Electron 44.7 完整 smoke 通过。后续动作准备及已发出的输入仍可能超过期限，Linux 与 Windows 本轮未测。
+
+CSS 与语义定位器的单目标文本、属性、状态、输入值及边界框读取使用同一正数期限约束查询和读取；已发出的只读请求可能在超时后继续完成。SDK 92 项测试和 macOS Electron 44.7 完整 smoke 通过；Linux 与 Windows 本轮未测。动作准备和已发出输入仍可能超过期限。

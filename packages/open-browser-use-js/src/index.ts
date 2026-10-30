@@ -2905,7 +2905,7 @@ export class OpenBrowserUseCssLocator {
       }
     }
   }
-  private async perform<T>(action: (snapshot: CssSnapshot, id: number) => Promise<T>, timeoutMs = 5000): Promise<T> {
+  private async perform<T>(action: (snapshot: CssSnapshot, id: number) => Promise<T>, timeoutMs = 5000, readOnly = false): Promise<T> {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now()+timeoutMs;
     while (true) {
@@ -2913,7 +2913,7 @@ export class OpenBrowserUseCssLocator {
         const snapshot = await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,`Locator target unavailable before timeout (${timeoutMs} ms)`);
         const ids = snapshot.ids;
         if (ids.length > 1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
-        if (ids.length) return await action(snapshot,ids[0]);
+        if (ids.length) { const result=action(snapshot,ids[0]);return readOnly ? await locatorReadBeforeDeadline(result,timeoutMs,deadline,"Timed out reading locator") : await result; }
       } catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
       const remaining = deadline-performance.now();
       if (remaining <= 0) throw new Error(`Locator target unavailable before timeout (${timeoutMs} ms)`);
@@ -2921,12 +2921,12 @@ export class OpenBrowserUseCssLocator {
     }
   }
   private read(mode: "innerText" | "textContent" | "attribute", name = "", timeoutMs = 5000): Promise<string | null> {
-    return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,mode,name) as string | null,timeoutMs);
+    return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,mode,name) as string | null,timeoutMs,true);
   }
-  isEnabled(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"enabled") as boolean); }
-  isChecked(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"checked") as boolean); }
-  boundingBox(options:{timeoutMs?:number} = {}):Promise<{x:number;y:number;width:number;height:number}|null> { return this.perform(async (snapshot,id)=>{if(!snapshot.frame)throw new RetryablePreflightError("Frame unavailable; observe again");if(!await this.tab.readCss(snapshot,id,"visible"))return null;const box=await this.tab.nodeBoundingBox(snapshot.frame,snapshot.frames,id);if(!box || !await this.tab.readCss(snapshot,id,"visible"))throw new RetryablePreflightError("Target geometry changed; observe again");return box;},options.timeoutMs); }
-  inputValue(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"inputValue") as string,options.timeoutMs); }
+  isEnabled(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"enabled") as boolean,undefined,true); }
+  isChecked(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"checked") as boolean,undefined,true); }
+  boundingBox(options:{timeoutMs?:number} = {}):Promise<{x:number;y:number;width:number;height:number}|null> { return this.perform(async (snapshot,id)=>{if(!snapshot.frame)throw new RetryablePreflightError("Frame unavailable; observe again");if(!await this.tab.readCss(snapshot,id,"visible"))return null;const box=await this.tab.nodeBoundingBox(snapshot.frame,snapshot.frames,id);if(!box || !await this.tab.readCss(snapshot,id,"visible"))throw new RetryablePreflightError("Target geometry changed; observe again");return box;},options.timeoutMs,true); }
+  inputValue(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"inputValue") as string,options.timeoutMs,true); }
   async isVisible(): Promise<boolean> {
     const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), ids=snapshot.ids;
     if (!ids.length) return false;
@@ -3217,12 +3217,12 @@ export class OpenBrowserUseRoleLocator {
     }
   }
 
-  async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs); }
-  async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs); }
-  async isEnabled(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean); }
-  async isChecked(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"checked")) as boolean); }
-  boundingBox(options:{timeoutMs?:number} = {}):Promise<{x:number;y:number;width:number;height:number}|null> { return this.perform(async (node,id)=>{if(!await this.tab.locatorRead(id,node.index,"visible"))return null;const observation=this.tab.currentObservation(id),target=observation.nodes.find(item=>item.index===node.index),frame=observation.frames?.find(item=>item.id===(target?.frameId ?? observation.frames?.[0]?.id));if(!target || !frame || !observation.frames)throw new RetryablePreflightError("Target frame unavailable; observe again");const box=await this.tab.nodeBoundingBox(frame,observation.frames,target.backendNodeId);if(!box || !await this.tab.locatorRead(id,node.index,"visible"))throw new RetryablePreflightError("Target geometry changed; observe again");return box;},options.timeoutMs); }
-  inputValue(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"inputValue")) as string,options.timeoutMs); }
+  async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs,true); }
+  async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs,true); }
+  async isEnabled(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean,undefined,true); }
+  async isChecked(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"checked")) as boolean,undefined,true); }
+  boundingBox(options:{timeoutMs?:number} = {}):Promise<{x:number;y:number;width:number;height:number}|null> { return this.perform(async (node,id)=>{if(!await this.tab.locatorRead(id,node.index,"visible"))return null;const observation=this.tab.currentObservation(id),target=observation.nodes.find(item=>item.index===node.index),frame=observation.frames?.find(item=>item.id===(target?.frameId ?? observation.frames?.[0]?.id));if(!target || !frame || !observation.frames)throw new RetryablePreflightError("Target frame unavailable; observe again");const box=await this.tab.nodeBoundingBox(frame,observation.frames,target.backendNodeId);if(!box || !await this.tab.locatorRead(id,node.index,"visible"))throw new RetryablePreflightError("Target geometry changed; observe again");return box;},options.timeoutMs,true); }
+  inputValue(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"inputValue")) as string,options.timeoutMs,true); }
   async isVisible(): Promise<boolean> {
     const {state,matches} = await this.find();
     if (!matches.length) return false;
@@ -3248,10 +3248,10 @@ export class OpenBrowserUseRoleLocator {
   }
   async getAttribute(name: string, options: {timeoutMs?: number} = {}): Promise<string | null> {
     if (typeof name !== "string" || !name || name.length > 256) throw new Error("Invalid attribute name");
-    return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"attribute",name)) as string | null, options.timeoutMs);
+    return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"attribute",name)) as string | null, options.timeoutMs,true);
   }
 
-  private async perform<T>(action: (node: InteractiveNode, snapshotId: string) => Promise<T>, timeoutMs = 5_000): Promise<T> {
+  private async perform<T>(action: (node: InteractiveNode, snapshotId: string) => Promise<T>, timeoutMs = 5_000, readOnly = false): Promise<T> {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now() + timeoutMs;
     let lastError: Error = new Error(`Locator matched 0 elements before timeout (${timeoutMs} ms)`);
@@ -3261,7 +3261,8 @@ export class OpenBrowserUseRoleLocator {
         if (matches.length > 1) throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
         if (matches.length === 1) {
           this.tab.bindLocatorScope(state.snapshotId,matches[0].node.index,matches[0].path,matches[0].filters,this.framePath ? [...this.framePath] : undefined,matches[0].css,this.guard(state.snapshotId,matches));
-          return await action(matches[0].node, state.snapshotId);
+          const result=action(matches[0].node,state.snapshotId);
+          return readOnly ? await locatorReadBeforeDeadline(result,timeoutMs,deadline,"Timed out reading locator") : await result;
         }
         lastError = new Error(`Locator matched 0 elements before timeout (${timeoutMs} ms)`);
       } catch (error) {

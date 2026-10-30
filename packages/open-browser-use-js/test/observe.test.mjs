@@ -1622,3 +1622,11 @@ test('locator preparation timeout prevents late actions',async()=>{
   resolveRole({state:{snapshotId:'s'},matches:[{node:{index:1}}]});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(actions,0);
 });
+
+test('single locator reads honor their deadline after target lookup',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  tab.queryCss=async()=>({ids:[1]});tab.readCss=()=>new Promise(()=>{});
+  await assert.rejects(tab.playwright.locator('button').innerText({timeoutMs:20}),/Timed out reading locator/);
+  const role=tab.playwright.getByRole('button');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};tab.locatorRead=()=>new Promise(()=>{});
+  await assert.rejects(role.textContent({timeoutMs:20}),/Timed out reading locator/);
+});
