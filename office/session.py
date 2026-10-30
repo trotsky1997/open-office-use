@@ -301,11 +301,17 @@ def edit_target(directory, base_revision, path):
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if state['format'] == 'docx' and word.STORY_PATH.fullmatch(path):
         inventory = word.list_stories(source)
-        matches = [(story, p) for story in inventory['stories'] for p in story['paragraphs'] if p['path'] == path]
-        if len(matches) != 1 or matches[0][1]['truncated']:
-            raise ValueError('Header or footer paragraph is unavailable in the bounded inventory')
+        match = word.STORY_PATH.fullmatch(path)
+        stories = [item for item in inventory['stories'] if item['id'] == match.group(2) and item['type'] == match.group(1)]
+        if len(stories) != 1: raise ValueError('Header or footer relationship does not exist')
+        story = stories[0]
+        with zipfile.ZipFile(source) as archive:
+            tree = ooxml.parse_xml(archive.read(story['part']))
+            target = word.find_paragraph(tree, path)
+            text = ''.join(node.text or '' for node in target.iter(word.W + 't'))
+        if len(text) > 4000: raise ValueError('Header or footer paragraph exceeds the editor text limit')
+        paragraph = {'text': text}
         if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
-        story, paragraph = matches[0]
         links = [{'relationship_id': item['id'], **link} for item in inventory['stories'] if item['part'] == story['part'] for link in item['linked_sections']]
         return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': paragraph['text'], 'replace_text_path_supported': True, 'replace_only': True,
                 'story_impact': {'part': story['part'], 'linked_sections': links, 'same_part_ids': story['same_part_ids'], 'complete': inventory['reference_resolution_complete']}}
@@ -431,6 +437,11 @@ def search_body(directory, revision, query, offset=0, snapshot_sha256=None):
     state = info(directory); source = revision_file(state, revision)
     return {'revision': revision, **word.search_body(source, query, offset, snapshot_sha256)}
 
+
+
+def search_stories(directory, revision, query, offset=0, snapshot_sha256=None):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **word.search_stories(source, query, offset, snapshot_sha256)}
 
 def compare_notes(directory, before_revision, after_revision, before_slide, after_slide):
     state = info(directory)

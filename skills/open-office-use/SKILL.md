@@ -32,3 +32,5 @@ For a supported chart-cache mismatch, `session_sync_chart_cache` updates one ref
 Use `office_schema` to discover the installed OfficeCLI elements and property definitions before constructing unfamiliar structured operations. Filter by format, operation and query; verify the resulting document and rendering.
 
 Use `dump_office_subtree` or `session_dump_office_subtree` to extract a bounded starting batch from a saved template. Review paths and dependencies before applying; charts and sibling resources can be omitted, and slide layouts may require a compatible template. Compare and render the replayed document.
+
+For header and footer text, use `search_word_stories` or `session_search_word_stories`; page through results using the snapshot hash and inspect shared-section impact before editing.

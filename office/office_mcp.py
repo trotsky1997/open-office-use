@@ -275,6 +275,18 @@ def search_word_body(file: str, query: str, offset: int = 0, snapshot_sha256: st
 
 
 @server.tool()
+def search_word_stories(file: str, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search related Word headers and footers; preserve query and snapshot hash when paging."""
+    return word.search_stories(file, query, offset, snapshot_sha256)
+
+
+@server.tool()
+def session_search_word_stories(directory: str, revision: int, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search headers and footers in an exact revision; inspect shared section impact before editing."""
+    return session.search_stories(directory, revision, query, offset, snapshot_sha256)
+
+
+@server.tool()
 def session_search_word_body(directory: str, revision: int, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
     """Search an exact Word revision; check coverage and validate paths before editing."""
     return session.search_body(directory, revision, query, offset, snapshot_sha256)

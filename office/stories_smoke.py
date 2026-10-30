@@ -110,6 +110,7 @@ with tempfile.TemporaryDirectory() as tmp:
     aliased=word.list_stories(alias); original=next(s for s in aliased['stories'] if s['id']==header_story['id']); other=next(s for s in aliased['stories'] if s['id']=='rIdAlias')
     assert original['same_part_ids']==['rIdAlias'] and other['linked_sections']==[{'section':2,'type':'default','inherited':False}]
     assert original['linked_sections']==[{'section':1,'type':'default','inherited':False}]
+    alias_matches = word.search_stories(alias, 'Project Alpha')['matches']; assert len(alias_matches) == 2 and len({item['part'] for item in alias_matches}) == 1 and len({item['path'] for item in alias_matches}) == 2
     alias_draft=root/'alias-draft'; session.start(alias_draft,source=alias); impact=session.edit_target(alias_draft,0,header_path)['story_impact']
     assert {link['section'] for link in impact['linked_sections']}=={1,2} and impact['same_part_ids']==['rIdAlias']
     ambiguous=root/'wrapped-section.docx'

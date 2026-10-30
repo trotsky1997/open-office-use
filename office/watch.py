@@ -46,7 +46,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul><div id="picture-panel" hidden><p id="picture-target"></p><label>Replacement image <input id="picture-file" type="file" accept="image/png,image/jpeg"></label> <button type="button" id="picture-replace">Replace picture</button><p>PNG or JPEG, up to 10 MiB. Existing crop and shape size remain; review the new revision.</p><p id="picture-status" role="status"></p></div></details>
 <details id="search-panel"><summary>Search document text</summary>
 <p>Search the displayed saved revision. Results are candidates; inspect their context before editing. Coverage can be incomplete for complex content.</p>
-<form id="text-search-form"><label>Find <input id="text-search-query" maxlength="200" required></label> <button type="submit" id="text-search-start">Search</button> <button type="button" id="text-search-next" disabled>Next results</button></form>
+<form id="text-search-form"><label id="text-search-scope-label" hidden>Scope <select id="text-search-scope"><option value="body">Body</option><option value="stories">Headers and footers</option></select></label> <label>Find <input id="text-search-query" maxlength="200" required></label> <button type="submit" id="text-search-start">Search</button> <button type="button" id="text-search-next" disabled>Next results</button></form>
 <p id="text-search-status" role="status"></p><ul id="text-search-results"></ul></details>
 <details id="edit-panel"><summary>Edit an element</summary><form id="edit-form">
 <label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
@@ -157,17 +157,18 @@ function clearTextSearch() {
  document.getElementById('text-search-results').replaceChildren(); document.getElementById('text-search-status').textContent='';
 }
 document.getElementById('text-search-query').addEventListener('input', clearTextSearch);
+document.getElementById('text-search-scope').addEventListener('change', clearTextSearch);
 async function textSearch(next) {
  if (textSearchBusy || displayed<0) return;
- const query=document.getElementById('text-search-query').value, revision=displayed;
+ const query=document.getElementById('text-search-query').value, revision=displayed, scope=document.getElementById('text-search-scope').value;
  if (!query) return;
- if (next && (!textSearchState || textSearchState.revision!==revision || textSearchState.query!==query || textSearchState.next===null)) return;
+ if (next && (!textSearchState || textSearchState.revision!==revision || textSearchState.query!==query || textSearchState.scope!==scope || textSearchState.next===null)) return;
  if (!next) clearTextSearch();
  const epoch=++textSearchEpoch, previous=next ? textSearchState : null;
  const status=document.getElementById('text-search-status'), results=document.getElementById('text-search-results');
  textSearchBusy=true; document.getElementById('text-search-start').disabled=true; document.getElementById('text-search-next').disabled=true; status.textContent=`Searching revision ${revision}…`;
  try {
-  const response=await fetch('text-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,query,offset:previous ? previous.next : 0,snapshot_sha256:previous ? previous.hash : null})});
+  const response=await fetch('text-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,query,scope,offset:previous ? previous.next : 0,snapshot_sha256:previous ? previous.hash : null})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Search failed');
   if (epoch!==textSearchEpoch || displayed!==revision || document.getElementById('text-search-query').value!==query) return;
   if (!next) results.replaceChildren();
@@ -193,7 +194,7 @@ async function textSearch(next) {
    }
    results.appendChild(row);
   }
-  textSearchState={revision,query,next:result.next_offset,hash:result.snapshot_sha256};
+  textSearchState={revision,query,scope,next:result.next_offset,hash:result.snapshot_sha256};
   const uncertain=result.unverified_paragraphs ?? result.unverified_text_cells ?? 0;
   status.textContent=`Revision ${revision}: ${result.matches.length} match(es) in this batch. ${result.scan_complete ? 'End of search scope.' : 'More content remains.'} ${uncertain ? uncertain+' text item(s) need review. ' : ''}${result.unsupported_structure?.length ? 'Some structures were omitted. ' : ''}Coverage is limited to supported content.`;
  } catch(error) { if (epoch===textSearchEpoch) status.textContent=`Search error: ${error.message}`; }
@@ -518,7 +519,7 @@ document.getElementById('word-replace').addEventListener('click', async () => {
   invalidateEdit(`Replacement saved as revision ${result.revision}. Reload the element to see its updated content.`); await refresh();
  } catch(error) {
   document.getElementById('edit-status').textContent=`Replacement error: ${error.message}`;
-  if (loaded===target && current===target.revision && pinned===null) { const tableCell=target.format==='pptx' && target.type==='tc'; value.readOnly=tableCell; mode.disabled=tableCell; document.getElementById('edit-save').disabled=tableCell; }
+  if (loaded===target && current===target.revision && pinned===null) { const tableCell=target.format==='pptx' && target.type==='tc' || Boolean(target.replace_only || target.read_only_reason); value.readOnly=tableCell; mode.disabled=tableCell; document.getElementById('edit-save').disabled=tableCell; }
  } finally { editBusy=false; button.disabled=false; find.disabled=false; replacement.disabled=false; path.disabled=pinned!==null; document.getElementById('edit-load').disabled=pinned!==null; }
 });
 async function trackedTextEdit(position) {
@@ -1070,6 +1071,7 @@ async function refresh() {
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   document.getElementById('comments-panel').hidden=state.format !== 'docx';
+  document.getElementById('text-search-scope-label').hidden=state.format !== 'docx';
   document.getElementById('tracked-panel').hidden=state.format !== 'docx';
   document.getElementById('stories-panel').hidden=state.format !== 'docx';
   document.getElementById('notes-panel').hidden=state.format !== 'pptx';
@@ -1153,12 +1155,14 @@ def serve(directory, preview, port=0, render=None):
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
                     if route.endswith('/text-search'):
-                        if not isinstance(payload, dict) or set(payload) != {'revision', 'query', 'offset', 'snapshot_sha256'}:
+                        if not isinstance(payload, dict) or set(payload) not in ({'revision', 'query', 'offset', 'snapshot_sha256'}, {'revision', 'query', 'scope', 'offset', 'snapshot_sha256'}):
                             raise ValueError('Search requires revision, query, offset and snapshot SHA-256')
                         state = session.info(directory)
+                        scope = payload.get('scope', 'body')
+                        if scope not in ('body', 'stories') or (scope == 'stories' and state['format'] != 'docx'): raise ValueError('Invalid search scope')
                         args = (directory, payload['revision'], payload['query'])
                         options = {'offset': payload['offset'], 'snapshot_sha256': payload['snapshot_sha256']}
-                        search = {'docx': session.search_body, 'xlsx': session.search_cells, 'pptx': session.search_slides}[state['format']]
+                        search = {'docx': session.search_stories if scope == 'stories' else session.search_body, 'xlsx': session.search_cells, 'pptx': session.search_slides}[state['format']]
                         saved = {'format': state['format'], **search(*args, **options)}
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/chart-cache-scan'):
