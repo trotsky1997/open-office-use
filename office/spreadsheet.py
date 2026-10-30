@@ -1,5 +1,6 @@
 """Bounded worksheet inspection and explicit LibreOffice recalculation."""
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -10,6 +11,83 @@ from xml.etree.ElementTree import tostring
 
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
+
+
+def inspect_workbook(file):
+    """Return bounded sparse samples from a saved XLSX snapshot."""
+    source = Path(file).resolve(strict=True)
+    if source.suffix.lower() != '.xlsx': raise ValueError('Workbook inspection requires an XLSX file')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+    with tempfile.TemporaryDirectory(prefix='office-workbook-inspect-') as tmp:
+        snapshot = Path(tmp) / 'workbook.xlsx'; shutil.copyfile(source, snapshot)
+        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+        try:
+            with zipfile.ZipFile(snapshot) as archive:
+                entries = archive.infolist(); names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+                workbook = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
+                try:
+                    worksheets = workbook.worksheets; sheet_names = workbook.sheetnames; worksheet_names = {sheet.title for sheet in worksheets}
+                    chart_names = [name for name in sheet_names if name not in worksheet_names]
+                    results = []
+                    # shortcut: inspect only the first 50 worksheets and first 100 populated cells per sheet; use targeted reads for the rest.
+                    for sheet in worksheets[:50]:
+                        path = getattr(sheet, '_worksheet_path', None)
+                        if not isinstance(path, str) or path not in names: raise ValueError(f'Cannot locate worksheet XML: {sheet.title}')
+                        strings = sheet._shared_strings; sample = []; scanned = 0; complete = True
+                        with archive.open(path) as stream:
+                            stack, sheet_data = [], None
+                            for event, element in ET.iterparse(stream, events=('start', 'end')):
+                                ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                                tag = element.tag[len(ns):] if isinstance(element.tag, str) and element.tag.startswith(ns) else ''
+                                if event == 'start':
+                                    if not stack and element.tag != '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}worksheet': raise ValueError(f'Invalid worksheet XML: {sheet.title}')
+                                    if tag == 'sheetData' and stack[-1:] == ['worksheet']:
+                                        if sheet_data is not None: raise ValueError(f'Worksheet has duplicate sheet data: {sheet.title}')
+                                        sheet_data = element
+                                    stack.append(tag); continue
+                                if stack[-3:] == ['sheetData', 'row', 'c']:
+                                    if scanned >= 10000: complete = False; break
+                                    scanned += 1; parts = {child.tag[len(ns):]: child for child in element if isinstance(child.tag, str) and child.tag.startswith(ns)}
+                                    formula, value, inline = parts.get('f'), parts.get('v'), parts.get('is')
+                                    if formula is not None or value is not None and value.text is not None or inline is not None:
+                                        if len(sample) >= 100: complete = False; break
+                                        cell_type = element.get('t', 'n'); raw = value.text if value is not None else None
+                                        text = None; text_complete = True
+                                        if formula is not None:
+                                            text = '=' + formula.text if formula.text else None
+                                            if not formula.text: text_complete = None
+                                        elif cell_type == 's':
+                                            if raw is None or not raw.isdecimal() or len(raw) > 10 or int(raw) >= len(strings):
+                                                raise ValueError(f'Invalid shared string index in {sheet.title}')
+                                            text = strings[int(raw)]
+                                            text_complete = None
+                                        elif cell_type == 'inlineStr' and inline is not None:
+                                            x = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                                            text = ''.join(node.text or '' for child in inline for node in ([child] if child.tag == x + 't' else child.findall(x + 't') if child.tag == x + 'r' else []))
+                                            text_complete = all(child.tag == x + 't' or child.tag == x + 'r' and all(item.tag in (x + 't', x + 'rPr') for item in child) for child in inline)
+                                        else: text = raw
+                                        if text is not None and not isinstance(text, str): text = str(text)
+                                        if text is not None and re.search(r'_x[0-9a-fA-F]{4}_', text): text_complete = False
+                                        sample.append({'cell': element.get('r'), 'type': cell_type, 'formula_kind': formula.get('t', 'normal') if formula is not None else None,
+                                                       'value': text[:500] if text is not None else None, 'value_truncated': text is not None and len(text) > 500, 'text_complete': text_complete})
+                                    element.clear()
+                                elif stack[-2:] == ['sheetData', 'row']:
+                                    element.clear()
+                                    if sheet_data is not None: sheet_data.remove(element)
+                                stack.pop()
+                        if sheet_data is None: raise ValueError(f'Worksheet has no sheet data: {sheet.title}')
+                        results.append({'name': sheet.title, 'state': sheet.sheet_state, 'declared_max_row': sheet.max_row,
+                                        'declared_max_column': sheet.max_column, 'cells': sample, 'stored_cells_scanned': scanned, 'sample_complete': complete})
+                    return {'type': 'xlsx', 'sheets': results, 'total_worksheets': len(worksheets), 'worksheets_truncated': len(worksheets) > 50,
+                            'chartsheet_names': chart_names[:50], 'chartsheets_truncated': len(chart_names) > 50,
+                            'limits': {'worksheets': 50, 'cells_per_sheet': 100, 'stored_cells_scanned_per_sheet': 10000, 'characters_per_value': 500},
+                            'dimension_note': 'Declared dimensions may be inaccurate; samples cover stored cells only.', 'formula_cache_freshness': 'unknown'}
+                finally:
+                    workbook.close()
+        except (zipfile.BadZipFile, ET.ParseError) as exc:
+            raise ValueError(f'Invalid workbook package or worksheet XML: {exc}') from exc
 
 
 def read_range(file, sheet, cell_range, include_style=False):

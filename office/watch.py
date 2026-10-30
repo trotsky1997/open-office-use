@@ -91,6 +91,9 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
 <button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
 <p id="formula-status" role="status"></p><pre id="formula-scan-output"></pre></details>
+<details id="workbook-panel" hidden><summary>Workbook overview</summary>
+<p>Inspect a bounded sample of stored cells in each worksheet. Numbers and dates can be raw stored values; use a cell range for detailed reads.</p>
+<button type="button" id="workbook-load">Inspect displayed revision</button><p id="workbook-status" role="status"></p><div id="workbook-results"></div></details>
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
@@ -135,7 +138,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
-let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null;
+let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -583,6 +586,26 @@ function clearCommentsFor(revision) {
 function clearStoriesFor(revision) {
  if (storiesRevision!==null && storiesRevision!==revision) { storiesEpoch++; storiesRevision=null; document.getElementById('stories-status').textContent=''; document.getElementById('stories-list').replaceChildren(); }
 }
+function clearWorkbookFor(revision) {
+ if (workbookRevision!==null && workbookRevision!==revision) { workbookEpoch++; workbookRevision=null; document.getElementById('workbook-status').textContent=''; document.getElementById('workbook-results').replaceChildren(); }
+}
+document.getElementById('workbook-load').addEventListener('click', async () => {
+ if (displayed<0) return;
+ const revision=displayed, epoch=++workbookEpoch, button=document.getElementById('workbook-load'), status=document.getElementById('workbook-status'), output=document.getElementById('workbook-results');
+ workbookRevision=revision; button.disabled=true; output.replaceChildren(); status.textContent=`Inspecting revision ${revision}…`;
+ try {
+  const response=await fetch('workbook-inspect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Workbook inspection failed');
+  if (epoch!==workbookEpoch || displayed!==revision) return;
+  for (const sheet of result.sheets) {
+   const section=document.createElement('details'), title=document.createElement('summary'); title.textContent=`${sheet.name} (${sheet.state}) · ${sheet.cells.length} sampled cell(s)${sheet.sample_complete ? '' : ' · sample truncated'}`; section.appendChild(title);
+   const description=document.createElement('p'); description.textContent=`Declared maximum row ${sheet.declared_max_row ?? 'unknown'}, column ${sheet.declared_max_column ?? 'unknown'}; scanned ${sheet.stored_cells_scanned} stored cell(s).`; section.appendChild(description);
+   const list=document.createElement('ul'); for (const cell of sheet.cells) { const row=document.createElement('li'); row.textContent=`${cell.cell || '(address unavailable)'} · ${cell.type}${cell.formula_kind ? ' · formula '+cell.formula_kind : ''}: ${cell.value ?? '(no value)'}${cell.value_truncated ? '…' : ''}${cell.text_complete ? '' : ' (text may be incomplete)'}`; list.appendChild(row); } section.appendChild(list); output.appendChild(section);
+  }
+  status.textContent=`Revision ${revision}: ${result.total_worksheets} recognized worksheet(s). ${result.worksheets_truncated ? 'Only the first 50 are shown. ' : ''}${result.chartsheet_names.length ? 'Chart sheets: '+result.chartsheet_names.join(', ')+(result.chartsheets_truncated ? '…' : '')+'. ' : ''}Declared dimensions may be inaccurate.`;
+ } catch(error) { if (epoch===workbookEpoch) status.textContent=`Workbook inspection error: ${error.message}`; }
+ finally {button.disabled=false;}
+});
 document.getElementById('stories-load').addEventListener('click', async () => {
  if (displayed<0) return;
  const revision=displayed, epoch=++storiesEpoch, button=document.getElementById('stories-load'), status=document.getElementById('stories-status'), list=document.getElementById('stories-list');
@@ -722,6 +745,7 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
  } finally { notesBusy=false; }
 });
 function display(state, live) {
+ clearWorkbookFor(state.revision);
  clearStoriesFor(state.revision);
  if (!live) document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
  notesComparisonEpoch++;
@@ -747,6 +771,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ clearWorkbookFor(state.revision);
  clearStoriesFor(state.revision);
  document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
  clearNotesFor(state.revision, false);
@@ -870,6 +895,7 @@ async function refresh() {
   document.getElementById('notes-comparison').hidden=state.format !== 'pptx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
   document.getElementById('formula-panel').hidden=state.format !== 'xlsx';
+  document.getElementById('workbook-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
   if (state.revision !== current) {
    if (formulaStatusRevision !== state.revision) { formulaStatusRevision=null; document.getElementById('formula-status').textContent=''; document.getElementById('formula-scan-output').textContent=''; }
@@ -936,7 +962,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -944,6 +970,10 @@ def serve(directory, preview, port=0, render=None):
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/workbook-inspect'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Workbook inspection requires a revision')
+                        saved = session.inspect_workbook(directory, payload['revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/stories-read'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Header/footer inventory requires a revision')
                         saved = session.list_stories(directory, payload['revision'])

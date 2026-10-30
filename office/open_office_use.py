@@ -39,8 +39,7 @@ def inspect(path):
         return {'type': 'docx', 'paragraphs': [p.text for p in doc.paragraphs],
                 'tables': [[[cell.text for cell in row.cells] for row in table.rows] for table in doc.tables]}
     if suffix == '.xlsx':
-        wb = load_workbook(path, data_only=False)
-        return {'type': 'xlsx', 'sheets': [{'name': ws.title, 'rows': [[cell.value for cell in row] for row in ws.iter_rows()] } for ws in wb.worksheets]}
+        return spreadsheet.inspect_workbook(path)
     prs = Presentation(path)
     return {'type': 'pptx', 'slides': [[{'shape': i, 'text': shape.text} for i, shape in enumerate(slide.shapes) if shape.has_text_frame] for slide in prs.slides]}
 
@@ -187,6 +186,7 @@ def main():
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
+    session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     restore = sub.add_parser('restore'); restore.add_argument('directory'); restore.add_argument('--base', type=int, required=True); restore.add_argument('--revision', type=int, required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
     watcher = commands.add_parser('watch'); watcher.add_argument('directory'); watcher.add_argument('--port', type=int, default=0)
@@ -253,6 +253,8 @@ def main():
                 result = session.recalculate(args.directory, args.base)
             elif args.action == 'scan-formulas':
                 result = session.scan_formulas(args.directory, args.base)
+            elif args.action == 'inspect-workbook':
+                result = session.inspect_workbook(args.directory, args.revision)
             elif args.action == 'restore':
                 result = session.restore(args.directory, args.base, args.revision)
             elif args.action == 'apply':

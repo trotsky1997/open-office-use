@@ -158,6 +158,11 @@ def scan_formulas(directory, base_revision):
     return {'revision': base_revision, **result}
 
 
+def inspect_workbook(directory, revision):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **spreadsheet.inspect_workbook(source)}
+
+
 def export(directory, revision, output):
     state = info(directory)
     source = revision_file(state, revision)

@@ -28,8 +28,14 @@ server = FastMCP(
 
 @server.tool()
 def inspect_file(file: str) -> dict[str, Any]:
-    """Extract basic text and cell content from a DOCX, XLSX, or PPTX file."""
+    """Extract basic content; XLSX uses bounded sparse cell samples and reports scan limits."""
     return inspect(file)
+
+
+@server.tool()
+def session_inspect_workbook(directory: str, revision: int) -> dict[str, Any]:
+    """Inspect a bounded sparse sample of an exact XLSX session revision."""
+    return session.inspect_workbook(directory, revision)
 
 
 @server.tool()
