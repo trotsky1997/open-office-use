@@ -544,3 +544,5 @@ Chrome 对外下载句柄改为随机 UUID，扩展内保存句柄与原生数�
 新增 tab.prepareDownloadStart：预先启用主 frame 与已附着跨进程 frame 的 Page 事件，按标签等待下载开始并返回 GUID、frame、URL 和建议文件名；准备超时阻止后续 Page.enable。SDK 107 项检查通过，Linux ARM64 Chromium 原生消息实测主文档及跨进程 frame，macOS Electron 实页验证主文档。GUID 与文件路径句柄独立，新建 frame 存在事件遗漏窗口，CDP 事件为实验性且已弃用；Windows 未测。
 
 下载开始观察在等待期间为新附着的跨进程 iframe 启用 Page 事件，结束或失败时移除监听；SDK 107 项检查通过。Linux ARM64 Chromium 原生消息及 macOS Electron 实页验证动态新 frame 加载后触发下载并取得所属 frame 事件。frame 附着至事件启用之间仍存在遗漏窗口；Windows 未测。
+
+下载开始观察期间，新 frame 的 Page.enable 会成为后续 SDK CDP 操作的准备屏障，事件或失败后释放。SDK 108 项检查通过；Linux ARM64 Chromium 原生消息和 macOS Electron 实页注入延迟，确认后续下载动作等待启用并收到 frame 事件。页面独立触发及绕过 SDK 的动作仍可能发生在启用之前；Windows 未测。

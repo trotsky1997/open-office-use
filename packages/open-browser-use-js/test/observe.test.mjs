@@ -1825,3 +1825,17 @@ test('download start observation is tab-scoped and bounds preparation',async()=>
   let release;browser.cdp.enableFrameSessions=async()=>await new Promise(resolve=>{release=resolve;});calls.length=0;
   await assert.rejects(tab.prepareDownloadStart({timeoutMs:20}),/timed out/i);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,0);
 });
+
+test('dynamic download frame preparation gates subsequent SDK commands',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1),handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return()=>handlers.delete(handler);};client.onDisconnect=()=>()=>{};
+  browser.cdp.ensureAttached=async()=>{};browser.cdp.enableFrameSessions=async()=>true;browser.cdp.frameSessions=async()=>[];
+  let release,commands=0;client.request=async(_method,params)=>{if(params.method==='Page.enable' && params.target.sessionId==='late')return await new Promise(resolve=>{release=resolve;});if(params.method==='Runtime.evaluate')commands++;return {};};
+  const wait=await tab.prepareDownloadStart({timeoutMs:1000});
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1},method:'Target.attachedToTarget',params:{sessionId:'late',targetInfo:{type:'iframe'}}}});
+  while(!release)await new Promise(resolve=>setImmediate(resolve));
+  const command=browser.cdp.call(1,'Runtime.evaluate',{expression:'1'});await new Promise(resolve=>setImmediate(resolve));assert.equal(commands,0);
+  release({});await command;assert.equal(commands,1);
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1,sessionId:'late'},method:'Page.downloadWillBegin',params:{guid:'g',frameId:'f',url:'https://example.test',suggestedFilename:'file'}}});
+  assert.equal((await wait.wait()).guid,'g');assert.equal(handlers.size,0);
+});

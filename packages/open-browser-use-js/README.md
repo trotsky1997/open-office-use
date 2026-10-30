@@ -1201,7 +1201,8 @@ const {guid, frameId, url, suggestedFilename} = await started.wait();
 
 This reports the browser's download-start event and covers the main frame and
 cross-process frames attached during preparation. New cross-process frames are
-enabled after attachment; a download that starts before enablement can be missed. The GUID identifies the CDP download event; it is separate from the
+enabled after attachment; subsequent SDK CDP commands wait for that enablement.
+Downloads initiated independently by the page before enablement can be missed. The GUID identifies the CDP download event; it is separate from the
 opaque handle returned by `prepareDownload()` and does not provide a file path.
 `Page.downloadWillBegin` is an experimental, deprecated CDP event.
 

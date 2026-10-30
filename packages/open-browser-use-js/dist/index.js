@@ -2398,7 +2398,9 @@ export class OpenBrowserUseTab {
             const { source, method, params } = event.params;
             if (!isObject(source) || source.tabId !== this.id || method !== "Target.attachedToTarget" || !isObject(params) || typeof params.sessionId !== "string" || !isObject(params.targetInfo) || params.targetInfo.type !== "iframe")
                 return;
-            void enable(params.sessionId).catch(error => { if (!controller.signal.aborted)
+            const preparation = enable(params.sessionId);
+            cdp.blockUntilPrepared(this.id, preparation);
+            void preparation.catch(error => { if (!controller.signal.aborted)
                 rejectDynamic(error instanceof Error ? error : new Error(String(error))); });
         });
         const waiting = cdp.waitForEvent(this.id, event => {

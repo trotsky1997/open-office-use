@@ -141,3 +141,4 @@
 - [x] 新增按标签观察下载开始的 CDP 入口，返回 GUID、frame、URL 和建议文件名；Linux Chromium 实测主文档及已附着跨进程 frame，macOS Electron 实测主文档。
 - [x] 下载开始观察为后续附着的跨进程 frame 启用 Page 事件；Linux Chromium 与 macOS Electron 实页验证，附着到启用之间仍有短暂遗漏窗口。
 - [ ] 下载事件 GUID 与 Chrome 文件路径句柄的可靠关联仍待解决。
+- [x] 下载开始观察期间，新 frame 的 Page.enable 阻挡后续 SDK CDP 动作直至准备结束；Linux Chromium 与 macOS Electron 实页注入延迟验证。

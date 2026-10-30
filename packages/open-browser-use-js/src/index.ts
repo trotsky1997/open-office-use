@@ -1954,7 +1954,9 @@ export class OpenBrowserUseTab {
       if(controller.signal.aborted || event.method!=="onCDPEvent" || !isObject(event.params))return;
       const {source,method,params}=event.params;
       if(!isObject(source) || source.tabId!==this.id || method!=="Target.attachedToTarget" || !isObject(params) || typeof params.sessionId!=="string" || !isObject(params.targetInfo) || params.targetInfo.type!=="iframe")return;
-      void enable(params.sessionId).catch(error=>{if(!controller.signal.aborted)rejectDynamic(error instanceof Error ? error : new Error(String(error)));});
+      const preparation=enable(params.sessionId);
+      cdp.blockUntilPrepared(this.id,preparation);
+      void preparation.catch(error=>{if(!controller.signal.aborted)rejectDynamic(error instanceof Error ? error : new Error(String(error)));});
     });
     const waiting=cdp.waitForEvent(this.id,event=>{
       if(event.method!=="onCDPEvent" || !isObject(event.params))return false;
