@@ -126,6 +126,24 @@ app.whenReady().then(async () => {
     await sdkTab.playwright.getByRole('button',{name:'View mode',pressed:true}).click();
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'state-pressed',index:0,trusted:true});
+    await sdkTab.watchDialogs();
+    let dialogWait=sdkTab.waitForDialog({timeoutMs:5000});
+    const confirmation=sdkTab.evaluate(`confirm('Continue?')`); void confirmation.catch(()=>{});
+    let nativeDialog=await dialogWait;
+    assert.equal(nativeDialog.info.type,'confirm'); assert.equal(nativeDialog.info.message,'Continue?');
+    await nativeDialog.dismiss(); assert.equal(await confirmation,false); assert.equal(sdkTab.currentDialog(),null);
+    await assert.rejects(nativeDialog.dismiss(),/no longer open/);
+    dialogWait=sdkTab.waitForDialog({timeoutMs:5000});
+    const alerted=sdkTab.evaluate(`alert('Notice')`); void alerted.catch(()=>{});
+    nativeDialog=await dialogWait;
+    assert.equal(nativeDialog.info.type,'alert'); assert.equal(nativeDialog.info.message,'Notice');
+    await nativeDialog.accept(); assert.equal(await alerted,null);
+    const frameDialogWait=sdkTab.waitForDialog({timeoutMs:5000});
+    const frameConfirmation=sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`confirm('Frame?')`,returnByValue:true},{sessionId:frameSession});void frameConfirmation.catch(()=>{});
+    const frameDialog=await frameDialogWait;
+    assert.equal(frameDialog.info.type,'confirm');assert.equal(frameDialog.info.message,'Frame?');
+    await frameDialog.dismiss();assert.equal((await frameConfirmation).result.value,false);
+
     const beforeHide = await evaluate('scrollY');
     surface.hide();
     await assert.rejects(call('Input.synthesizeScrollGesture',{x:100,y:100,xDistance:0,yDistance:-250,gestureSourceType:'mouse',preventFling:true}),/IAB_SCROLL_REQUIRES_PRESENTED_SURFACE/);

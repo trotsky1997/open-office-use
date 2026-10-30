@@ -35,6 +35,17 @@ try {
  const client=new OpenBrowserUseClient({socketPath,sessionId:'native-e2e',timeoutMs:15000});browser=new OpenBrowserUseBrowser({client});await browser.connect();
  const info=await client.getInfo();assert.equal(info.metadata.extensionId,id);
  const tab=await browser.newTab();await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
+ await tab.watchDialogs();
+ let nativeDialogWait=tab.waitForDialog({timeoutMs:5000});
+ const promptResult=tab.evaluate(`prompt('Name?','Guest')`); void promptResult.catch(()=>{});
+ let nativeDialog=await nativeDialogWait;
+ assert.equal(nativeDialog.info.type,'prompt');assert.equal(nativeDialog.info.defaultPrompt,'Guest');
+ await nativeDialog.accept('Ada');assert.equal(await promptResult,'Ada');
+ await assert.rejects(nativeDialog.accept('again'),/no longer open/);
+ nativeDialogWait=tab.waitForDialog({timeoutMs:5000});
+ const confirmResult=tab.evaluate(`confirm('Continue?')`);void confirmResult.catch(()=>{});
+ nativeDialog=await nativeDialogWait;assert.equal(nativeDialog.info.type,'confirm');
+ await nativeDialog.dismiss();assert.equal(await confirmResult,false);
  const state=await tab.observe();const button=state.nodes.find(n=>n.role==='button'&&n.name==='Save');assert.ok(button);await tab.click(button.index,state.snapshotId);
  assert.deepEqual(await tab.evaluate('({text:document.querySelector("button").textContent,trusted:window.trusted})'),{text:'Done',trusted:true});
  assert.match((await tab.observe({diff:true})).text,/\+ .*button.*Done/);
@@ -127,6 +138,9 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ nativeDialogWait=tab.waitForDialog({timeoutMs:5000});
+ const frameConfirm=browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`confirm('Frame?')`,returnByValue:true},{sessionId:crossSession});void frameConfirm.catch(()=>{});
+ nativeDialog=await nativeDialogWait;assert.equal(nativeDialog.info.message,'Frame?');await nativeDialog.dismiss();assert.equal((await frameConfirm).result.value,false);
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'(()=>{const box=document.createElement(\'section\');box.id=\'state-fixture\';box.innerHTML=\'<input type="checkbox" aria-label="Notifications" checked><input type="checkbox" aria-label="Notifications"><input type="checkbox" aria-label="Notifications" checked disabled><fieldset disabled><button aria-label="Locked by fieldset">Locked</button></fieldset><div aria-disabled="true"><button aria-label="Locked by parent">Locked</button></div><button aria-label="View mode" aria-pressed="true">On</button><button aria-label="View mode" aria-pressed="false">Off</button><button aria-label="Details" aria-expanded="false">Details</button><div role="tablist"><button role="tab" aria-label="Period" aria-selected="true">One</button><button role="tab" aria-label="Period" aria-selected="false">Two</button></div>\';box.querySelectorAll(\'input\').forEach((el,i)=>el.onchange=e=>parent.postMessage({kind:\'state-check\',index:i,checked:el.checked,trusted:e.isTrusted},\'*\'));box.querySelectorAll(\'[aria-pressed]\').forEach((el,i)=>el.onclick=e=>parent.postMessage({kind:\'state-pressed\',index:i,trusted:e.isTrusted},\'*\'));document.body.append(box)})()'},{sessionId:crossSession});
  assert.equal(await tab.playwright.getByRole('checkbox',{name:'Notifications',disabled:true}).count(),1);
  assert.equal(await tab.playwright.getByRole('checkbox',{name:'Notifications',disabled:false}).count(),2);
@@ -258,6 +272,8 @@ try {
    await call('const state = await tab.observe(); const button = state.nodes.find(n => n.role === "button" && n.name === "Save"); await tab.click(button.index,state.snapshotId)');
    assert.equal((await call('nodeRepl.write(await tab.evaluate("window.trusted"))')).content[0].text,'true');
    assert.equal((await call('nodeRepl.emitImage(await tab.getScreenshot())')).content[0].type,'image');
+   await call('await tab.watchDialogs(); const dialogWait = tab.waitForDialog({timeoutMs:5000}); const dialogAction = tab.evaluate(\"prompt(\\\"REPL?\\\",\\\"default\\\")\"); void dialogAction.catch(()=>{});');
+   assert.equal((await call('const dialog = await dialogWait; await dialog.accept(\"response\"); nodeRepl.write(await dialogAction)')).content[0].text,'response');
    await call('await browser.client.finalizeTabs([])');
  } finally {const exited=once(repl,'exit');repl.stdin.end();await exited;}
  if (process.env.OBU_MIXED_SMOKE === '1') {

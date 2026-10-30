@@ -50,6 +50,13 @@ export type SelectOption = string | {
     value?: string;
     label?: string;
 };
+export type OpenBrowserUseDialogInfo = {
+    id: string;
+    type: "alert" | "confirm" | "prompt" | "beforeunload";
+    message: string;
+    url: string;
+    defaultPrompt?: string;
+};
 export type RoleLocatorOptions = {
     name?: string;
     exact?: boolean;
@@ -84,7 +91,7 @@ export declare class OpenBrowserUseClient {
     connect(): Promise<this>;
     close(): void;
     onNotification(handler: NotificationHandler): () => void;
-    request(method: string, params?: BrowserUseRequestParams): Promise<JsonValue>;
+    request(method: string, params?: BrowserUseRequestParams, expectedGeneration?: number): Promise<JsonValue>;
     getInfo(): Promise<JsonValue>;
     createTab(): Promise<JsonValue>;
     getTabs(): Promise<JsonValue>;
@@ -123,6 +130,14 @@ export declare class OpenBrowserUseBrowser {
     getUserTabs(): Promise<JsonValue>;
     claimTab(tabId: number): Promise<OpenBrowserUseTab>;
 }
+export declare class OpenBrowserUseDialog {
+    private cdp;
+    private tabId;
+    readonly info: OpenBrowserUseDialogInfo;
+    constructor(cdp: OpenBrowserUseCdp, tabId: number, info: OpenBrowserUseDialogInfo);
+    accept(promptText?: string): Promise<void>;
+    dismiss(): Promise<void>;
+}
 export declare class OpenBrowserUseTab {
     #private;
     readonly browser: OpenBrowserUseBrowser;
@@ -144,6 +159,11 @@ export declare class OpenBrowserUseTab {
     private freshFilterObservation;
     private scopeContains;
     private verifyLocatorScope;
+    watchDialogs(): Promise<void>;
+    currentDialog(): OpenBrowserUseDialog | null;
+    waitForDialog(options?: {
+        timeoutMs?: number;
+    }): Promise<OpenBrowserUseDialog>;
     click(index: number, snapshotId: string): Promise<void>;
     hover(index: number, snapshotId: string): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;
@@ -271,6 +291,7 @@ export declare class OpenBrowserUseCdp {
             x: number;
             y: number;
         };
+        expectedGeneration?: number;
     }): Promise<JsonValue>;
     evaluate(tabId: number, expression: string, options?: {
         awaitPromise?: boolean;

@@ -331,6 +331,9 @@ enables/disables both effects during manual steps or automatic playback.
   require further validation. A stalled preparation or screenshot returns a
   three-second timeout and releases the tab queue. Timeout detaches the debugger
   and invalidates iframe sessions; observe a timed-out input before retrying.
+- JavaScript `alert` and `confirm` dialogs can be observed and handled with
+  the SDK dialog API. A native dialog may make a hidden host window visible.
+  Electron does not implement `window.prompt()`.
 - Scroll requires a presented surface. A hidden or minimized host temporarily
   disables background throttling and sends a trusted wheel event, then restores
   the previous setting. This can temporarily change page visibility and affects

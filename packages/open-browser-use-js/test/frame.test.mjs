@@ -84,6 +84,26 @@ test("reconnects after failed connection and remote disconnect", async () => {
   }
 });
 
+test("connection-bound requests reject after a socket reconnect", async () => {
+  const directory=await mkdtemp(join(tmpdir(),"obu-generation-")), socketPath=join(directory,"obu.sock");
+  const sockets=[], received=[];
+  const server=createServer(socket=>{sockets.push(socket);socket.on('data',data=>received.push(data));});
+  server.listen(socketPath); await once(server,'listening');
+  const client=new OpenBrowserUseClient({socketPath});
+  try {
+    await client.connect();
+    const generation=client.connectionGeneration;
+    const closed=once(sockets[0],'close');sockets[0].destroy();await closed;
+    for(let i=0;i<50 && client.connectionGeneration===generation;i++)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.notEqual(client.connectionGeneration,generation);
+    await assert.rejects(client.request('executeCdp',{},generation),/Connection changed/);
+    assert.equal(received.length,0);
+  } finally {
+    client.close();for(const socket of sockets)socket.destroy();server.close();await once(server,'close');
+    await rm(directory,{recursive:true,force:true});
+  }
+});
+
 test("high-level browser tabs can goto, wait for load state, and read a DOM snapshot", async () => {
   const directory = await mkdtemp(join(tmpdir(), "obu-sdk-js-"));
   const socketPath = join(directory, "obu.sock");

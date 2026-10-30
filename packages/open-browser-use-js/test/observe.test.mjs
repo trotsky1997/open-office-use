@@ -76,6 +76,59 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test('JavaScript dialogs are observed, scoped and decided only once', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set(), calls=[];
+  let release;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    calls.push(params);
+    if(params.method==='Page.handleJavaScriptDialog')await new Promise(resolve=>{release=resolve;});
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await tab.watchDialogs();
+  const waiting=tab.waitForDialog({timeoutMs:1000});
+  const emit=(method,params,source={tabId:1,sessionId:'frame'})=>{for(const handler of handlers)handler({method:'onCDPEvent',params:{source,method,params}});};
+  emit('Page.javascriptDialogOpening',{type:'prompt',message:'Name?',url:'https://example.test',defaultPrompt:'Guest'});
+  const dialog=await waiting;
+  assert.deepEqual({...dialog.info,id:'id'},{id:'id',type:'prompt',message:'Name?',url:'https://example.test',defaultPrompt:'Guest'});
+  const pending=dialog.accept('Ada');
+  await new Promise(resolve=>setImmediate(resolve));
+  await assert.rejects(dialog.dismiss(),/already been issued/);
+  assert.deepEqual(calls.at(-1).commandParams,{accept:true,promptText:'Ada'});
+  assert.equal(calls.at(-1).target.sessionId,'frame');
+  release();await pending;
+  assert.equal(tab.currentDialog(),null);
+  await assert.rejects(dialog.dismiss(),/no longer open/);
+  emit('Page.javascriptDialogOpening',{type:'confirm',message:'Continue?',url:'https://example.test'},{tabId:1});
+  await assert.rejects(tab.currentDialog().accept('text'),/prompt dialog/);
+  emit('Page.javascriptDialogClosed',{}, {tabId:1});
+  assert.equal(tab.currentDialog(),null);
+  emit('Page.javascriptDialogOpening',{type:'alert',message:'Closed',url:'https://example.test'},{tabId:1});
+  for(const handler of handlers)handler({method:'onTabClosed',params:{tabId:1}});
+  assert.equal(tab.currentDialog(),null);
+  await assert.rejects(tab.waitForDialog({timeoutMs:0}),/Timed out/);
+});
+
+test('dialog decisions cannot cross a reconnect during attachment', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set(), calls=[];
+  let generation=0, reconnect=false;
+  Object.defineProperty(client,'connectionGeneration',{get:()=>generation});
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async(method,params)=>{
+    if(method==='attach'){if(reconnect)generation++;return {};}
+    calls.push(params);return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await tab.watchDialogs();
+  for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method:'Page.javascriptDialogOpening',params:{type:'confirm',message:'Continue?',url:'https://example.test'}}});
+  const dialog=tab.currentDialog();reconnect=true;
+  await assert.rejects(dialog.dismiss(),/Connection changed/);
+  assert.equal(calls.some(call=>call.method==='Page.handleJavaScriptDialog'),false);
+  assert.equal(tab.currentDialog(),null);
+});
+
 test("large page text is bounded and reports truncation", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
   client.request = async (method, params) => {

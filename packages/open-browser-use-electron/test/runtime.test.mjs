@@ -108,6 +108,24 @@ test('a stalled background scroll releases the tab queue', async t => {
   assert.equal(wc.backgroundThrottling, true);
   await call('Runtime.evaluate');
 });
+test('dialog decisions bypass a blocked page command without crossing scopes', async t => {
+  const { adapter, a, b }=setup(t), tab=await a.tabs.create(), commands=[];
+  let release;
+  adapter.views[0].webContents.debugger.sendCommand=async (method,params)=>{
+    commands.push(method);
+    if(method==='Runtime.evaluate')await new Promise(resolve=>{release=resolve;});
+    if(method==='Page.handleJavaScriptDialog')release();
+    return {};
+  };
+  const pending=a.call('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});
+  await new Promise(resolve=>setImmediate(resolve));
+  await assert.rejects(b.call('executeCdp',{target:{tabId:tab.id},method:'Page.handleJavaScriptDialog',commandParams:{accept:true}}));
+  await assert.rejects(a.call('executeCdp',{target:{tabId:tab.id},method:'Page.handleJavaScriptDialog',commandParams:{accept:'yes'}}),/Invalid dialog decision/);
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Page.handleJavaScriptDialog',commandParams:{accept:false}});
+  await pending;
+  assert.deepEqual(commands,['Runtime.evaluate','Page.handleJavaScriptDialog']);
+});
+
 test('reject global CDP and unsafe navigation; enforce operation grants', async t => {
   const { runtime, a } = setup(t); const tab = await a.tabs.create();
   for (const method of ['Browser.close', 'Target.getTargets', 'Storage.clearDataForOrigin', 'Network.getAllCookies', 'DOM.setFileInputFiles']) {

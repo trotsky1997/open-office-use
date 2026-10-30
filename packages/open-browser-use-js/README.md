@@ -289,6 +289,29 @@ host platform. `+` is supported alone; use `Shift+=` with other modifiers.
 For arbitrary Unicode text, use `typeText`. Pressing a key invalidates the previous
 observation.
 
+## JavaScript dialogs
+
+Call `watchDialogs()` before triggering a JavaScript dialog. Start the action
+without awaiting it, then wait for and explicitly handle the dialog:
+
+```js
+await tab.watchDialogs();
+const waiting = tab.waitForDialog({ timeoutMs: 5000 });
+const action = tab.evaluate("confirm('Continue?')");
+void action.catch(() => {});
+const dialog = await waiting;
+console.log(dialog.info.type, dialog.info.message, dialog.info.url);
+await dialog.dismiss(); // or await dialog.accept()
+console.log(await action);
+```
+
+`currentDialog()` returns the active dialog or `null`. Prompt dialogs expose
+`info.defaultPrompt` and can be answered with `dialog.accept('text')`. A dialog
+handle permits one decision; a disconnect invalidates it. If a decision fails
+with an unknown outcome, inspect the page before trying another action. Chrome
+supports prompt dialogs; Electron does not implement `window.prompt()`.
+Electron may show a hidden host window when a native dialog opens.
+
 ## Persistent JavaScript MCP
 
 The SDK package also provides `obu-repl-mcp`, an MCP stdio server for trusted

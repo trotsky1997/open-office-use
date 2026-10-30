@@ -29,6 +29,7 @@ export class IabClient extends OpenBrowserUseClient {
       this.pending.clear(); this.handlers.clear();
     });
   }
+  override get connectionGeneration(): number { return this.channel.stream.destroyed ? 1 : 0; }
   override async connect(): Promise<this> { if (this.channel.stream.destroyed) throw new Error('IAB connection closed'); return this; }
   override close(): void { this.channel.close(); }
   override onNotification(handler: NotificationHandler): () => void { this.handlers.add(handler); return () => { this.handlers.delete(handler); }; }
@@ -49,7 +50,8 @@ export class IabClient extends OpenBrowserUseClient {
     // Do not keep the lease secret in long-lived client metadata.
     b.secret = ''; return this;
   }
-  override request(method: string, params: BrowserUseRequestParams = {}): Promise<JsonValue> {
+  override request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number): Promise<JsonValue> {
+    if (expectedGeneration !== undefined && expectedGeneration !== this.connectionGeneration) return Promise.reject(new Error("Connection changed; observe again"));
     if (params.session_id !== undefined && params.session_id !== this.sessionId) return Promise.reject(new Error('IAB scope mismatch'));
     return this.send(method, { ...params, session_id: this.sessionId, turn_id: params.turn_id ?? this.turnId });
   }

@@ -21,7 +21,7 @@ type Tab = {
 type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; closing?: boolean };
 type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds: { x: number; y: number; width: number; height: number }; remove: () => void };
 const pageCommands = new Set([
-  'Page.enable', 'Page.disable', 'Page.navigate', 'Page.reload', 'Page.stopLoading',
+  'Page.enable', 'Page.disable', 'Page.navigate', 'Page.reload', 'Page.stopLoading', 'Page.handleJavaScriptDialog',
   'Page.getNavigationHistory', 'Page.navigateToHistoryEntry', 'Page.captureScreenshot', 'Page.getFrameTree',
   'Page.getLayoutMetrics', 'Page.close',
   'Runtime.enable', 'Runtime.disable', 'Runtime.evaluate', 'Runtime.callFunctionOn',
@@ -225,6 +225,7 @@ export class IabRuntime implements Backend {
     } else if (!pageCommands.has(method)) throw new Error('IAB CDP command is outside page permissions');
     if (params.includeCommandLineAPI) throw new Error('DevTools command-line helpers are not exposed to page grants');
     if (method === 'Page.navigate') assertUrl(params.url);
+    if (method === 'Page.handleJavaScriptDialog' && (typeof params.accept !== 'boolean' || (params.promptText !== undefined && typeof params.promptText !== 'string') || Object.keys(params).some(key => !['accept','promptText'].includes(key)))) throw new Error('Invalid dialog decision');
     if (method === 'Page.close') { await this.closeTab(tab.scopeId, tab.id); return {}; }
     const scroll = method === 'Input.synthesizeScrollGesture' || (method === 'Input.dispatchMouseEvent' && params.type === 'mouseWheel');
     const mouse = method === 'Input.dispatchMouseEvent' || method === 'Input.synthesizeScrollGesture';
@@ -340,11 +341,13 @@ export class IabRuntime implements Backend {
     if (params.visualPoint !== undefined && (!params.target?.sessionId || params.method !== 'Input.dispatchMouseEvent' ||
         !params.visualPoint || !Number.isFinite(params.visualPoint.x) || !Number.isFinite(params.visualPoint.y) || params.visualPoint.x < 0 || params.visualPoint.y < 0)) throw new Error('Invalid visual point');
     tab.pending++;
-    const run = tab.queue.then(() => {
+    const execute = () => {
       if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
       return this.cdp(this.tab(scopeId, tab.id), params.method, params.commandParams ?? {}, authorized, params.target?.sessionId, params.visualPoint);
-    });
-    tab.queue = run.catch(() => {});
+    };
+    // Dialog decisions must bypass an input or evaluation blocked by that dialog.
+    const run = params.method === 'Page.handleJavaScriptDialog' ? Promise.resolve().then(execute) : tab.queue.then(execute);
+    if (params.method !== 'Page.handleJavaScriptDialog') tab.queue = run.catch(() => {});
     try { return await run; } finally { tab.pending--; }
   }
   readonly surfaces = {

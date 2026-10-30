@@ -51,6 +51,7 @@ export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | { clien
 
 export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; checked?: boolean | "mixed"; disabled?: boolean; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
 export type SelectOption = string | {value?: string; label?: string};
+export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; url: string; defaultPrompt?: string };
 export type RoleLocatorOptions = {name?: string; exact?: boolean; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
@@ -119,6 +120,7 @@ export class OpenBrowserUseClient {
     socket.on("close", () => {
       if (this.#socket !== socket) return;
       this.#socket = null;
+      this.#generation++;
       this.#pendingData = Buffer.alloc(0);
       this.#rejectAll(new Error("Open Browser Use socket closed"));
     });
@@ -142,6 +144,7 @@ export class OpenBrowserUseClient {
   }
 
   close(): void {
+    if (this.#socket) this.#generation++;
     this.#socket?.destroy();
     this.#socket = null;
     this.#connection = null;
@@ -156,8 +159,9 @@ export class OpenBrowserUseClient {
     };
   }
 
-  async request(method: string, params: BrowserUseRequestParams = {}): Promise<JsonValue> {
+  async request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number): Promise<JsonValue> {
     await this.connect();
+    if (expectedGeneration !== undefined && expectedGeneration !== this.#generation) throw new Error("Connection changed; observe again");
     const socket = this.#socket;
     if (!socket) {
       throw new Error("Open Browser Use socket is not connected");
@@ -396,6 +400,12 @@ export class OpenBrowserUseBrowser {
     if (tabIdFromValue(claimed, "claimUserTab response") !== tabId) throw new Error("Browser claimed a different tab");
     return this.tab(tabId);
   }
+}
+
+export class OpenBrowserUseDialog {
+  constructor(private cdp: OpenBrowserUseCdp, private tabId: number, readonly info: OpenBrowserUseDialogInfo) {}
+  accept(promptText?: string): Promise<void> { return this.cdp.resolveDialog(this.tabId,this.info.id,true,promptText); }
+  dismiss(): Promise<void> { return this.cdp.resolveDialog(this.tabId,this.info.id,false); }
 }
 
 export class OpenBrowserUseTab {
@@ -668,6 +678,31 @@ export class OpenBrowserUseTab {
         if (!matchesTextFilters(await this.scopeText(fresh,current.index),item.filters)) throw new RetryablePreflightError("Locator text changed; observe again");
       }
     }
+  }
+
+  async watchDialogs(): Promise<void> { await this.browser.cdp.enableDialogs(this.id); }
+
+  currentDialog(): OpenBrowserUseDialog | null {
+    const info = this.browser.cdp.currentDialog(this.id);
+    return info ? new OpenBrowserUseDialog(this.browser.cdp,this.id,info) : null;
+  }
+
+  async waitForDialog(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDialog> {
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid dialog timeout");
+    let dialog = this.currentDialog();
+    if (dialog) return dialog;
+    await this.watchDialogs();
+    dialog = this.currentDialog();
+    if (dialog) return dialog;
+    await this.browser.cdp.waitForEvent(this.id,notification => {
+      if (notification.method !== "onCDPEvent" || !isObject(notification.params)) return false;
+      const source = notification.params.source;
+      return isObject(source) && source.tabId === this.id && notification.params.method === "Page.javascriptDialogOpening";
+    },{timeoutMs,timeoutMessage:"Timed out waiting for a JavaScript dialog"});
+    dialog = this.currentDialog();
+    if (!dialog) throw new Error("Dialog closed before it could be observed");
+    return dialog;
   }
 
   async click(index: number, snapshotId: string): Promise<void> {
@@ -1327,21 +1362,33 @@ export class OpenBrowserUseCdp {
   #pending = new Map<number, Set<Promise<void>>>();
   #failure = new Map<number, Error>();
   #generations = new Map<number, number>();
+  #dialogs = new Map<number, {info: OpenBrowserUseDialogInfo; generation:number; sessionId?:string; issued:boolean}>();
+  #dialogEnabled = new Map<number,number>();
 
   constructor(client: OpenBrowserUseClient) {
     this.client = client;
     client.onNotification(notification => {
-      if (notification.method === "onDebuggerDetach" && isObject(notification.params) && typeof notification.params.tabId === "number") {
+      if (["onDebuggerDetach","onTabClosed"].includes(notification.method) && isObject(notification.params) && typeof notification.params.tabId === "number") {
         const tabId = notification.params.tabId;
         this.#frames.get(tabId)?.clear();
         this.#frames.delete(tabId);
         this.#generations.delete(tabId);
         this.#failure.delete(tabId);
+        this.#dialogs.delete(tabId);
+        this.#dialogEnabled.delete(tabId);
         return;
       }
       if (notification.method !== "onCDPEvent" || !isObject(notification.params)) return;
       const { source, method, params } = notification.params;
       if (!isObject(source) || typeof source.tabId !== "number" || !isObject(params)) return;
+      if (method === "Page.javascriptDialogOpening" && typeof params.type === "string" && ["alert","confirm","prompt","beforeunload"].includes(params.type) && typeof params.message === "string" && typeof params.url === "string") {
+        const info: OpenBrowserUseDialogInfo = {id:randomUUID(),type:params.type as OpenBrowserUseDialogInfo["type"],message:params.message,url:params.url,...(typeof params.defaultPrompt === "string" ? {defaultPrompt:params.defaultPrompt} : {})};
+        this.#dialogs.set(source.tabId,{info,generation:this.client.connectionGeneration,...(typeof source.sessionId === "string" ? {sessionId:source.sessionId} : {}),issued:false});
+      } else if (method === "Page.javascriptDialogClosed") {
+        const dialog = this.#dialogs.get(source.tabId);
+        if (dialog && (dialog.sessionId === source.sessionId || typeof source.sessionId !== "string")) this.#dialogs.delete(source.tabId);
+      }
+
       const frames = this.#frames.get(source.tabId);
       if (!frames) return;
       if (method === "Target.detachedFromTarget" && typeof params.sessionId === "string") {
@@ -1365,6 +1412,32 @@ export class OpenBrowserUseCdp {
         .finally(() => pending.delete(task));
       pending.add(task);
     });
+  }
+
+  /** @internal */
+  async enableDialogs(tabId: number): Promise<void> {
+    if (this.#dialogEnabled.get(tabId) === this.client.connectionGeneration) return;
+    await this.call(tabId,"Page.enable");
+    this.#dialogEnabled.set(tabId,this.client.connectionGeneration);
+  }
+
+  /** @internal */
+  currentDialog(tabId: number): OpenBrowserUseDialogInfo | null {
+    const dialog = this.#dialogs.get(tabId);
+    if (!dialog || dialog.generation !== this.client.connectionGeneration) { this.#dialogs.delete(tabId); return null; }
+    return {...dialog.info};
+  }
+
+  /** @internal */
+  async resolveDialog(tabId: number, id: string, accept: boolean, promptText?: string): Promise<void> {
+    if (promptText !== undefined && typeof promptText !== "string") throw new Error("Prompt text must be a string");
+    const dialog = this.#dialogs.get(tabId);
+    if (!dialog || dialog.info.id !== id || dialog.generation !== this.client.connectionGeneration) throw new Error("Dialog is no longer open");
+    if (dialog.issued) throw new Error("Dialog decision has already been issued; observe again");
+    if (promptText !== undefined && (!accept || dialog.info.type !== "prompt")) throw new Error("Prompt text requires an accepted prompt dialog");
+    dialog.issued = true;
+    await this.call(tabId,"Page.handleJavaScriptDialog",{accept,...(promptText !== undefined ? {promptText} : {})},{sessionId:dialog.sessionId,expectedGeneration:dialog.generation});
+    if (this.#dialogs.get(tabId)?.info.id === id) this.#dialogs.delete(tabId);
   }
 
   async enableFrameSessions(tabId: number): Promise<boolean> {
@@ -1403,16 +1476,19 @@ export class OpenBrowserUseCdp {
     tabId: number,
     method: string,
     commandParams: BrowserUseRequestParams = {},
-    options: { timeoutMs?: number; sessionId?: string; visualPoint?: {x: number; y: number} } = {}
+    options: { timeoutMs?: number; sessionId?: string; visualPoint?: {x: number; y: number}; expectedGeneration?: number } = {}
   ): Promise<JsonValue> {
     await this.ensureAttached(tabId);
-    return this.client.request("executeCdp", {
+    if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration) throw new Error("Connection changed; observe again");
+    const result = await this.client.request("executeCdp", {
       target: { tabId, ...(options.sessionId ? {sessionId: options.sessionId} : {}) },
       method,
       commandParams,
       ...(options.visualPoint ? {visualPoint: options.visualPoint} : {}),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
-    });
+    },options.expectedGeneration);
+    if (method === "Page.disable" && !options.sessionId) this.#dialogEnabled.delete(tabId);
+    return result;
   }
 
   async evaluate(tabId: number, expression: string, options: { awaitPromise?: boolean } = {}): Promise<JsonValue> {
