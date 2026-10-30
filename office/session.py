@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
 
 import cell_text
+import chart_cache
 import layout
 import notes
 import officecli_backend
@@ -161,6 +162,11 @@ def scan_formulas(directory, base_revision):
 def inspect_workbook(directory, revision):
     state = info(directory); source = revision_file(state, revision)
     return {'revision': revision, **spreadsheet.inspect_workbook(source)}
+
+
+def scan_chart_caches(directory, revision):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **chart_cache.scan(source)}
 
 
 def export(directory, revision, output):

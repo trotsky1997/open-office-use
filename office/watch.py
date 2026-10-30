@@ -29,7 +29,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 .box{position:absolute;border:2px solid #0867c4;background:#087dd126;pointer-events:none;display:none;box-sizing:border-box}
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
-#comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
+#comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output,#chart-cache-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
 input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
 .comparison-page{position:relative;width:100%}.comparison-page img{display:block}.layout-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}.layout-overlay polygon{vector-effect:non-scaling-stroke;stroke-width:2}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
@@ -91,6 +91,9 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
 <button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
 <p id="formula-status" role="status"></p><pre id="formula-scan-output"></pre></details>
+<details id="chart-cache-panel" hidden><summary>Chart cache checks</summary>
+<p>Compare supported chart caches with stored worksheet values. Formula caches may be stale; inspect chart rendering and unverified sources separately.</p>
+<button type="button" id="chart-cache-scan">Check displayed revision</button><p id="chart-cache-status" role="status"></p><pre id="chart-cache-output"></pre></details>
 <details id="workbook-panel" hidden><summary>Workbook overview</summary>
 <p>Inspect a bounded sample of stored cells in each worksheet. Numbers and dates can be raw stored values; use a cell range for detailed reads.</p>
 <button type="button" id="workbook-load">Inspect displayed revision</button><p id="workbook-status" role="status"></p><div id="workbook-results"></div></details>
@@ -138,7 +141,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
-let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null;
+let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -589,6 +592,22 @@ function clearStoriesFor(revision) {
 function clearWorkbookFor(revision) {
  if (workbookRevision!==null && workbookRevision!==revision) { workbookEpoch++; workbookRevision=null; document.getElementById('workbook-status').textContent=''; document.getElementById('workbook-results').replaceChildren(); }
 }
+function clearChartCacheFor(revision) {
+ if (chartCacheRevision!==null && chartCacheRevision!==revision) { chartCacheEpoch++; chartCacheRevision=null; document.getElementById('chart-cache-status').textContent=''; document.getElementById('chart-cache-output').textContent=''; }
+}
+document.getElementById('chart-cache-scan').addEventListener('click', async () => {
+ if (displayed<0) return;
+ const revision=displayed, epoch=++chartCacheEpoch, button=document.getElementById('chart-cache-scan'), status=document.getElementById('chart-cache-status');
+ chartCacheRevision=revision; button.disabled=true; document.getElementById('chart-cache-output').textContent=''; status.textContent=`Checking revision ${revision}…`;
+ try {
+  const response=await fetch('chart-cache-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Chart cache check failed');
+  if (epoch!==chartCacheEpoch || displayed!==revision) return;
+  status.textContent=`Revision ${revision}: ${result.chart_parts_total} chart part(s), ${result.mismatch_references} mismatch candidate(s), ${result.missing_caches} missing cache(s), ${result.unverified_references} unverified reference(s). ${result.complete ? 'Supported checks completed.' : 'Coverage incomplete.'}`;
+  document.getElementById('chart-cache-output').textContent=JSON.stringify(result, null, 2);
+ } catch(error) { if (epoch===chartCacheEpoch) status.textContent=`Chart cache error: ${error.message}`; }
+ finally {button.disabled=false;}
+});
 document.getElementById('workbook-load').addEventListener('click', async () => {
  if (displayed<0) return;
  const revision=displayed, epoch=++workbookEpoch, button=document.getElementById('workbook-load'), status=document.getElementById('workbook-status'), output=document.getElementById('workbook-results');
@@ -745,6 +764,7 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
  } finally { notesBusy=false; }
 });
 function display(state, live) {
+ clearChartCacheFor(state.revision);
  clearWorkbookFor(state.revision);
  clearStoriesFor(state.revision);
  if (!live) document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
@@ -771,6 +791,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ clearChartCacheFor(state.revision);
  clearWorkbookFor(state.revision);
  clearStoriesFor(state.revision);
  document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
@@ -895,6 +916,7 @@ async function refresh() {
   document.getElementById('notes-comparison').hidden=state.format !== 'pptx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
   document.getElementById('formula-panel').hidden=state.format !== 'xlsx';
+  document.getElementById('chart-cache-panel').hidden=state.format !== 'xlsx';
   document.getElementById('workbook-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
   if (state.revision !== current) {
@@ -962,7 +984,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/chart-cache-scan', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -970,6 +992,10 @@ def serve(directory, preview, port=0, render=None):
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/chart-cache-scan'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Chart cache scan requires a revision')
+                        saved = session.scan_chart_caches(directory, payload['revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/workbook-inspect'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Workbook inspection requires a revision')
                         saved = session.inspect_workbook(directory, payload['revision'])

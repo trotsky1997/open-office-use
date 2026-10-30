@@ -13,6 +13,7 @@ from openpyxl import Workbook, load_workbook
 from pptx import Presentation
 
 import layout
+import chart_cache
 import notes
 import visual
 import word
@@ -158,6 +159,7 @@ def main():
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
     cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
     formula_scan = commands.add_parser('scan-formulas'); formula_scan.add_argument('file')
+    chart_scan = commands.add_parser('scan-chart-caches'); chart_scan.add_argument('file')
     calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
     bundle = commands.add_parser('review-bundle'); bundle.add_argument('file'); bundle.add_argument('--out-dir', required=True)
     audit = commands.add_parser('audit'); audit.add_argument('file')
@@ -186,6 +188,7 @@ def main():
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
+    session_chart_scan = sub.add_parser('scan-chart-caches'); session_chart_scan.add_argument('directory'); session_chart_scan.add_argument('--revision', type=int, required=True)
     session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     restore = sub.add_parser('restore'); restore.add_argument('directory'); restore.add_argument('--base', type=int, required=True); restore.add_argument('--revision', type=int, required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
@@ -253,6 +256,8 @@ def main():
                 result = session.recalculate(args.directory, args.base)
             elif args.action == 'scan-formulas':
                 result = session.scan_formulas(args.directory, args.base)
+            elif args.action == 'scan-chart-caches':
+                result = session.scan_chart_caches(args.directory, args.revision)
             elif args.action == 'inspect-workbook':
                 result = session.inspect_workbook(args.directory, args.revision)
             elif args.action == 'restore':
@@ -301,6 +306,8 @@ def main():
             result = spreadsheet.read_range(args.file, args.sheet, args.cell_range)
         elif args.command == 'scan-formulas':
             result = spreadsheet.scan_formulas(args.file)
+        elif args.command == 'scan-chart-caches':
+            result = chart_cache.scan(args.file)
         elif args.command == 'recalculate':
             result = {'output': spreadsheet.recalculate(args.file, args.out)}
         elif args.command == 'structured':

@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 import layout
+import chart_cache
 import officecli_backend
 import spreadsheet
 import visual
@@ -59,6 +60,11 @@ def create(source, destination, render, revision=None):
                 if not formulas['complete']: flags.append('formula_scan_incomplete')
                 if formulas['formula_errors'] or formulas['literal_errors']: flags.append('formula_or_cell_errors')
                 if formulas['empty_or_missing_cache']: flags.append('formula_cache_missing')
+            chart_results = check('chart_cache_scan', lambda: chart_cache.scan(snapshot))
+            if chart_results is not None:
+                if not chart_results['complete']: flags.append('chart_cache_scan_incomplete')
+                if chart_results['mismatch_references']: flags.append('chart_cache_mismatch')
+                if chart_results['missing_caches']: flags.append('chart_cache_missing')
         else:
             geometry = check('slide_layout', lambda: layout.inspect(snapshot))
             if geometry is not None:

@@ -13,6 +13,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE
 from pptx import Presentation
 from PIL import Image as PILImage
 from pptx.util import Inches
+import xlsxwriter
 from session import set_selection
 from thread_comment_smoke import fixture as thread_fixture
 from mcp import ClientSession, StdioServerParameters
@@ -27,7 +28,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'session_inspect_workbook', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'read_slide_notes', 'session_read_slide_notes', 'compare_slide_notes', 'session_compare_slide_notes', 'session_replace_slide_notes', 'session_replace_slide_notes_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'list_word_stories', 'session_list_word_stories', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'session_inspect_workbook', 'scan_chart_caches', 'session_scan_chart_caches', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'read_slide_notes', 'session_read_slide_notes', 'compare_slide_notes', 'session_compare_slide_notes', 'session_replace_slide_notes', 'session_replace_slide_notes_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'list_word_stories', 'session_list_word_stories', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -239,6 +240,17 @@ async def main():
                 grid_draft = root / 'grid-draft'
                 grid_started = await session.call_tool('start_session', {'directory': str(grid_draft), 'source': str(original)})
                 assert not grid_started.isError, grid_started
+                chart_scan = await session.call_tool('session_scan_chart_caches', {'directory': str(grid_draft), 'revision': 0})
+                assert not chart_scan.isError and chart_scan.structuredContent['chart_parts_total'] == 0 and chart_scan.structuredContent['complete'], chart_scan
+                chart_source = root / 'chart-source.xlsx'; chart_book = xlsxwriter.Workbook(str(chart_source)); chart_sheet = chart_book.add_worksheet('Sales'); chart_sheet.write_column('A1', ['Jan', 'Feb']); chart_sheet.write_column('B1', [10, 20]); chart = chart_book.add_chart({'type': 'column'}); chart.add_series({'categories': '=Sales!$A$1:$A$2', 'values': '=Sales!$B$1:$B$2'}); chart_sheet.insert_chart('D1', chart); chart_book.close()
+                chart_draft = root / 'chart-draft'; chart_start = await session.call_tool('start_session', {'directory': str(chart_draft), 'source': str(chart_source)})
+                assert not chart_start.isError, chart_start
+                chart_edit = await session.call_tool('session_replace_text', {'directory': str(chart_draft), 'base_revision': 0, 'path': '/Sales/A1', 'find': 'Jan', 'replacement': 'March'})
+                assert not chart_edit.isError, chart_edit
+                chart_result = await session.call_tool('session_scan_chart_caches', {'directory': str(chart_draft), 'revision': 1})
+                assert not chart_result.isError and chart_result.structuredContent['mismatch_references'] == 1, chart_result
+                saved_chart_result = await session.call_tool('scan_chart_caches', {'file': str(chart_draft / 'revision-000001.xlsx')})
+                assert not saved_chart_result.isError and saved_chart_result.structuredContent['mismatch_references'] == 1, saved_chart_result
                 workbook_view = await session.call_tool('session_inspect_workbook', {'directory': str(grid_draft), 'revision': 0})
                 assert not workbook_view.isError and workbook_view.structuredContent['revision'] == 0 and workbook_view.structuredContent['sheets'][0]['cells'][0]['cell'] == 'A1', workbook_view
                 file_workbook_view = await session.call_tool('inspect_file', {'file': str(original)})

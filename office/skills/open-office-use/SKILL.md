@@ -18,3 +18,5 @@ For XLSX editing, check `session_read_grid` for `sheet_protected`, cell `read_on
 For an XLSX overview, use `inspect_file` or `session_inspect_workbook` to obtain a bounded sparse sample across worksheets; check sample and truncation flags and use `read_cells` for detailed decoded values.
 
 Range reads use one saved snapshot and have a response size limit; narrow a range on a limit error. Grid cells longer than 4,000 UTF-16 units are read-only; use supported targeted text replacement when appropriate.
+
+After editing XLSX chart source cells, use `scan_chart_caches` or `session_scan_chart_caches` and inspect mismatches, missing caches and coverage. Formula caches may be stale and chart rendering still needs review.

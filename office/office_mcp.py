@@ -6,6 +6,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP, Image
 
 import officecli_backend
+import chart_cache
 import spreadsheet
 import layout
 import notes
@@ -36,6 +37,18 @@ def inspect_file(file: str) -> dict[str, Any]:
 def session_inspect_workbook(directory: str, revision: int) -> dict[str, Any]:
     """Inspect a bounded sparse sample of an exact XLSX session revision."""
     return session.inspect_workbook(directory, revision)
+
+
+@server.tool()
+def scan_chart_caches(file: str) -> dict[str, Any]:
+    """Compare supported chart caches with stored worksheet values; check completeness and formula freshness."""
+    return chart_cache.scan(file)
+
+
+@server.tool()
+def session_scan_chart_caches(directory: str, revision: int) -> dict[str, Any]:
+    """Check supported chart caches in an exact XLSX session revision."""
+    return session.scan_chart_caches(directory, revision)
 
 
 @server.tool()
