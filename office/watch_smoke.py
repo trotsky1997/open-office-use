@@ -33,10 +33,26 @@ with tempfile.TemporaryDirectory() as tmp:
         assert first['revision'] == 0 and first['pages'] > 0
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
         origin = f"http://{urlsplit(url).netloc}"
-        selection = {'revision': 0, 'page': 1, 'box': [0.1, 0.1, 0.7, 0.4]}
+        selection = {'revision': 0, 'page': 1, 'box': [0, 0, 1, 1]}
         request = urllib.request.Request(url + 'selection', data=json.dumps(selection).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         assert json.loads(urllib.request.urlopen(request).read()) == selection
         assert json.loads((directory / 'selection.json').read_text()) == selection
+        candidates_request = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        candidates = json.loads(urllib.request.urlopen(candidates_request, timeout=60).read())
+        assert candidates['revision'] == 0 and any(item['path'] == '/body/p[1]' for item in candidates['candidates']), candidates
+        mismatch = dict(selection, box=[0, 0, 0.5, 0.5])
+        wrong_selection = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': mismatch}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(wrong_selection)
+            raise AssertionError('Mismatched selection was accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400
+        forbidden_candidates = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection}).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(forbidden_candidates)
+            raise AssertionError('Cross-origin search was accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 403
         bad_origin = urllib.request.Request(url + 'selection', data=b'{}', headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
         try:
             urllib.request.urlopen(bad_origin)
@@ -47,6 +63,12 @@ with tempfile.TemporaryDirectory() as tmp:
         run('session', 'apply', directory, '--base', '0', '--spec', spec)
         second = json.loads(get(url + 'state'))
         assert second['revision'] == 1 and second['pages'] > 0
+        stale_candidates = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(stale_candidates)
+            raise AssertionError('Stale candidate lookup was accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400
         history = json.loads(get(url + 'revision/0/state'))
         assert history['revision'] == 0 and history['pages'] > 0
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')

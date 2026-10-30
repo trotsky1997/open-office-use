@@ -316,3 +316,5 @@ Local draft sessions store saved revision files in a caller-chosen directory. Ea
 Selected visual regions can be rendered to PDF and queried for word-center text geometry with Poppler. Results carry the selected revision and current staleness; they are visual text evidence and require structured lookup for editing targets.
 
 Selection candidate lookup searches bounded text fragments against an OfficeCLI snapshot, returns candidate paths and requires verification. It is text-based and provides no geometric identity guarantee.
+
+The viewer can search a saved visual selection for text-based element candidates and explicitly load a chosen path. Selection identity and latest revision are checked before and after lookup; candidates remain subject to user verification.

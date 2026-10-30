@@ -64,3 +64,7 @@ The local viewer can preview a selected historical revision before restoration, 
 ## Element editing
 
 Added limited element editing through the viewer and MCP: load one target at a specified latest revision, review content, and save a new revision. Tested Word text, spreadsheet formulas, PowerPoint titles, stale writes, cross-origin rejection and real Chrome interaction. Direct canvas editing, collaborative synchronization and advanced formatting remain open.
+
+## Viewer candidates
+
+Connected selection-based candidate lookup to the local viewer. The user chooses a candidate and reviews it before committing an edit. The server checks selection identity and version around the lookup. Verified cross-origin, stale and changed-selection rejection and Chrome interaction. Geometric identity and complete canvas editing remain open.

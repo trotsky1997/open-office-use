@@ -29,3 +29,5 @@ Added historical revision restoration as a new version through CLI, MCP and the 
 Added historical revision previews to the local viewer, with latest-version status and selection restricted to current content. Verified concurrent Chrome views and restoration.
 
 Added limited version-bound element editing in the local viewer and MCP. Verified three formats, formula mode, conflict checks and browser interaction.
+
+Connected viewer selection to candidate lookup and explicit element loading. Verified access checks, stale/changed selection handling and browser interaction.

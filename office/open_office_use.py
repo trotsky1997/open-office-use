@@ -173,7 +173,7 @@ def main():
             return 0
         if args.command == 'watch':
             import watch
-            watch.serve(args.directory, preview, args.port)
+            watch.serve(args.directory, preview, args.port, render)
             return 0
         if args.command == 'session':
             if args.action == 'start':

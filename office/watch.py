@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
+import selection_candidates
 import session
 
 PAGE = '''<!doctype html>
@@ -32,7 +33,10 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <details><summary>Restore a previous revision</summary><form id="restore-form">
 <label for="restore-revision">Revision</label> <select id="restore-revision" required></select>
 <button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
-<details><summary>Edit an element</summary><form id="edit-form">
+<details id="candidate-panel"><summary>Find selected elements</summary>
+<p>Matches use text and may be incomplete or ambiguous. Verify the target before editing.</p>
+<button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul></details>
+<details id="edit-panel"><summary>Edit an element</summary><form id="edit-form">
 <label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
 <button type="button" id="edit-load">Load element</button>
 <label>Kind <select id="edit-mode" disabled></select></label>
@@ -50,16 +54,48 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null;
+let savedSelection = null, selectionEpoch = 0;
+function clearCandidates() {
+ savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
+ document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
+}
 async function saveSelection(revision, page, coordinates) {
+ clearCandidates(); const epoch=selectionEpoch;
  try {
   const response=await fetch('selection', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({revision,page,box:coordinates})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Selection failed');
+  if (epoch !== selectionEpoch || revision !== current || pinned !== null) return;
+  savedSelection=result; document.getElementById('candidate-search').disabled=false;
   document.getElementById('selection').textContent = `Selection saved · revision ${revision}, page ${page}`;
   document.querySelectorAll('.box').forEach(item => item.style.display='none');
   const selected = revision === current && document.querySelector(`.page[data-page="${page}"] .box`);
   if (selected) Object.assign(selected.style, {display:'block', left:`${coordinates[0]*100}%`, top:`${coordinates[1]*100}%`, width:`${(coordinates[2]-coordinates[0])*100}%`, height:`${(coordinates[3]-coordinates[1])*100}%`});
  } catch (error) { document.getElementById('selection').textContent = `Selection error: ${error.message}`; }
 }
+document.getElementById('candidate-search').addEventListener('click', async () => {
+ if (!savedSelection || pinned !== null || savedSelection.revision !== current) return;
+ const requested=savedSelection, epoch=selectionEpoch, button=document.getElementById('candidate-search'); button.disabled=true;
+ document.getElementById('candidate-status').textContent='Finding candidates…';
+ try {
+  const response=await fetch('candidates', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({selection:requested})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Search failed');
+  if (epoch !== selectionEpoch || pinned !== null || current !== result.revision) return;
+  const list=document.getElementById('candidate-list'); list.replaceChildren();
+  for (const item of result.candidates) {
+   const row=document.createElement('li'); const label=document.createElement('span');
+   label.textContent=`${item.type || 'element'} · ${item.path} · ${String(item.text || '').slice(0,200)}`;
+   const use=document.createElement('button'); use.type='button'; use.textContent=`Use ${item.path}`;
+   use.addEventListener('click', () => {
+    if (epoch !== selectionEpoch || current !== result.revision || pinned !== null) return;
+    document.getElementById('edit-panel').open=true; document.getElementById('edit-path').value=item.path;
+    invalidateEdit('Load and verify this candidate.'); document.getElementById('edit-load').click();
+   });
+   row.append(label, document.createTextNode(' '), use); list.appendChild(row);
+  }
+  document.getElementById('candidate-status').textContent = result.candidates.length ? `${result.candidates.length} candidate(s). Verify the target; matches may be incomplete.` : 'No candidates found. Try a different selection or enter a path.';
+ } catch (error) { if (epoch === selectionEpoch) document.getElementById('candidate-status').textContent=`Candidate error: ${error.message}`; }
+ finally { if (epoch === selectionEpoch && pinned === null && savedSelection) button.disabled=false; }
+});
 function invalidateEdit(message) {
  loaded=null; document.getElementById('edit-save').disabled=true;
  document.getElementById('edit-mode').disabled=true; document.getElementById('edit-value').disabled=true;
@@ -143,7 +179,7 @@ function display(state, live) {
   image.alt=`Revision ${state.revision}, page ${i+1}`; image.loading='lazy'; image.draggable=false;
   fragment.appendChild(selectable(image, i+1, state.revision, live));
  }
- document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; viewKey=key;
+ document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; viewKey=key; clearCandidates();
  document.getElementById('selection').textContent = live ? 'Drag on a page to save a selection for the agent.' : 'Selections are available on the latest revision.';
  document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load').forEach(element => element.disabled=!live);
  if (!live) invalidateEdit('Return to the latest revision to edit.');
@@ -183,7 +219,7 @@ refresh(); setInterval(refresh, 2000);
 </script></body></html>'''
 
 
-def serve(directory, preview, port=0):
+def serve(directory, preview, port=0, render=None):
     directory = session.info(directory)['directory']
     if not 0 <= port <= 65535:
         raise ValueError('Port must be between 0 and 65535')
@@ -225,13 +261,29 @@ def serve(directory, preview, port=0):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/candidates'):
+                        if not isinstance(payload, dict) or set(payload) != {'selection'}:
+                            raise ValueError('Candidates require a saved selection')
+                        expected = session.validate_selection(payload['selection'])
+                        with lock:
+                            selected = session.get_selection(directory)
+                            if selected['stale'] or any(selected[key] != expected[key] for key in expected):
+                                raise ValueError('Selection changed; select the current page again')
+                        if render is None:
+                            raise RuntimeError('Candidate rendering is unavailable')
+                        result = selection_candidates.candidates(directory, render)
+                        with lock:
+                            selected = session.get_selection(directory)
+                            if selected['stale'] or result['stale'] or any(selected[key] != expected[key] for key in expected) or any(result[key] != expected[key] for key in expected):
+                                raise ValueError('Selection changed; select the current page again')
+                        self.send(200, json.dumps(result).encode(), 'application/json'); return
                     with lock:
                         if route.endswith('/selection'):
                             selection = session.validate_selection(payload)
