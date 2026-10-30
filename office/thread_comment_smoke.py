@@ -6,6 +6,7 @@ from lxml import etree
 from docx import Document
 
 import word
+import session
 
 W = word.W
 W14 = '{http://schemas.microsoft.com/office/word/2010/wordml}'
@@ -53,6 +54,21 @@ if __name__ == '__main__':
         assert a['resolved'] is True and a['reply_parent_status'] == 'root', a
         assert b['resolved'] is False and b['reply_to_comment_id'] == a['id'] and b['reply_parent_status'] == 'matched', b
         assert c['resolved'] is False and c['reply_to_paragraph_id'] == 'DEADBEEF' and c['reply_parent_status'] == 'unresolved', c
+        source = Path(tmp) / 'normal.docx'; draft = Path(tmp) / 'thread-draft'; session.start(draft, source=source)
+        opened = session.resolve_comment(draft, 0, a['id'], False)
+        assert session.list_comments(draft, 1)['comments'][0]['resolved'] is False
+        with zipfile.ZipFile(source) as before, zipfile.ZipFile(opened['file']) as after:
+            assert set(before.namelist()) == set(after.namelist())
+            assert all(before.read(name) == after.read(name) for name in before.namelist() if name != 'word/commentsExtended.xml')
+        for bad_id in (b['id'], c['id'], '999'):
+            try: session.resolve_comment(draft, 1, bad_id, True)
+            except ValueError: pass
+            else: raise AssertionError('Invalid or reply comment state accepted')
+        assert session.info(draft)['latest_revision'] == 1
+        duplicate_file = fixture(tmp, 'duplicate_record'); duplicate_draft = Path(tmp) / 'duplicate-draft'; session.start(duplicate_draft, source=duplicate_file)
+        try: session.resolve_comment(duplicate_draft, 0, a['id'], False)
+        except ValueError: pass
+        else: raise AssertionError('Ambiguous comment metadata accepted')
         duplicate = word.list_comments(fixture(tmp, 'duplicate_record')); assert duplicate['comments'][0]['thread_metadata'] == 'ambiguous' and duplicate['comments'][0]['resolved'] is None
         same_para = word.list_comments(fixture(tmp, 'duplicate_comment_para')); assert same_para['comments'][0]['thread_metadata'] == 'ambiguous' and same_para['comments'][1]['thread_metadata'] == 'ambiguous'
         invalid = word.list_comments(fixture(tmp, 'invalid_done')); assert invalid['comments'][2]['thread_metadata'] == 'invalid' and invalid['comments'][2]['resolved'] is None

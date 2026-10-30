@@ -139,6 +139,12 @@ def session_list_comments(directory: str, revision: int) -> dict[str, Any]:
 
 
 @server.tool()
+def session_resolve_comment(directory: str, base_revision: int, comment_id: str, resolved: bool) -> dict[str, Any]:
+    """Resolve or reopen a root Word comment as a new revision; ambiguous metadata is rejected."""
+    return session.resolve_comment(directory, base_revision, comment_id, resolved)
+
+
+@server.tool()
 def session_add_comment(directory: str, base_revision: int, path: str, text: str, author: str) -> dict[str, Any]:
     """Add a Word comment to a simple body paragraph and create a new revision."""
     return session.add_comment(directory, base_revision, path, text, author)

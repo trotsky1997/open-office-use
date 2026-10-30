@@ -361,3 +361,131 @@ def list_comments(source):
             return {'total_comments': len(nodes), 'comments': result, 'truncated': len(nodes) > 200, 'anchor_scan_complete': complete, 'thread_metadata_status': metadata_status}
     except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
         raise ValueError(f'Invalid Word document: {exc}') from exc
+
+
+def set_comment_resolved(source, output, comment_id, resolved):
+    """Set the done state on a root Word comment while preserving unrelated parts."""
+    import posixpath
+    import secrets
+    import uuid
+    import zipfile
+    from lxml import etree
+
+    if Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
+        raise ValueError('Comment state requires DOCX input and output')
+    if not isinstance(comment_id, str) or not re.fullmatch(r'0|[1-9][0-9]{0,9}', comment_id) or int(comment_id) > 2147483647:
+        raise ValueError('Comment ID must be a nonnegative decimal string')
+    if not isinstance(resolved, bool):
+        raise ValueError('Resolved must be a boolean')
+    rel_ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+    type_ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+    w15 = '{http://schemas.microsoft.com/office/word/2012/wordml}'
+    mc = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+    comments_type = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
+    extended_type = 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended'
+    rel_path = 'word/_rels/document.xml.rels'
+
+    def locate(archive, relation):
+        target = relation.get('Target')
+        if relation.get('TargetMode') == 'External' or not target:
+            raise ValueError('Invalid comment relationship')
+        part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+        if not part.startswith('word/') or part not in archive.namelist():
+            raise ValueError('Invalid comment part')
+        return part
+
+    def select_part(file):
+        with zipfile.ZipFile(file) as archive:
+            rels = ooxml.parse_xml(archive.read(rel_path))
+            if rels.getroot().tag != rel_ns + 'Relationships': raise ValueError('Invalid document relationships')
+            links = [item for item in rels.getroot().findall(rel_ns + 'Relationship') if item.get('Type') == comments_type]
+            if len(links) != 1: raise ValueError('Exactly one comments relationship is required')
+            return locate(archive, links[0])
+
+    def edit(tree, archive):
+        if tree.getroot().tag != W + 'comments': raise ValueError('Invalid comments XML')
+        nodes = tree.getroot().findall(W + 'comment')
+        values = [node.get(W + 'id') for node in nodes]
+        if any(value is None or not re.fullmatch(r'[0-9]{1,10}', value) for value in values): raise ValueError('Invalid comment identifier')
+        matches = [node for node in nodes if int(node.get(W + 'id')) == int(comment_id)]
+        if len(matches) != 1: raise ValueError('Comment ID must identify exactly one comment')
+        rel_bytes = archive.read(rel_path); rels = ooxml.parse_xml(rel_bytes)
+        if rels.getroot().tag != rel_ns + 'Relationships': raise ValueError('Invalid document relationships')
+        relationships = rels.getroot().findall(rel_ns + 'Relationship')
+        links = [item for item in relationships if item.get('Type') == extended_type]
+        if len(links) > 1: raise ValueError('Multiple extended comments relationships are unsupported')
+        paragraphs = list(matches[0].iter(W + 'p'))
+        if not paragraphs: raise ValueError('Comment has no paragraph')
+        paragraph = paragraphs[-1]; para_id = paragraph.get(W14_PARAGRAPH_ID)
+        additional = {}; ext_bytes = None
+        if links:
+            ext_part = locate(archive, links[0]); ext_bytes = archive.read(ext_part); ext = ooxml.parse_xml(ext_bytes)
+            metadata, status = comment_thread_metadata(archive, relationships, nodes)
+            item = metadata.get(comment_id, {})
+            if status != 'available': raise ValueError('Extended comment metadata is invalid')
+            if item.get('thread_metadata') == 'matched':
+                if item.get('reply_parent_status') != 'root': raise ValueError('Comment must be a root thread')
+                if not para_id or not re.fullmatch(r'[0-9A-Fa-f]{8}', para_id) or not 0 < int(para_id, 16) < 0x80000000:
+                    raise ValueError('Comment paragraph ID is invalid')
+                if sum((node.get(W14_PARAGRAPH_ID) or '').upper() == para_id.upper() for node in tree.getroot().iter(W + 'p')) != 1:
+                    raise ValueError('Comment paragraph ID is ambiguous')
+                records = [record for record in ext.getroot().findall(w15 + 'commentEx') if record.get(w15 + 'paraId', '').upper() == para_id.upper()]
+                if len(records) != 1: raise ValueError('Comment metadata is ambiguous')
+                records[0].set(w15 + 'done', '1' if resolved else '0')
+                return {ext_part: ooxml.serialize_xml(ext, ext_bytes)}
+            if item.get('thread_metadata') not in (None, 'missing'):
+                raise ValueError('Comment thread metadata is ambiguous or invalid')
+        else:
+            ext_part = 'word/commentsExtended.xml'
+            if ext_part in archive.namelist(): raise ValueError('Unreferenced extended comments part')
+            ext = etree.ElementTree(etree.Element(w15 + 'commentsEx', nsmap={'w15': w15[1:-1]}))
+        if any(item.get('Type', '').endswith(('/commentsIds', '/commentsExtensible')) for item in relationships):
+            raise ValueError('Existing modern comment metadata requires an explicit extended record')
+        document = ooxml.parse_xml(archive.read('word/document.xml'))
+        if document.getroot().tag != W + 'document': raise ValueError('Invalid document XML')
+        markers = [node.tag for node in document.getroot().iter() if node.tag in (W + 'commentRangeStart', W + 'commentRangeEnd', W + 'commentReference') and node.get(W + 'id') == comment_id]
+        if markers != [W + 'commentRangeStart', W + 'commentRangeEnd', W + 'commentReference']:
+            raise ValueError('Legacy comment must have one complete main-document anchor')
+        all_para_ids = [node.get(W14_PARAGRAPH_ID).upper() for node in tree.getroot().iter(W + 'p') if node.get(W14_PARAGRAPH_ID)]
+        extended_ids = [(node.get(w15 + 'paraId') or '').upper() for node in ext.getroot().findall(w15 + 'commentEx')]
+        if any(not re.fullmatch(r'[0-9A-F]{8}', value) for value in extended_ids) or len(extended_ids) != len(set(extended_ids)):
+            raise ValueError('Existing extended comment identifiers are invalid or ambiguous')
+        if para_id:
+            if not re.fullmatch(r'[0-9A-Fa-f]{8}', para_id) or not 0 < int(para_id, 16) < 0x80000000 or all_para_ids.count(para_id.upper()) != 1:
+                raise ValueError('Comment paragraph ID is invalid or ambiguous')
+            para_id = para_id.upper()
+        else:
+            para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
+            while para_id in all_para_ids or para_id in extended_ids: para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
+            root = tree.getroot(); nsmap = dict(root.nsmap)
+            prefix = next((key for key, value in nsmap.items() if key and value == W14_PARAGRAPH_ID[1:].split('}', 1)[0]), None)
+            if prefix is None:
+                prefix = 'w14'
+                while prefix in nsmap: prefix += 'x'
+                nsmap[prefix] = 'http://schemas.microsoft.com/office/word/2010/wordml'
+            if not any(key and value == mc[1:-1] for key, value in nsmap.items()):
+                mc_prefix = 'mc'
+                while mc_prefix in nsmap: mc_prefix += 'x'
+                nsmap[mc_prefix] = mc[1:-1]
+            replacement = etree.Element(root.tag, attrib=dict(root.attrib), nsmap=nsmap); replacement.text = root.text
+            for child in list(root): replacement.append(child)
+            tree._setroot(replacement)
+            ignorable = (replacement.get(mc + 'Ignorable') or '').split()
+            if prefix not in ignorable: ignorable.append(prefix)
+            replacement.set(mc + 'Ignorable', ' '.join(ignorable)); paragraph.set(W14_PARAGRAPH_ID, para_id)
+        if para_id in extended_ids: raise ValueError('Comment metadata is ambiguous')
+        etree.SubElement(ext.getroot(), w15 + 'commentEx', {w15 + 'paraId': para_id, w15 + 'done': '1' if resolved else '0'})
+        additional[ext_part] = ooxml.serialize_xml(ext, ext_bytes) if ext_bytes else etree.tostring(ext, encoding='UTF-8', xml_declaration=True)
+        if not links:
+            rid = 'rIdOfficeUse' + uuid.uuid4().hex
+            if any(item.get('Id') == rid for item in relationships): raise ValueError('Relationship identifier collision')
+            etree.SubElement(rels.getroot(), rel_ns + 'Relationship', Id=rid, Type=extended_type, Target='commentsExtended.xml')
+            additional[rel_path] = ooxml.serialize_xml(rels, rel_bytes)
+            content_bytes = archive.read('[Content_Types].xml'); types = ooxml.parse_xml(content_bytes)
+            if types.getroot().tag != type_ns + 'Types' or any(item.get('PartName') == '/' + ext_part for item in types.getroot()):
+                raise ValueError('Invalid or conflicting package content types')
+            etree.SubElement(types.getroot(), type_ns + 'Override', PartName='/' + ext_part, ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml')
+            additional['[Content_Types].xml'] = ooxml.serialize_xml(types, content_bytes)
+        return additional
+
+    return ooxml.edit_xml(source, output, select_part, edit, allow_new=True)

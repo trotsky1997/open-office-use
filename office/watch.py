@@ -64,7 +64,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="comments-panel" hidden><summary>Word comments</summary>
-<p>Read comments from the displayed revision. Anchor text and paths are bounded body hints. Word 2013 thread metadata is shown when available; review unknown or ambiguous states in Word.</p>
+<p>Read comments from the displayed revision. Anchor text and paths are bounded body hints. Word 2013 thread metadata is shown when available; review unknown or ambiguous states in Word. Root comments can be resolved or reopened in the latest revision.</p>
 <button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
@@ -564,6 +564,22 @@ document.getElementById('comments-load').addEventListener('click', async () => {
    const state=comment.resolved===true ? 'Resolved' : comment.resolved===false ? 'Open' : 'Status unknown';
    const parent=comment.reply_parent_status==='matched' ? ` · Reply to #${comment.reply_to_comment_id}` : comment.reply_to_paragraph_id ? ` · Reply parent ${comment.reply_to_paragraph_id} (${comment.reply_parent_status})` : '';
    row.textContent=`#${comment.id} · ${state}${parent} · ${comment.author || 'Unknown author'} · ${comment.date || 'No date'} · ${comment.text}${comment.text_truncated ? '…' : ''}${comment.text_approximate ? ' (text may be incomplete)' : ''} | Anchor (${comment.anchor_status}): ${comment.anchor_text || '(no text)'}${comment.anchor_text_truncated ? '…' : ''}${comment.anchor_text_approximate ? ' (text may be incomplete)' : ''} | ${location}${comment.path_unavailable || comment.paths_truncated ? ' (some paths unavailable)' : ''}`;
+   const canChange=revision===current && pinned===null && (comment.reply_parent_status==='root' && comment.thread_metadata==='matched' || ['absent','available'].includes(result.thread_metadata_status) && ['missing','unavailable'].includes(comment.thread_metadata) && comment.anchor_status==='range');
+   if (canChange) {
+    const change=document.createElement('button'); change.type='button'; const resolved=comment.resolved!==true;
+    change.textContent=resolved ? 'Resolve' : 'Reopen'; change.setAttribute('aria-label',`${change.textContent} comment ${comment.id}`);
+    change.addEventListener('click', async () => {
+     if (commentsBusy || current!==revision || pinned!==null || displayed!==revision) return;
+     commentsBusy=true; button.disabled=true; list.querySelectorAll('button').forEach(item=>item.disabled=true); status.textContent='Saving comment status…';
+     try {
+      const response=await fetch('resolve-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,comment_id:comment.id,resolved})});
+      const saved=await response.json(); if (!response.ok) throw new Error(saved.error || 'Could not update comment');
+      await refresh(); status.textContent=`Comment ${comment.id} ${resolved ? 'resolved' : 'reopened'} in revision ${saved.revision}. Load comments to review.`;
+     } catch(error) { status.textContent=`Comment status error: ${error.message}`; }
+     finally {commentsBusy=false; button.disabled=false; if (current===revision && pinned===null) list.querySelectorAll('button').forEach(item=>item.disabled=false);}
+    });
+    row.appendChild(document.createTextNode(' ')); row.appendChild(change);
+   }
    list.appendChild(row);
   }
   status.textContent=`Revision ${revision}: ${result.total_comments} comment(s). ${result.truncated ? 'First 200 shown. ' : ''}${result.anchor_scan_complete ? '' : 'Anchor scan incomplete. ' }${result.thread_metadata_status==='available' ? 'Thread metadata loaded; unmatched states remain unknown.' : 'Resolved status is unavailable.'}`;
@@ -757,7 +773,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 20000
@@ -842,6 +858,10 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Picture replacement requires revision, path and image')
                             image_data = base64.b64decode(payload['image'], validate=True)
                             saved = session.replace_picture(directory, payload['base_revision'], payload['path'], image_data)
+                        elif route.endswith('/resolve-comment'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'comment_id', 'resolved'}:
+                                raise ValueError('Comment state requires revision, comment ID and resolved')
+                            saved = session.resolve_comment(directory, payload['base_revision'], payload['comment_id'], payload['resolved'])
                         elif route.endswith('/add-comment'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'text', 'author'}:
                                 raise ValueError('Comment requires revision, path, text and author')

@@ -45,7 +45,27 @@ with tempfile.TemporaryDirectory() as tmp:
         try: session.add_comment(draft, base, path, 'rejected', 'Reviewer')
         except ValueError: pass
         else: raise AssertionError('Stale or unsupported paragraph accepted')
+    multi_draft = root / 'multi-draft'; session.start(multi_draft, source=second['file'])
+    session.resolve_comment(multi_draft, 0, '0', True)
+    session.resolve_comment(multi_draft, 1, '1', True)
+    multi = session.list_comments(multi_draft, 2)
+    assert [comment['resolved'] for comment in multi['comments']] == [True, True], multi
     assert session.info(draft)['latest_revision'] == 2
+    resolve_draft = root / 'resolve-draft'; session.start(resolve_draft, source=first['file'])
+    resolved = session.resolve_comment(resolve_draft, 0, '0', True)
+    resolved_data = session.list_comments(resolve_draft, 1)
+    assert resolved_data['comments'][0]['resolved'] is True and resolved_data['comments'][0]['reply_parent_status'] == 'root', resolved_data
+    assert Document(resolved['file']).paragraphs[0].text == 'Important text'
+    reopened = session.resolve_comment(resolve_draft, 1, '0', False)
+    assert session.list_comments(resolve_draft, 2)['comments'][0]['resolved'] is False
+    with zipfile.ZipFile(resolved['file']) as a, zipfile.ZipFile(reopened['file']) as b:
+        assert set(a.namelist()) == set(b.namelist())
+        assert all(a.read(name) == b.read(name) for name in a.namelist() if name != 'word/commentsExtended.xml')
+    validation = officecli_backend.audit(resolved['file'])['validation']; assert validation['exit_code'] == 0, validation
+    try: session.resolve_comment(resolve_draft, 0, '0', False)
+    except ValueError as exc: assert 'conflict' in str(exc).lower()
+    else: raise AssertionError('Stale comment resolution succeeded')
+
     external = Document(); old_paragraph = external.add_paragraph(); old_run = old_paragraph.add_run('Already reviewed')
     external.add_comment(old_run, text='Existing comment', author='Other'); external.add_paragraph('Another paragraph')
     external_file = root / 'existing.docx'; external.save(external_file); external_draft = root / 'existing-draft'; session.start(external_draft, source=external_file)
@@ -65,6 +85,9 @@ with tempfile.TemporaryDirectory() as tmp:
     cli = Path(__file__).with_name('open_office_use.py')
     listed_cli = subprocess.run([sys.executable, str(cli), 'session', 'comments', str(draft), '--revision', '2'], check=True, capture_output=True, text=True)
     assert json.loads(listed_cli.stdout)['total_comments'] == 2
+    cli_state_draft = root / 'cli-state'; session.start(cli_state_draft, source=first['file'])
+    subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'session', 'resolve-comment', str(cli_state_draft), '--base', '0', '--id', '0', '--resolved', 'true'], check=True, capture_output=True)
+    assert session.list_comments(cli_state_draft, 1)['comments'][0]['resolved'] is True
     cli_draft = root / 'cli-draft'; session.start(cli_draft, source=source)
     subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'session', 'add-comment', str(cli_draft), '--base', '0', '--path', '/body/p[1]', '--text', 'CLI review', '--author', 'Editor'], check=True, capture_output=True)
     assert next(iter(Document(cli_draft / 'revision-000001.docx').comments)).text == 'CLI review'

@@ -288,6 +288,19 @@ def replace_text(directory, base_revision, path, find, replacement):
     return {'revision': base_revision + 1, 'file': str(output), 'path': path}
 
 
+def resolve_comment(directory, base_revision, comment_id, resolved):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'docx': raise ValueError('Comment state requires a DOCX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
+    try:
+        word.set_comment_resolved(source, output, comment_id, resolved)
+    except FileExistsError as exc:
+        raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'comment_id': comment_id, 'resolved': resolved}
+
+
 def add_comment(directory, base_revision, path, text, author):
     state = info(directory)
     source = revision_file(state, base_revision)
