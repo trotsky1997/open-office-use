@@ -486,13 +486,13 @@ def session_inspect_slide_navigation(directory: str, revision: int) -> dict[str,
 
 @server.tool()
 def inspect_slide_charts(file: str) -> dict[str, Any]:
-    """Inspect PowerPoint chart caches and compare saved embedded workbook values; formula freshness is unknown."""
+    """Inspect PowerPoint chart caches, saved axis settings and embedded workbook values; formula freshness is unknown."""
     return slide_charts.inspect(file)
 
 
 @server.tool()
 def session_inspect_slide_charts(directory: str, revision: int) -> dict[str, Any]:
-    """Inspect PowerPoint chart caches and saved embedded workbook values in a session revision."""
+    """Inspect PowerPoint chart caches, saved axis settings and embedded workbook values in a session revision."""
     return session.inspect_slide_charts(directory, revision)
 
 

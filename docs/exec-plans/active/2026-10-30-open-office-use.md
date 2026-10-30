@@ -332,3 +332,5 @@ Existing regular text-run slide jumps can be set or removed through snapshot-bou
 Added a reproducible cross-format quarterly review example using a shared illustrative dataset. OfficeCLI validation and LibreOffice PDF previews cover the generated DOCX, XLSX and PPTX; the workbook print range was adjusted after visual review. Native Office and real-world source-file preservation remain open.
 
 PowerPoint column, bar and line charts support explicit minimum and maximum numeric-axis bounds, including horizontal bar charts. LibreOffice PDF previews showed the requested line and bar axis ranges. Inspect clipping and application-specific rendering; native PowerPoint remains unverified.
+
+PowerPoint chart inventory reports saved axis positions, explicit bounds, orientation and logarithmic base with per-inventory coverage and malformed-structure issues. Automatic rendered bounds depend on the application.

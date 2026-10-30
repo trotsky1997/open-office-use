@@ -83,6 +83,50 @@ def reconcile(chart, budget):
         return {'status': 'incomplete', 'reason': 'embedded_workbook_unreadable', 'error_type': type(exc).__name__, 'complete': False}
 
 
+def axis_inventory(chart):
+    """Read saved axis settings; automatic bounds depend on the rendering application."""
+    areas = chart.part._element.findall(C + 'chart/' + C + 'plotArea')
+    if len(areas) != 1: return {'axes': [], 'complete': False, 'issues': ['ambiguous_plot_area']}
+    axes = [node for node in areas[0] if node.tag in (C + 'valAx', C + 'catAx', C + 'dateAx', C + 'serAx')]
+    issues = set(); records = []; seen = set()
+    if len(axes) > 20: issues.add('axis_limit')
+    for axis in axes[:20]:
+        record = {'type': axis.tag[len(C):], 'id': None, 'position': None, 'minimum': None, 'maximum': None, 'log_base': None, 'orientation': None}
+        for tag, key in (('axId', 'id'), ('axPos', 'position')):
+            nodes = axis.findall(C + tag)
+            if len(nodes) != 1 or not nodes[0].get('val'): issues.add('ambiguous_axis_' + key)
+            else:
+                value = nodes[0].get('val')
+                if len(value) > 100: issues.add('axis_' + key + '_truncated')
+                record[key] = value[:100]
+        if record['id'] in seen: issues.add('duplicate_axis_id')
+        if record['id'] is not None: seen.add(record['id'])
+        if record['position'] not in ('b', 't', 'l', 'r'): issues.add('invalid_axis_position')
+        scales = axis.findall(C + 'scaling')
+        if len(scales) != 1: issues.add('ambiguous_axis_scaling')
+        else:
+            for tag, key in (('min', 'minimum'), ('max', 'maximum'), ('logBase', 'log_base')):
+                nodes = scales[0].findall(C + tag)
+                if len(nodes) > 1: issues.add('ambiguous_axis_' + key)
+                elif nodes:
+                    raw = nodes[0].get('val', '')
+                    try:
+                        if len(raw) > 100: raise ValueError()
+                        value = float(raw)
+                        if not math.isfinite(value): raise ValueError()
+                        record[key] = value
+                    except ValueError: issues.add('invalid_axis_' + key)
+            orientation = scales[0].findall(C + 'orientation')
+            if len(orientation) > 1: issues.add('ambiguous_axis_orientation')
+            elif orientation:
+                record['orientation'] = orientation[0].get('val')
+                if record['orientation'] not in ('minMax', 'maxMin'): issues.add('invalid_axis_orientation')
+            if record['minimum'] is not None and record['maximum'] is not None and record['minimum'] >= record['maximum']: issues.add('invalid_axis_range')
+            if record['log_base'] is not None and not 2 <= record['log_base'] <= 1000: issues.add('invalid_axis_log_base')
+        records.append(record)
+    return {'axes': records, 'complete': not issues, 'issues': sorted(issues)}
+
+
 def inspect(file):
     source = Path(file).resolve(strict=True)
     if source.suffix.lower() != '.pptx': raise ValueError('Slide chart inspection requires PPTX')
@@ -159,6 +203,8 @@ def inspect(file):
                               'plot_count': len(plots), 'series_total': len(series), 'series': [], 'workbook': workbook(chart),
                               'description': (metadata.get('descr', '') if metadata is not None else '')[:1000],
                               'description_truncated': metadata is not None and len(metadata.get('descr', '')) > 1000}
+                    record['axis_inventory'] = axis_inventory(chart)
+                    if not record['axis_inventory']['complete']: issue(slide_no, path, 'incomplete_axis_inventory')
                     title = chart.part._element.find('.//' + C + 'chart/' + C + 'title')
                     if title is not None:
                         rich = title.find(C + 'tx/' + C + 'rich')

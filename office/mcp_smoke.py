@@ -150,6 +150,8 @@ async def main():
                 chart_inventory = await session.call_tool('inspect_slide_charts', {'file':str(positioned)})
                 assert not chart_inventory.isError and chart_inventory.structuredContent['charts'][0]['series'][0]['values'] == [100,120], chart_inventory
                 assert chart_inventory.structuredContent['charts'][0]['reconciliation']['status'] == 'match' and chart_inventory.structuredContent['charts'][0]['description'] == 'Quarterly revenue chart', chart_inventory
+                axis_inventory = chart_inventory.structuredContent['charts'][0]['axis_inventory']; axis = next(item for item in axis_inventory['axes'] if item['type'] == 'valAx')
+                assert axis_inventory['complete'] and axis['minimum'] == 0 and axis['maximum'] == 150, axis_inventory
                 description_draft = root/'description-draft'; assert not (await session.call_tool('start_session', {'directory':str(description_draft),'source':str(positioned)})).isError
                 chart_target = chart_inventory.structuredContent['charts'][0]
                 described_chart = await session.call_tool('session_set_slide_description', {'directory':str(description_draft),'base_revision':0,'path':chart_target['path'],'description':'Updated revenue chart','expected_sha256':chart_inventory.structuredContent['snapshot_sha256']})

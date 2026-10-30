@@ -37,6 +37,20 @@ with tempfile.TemporaryDirectory() as tmp:
     assert pie_chart.plots[0].data_labels.show_percentage and not pie_chart.plots[0].data_labels.show_value
     assert pie_chart.series[0].points[1].format.fill.fore_color.rgb == (0x62,0xa8,0x94)
     inventory = slide_charts.inspect(out); assert inventory['charts'][3]['reconciliation']['status'] == 'match', inventory
+    column_axis = inventory['charts'][0]['axis_inventory']; bar_axis = inventory['charts'][2]['axis_inventory']; pie_axis = inventory['charts'][3]['axis_inventory']
+    assert column_axis['complete'] and next(axis for axis in column_axis['axes'] if axis['type'] == 'valAx')['minimum'] == 0
+    assert next(axis for axis in column_axis['axes'] if axis['type'] == 'valAx')['maximum'] == 150
+    assert bar_axis['complete'] and next(axis for axis in bar_axis['axes'] if axis['type'] == 'valAx')['position'] == 'b'
+    assert pie_axis['complete'] and pie_axis['axes'] == []
+    line_axis = next(axis for axis in inventory['charts'][1]['axis_inventory']['axes'] if axis['type'] == 'valAx')
+    assert line_axis['minimum'] == -0.1 and line_axis['maximum'] is None
+    scale = first.value_axis._element.find('{http://schemas.openxmlformats.org/drawingml/2006/chart}scaling')
+    scale.find('{http://schemas.openxmlformats.org/drawingml/2006/chart}max').set('val', 'NaN')
+    broken_axis = slide_charts.axis_inventory(first)
+    assert not broken_axis['complete'] and 'invalid_axis_maximum' in broken_axis['issues'], broken_axis
+    malformed = root/'malformed-axis.pptx'; deck.save(malformed)
+    malformed_report = slide_charts.inspect(malformed)
+    assert not malformed_report['complete'] and 'invalid_axis_maximum' in malformed_report['charts'][0]['axis_inventory']['issues']
     assert inventory['charts'][0]['description'] == 'Revenue compared with target' and not inventory['charts'][0]['description_truncated']
     chart_draft = root/'chart-description'; session.start(chart_draft,source=out)
     chart_target = inventory['charts'][0]
