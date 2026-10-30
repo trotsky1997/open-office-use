@@ -881,7 +881,7 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
-    async actCss(snapshot, id, hover, key) {
+    async actCss(snapshot, id, hover, key, text) {
         if (key !== undefined)
             this.parseKey(key);
         const frame = snapshot.frame;
@@ -934,20 +934,45 @@ export class OpenBrowserUseTab {
             const fresh = await this.queryCss(snapshot.selector, snapshot.framePath);
             if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
                 throw new RetryablePreflightError("Selector target changed; observe again");
+            if (text !== undefined) {
+                const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() { return this.isConnected && !this.disabled && !this.readOnly && this.getAttribute('aria-readonly') !== 'true' && (this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))); }` }, { sessionId });
+                if (!isObject(editable) || !isObject(editable.result) || editable.result.value !== true)
+                    throw new Error("Target is not an editable text field");
+            }
             this.#observation = undefined;
             const options = { sessionId, ...(sessionId ? { visualPoint: second.point } : {}) };
             inputIssued = true;
-            if (key !== undefined) {
+            if (key !== undefined || text !== undefined) {
                 await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId });
-                const afterFocus = await this.queryCss(snapshot.selector, snapshot.framePath);
-                if (afterFocus.documentId !== snapshot.documentId || JSON.stringify(afterFocus.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.ids) !== JSON.stringify(snapshot.ids))
-                    throw new Error("Selector target changed after focus; observe again");
-                if ((await this.focusedInputFrame()).id !== frame.id)
-                    throw new Error("Target frame lost focus; observe again");
-                const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }` }, { sessionId });
-                if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true)
-                    throw new Error("Target lost focus; observe again");
-                await this.sendKey(key, sessionId);
+                const verifyFocus = async () => {
+                    const afterFocus = await this.queryCss(snapshot.selector, snapshot.framePath);
+                    if (afterFocus.documentId !== snapshot.documentId || JSON.stringify(afterFocus.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.ids) !== JSON.stringify(snapshot.ids))
+                        throw new Error("Selector target changed after focus; observe again");
+                    if ((await this.focusedInputFrame()).id !== frame.id)
+                        throw new Error("Target frame lost focus; observe again");
+                    const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text !== undefined }], functionDeclaration: `function(editable) { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; if (editable && (this.readOnly || this.getAttribute('aria-readonly') === 'true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))) return false; let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }` }, { sessionId });
+                    if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true)
+                        throw new Error("Target lost focus or is not editable; observe again");
+                };
+                await verifyFocus();
+                if (key !== undefined) {
+                    await this.sendKey(key, sessionId);
+                    return;
+                }
+                if (text === undefined)
+                    throw new Error("Text is unavailable");
+                await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A", sessionId);
+                await verifyFocus();
+                const selected = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() { if (this.isContentEditable) { const selection=this.getRootNode().getSelection?.() ?? getSelection(); return !!selection && selection.toString()===this.innerText; } return this.selectionStart===null || (this.selectionStart===0 && this.selectionEnd===this.value.length); }` }, { sessionId });
+                if (!isObject(selected) || !isObject(selected.result) || selected.result.value !== true)
+                    throw new Error("Could not select the text field contents");
+                if (text)
+                    await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId });
+                else
+                    await this.sendKey("Backspace", sessionId);
+                const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) { return this.isConnected && (this.isContentEditable ? this.innerText : this.value)===value; }` }, { sessionId });
+                if (!isObject(applied) || !isObject(applied.result) || applied.result.value !== true)
+                    throw new Error("Text field did not retain the requested value");
                 return;
             }
             if (hover)
@@ -2258,6 +2283,11 @@ export class OpenBrowserUseCssLocator {
         if (typeof key !== "string")
             throw new Error("Invalid key");
         return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, key), options.timeoutMs);
+    }
+    fill(text, options = {}) {
+        if (typeof text !== "string")
+            throw new Error("Text must be a string");
+        return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, text), options.timeoutMs);
     }
     async innerText(options = {}) {
         const value = await this.read("innerText", "", options.timeoutMs);
