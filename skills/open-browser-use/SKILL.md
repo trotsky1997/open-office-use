@@ -46,7 +46,7 @@ For visual
 input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clickAt()` and
 `tab.scrollAt()`; use `tab.drag([x1,y1], [x2,y2])` for dragging, and convert
 screenshot pixels to CSS viewport coordinates.
-Use `tab.pressKey("Enter")` or `tab.pressKey("ControlOrMeta+A")` for focused
+Use `locator.press("Enter")` to focus a matched target and send a key, or `tab.pressKey("Enter")` and `tab.pressKey("ControlOrMeta+A")` for already focused
 page keyboard actions; use `tab.typeText()` to insert text.
 For subsequent observations, `tab.observe({diff:true})` reports text changes;
 always use the newly returned `nodes` and `snapshotId` for actions.

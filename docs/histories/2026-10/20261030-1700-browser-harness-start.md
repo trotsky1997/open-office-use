@@ -103,3 +103,5 @@ macOS 隔离 Chromium 原生消息完整链路及 Electron 44 跨进程 frame �
 Linux ARM64 Chromium 150 在隔离临时 profile 中复跑真实扩展、原生 host 与 SDK/REPL：跨进程 frame 可信悬停和被 aria-label 覆盖的 alt 定位通过；SDK 34 项测试通过。测试 Chromium 使用 --no-sandbox。
 
 新增 dialog 与 alertdialog 语义角色。macOS Electron 验证原生模态 dialog 的定位和可信悬停；macOS Chromium 原生消息链路验证主页面 dialog 与跨进程 frame alertdialog。
+
+新增定位器 press：输入前检查目标和焦点，DOM.focus 可能触发页面焦点处理器；跨 frame 将按键发送到对应会话。支持 Space，按下结果未知时尽力释放按键。macOS Chromium 与 Electron 的跨进程输入框验证可信 Enter，Electron 验证复选框 Space。

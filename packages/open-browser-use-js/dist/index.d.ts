@@ -125,11 +125,14 @@ export declare class OpenBrowserUseTab {
     private readAXValues;
     click(index: number, snapshotId: string): Promise<void>;
     hover(index: number, snapshotId: string): Promise<void>;
+    press(index: number, snapshotId: string, key: string): Promise<void>;
     hoverAt(x: number, y: number): Promise<void>;
     clickAt(x: number, y: number): Promise<void>;
     drag(from: [number, number], to: [number, number]): Promise<void>;
     scrollAt(x: number, y: number, deltaX: number, deltaY: number): Promise<void>;
+    private parseKey;
     pressKey(key: string): Promise<void>;
+    private sendKey;
     private checkPoint;
     getViewport(): Promise<{
         width: number;
@@ -192,6 +195,9 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<void>;
     hover(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    press(key: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
     fill(text: string, options?: {

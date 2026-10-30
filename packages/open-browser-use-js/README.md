@@ -145,6 +145,7 @@ const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
 await save.hover(); // move the pointer over the matched control
 await save.click();
 await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
+await tab.playwright.getByRole("textbox", { name: "Message" }).press("Enter");
 await tab.playwright.getByPlaceholder("Email address", { exact: true }).fill("user@example.com");
 await tab.playwright.getByLabel("Email updates", { exact: true }).check();
 await tab.playwright.getByLabel("Colour", { exact: true }).selectOption({ label: "Blue" });
@@ -240,9 +241,14 @@ disable background throttling while dispatching a trusted wheel event.
 through intermediate points. Both endpoints use CSS viewport coordinates;
 the SDK attempts to release the button if a move fails.
 
+A locator’s `press("Enter")` focuses its matched target, verifies focus and
+then sends the key; focus handlers can change the page. Frame targets use their
+own debugger session. A focus or key event that has been issued is not retried
+after an error.
+
 `await tab.pressKey("Enter")` sends a key press to the currently focused
 element. Supported keys include Enter, Tab, Escape, Backspace, Delete, arrows,
-Home, End, PageUp, PageDown and letters. Prefix modifiers with `+`, for example
+Home, End, PageUp, PageDown, Space and letters. Prefix modifiers with `+`, for example
 `ControlOrMeta+A` selects all on the host platform. Letter keys send keyboard
 events; use `typeText` to insert text. Pressing a key invalidates the previous
 observation.

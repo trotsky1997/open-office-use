@@ -68,6 +68,13 @@ app.whenReady().then(async () => {
     await sdkTab.playwright.getByAltText('Cross photo',{exact:true}).click();
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-image',trusted:true});
+    await sdkTab.playwright.getByLabel('Cross-frame text',{exact:true}).press('Enter');
+    await new Promise(resolve=>setTimeout(resolve,100));
+    assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-key',key:'Enter',trusted:true});
+    await sdkTab.playwright.getByLabel('Cross updates',{exact:true}).press('Space');
+    await new Promise(resolve=>setTimeout(resolve,100));
+    assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-check',value:true,trusted:true});
+    assert.equal(await evaluate(`window.crossMessages.some(message=>message.kind==='cross-click')`),false);
     const beforeHide = await evaluate('scrollY');
     surface.hide();
     await assert.rejects(call('Input.synthesizeScrollGesture',{x:100,y:100,xDistance:0,yDistance:-250,gestureSourceType:'mouse',preventFling:true}),/IAB_SCROLL_REQUIRES_PRESENTED_SURFACE/);

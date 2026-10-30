@@ -413,6 +413,10 @@ export class OpenBrowserUseTab {
     async hover(index, snapshotId) {
         await this.act(index, snapshotId, undefined, false, undefined, undefined, true);
     }
+    async press(index, snapshotId, key) {
+        this.parseKey(key);
+        await this.act(index, snapshotId, undefined, false, undefined, undefined, false, key);
+    }
     async hoverAt(x, y) {
         this.#observation = undefined;
         await this.checkPoint(x, y);
@@ -457,15 +461,14 @@ export class OpenBrowserUseTab {
         await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
         await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true });
     }
-    async pressKey(key) {
-        this.#observation = undefined;
+    parseKey(key) {
         if (typeof key !== "string")
             throw new Error("Key must be a string");
         const definitions = {
             Enter: ["Enter", 13], Tab: ["Tab", 9], Escape: ["Escape", 27], Backspace: ["Backspace", 8],
             Delete: ["Delete", 46], ArrowLeft: ["ArrowLeft", 37], ArrowUp: ["ArrowUp", 38],
             ArrowRight: ["ArrowRight", 39], ArrowDown: ["ArrowDown", 40], Home: ["Home", 36], End: ["End", 35],
-            PageUp: ["PageUp", 33], PageDown: ["PageDown", 34]
+            PageUp: ["PageUp", 33], PageDown: ["PageDown", 34], Space: ["Space", 32]
         };
         const parts = key.split("+");
         const name = parts.pop() ?? "";
@@ -476,6 +479,14 @@ export class OpenBrowserUseTab {
         const definition = definitions[name] ?? (/^[a-zA-Z]$/.test(name) ? [`Key${name.toUpperCase()}`, name.toUpperCase().charCodeAt(0)] : undefined);
         if (!definition)
             throw new Error("Unsupported key");
+        return { name, modifiers, modifierBits, definition };
+    }
+    async pressKey(key) {
+        this.#observation = undefined;
+        await this.sendKey(key);
+    }
+    async sendKey(key, sessionId) {
+        const { name, modifiers, modifierBits, definition } = this.parseKey(key);
         const modifierCodes = { Alt: ["AltLeft", 18], Control: ["ControlLeft", 17], Meta: ["MetaLeft", 91], Shift: ["ShiftLeft", 16] };
         let mask = 0;
         const pressed = [];
@@ -484,24 +495,24 @@ export class OpenBrowserUseTab {
             for (const modifier of modifiers) {
                 mask |= modifierBits[modifier];
                 const [code, windowsVirtualKeyCode] = modifierCodes[modifier];
-                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask });
                 pressed.push(modifier);
+                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, { sessionId });
             }
-            const actualKey = /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
+            const actualKey = name === "Space" ? " " : /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
             const params = { key: actualKey, code: definition[0], windowsVirtualKeyCode: definition[1], modifiers: mask };
             const selectAll = actualKey === "a" && (mask === 2 || mask === 4);
-            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "rawKeyDown", ...(selectAll ? { commands: ["selectAll"] } : {}) });
             activeKey = params;
-            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "keyUp" });
+            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "rawKeyDown", ...(selectAll ? { commands: ["selectAll"] } : {}) }, { sessionId });
+            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "keyUp" }, { sessionId });
             activeKey = undefined;
         }
         finally {
             if (activeKey)
-                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...activeKey, type: "keyUp" }).catch(() => { });
+                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...activeKey, type: "keyUp" }, { sessionId }).catch(() => { });
             for (const modifier of pressed.reverse()) {
                 mask &= ~modifierBits[modifier];
                 const [code, windowsVirtualKeyCode] = modifierCodes[modifier];
-                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "keyUp", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }).catch(() => { });
+                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "keyUp", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, { sessionId }).catch(() => { });
             }
         }
     }
@@ -548,7 +559,7 @@ export class OpenBrowserUseTab {
             throw new Error("Invalid selected options result");
         return result;
     }
-    async act(index, snapshotId, text, replace = false, checked, selection, hover = false) {
+    async act(index, snapshotId, text, replace = false, checked, selection, hover = false, key) {
         const observation = this.#observation;
         this.#observation = undefined;
         const node = observation?.nodes.find((item) => item.index === index);
@@ -728,6 +739,20 @@ export class OpenBrowserUseTab {
                 if (!Array.isArray(selected) || JSON.stringify([...selected].sort()) !== JSON.stringify([...expected].sort()))
                     throw new Error("Select did not retain the requested options");
                 return selected;
+            }
+            if (key !== undefined) {
+                inputIssued = true;
+                await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId: targetSession });
+                const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
+                    objectId, returnByValue: true,
+                    functionDeclaration: `function() { return this.isConnected && this.getRootNode().activeElement === this; }`
+                }, { sessionId: targetSession });
+                if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true || await this.documentId() !== observation.documentId)
+                    throw new Error("Target lost focus; observe again");
+                if (node.frameChain)
+                    await this.validateFrames(node.frameChain);
+                await this.sendKey(key, targetSession);
+                return;
             }
             const inputOptions = { sessionId: targetSession, ...(targetSession ? { visualPoint: { x: point.x, y: point.y } } : {}) };
             inputIssued = true;
@@ -1012,6 +1037,7 @@ export class OpenBrowserUseRoleLocator {
     }
     async click(options = {}) { await this.perform((node, id) => this.tab.click(node.index, id), options.timeoutMs); }
     async hover(options = {}) { await this.perform((node, id) => this.tab.hover(node.index, id), options.timeoutMs); }
+    async press(key, options = {}) { await this.perform((node, id) => this.tab.press(node.index, id, key), options.timeoutMs); }
     async fill(text, options = {}) { await this.perform((node, id) => this.tab.fill(node.index, id, text), options.timeoutMs); }
     async type(text, options = {}) { await this.perform((node, id) => this.tab.typeText(node.index, id, text), options.timeoutMs); }
     async check(options = {}) { await this.perform((node, id) => this.tab.setChecked(node.index, id, true), options.timeoutMs); }

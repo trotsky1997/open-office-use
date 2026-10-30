@@ -230,9 +230,10 @@ test("drag sends a pointer path and releases the button after failure", async ()
 test("keyboard input validates keys and sends paired events with modifiers", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
   const events = [];
+  let failDown = false;
   client.request = async (method, params) => {
     if (method === "attach") return {};
-    if (params.method === "Input.dispatchKeyEvent") events.push(params.commandParams);
+    if (params.method === "Input.dispatchKeyEvent") { events.push(params.commandParams); if (failDown && params.commandParams.type === "rawKeyDown" && params.commandParams.key === "a") throw new Error("unknown outcome"); }
     return {};
   };
   const tab = new OpenBrowserUseBrowser({ client }).tab(1);
@@ -240,9 +241,15 @@ test("keyboard input validates keys and sends paired events with modifiers", asy
   assert.deepEqual(events.map(event => event.type), ["rawKeyDown", "rawKeyDown", "keyUp", "keyUp"]);
   assert.equal(events[1].modifiers, 2);
   assert.equal(events[1].windowsVirtualKeyCode, 65);
+  await tab.pressKey("Space");
+  assert.equal(events[4].key," ");
+  assert.equal(events[4].code,"Space");
   await assert.rejects(tab.pressKey("Unknown+Enter"), /modifiers/);
   await assert.rejects(tab.pressKey("F42"), /Unsupported/);
-  assert.equal(events.length, 4);
+  assert.equal(events.length, 6);
+  failDown = true;
+  await assert.rejects(tab.pressKey("Control+A"),/unknown outcome/);
+  assert.deepEqual(events.slice(-4).map(event=>event.type),["rawKeyDown","rawKeyDown","keyUp","keyUp"]);
 });
 
 test("text input requires an editable focused observed textbox", async () => {
@@ -278,8 +285,8 @@ test("text input requires an editable focused observed textbox", async () => {
 
 test("cross-process frame input uses its session and rejects detached targets", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
-  let notify, detached = false;
-  const input = [];
+  let notify, detached = false, focused = true;
+  const input = [], keys = [];
   client.onNotification = handler => { notify = handler; return () => {}; };
   client.request = async (method, params) => {
     if (method === "attach") return {};
@@ -293,7 +300,9 @@ test("cross-process frame input uses its session and rejects detached targets", 
     if (command === "Accessibility.getFullAXTree") return {nodes:args.frameId === "nested" ? [{backendDOMNodeId:7,role:{value:"button"},name:{value:"Nested"}}] : []};
     if (command === "DOM.getFrameOwner") return {backendNodeId:args.frameId === "nested" ? 8 : 9};
     if (command === "DOM.resolveNode") return {object:{objectId:String(args.backendNodeId)}};
+    if (command === "Runtime.callFunctionOn" && args.functionDeclaration.includes("activeElement")) return {result:{value:focused}};
     if (command === "Runtime.callFunctionOn") return {result:{value:args.objectId === "7" ? {x:10,y:20,width:10,height:10} : args.objectId === "8" ? {x:110,y:120} : {x:210,y:220}}};
+    if (command === "Input.dispatchKeyEvent" || command === "DOM.focus") keys.push({session,command,...args});
     if (command === "Input.dispatchMouseEvent") input.push({session,visualPoint:params.visualPoint,...args});
     return {};
   };
@@ -304,6 +313,15 @@ test("cross-process frame input uses its session and rejects detached targets", 
   await tab.click(target.index,state.snapshotId);
   assert.deepEqual(input.map(({session,x,y})=>({session,x,y})),[{session:"child-session",x:110,y:120},{session:"child-session",x:110,y:120}]);
   assert.deepEqual(input.map(({visualPoint})=>visualPoint),[{x:210,y:220},{x:210,y:220}]);
+  await tab.playwright.getByRole("button",{name:"Nested",exact:true}).press("Enter");
+  assert.deepEqual(keys.map(({session,command})=>({session,command})),[{session:"child-session",command:"DOM.focus"},{session:"child-session",command:"Input.dispatchKeyEvent"},{session:"child-session",command:"Input.dispatchKeyEvent"}]);
+  assert.equal(input.length,2);
+  await assert.rejects(tab.playwright.getByRole("button",{name:"Nested",exact:true}).press("F42"),/Unsupported/);
+  assert.equal(keys.length,3);
+  focused = false;
+  await assert.rejects(tab.playwright.getByRole("button",{name:"Nested",exact:true}).press("Enter"),/lost focus/);
+  assert.equal(keys.length,4);
+  assert.equal(keys.at(-1).command,"DOM.focus");
   const stale = await tab.observe({includeFrames:true});
   detached = true;
   notify({method:"onCDPEvent",params:{source:{tabId:1},method:"Target.detachedFromTarget",params:{sessionId:"child-session"}}});
