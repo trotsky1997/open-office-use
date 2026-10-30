@@ -179,3 +179,7 @@ Added Word-comment and hidden-slide flags and a bounded PowerPoint speaker-note 
 ### Slide small-text candidates
 
 Exercised a structured PowerPoint creation and render/review workflow, and added explicit run-size candidates below 14 pt to layout inspection and review bundles. Checked text boxes, tables, unresolved inheritance and normal authored text, along with layout and review-bundle smoke checks. Rendering, auto-fit, group scaling, theme inheritance and master text remain outside the font-size calculation.
+
+### Viewer small-text candidates
+
+Connected small-text candidates to the layout viewer list, coverage status and visible-object overlay. Verified the browser flow on a real presentation and checked text-box and table polygons. Table highlights cover the object, and hidden-slide or uncertain page mapping disables highlighting.

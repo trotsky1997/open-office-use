@@ -130,3 +130,5 @@ Review bundles flag Word comments, hidden slides and speaker-note parts or body 
 ## Small-font review candidates
 
 A real PPTX was authored through OfficeCLI, rendered and inspected. Slide layout inspection and review bundles now flag directly specified runs below 14 pt, including table cells, and report unresolved inherited sizes and scan limits. The threshold is advisory; theme inheritance, auto-fit, grouped scaling and final legibility require rendered review.
+
+The viewer lists small-text candidates and highlights their visible object geometry, with separate font-size coverage status. Table candidates highlight the full table; hidden-slide and page-mapping restrictions remain.

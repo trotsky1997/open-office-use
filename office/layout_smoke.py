@@ -63,6 +63,8 @@ with tempfile.TemporaryDirectory() as tmp:
     font_source = root / 'fonts.pptx'; font_deck.save(font_source); fonts = layout.inspect(font_source)['font_size']
     assert fonts['candidate_count'] == 2 and fonts['unresolved_runs'] == 1 and not fonts['complete']
     assert [(item['size_pt'], item['cell']) for item in fonts['candidates']] == [(10, None), (12, [1, 1])]
+    assert fonts['candidates'][0]['visible_polygon_inches'] == [[1.0, 1.0], [5.0, 1.0], [5.0, 2.0], [1.0, 2.0]]
+    assert fonts['candidates'][1]['visible_polygon_inches'] == [[1.0, 3.0], [5.0, 3.0], [5.0, 4.0], [1.0, 4.0]]
     hidden_deck = Presentation(); hidden_deck.slides.add_slide(hidden_deck.slide_layouts[6]); hidden = hidden_deck.slides.add_slide(hidden_deck.slide_layouts[6]); hidden._element.set('show', '0')
     hidden_source = root / 'hidden.pptx'; hidden_deck.save(hidden_source); hidden_result = layout.inspect(hidden_source)
     assert hidden_result['visibility_known'] and hidden_result['hidden_slides'] == [2]

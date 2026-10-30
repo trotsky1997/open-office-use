@@ -150,7 +150,7 @@ def inspect(file, selection=None):
                         if size.pt < fonts['threshold_pt']:
                             fonts['candidate_count'] += 1
                             if len(fonts['candidates']) < MAX_ISSUES:
-                                fonts['candidates'].append({'slide': descriptor['slide'], 'path_hint': descriptor['path_hint'], 'name': descriptor['name'], 'cell': cell, 'size_pt': size.pt, 'text_preview': run.text[:160]})
+                                fonts['candidates'].append({'slide': descriptor['slide'], 'path_hint': descriptor['path_hint'], 'id': descriptor['id'], 'name': descriptor['name'], 'cell': cell, 'size_pt': size.pt, 'text_preview': run.text[:160], 'visible_polygon_inches': descriptor['visible_polygon_inches']})
             def issue(bucket, item):
                 if len(bucket) < MAX_ISSUES:
                     bucket.append(item)
@@ -206,15 +206,15 @@ def inspect(file, selection=None):
                                 descriptor['text_preview'] = text[:160]; descriptor['text_truncated'] = len(text) > 160
                             if has_text:
                                 totals['text_shapes'] += 1
+                            full_area = area(points)
+                            visible = intersect(points[:], [(0, 0), (slide_width, 0), (slide_width, slide_height), (0, slide_height)])
+                            descriptor['visible_polygon_inches'] = [[round(x / EMU, 4), round(y / EMU, 4)] for x, y in visible]
                             if shape.has_table:
                                 for row_index, row in enumerate(shape.table.rows, 1):
                                     for column_index, cell in enumerate(row.cells, 1):
                                         scan_fonts(cell.text_frame, descriptor, [row_index, column_index])
                             elif shape.has_text_frame:
                                 scan_fonts(shape.text_frame, descriptor)
-                            full_area = area(points)
-                            visible = intersect(points[:], [(0, 0), (slide_width, 0), (slide_width, slide_height), (0, slide_height)])
-                            descriptor['visible_polygon_inches'] = [[round(x / EMU, 4), round(y / EMU, 4)] for x, y in visible]
                             if selection and selection['page'] == slide_number and path and area(visible) > 1:
                                 x1, y1, x2, y2 = selection['box']
                                 box = [(x1 * slide_width, y1 * slide_height), (x2 * slide_width, y1 * slide_height),
