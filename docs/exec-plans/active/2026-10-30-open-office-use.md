@@ -108,3 +108,7 @@ Dynamic candidate validation resolves LET bindings and LAMBDA parameters lexical
 ## Speaker notes search
 
 Slide search supports a notes scope with bounded, snapshot-bound pagination, hidden-slide metadata and paragraph-level candidates. Viewer results open the notes editor for targeted replacement; unsupported paragraph content remains marked for review.
+
+## Word footnotes and endnotes
+
+Ordinary footnote and endnote paragraphs can be searched with snapshot-bound pagination and edited through verified part paths. Targeted replacement preserves note markers and supported run formatting; separator notes and complex structures remain outside the edit scope.

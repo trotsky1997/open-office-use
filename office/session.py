@@ -311,6 +311,15 @@ def edit_target(directory, base_revision, path):
     source = revision_file(state, base_revision)
     if base_revision != state['latest_revision']:
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if state['format'] == 'docx' and word.NOTE_PATH.fullmatch(path):
+        part = word.paragraph_part(source, path)
+        with zipfile.ZipFile(source) as archive:
+            tree = ooxml.parse_xml(archive.read(part)); target = word.find_paragraph(tree, path)
+            text = ''.join(node.text or '' for node in target.iter(word.W + 't'))
+        if len(text) > 4000: raise ValueError('Note paragraph exceeds the editor text limit')
+        if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
+        match = word.NOTE_PATH.fullmatch(path)
+        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': text, 'replace_text_path_supported': True, 'replace_only': True, 'note_impact': {'kind': match.group(1), 'id': match.group(2), 'part': part}}
     if state['format'] == 'docx' and word.STORY_PATH.fullmatch(path):
         inventory = word.list_stories(source)
         match = word.STORY_PATH.fullmatch(path)
@@ -476,6 +485,11 @@ def search_body(directory, revision, query, offset=0, snapshot_sha256=None):
     state = info(directory); source = revision_file(state, revision)
     return {'revision': revision, **word.search_body(source, query, offset, snapshot_sha256)}
 
+
+
+def search_notes(directory, revision, query, offset=0, snapshot_sha256=None):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **word.search_notes(source, query, offset, snapshot_sha256)}
 
 
 def search_stories(directory, revision, query, offset=0, snapshot_sha256=None):

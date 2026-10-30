@@ -314,6 +314,18 @@ def search_word_body(file: str, query: str, offset: int = 0, snapshot_sha256: st
 
 
 @server.tool()
+def search_word_notes(file: str, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search ordinary Word footnote and endnote paragraphs; paginate with the same query and snapshot hash."""
+    return word.search_notes(file, query, offset, snapshot_sha256)
+
+
+@server.tool()
+def session_search_word_notes(directory: str, revision: int, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search footnotes and endnotes in an exact revision; validate candidates before editing."""
+    return session.search_notes(directory, revision, query, offset, snapshot_sha256)
+
+
+@server.tool()
 def search_word_stories(file: str, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
     """Search related Word headers and footers; preserve query and snapshot hash when paging."""
     return word.search_stories(file, query, offset, snapshot_sha256)

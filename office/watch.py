@@ -48,7 +48,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul><div id="picture-panel" hidden><p id="picture-target"></p><label>Replacement image <input id="picture-file" type="file" accept="image/png,image/jpeg"></label> <button type="button" id="picture-replace">Replace picture</button><p>PNG or JPEG, up to 10 MiB. Existing crop and shape size remain; review the new revision.</p><p id="picture-status" role="status"></p></div></details>
 <details id="search-panel"><summary>Search document text</summary>
 <p>Search the displayed saved revision. Results are candidates; inspect their context before editing. Coverage can be incomplete for complex content.</p>
-<form id="text-search-form"><label id="text-search-scope-label" hidden>Scope <select id="text-search-scope"><option value="body">Body</option><option value="stories">Headers and footers</option><option value="slides">Slide text</option><option value="notes">Speaker notes</option></select></label> <label>Find <input id="text-search-query" maxlength="200" required></label> <button type="submit" id="text-search-start">Search</button> <button type="button" id="text-search-next" disabled>Next results</button></form>
+<form id="text-search-form"><label id="text-search-scope-label" hidden>Scope <select id="text-search-scope"><option value="body">Body</option><option value="stories">Headers and footers</option><option value="word-notes">Footnotes and endnotes</option><option value="slides">Slide text</option><option value="notes">Speaker notes</option></select></label> <label>Find <input id="text-search-query" maxlength="200" required></label> <button type="submit" id="text-search-start">Search</button> <button type="button" id="text-search-next" disabled>Next results</button></form>
 <p id="text-search-status" role="status"></p><ul id="text-search-results"></ul></details>
 <details id="edit-panel"><summary>Edit an element</summary><form id="edit-form">
 <label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
@@ -598,10 +598,12 @@ async function loadElement(path) {
   editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=tableCell;
   document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
-  document.getElementById('word-track-row').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported);
+  document.getElementById('word-track-row').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only);
   document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only); document.getElementById('comment-text').value=''; document.getElementById('comment-anchor').value='';
   document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
-  if (target.replace_only) {
+  if (target.replace_only && target.note_impact) {
+   document.getElementById('edit-status').textContent=`Loaded ${target.note_impact.kind} ${target.note_impact.id} at revision ${target.revision}. References to this note share its text. Use Replace once; review the rendered document.`;
+  } else if (target.replace_only) {
    const impact=target.story_impact, linked=impact.linked_sections.map(r=>`${r.section} (${r.type}, ${r.inherited ? 'linked' : 'direct'}, ${r.relationship_id})`).join(', ') || 'none found';
    document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Part ${impact.part}; sections: ${linked}. ${impact.same_part_ids.length ? 'Other relationship IDs share this part: '+impact.same_part_ids.join(', ')+'. ' : ''}${impact.complete ? '' : 'Section links are incomplete. '}Use Replace once; verify the rendered document.`;
   } else document.getElementById('edit-status').textContent=target.read_only_reason ? `Loaded read-only cell: ${target.read_only_reason.replaceAll('_',' ')}.` : `Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
@@ -1251,7 +1253,7 @@ async function refresh() {
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   document.getElementById('comments-panel').hidden=state.format !== 'docx';
-  const scopeControl=document.getElementById('text-search-scope'), available=state.format==='docx' ? ['body','stories'] : state.format==='pptx' ? ['slides','notes'] : ['body'];
+  const scopeControl=document.getElementById('text-search-scope'), available=state.format==='docx' ? ['body','stories','word-notes'] : state.format==='pptx' ? ['slides','notes'] : ['body'];
   for (const option of scopeControl.options) option.hidden=!available.includes(option.value);
   if (!available.includes(scopeControl.value)) { scopeControl.value=available[0]; clearTextSearch(); }
   document.getElementById('text-search-scope-label').hidden=state.format === 'xlsx';
@@ -1346,11 +1348,11 @@ def serve(directory, preview, port=0, render=None):
                             raise ValueError('Search requires revision, query, offset and snapshot SHA-256')
                         state = session.info(directory)
                         scope = payload.get('scope', 'body')
-                        allowed = {'docx': ('body', 'stories'), 'xlsx': ('body',), 'pptx': ('body', 'slides', 'notes')}
+                        allowed = {'docx': ('body', 'stories', 'word-notes'), 'xlsx': ('body',), 'pptx': ('body', 'slides', 'notes')}
                         if scope not in allowed[state['format']]: raise ValueError('Invalid search scope')
                         args = (directory, payload['revision'], payload['query'])
                         options = {'offset': payload['offset'], 'snapshot_sha256': payload['snapshot_sha256']}
-                        search = {'docx': session.search_stories if scope == 'stories' else session.search_body, 'xlsx': session.search_cells, 'pptx': session.search_slides}[state['format']]
+                        search = {'docx': session.search_stories if scope == 'stories' else session.search_notes if scope == 'word-notes' else session.search_body, 'xlsx': session.search_cells, 'pptx': session.search_slides}[state['format']]
                         if state['format'] == 'pptx': options['scope'] = 'notes' if scope == 'notes' else 'slides'
                         saved = {'format': state['format'], **search(*args, **options)}
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return

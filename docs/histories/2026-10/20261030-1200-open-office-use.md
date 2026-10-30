@@ -147,3 +147,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Check threaded-comment anchors alongside legacy notes before merges and preserve all related parts byte-for-byte. Validated three public reference workbooks with replies and mentions, plus malformed and overlapping cases.
 
 - Add snapshot-bound speaker notes search to CLI, MCP and the viewer, with hidden-slide and paragraph candidates routed to the targeted notes editor.
+
+- Add Word footnote/endnote search and targeted run-preserving text replacement through CLI, MCP and viewer, including note-marker preservation and coverage reporting.

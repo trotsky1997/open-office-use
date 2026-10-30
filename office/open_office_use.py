@@ -198,7 +198,7 @@ def main():
     comments = commands.add_parser('comments'); comments.add_argument('file')
     changes = commands.add_parser('tracked-changes'); changes.add_argument('file')
     stories = commands.add_parser('stories'); stories.add_argument('file')
-    word_search = commands.add_parser('search-word'); word_search.add_argument('file'); word_search.add_argument('--query', required=True); word_search.add_argument('--offset', type=int, default=0); word_search.add_argument('--snapshot-sha256'); word_search.add_argument('--scope', choices=('body', 'stories'), default='body')
+    word_search = commands.add_parser('search-word'); word_search.add_argument('file'); word_search.add_argument('--query', required=True); word_search.add_argument('--offset', type=int, default=0); word_search.add_argument('--snapshot-sha256'); word_search.add_argument('--scope', choices=('body', 'stories', 'notes'), default='body')
     slide_search = commands.add_parser('search-slides'); slide_search.add_argument('file'); slide_search.add_argument('--query', required=True); slide_search.add_argument('--slide', type=int); slide_search.add_argument('--offset', type=int, default=0); slide_search.add_argument('--snapshot-sha256'); slide_search.add_argument('--scope', choices=('slides', 'notes'), default='slides')
     note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
@@ -264,7 +264,7 @@ def main():
     session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     session_search = sub.add_parser('search-cells'); session_search.add_argument('directory'); session_search.add_argument('--revision', type=int, required=True); session_search.add_argument('--query', required=True)
     session_search.add_argument('--sheet'); session_search.add_argument('--offset', type=int, default=0); session_search.add_argument('--snapshot-sha256')
-    session_word_search = sub.add_parser('search-word'); session_word_search.add_argument('directory'); session_word_search.add_argument('--revision', type=int, required=True); session_word_search.add_argument('--query', required=True); session_word_search.add_argument('--offset', type=int, default=0); session_word_search.add_argument('--snapshot-sha256'); session_word_search.add_argument('--scope', choices=('body', 'stories'), default='body')
+    session_word_search = sub.add_parser('search-word'); session_word_search.add_argument('directory'); session_word_search.add_argument('--revision', type=int, required=True); session_word_search.add_argument('--query', required=True); session_word_search.add_argument('--offset', type=int, default=0); session_word_search.add_argument('--snapshot-sha256'); session_word_search.add_argument('--scope', choices=('body', 'stories', 'notes'), default='body')
     session_slide_search = sub.add_parser('search-slides'); session_slide_search.add_argument('directory'); session_slide_search.add_argument('--revision', type=int, required=True); session_slide_search.add_argument('--query', required=True); session_slide_search.add_argument('--slide', type=int); session_slide_search.add_argument('--offset', type=int, default=0); session_slide_search.add_argument('--snapshot-sha256'); session_slide_search.add_argument('--scope', choices=('slides', 'notes'), default='slides')
     restore = sub.add_parser('restore'); restore.add_argument('directory'); restore.add_argument('--base', type=int, required=True); restore.add_argument('--revision', type=int, required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
@@ -367,7 +367,7 @@ def main():
             elif args.action == 'search-cells':
                 result = session.search_cells(args.directory, args.revision, args.query, args.sheet, args.offset, args.snapshot_sha256)
             elif args.action == 'search-word':
-                result = (session.search_stories if args.scope == 'stories' else session.search_body)(args.directory, args.revision, args.query, args.offset, args.snapshot_sha256)
+                result = ({'body': session.search_body, 'stories': session.search_stories, 'notes': session.search_notes}[args.scope])(args.directory, args.revision, args.query, args.offset, args.snapshot_sha256)
             elif args.action == 'search-slides':
                 result = session.search_slides(args.directory, args.revision, args.query, args.slide, args.offset, args.snapshot_sha256, args.scope)
             elif args.action == 'restore':
@@ -389,7 +389,7 @@ def main():
         elif args.command == 'stories':
             result = word.list_stories(args.file)
         elif args.command == 'search-word':
-            result = (word.search_stories if args.scope == 'stories' else word.search_body)(args.file, args.query, args.offset, args.snapshot_sha256)
+            result = ({'body': word.search_body, 'stories': word.search_stories, 'notes': word.search_notes}[args.scope])(args.file, args.query, args.offset, args.snapshot_sha256)
         elif args.command == 'search-slides':
             result = slides.search_text(args.file, args.query, args.slide, args.offset, args.snapshot_sha256, args.scope)
         elif args.command == 'notes':

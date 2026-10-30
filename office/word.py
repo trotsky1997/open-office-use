@@ -15,6 +15,7 @@ W14_PARAGRAPH_ID = '{http://schemas.microsoft.com/office/word/2010/wordml}paraId
 INDEX = r'[1-9][0-9]{0,5}'
 PATH = re.compile(r'/body(?:(?:/(?:tbl|table)\[' + INDEX + r'\]/(?:tr|row)\[' + INDEX + r'\]/(?:tc|cell)\[' + INDEX + r'\])){0,8}/p(?:\[' + INDEX + r'\]|\[@paraId=[0-9A-Fa-f]{8}\])\Z')
 SEGMENT = re.compile(r'/(tbl|table|tr|row|tc|cell|p)\[([^]]+)\]')
+NOTE_PATH = re.compile(r'^/(footnote|endnote)\[@id=(0|[1-9][0-9]{0,9})\](?:(?:/(?:tbl|table)\[' + INDEX + r'\]/(?:tr|row)\[' + INDEX + r'\]/(?:tc|cell)\[' + INDEX + r'\])){0,8}/p(?:\[' + INDEX + r'\]|\[@paraId=[0-9A-Fa-f]{8}\])\Z')
 REL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
 R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
 STORY_ID = r'[A-Za-z_][A-Za-z0-9_.-]{0,127}'
@@ -26,7 +27,7 @@ def paragraph_path(path):
 
 
 def replacement_path(path):
-    return paragraph_path(path) or isinstance(path, str) and len(path) <= 512 and STORY_PATH.fullmatch(path) is not None
+    return paragraph_path(path) or isinstance(path, str) and len(path) <= 512 and (STORY_PATH.fullmatch(path) is not None or NOTE_PATH.fullmatch(path) is not None)
 
 
 def tracked_changes(source):
@@ -133,6 +134,11 @@ def search_stories(source, query, offset=0, snapshot_sha256=None):
     return search_paragraphs(source, query, offset, snapshot_sha256, 'stories')
 
 
+def search_notes(source, query, offset=0, snapshot_sha256=None):
+    """Search related footnote and endnote paragraphs."""
+    return search_paragraphs(source, query, offset, snapshot_sha256, 'notes')
+
+
 def search_paragraphs(source, query, offset, snapshot_sha256, scope):
     if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
         raise ValueError('Search text must contain 1 to 200 characters without control characters')
@@ -158,13 +164,28 @@ def search_paragraphs(source, query, offset, snapshot_sha256, scope):
                         body = root.find(W + 'body')
                         if body is None: raise ValueError('Document has no body')
                         yield '/body', None, body
-                    else:
+                    elif scope == 'stories':
                         stories = story_relationships(archive)
                         if len(stories) > 200: raise ValueError('Document exceeds the 200 header/footer relationship limit')
                         for rid, story in stories.items():
                             root = ooxml.parse_xml(archive.read(story['part'])).getroot()
                             if root.tag != W + ('hdr' if story['type'] == 'header' else 'ftr'): raise ValueError('Header or footer has an invalid root')
                             yield f"/{story['type']}[@id={rid}]", story['part'], root
+                    else:
+                        for kind, part in note_relationships(archive).items():
+                            root = ooxml.parse_xml(archive.read(part)).getroot()
+                            if root.tag != W + kind + 's': raise ValueError('Notes part has an invalid root')
+                            seen = set()
+                            for note in root:
+                                if note.tag != W + kind: unsupported.add('note_structure'); continue
+                                note_type = note.get(W + 'type', 'normal')
+                                if note_type in ('separator', 'continuationSeparator', 'continuationNotice'): continue
+                                note_id = note.get(W + 'id', '')
+                                if note_type != 'normal' or not re.fullmatch(r'0|[1-9][0-9]{0,9}', note_id): unsupported.add('unsupported_note'); continue
+                                if note_id in seen: raise ValueError('Duplicate note identifier')
+                                seen.add(note_id)
+                                if len(seen) > 10000: raise ValueError('Document exceeds the 10,000 notes limit')
+                                yield f'/{kind}[@id={note_id}]', part, note
                 unsupported = set()
                 def paragraphs(container, path, depth):
                     if depth > 8:
@@ -213,7 +234,7 @@ def search_paragraphs(source, query, offset, snapshot_sha256, scope):
                         'unsupported_structure': sorted(unsupported), 'scan_complete': scan_complete,
                         'complete': offset == 0 and scan_complete and not uncertain and not unsupported,
                         'limits': {'paragraphs': 10000, 'matches': 100},
-                        'notes': [('Search covers body and supported table paragraphs; headers, footers, notes and text boxes are excluded.' if scope == 'body' else 'Search covers related header and footer paragraphs and tables; shared parts can appear under multiple relationship IDs. Check section impact before editing.'),
+                        'notes': [('Search covers body and supported table paragraphs; headers, footers, notes and text boxes are excluded.' if scope == 'body' else 'Search covers related header and footer paragraphs and tables; shared parts can appear under multiple relationship IDs. Check section impact before editing.' if scope == 'stories' else 'Search covers ordinary footnote and endnote paragraphs and tables; separator notes and other stories are excluded.'),
                                   'Paths are candidates: inspect paragraph structure and use targeted editing validation before replacing text.']}
         except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
             raise ValueError(f'Invalid Word document: {exc}') from exc
@@ -237,6 +258,26 @@ def story_relationships(archive):
         if not path.startswith('word/') or path not in archive.namelist(): raise ValueError('Invalid header or footer part')
         stories[rid] = {'type': kind, 'part': path}
     return stories
+
+
+def note_relationships(archive):
+    tree = ooxml.parse_xml(archive.read('word/_rels/document.xml.rels'))
+    if tree.getroot().tag != REL + 'Relationships': raise ValueError('Invalid document relationships')
+    seen = set(); result = {}
+    for rel in tree.getroot().findall(REL + 'Relationship'):
+        rid = rel.get('Id'); typ = rel.get('Type', '')
+        if not rid or rid in seen: raise ValueError('Missing or duplicate relationship ID')
+        seen.add(rid)
+        kinds = {R[1:-1] + '/footnotes': 'footnote', R[1:-1] + '/endnotes': 'endnote'}
+        if typ not in kinds:
+            if typ.endswith(('/footnotes', '/endnotes')): raise ValueError('Unsupported notes relationship')
+            continue
+        kind = kinds[typ]; target = rel.get('Target', '')
+        if kind in result or rel.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', chr(92), ':')): raise ValueError('Ambiguous notes relationship')
+        part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+        if not part.startswith('word/') or part not in archive.namelist() or part == 'word/document.xml' or part in result.values(): raise ValueError('Invalid notes part')
+        result[kind] = part
+    return result
 
 
 def list_stories(source):
@@ -311,8 +352,14 @@ def list_stories(source):
 
 
 def find_paragraph(tree, path):
-    story = STORY_PATH.fullmatch(path)
-    if story:
+    story = STORY_PATH.fullmatch(path); note = NOTE_PATH.fullmatch(path)
+    if note:
+        kind, note_id = note.groups()
+        if tree.getroot().tag != W + kind + 's': raise ValueError('Notes part has an invalid root')
+        matches = [node for node in tree.getroot().findall(W + kind) if node.get(W + 'id') == note_id and node.get(W + 'type', 'normal') == 'normal']
+        if len(matches) != 1: raise ValueError('Note identifier must be unique')
+        paragraph = matches[0]
+    elif story:
         if tree.getroot().tag != W + ('hdr' if story.group(1) == 'header' else 'ftr'): raise ValueError('Header or footer has an invalid root')
         paragraph = tree.getroot()
     else:
@@ -409,7 +456,7 @@ def anchor_runs(paragraph, anchor):
 
 def replace_text(source, output, path, find, replacement):
     if not replacement_path(path):
-        raise ValueError('Target must be a body, header or footer paragraph path')
+        raise ValueError('Target must be a body, header, footer, footnote or endnote paragraph path')
     if Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
         raise ValueError('Text replacement requires DOCX input and output')
 
@@ -423,7 +470,7 @@ def replace_text(source, output, path, find, replacement):
 
         def add_run(run):
             tags = {child.tag for child in run}
-            if tags <= {W + 'rPr', W + 'commentReference'} and W + 'commentReference' in tags:
+            if tags <= {W + 'rPr', W + 'commentReference', W + 'footnoteRef', W + 'endnoteRef'} and tags & {W + 'commentReference', W + 'footnoteRef', W + 'endnoteRef'}:
                 boundary(); return
             if not tags <= {W + 'rPr', W + 't'}:
                 raise ValueError('Paragraph contains unsupported run content such as fields, tabs or images')
@@ -461,6 +508,11 @@ def replace_text(source, output, path, find, replacement):
 
 
 def paragraph_part(file, path):
+    note = NOTE_PATH.fullmatch(path)
+    if note:
+        with zipfile.ZipFile(file) as archive: relationships = note_relationships(archive)
+        if note.group(1) not in relationships: raise ValueError('Note relationship does not exist')
+        return relationships[note.group(1)]
     story = STORY_PATH.fullmatch(path)
     if story is None: return 'word/document.xml'
     with zipfile.ZipFile(file) as archive: relationships = story_relationships(archive)
