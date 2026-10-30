@@ -581,10 +581,12 @@ Targeted single-part OOXML edits select and modify parts from one checked source
 
 Grid reads use a checked source snapshot and return `snapshot_sha256`. Value and formatting edits can provide `expected_sha256` to bind the request to a previously read grid; the viewer supplies it automatically. Grid constraints, OfficeCLI candidate generation and XML updates use matching source bytes. Merge, freeze and size operations also accept `expected_sha256`, and the viewer passes the loaded hash for each.
 
-`session_edit_target` returns a snapshot hash. Pass it as `expected_sha256` to `session_edit` or `session_replace_text` to reject edits against changed source bytes; the viewer does this for direct edits and text replacements. Tracked text insertion/replacement and new paragraph comments also accept the target hash, which the viewer supplies. Picture replacement has a separate consistency boundary.
+`session_edit_target` returns a snapshot hash. Pass it as `expected_sha256` to `session_edit` or `session_replace_text` to reject edits against changed source bytes; the viewer does this for direct edits and text replacements. Tracked text insertion/replacement and new paragraph comments also accept the target hash, which the viewer supplies. Picture replacement supports the selected document snapshot hash.
 
 Speaker-note reads return `snapshot_sha256`. Pass it as `expected_sha256` to full-note or paragraph replacement; the viewer checks the displayed source and supplies the hash automatically. Full replacement can reset note formatting.
 
 Comment inventories return `snapshot_sha256`; pass it as `expected_sha256` to comment replies and state changes to bind them to the inspected file. The viewer supplies this hash for its comment actions.
 
 Tracked-change inventories return `snapshot_sha256`. Pass it to `session_resolve_tracked_runs` as `expected_sha256` to bind acceptance or rejection to the inspected file. The viewer checks its displayed snapshot and sends the inventory hash.
+
+PowerPoint picture replacement accepts `expected_sha256` (CLI: `--expected-sha256`) from the inspected presentation or selection; the viewer binds it to the selected preview. CLI and MCP read replacement images from a checked local snapshot.

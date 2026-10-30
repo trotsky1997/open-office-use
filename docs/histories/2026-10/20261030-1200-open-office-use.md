@@ -377,3 +377,5 @@ Bound speaker-note reads and both note replacement operations to checked snapsho
 Bound comment inventory, replies and resolved-state changes to checked snapshots; the viewer and MCP can use the inspected hash.
 
 Bound tracked-change acceptance/rejection to the inspected snapshot hash through MCP and the viewer.
+
+Bound PowerPoint picture replacement to inspected presentation hashes, and read CLI/MCP image inputs through checked snapshots.

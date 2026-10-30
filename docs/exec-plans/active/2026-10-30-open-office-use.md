@@ -274,3 +274,5 @@ Speaker-note reads and replacements use checked snapshots; the viewer binds save
 Comment inventory and reply/resolution operations use checked snapshots, with expected hashes in MCP and viewer actions.
 
 Tracked-change resolution can enforce the inventory snapshot hash; the viewer validates its preview and supplies the hash.
+
+Picture replacement accepts a source snapshot hash; viewer selections bind the hash, and local image inputs use checked snapshots.

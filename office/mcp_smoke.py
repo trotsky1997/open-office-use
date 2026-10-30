@@ -218,7 +218,10 @@ async def main():
                 assert not slide_search.isError and slide_search.structuredContent['scan_complete'], slide_search
                 started_picture = await session.call_tool('start_session', {'directory': str(picture_draft), 'source': str(picture_source)})
                 assert not started_picture.isError, started_picture
-                changed_picture = await session.call_tool('session_replace_picture', {'directory': str(picture_draft), 'base_revision': 0, 'path': f'/slide[1]/picture[@id={picture.shape_id}]', 'image_file': str(replacement_image)})
+                picture_inventory = await session.call_tool('session_inspect_slides', {'directory':str(picture_draft),'revision':0})
+                picture_args = {'directory':str(picture_draft),'base_revision':0,'path':f'/slide[1]/picture[@id={picture.shape_id}]','image_file':str(replacement_image)}
+                assert (await session.call_tool('session_replace_picture', {**picture_args,'expected_sha256':'0'*64})).isError
+                changed_picture = await session.call_tool('session_replace_picture', {**picture_args,'expected_sha256':picture_inventory.structuredContent['snapshot_sha256']})
                 assert not changed_picture.isError and Presentation(picture_draft / 'revision-000001.pptx').slides[0].shapes[0].image.blob == replacement_image.read_bytes(), changed_picture
                 initial_notes = await session.call_tool('session_read_slide_notes', {'directory':str(picture_draft),'revision':1,'slide':1})
                 assert (await session.call_tool('session_replace_slide_notes', {'directory':str(picture_draft),'base_revision':1,'slide':1,'text':'bad','expected_sha256':'0'*64})).isError

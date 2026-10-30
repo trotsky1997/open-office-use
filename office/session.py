@@ -771,7 +771,16 @@ def add_comment(directory, base_revision, path, text, author, anchor=None, expec
     return {'revision': base_revision + 1, 'file': str(output), 'path': path, 'comment_id': result['comment_id']}
 
 
-def replace_picture(directory, base_revision, path, image_data):
+
+def read_picture_file(path):
+    source = Path(path).resolve(strict=True)
+    if source.stat().st_size > 10 * 1024 * 1024: raise ValueError('Image must be at most 10 MiB')
+    with tempfile.TemporaryDirectory(prefix='office-picture-source-') as tmp:
+        frozen, _ = snapshots.copy(source, tmp)
+        if frozen.stat().st_size > 10 * 1024 * 1024: raise ValueError('Image must be at most 10 MiB')
+        return frozen.read_bytes()
+
+def replace_picture(directory, base_revision, path, image_data, expected_sha256=None):
     state = info(directory)
     source = revision_file(state, base_revision)
     if state['format'] != 'pptx':
@@ -782,7 +791,7 @@ def replace_picture(directory, base_revision, path, image_data):
         raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
     try:
-        slides.replace_picture(source, output, path, image_data)
+        slides.replace_picture(source, output, path, image_data, expected_sha256)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'path': path}

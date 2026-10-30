@@ -1273,7 +1273,7 @@ def main():
     reply = sub.add_parser('reply-comment'); reply.add_argument('directory'); reply.add_argument('--base', type=int, required=True); reply.add_argument('--parent-id', required=True); reply.add_argument('--text', required=True); reply.add_argument('--author', required=True)
     resolve = sub.add_parser('resolve-comment'); resolve.add_argument('directory'); resolve.add_argument('--base', type=int, required=True); resolve.add_argument('--id', required=True); resolve.add_argument('--resolved', choices=['true', 'false'], required=True)
     comment = sub.add_parser('add-comment'); comment.add_argument('directory'); comment.add_argument('--base', type=int, required=True); comment.add_argument('--path', required=True); comment.add_argument('--text', required=True); comment.add_argument('--author', required=True); comment.add_argument('--anchor')
-    picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True)
+    picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True); picture.add_argument('--expected-sha256')
     session_review = sub.add_parser('review'); session_review.add_argument('directory'); session_review.add_argument('--revision', type=int, required=True); session_review.add_argument('--out-dir', required=True)
     session_comments = sub.add_parser('comments'); session_comments.add_argument('directory'); session_comments.add_argument('--revision', type=int, required=True)
     session_changes = sub.add_parser('tracked-changes'); session_changes.add_argument('directory'); session_changes.add_argument('--revision', type=int, required=True)
@@ -1372,10 +1372,8 @@ def main():
             elif args.action == 'add-comment':
                 result = session.add_comment(args.directory, args.base, args.path, args.text, args.author, args.anchor)
             elif args.action == 'replace-picture':
-                image = Path(args.image)
-                if image.stat().st_size > 10 * 1024 * 1024:
-                    raise ValueError('Image must be at most 10 MiB')
-                result = session.replace_picture(args.directory, args.base, args.path, image.read_bytes())
+                image_data = session.read_picture_file(args.image)
+                result = session.replace_picture(args.directory, args.base, args.path, image_data, expected_sha256=args.expected_sha256)
             elif args.action == 'review':
                 state = session.info(args.directory); source = session.revision_file(state, args.revision)
                 if Path(args.out_dir).resolve().is_relative_to(Path(state['directory'])): raise ValueError('Review output must be outside the session directory')

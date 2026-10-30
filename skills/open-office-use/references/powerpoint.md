@@ -39,3 +39,5 @@ Use `inspect_slides` or `session_inspect_slides` before reordering to list slide
 In the local viewer, the Slide order panel loads the displayed revision's slide list and recognized sections and saves a complete comma-separated order in the latest revision. Reload after changing revisions.
 
 Speaker-note reads return `snapshot_sha256`. Pass it as `expected_sha256` when replacing full notes or a notes paragraph; the viewer binds these operations to the displayed snapshot.
+
+For picture replacement, pass the selected presentation `snapshot_sha256` as `expected_sha256` to bind the operation to the inspected source. The viewer submits the selection snapshot automatically; local replacement images are read from checked snapshots.

@@ -1,5 +1,6 @@
 """Check picture replacement, shared media isolation and revision conflicts."""
 import io
+import hashlib
 import tempfile
 import subprocess
 import sys
@@ -24,7 +25,15 @@ with tempfile.TemporaryDirectory() as tmp:
     source = root / 'source.pptx'; deck.save(source); original = source.read_bytes()
     draft = root / 'draft'; session.start(draft, source=source)
     replacement = image('blue'); path = f'/slide[1]/picture[@id={first.shape_id}]'
-    result = session.replace_picture(draft, 0, path, replacement)
+    expected = hashlib.sha256(original).hexdigest()
+    altered=Presentation(source); altered.slides[0].shapes[0].rotation=21; alternate=root/'alternate.pptx';altered.save(alternate)
+    revision_file=draft/'revision-000000.pptx';revision_file.write_bytes(alternate.read_bytes())
+    try: session.replace_picture(draft, 0, path, replacement, expected_sha256=expected)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Changed picture source accepted')
+    assert session.info(draft)['latest_revision']==0
+    revision_file.write_bytes(original)
+    result = session.replace_picture(draft, 0, path, replacement, expected_sha256=expected)
     changed = Presentation(result['file']); a, b = changed.slides[0].shapes
     assert a.image.blob == replacement and b.image.blob == image('red')
     assert a.crop_left == first.crop_left and a.rotation == first.rotation and a.left == first.left and a.width == first.width
@@ -47,6 +56,6 @@ with tempfile.TemporaryDirectory() as tmp:
     assert Presentation(grouped_result['file']).slides[0].shapes[0].shapes[0].image.blob == replacement
     replacement_file = root / 'replacement.png'; replacement_file.write_bytes(replacement)
     cli_draft = root / 'cli-draft'; session.start(cli_draft, source=source)
-    subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'session', 'replace-picture', str(cli_draft), '--base', '0', '--path', path, '--image', str(replacement_file)], check=True, capture_output=True)
+    subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'session', 'replace-picture', str(cli_draft), '--base', '0', '--path', path, '--image', str(replacement_file), '--expected-sha256', expected], check=True, capture_output=True)
     assert Presentation(cli_draft / 'revision-000001.pptx').slides[0].shapes[0].image.blob == replacement
 print('Picture smoke passed: shared images, geometry, revisions and invalid input')

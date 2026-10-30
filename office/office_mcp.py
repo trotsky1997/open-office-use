@@ -436,12 +436,10 @@ def session_add_comment(directory: str, base_revision: int, path: str, text: str
 
 
 @server.tool()
-def session_replace_picture(directory: str, base_revision: int, path: str, image_file: str) -> dict[str, Any]:
+def session_replace_picture(directory: str, base_revision: int, path: str, image_file: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Replace a PPTX picture with a local PNG or JPEG, preserving its geometry and crop."""
-    image = Path(image_file).resolve(strict=True)
-    if image.stat().st_size > 10 * 1024 * 1024:
-        raise ValueError('Image must be at most 10 MiB')
-    return session.replace_picture(directory, base_revision, path, image.read_bytes())
+    image_data = session.read_picture_file(image_file)
+    return session.replace_picture(directory, base_revision, path, image_data, expected_sha256)
 
 
 @server.tool()

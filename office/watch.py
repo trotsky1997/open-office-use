@@ -275,6 +275,7 @@ document.getElementById('candidate-search').addEventListener('click', async () =
   const response=await fetch('candidates', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({selection:requested,snapshot_sha256:displayedHash})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Search failed');
   if (epoch !== selectionEpoch || pinned !== null || current !== result.revision) return;
+  if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; select the picture again');
   const list=document.getElementById('candidate-list'); list.replaceChildren();
   for (const item of result.candidates) {
    const row=document.createElement('li'); const label=document.createElement('span');
@@ -282,7 +283,7 @@ document.getElementById('candidate-search').addEventListener('click', async () =
    const use=document.createElement('button'); use.type='button'; use.textContent=`Use ${item.path}`;
    use.addEventListener('click', () => {
     if (epoch !== selectionEpoch || current !== result.revision || pinned !== null) return;
-    if (item.type === 'picture') { pictureTarget={revision:result.revision,path:item.path}; document.getElementById('picture-target').textContent=`Picture: ${item.path}`; document.getElementById('picture-file').value=''; document.getElementById('picture-status').textContent=''; document.getElementById('picture-panel').hidden=false; }
+    if (item.type === 'picture') { pictureTarget={revision:result.revision,path:item.path,snapshot_sha256:result.snapshot_sha256}; document.getElementById('picture-target').textContent=`Picture: ${item.path}`; document.getElementById('picture-file').value=''; document.getElementById('picture-status').textContent=''; document.getElementById('picture-panel').hidden=false; }
     else { document.getElementById('edit-panel').open=true; loadElement(item.path); }
    });
    row.append(label, document.createTextNode(' '), use); list.appendChild(row);
@@ -293,13 +294,13 @@ document.getElementById('candidate-search').addEventListener('click', async () =
 });
 document.getElementById('picture-replace').addEventListener('click', async () => {
  const target=pictureTarget, file=document.getElementById('picture-file').files[0], button=document.getElementById('picture-replace');
- if (!target || pinned!==null || target.revision!==current) { document.getElementById('picture-status').textContent='Version changed; select the picture again.'; return; }
+ if (!target || pinned!==null || target.revision!==current || target.snapshot_sha256!==displayedHash) { document.getElementById('picture-status').textContent='Version changed; select the picture again.'; return; }
  if (!file || file.size===0 || file.size>10*1024*1024) { document.getElementById('picture-status').textContent='Choose a PNG or JPEG up to 10 MiB.'; return; }
  button.disabled=true;
  try {
   const encoded=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(new Error('Could not read image'));reader.readAsDataURL(file);});
-  if (target!==pictureTarget || pinned!==null || target.revision!==current) throw new Error('Version or selection changed; select the picture again.');
-  const response=await fetch('replace-picture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,image:encoded})});
+  if (target!==pictureTarget || pinned!==null || target.revision!==current || target.snapshot_sha256!==displayedHash) throw new Error('Version or selection changed; select the picture again.');
+  const response=await fetch('replace-picture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,image:encoded,snapshot_sha256:target.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Picture replacement failed');
   document.getElementById('picture-status').textContent=`Saved as revision ${result.revision}.`; await refresh();
  } catch(error) { document.getElementById('picture-status').textContent=`Picture error: ${error.message}`; }
@@ -1572,10 +1573,10 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Restore requires base_revision and revision')
                             saved = session.restore(directory, payload['base_revision'], payload['revision'])
                         elif route.endswith('/replace-picture'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'image'} or not isinstance(payload['image'], str):
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'image'}, {'base_revision', 'path', 'image', 'snapshot_sha256'}) or not isinstance(payload['image'], str):
                                 raise ValueError('Picture replacement requires revision, path and image')
                             image_data = base64.b64decode(payload['image'], validate=True)
-                            saved = session.replace_picture(directory, payload['base_revision'], payload['path'], image_data)
+                            saved = session.replace_picture(directory, payload['base_revision'], payload['path'], image_data, expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/reply-comment'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'parent_id', 'text', 'author'}, {'base_revision', 'parent_id', 'text', 'author', 'snapshot_sha256'}):
                                 raise ValueError('Reply requires revision, parent ID, text and author')

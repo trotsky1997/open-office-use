@@ -89,4 +89,6 @@ with tempfile.TemporaryDirectory() as tmp:
         result = session.merge_cells(draft, 0, 'Sheet', 'A1:B2')
     from openpyxl import load_workbook
     assert load_workbook(result['file']).active['A1'].value == 'Original'
+    image_source = root/'image.png'; image_source.write_bytes(b'bytes to snapshot')
+    reject(image_source, lambda: session.read_picture_file(image_source))
 print('Session snapshot smoke passed: start, batch, apply, restore and export')

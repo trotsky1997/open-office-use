@@ -355,7 +355,7 @@ def replace_text(source, output, path, find, replacement):
     return ooxml.edit_xml(source, output, lambda file: slide_part(file, slide_index), edit)
 
 
-def replace_picture(source, output, path, image_data):
+def replace_picture(source, output, path, image_data, expected_sha256=None):
     """Replace one embedded picture while preserving slide XML geometry and crop."""
     import io
     import posixpath
@@ -431,4 +431,4 @@ def replace_picture(source, output, path, image_data):
         etree.SubElement(content_tree.getroot(), types + 'Override', PartName='/' + media, ContentType=content_type)
         return {rels_part: ooxml.serialize_xml(rel_tree, rel_bytes), '[Content_Types].xml': ooxml.serialize_xml(content_tree, content_bytes), media: image_data}
 
-    return ooxml.edit_xml(source, output, select_part, edit, allow_new=True)
+    return ooxml.edit_xml(source, output, select_part, edit, allow_new=True, expected_sha256=expected_sha256)
