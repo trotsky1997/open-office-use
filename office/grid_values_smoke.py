@@ -12,6 +12,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 import xlsxwriter
 import officecli_backend
+import grid_values
+import ooxml
 import session
 import spreadsheet
 
@@ -73,12 +75,29 @@ with tempfile.TemporaryDirectory() as tmp:
             after.writestr(entry, data)
         chain = etree.Element(X + 'calcChain'); etree.SubElement(chain, X + 'c', r='C1', i='1'); after.writestr('xl/calcChain.xml', etree.tostring(chain))
     chain_draft = root / 'chain-draft'; session.start(chain_draft, source=chain_source)
-    try: session.edit_grid(chain_draft, 0, 'Sheet', 'C1', [{'cell': 'C1', 'value': '=A1+3'}])
-    except ValueError as error: assert 'calculation chain' in str(error)
-    else: raise AssertionError('Formula edit with calculation chain accepted')
-    assert session.info(chain_draft)['latest_revision'] == 0
-    chain_edit = session.edit_grid(chain_draft, 0, 'Sheet', 'A1', [{'cell': 'A1', 'value': '8'}])
-    with zipfile.ZipFile(chain_source) as before, zipfile.ZipFile(chain_edit['file']) as after: assert before.read('xl/calcChain.xml') == after.read('xl/calcChain.xml')
+    chain_edit = session.edit_grid(chain_draft, 0, 'Sheet', 'C1', [{'cell': 'C1', 'value': '=A1+3'}])
+    assert chain_edit['calculation_chain'] == 'removed'
+    with zipfile.ZipFile(chain_source) as before, zipfile.ZipFile(chain_edit['file']) as after:
+        assert 'xl/calcChain.xml' not in after.namelist()
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name not in ('xl/calcChain.xml', 'xl/_rels/workbook.xml.rels', '[Content_Types].xml', 'xl/worksheets/sheet1.xml', 'xl/styles.xml'))
+        assert b'calcChain' not in after.read('xl/_rels/workbook.xml.rels') and b'calcChain' not in after.read('[Content_Types].xml')
+    assert load_workbook(chain_edit['file'], data_only=True).active['B1'].value == 10
+    assert load_workbook(chain_edit['file'], data_only=True).active['C1'].value is None
+    audit = officecli_backend.audit(chain_edit['file']); assert audit['validation']['exit_code'] == 0 and audit['validation']['result']['success'], audit
+    recalculated = session.recalculate(chain_draft, 1); assert load_workbook(recalculated['file'], data_only=True).active['C1'].value == 8
+    unchanged_draft = root / 'chain-unchanged'; session.start(unchanged_draft, source=chain_source)
+    unchanged = session.edit_grid(unchanged_draft, 0, 'Sheet', 'A1', [{'cell': 'A1', 'value': '8'}])
+    assert unchanged['calculation_chain'] == 'unchanged'
+    with zipfile.ZipFile(chain_source) as before, zipfile.ZipFile(unchanged['file']) as after: assert before.read('xl/calcChain.xml') == after.read('xl/calcChain.xml')
+    unsafe = root / 'chain-referenced.xlsx'
+    with zipfile.ZipFile(chain_source) as before, zipfile.ZipFile(unsafe, 'w') as after:
+        for entry in before.infolist(): after.writestr(entry, before.read(entry))
+        extra = etree.Element(rel + 'Relationships'); etree.SubElement(extra, rel + 'Relationship', Id='rId1', Type='urn:other', Target='../calcChain.xml')
+        after.writestr('xl/worksheets/_rels/sheet1.xml.rels', etree.tostring(extra))
+    with zipfile.ZipFile(unsafe) as archive:
+        try: grid_values.remove_calculation_chain(archive, ooxml.parse_xml(archive.read('[Content_Types].xml')))
+        except ValueError as error: assert 'additional references' in str(error)
+        else: raise AssertionError('Referenced calculation chain removed')
     signed = root / 'signed.xlsx'
     with zipfile.ZipFile(source) as before, zipfile.ZipFile(signed, 'w') as after:
         for entry in before.infolist(): after.writestr(entry, before.read(entry))

@@ -59,7 +59,7 @@ def serialize_xml(tree, original):
     return etree.tostring(tree, **options)
 
 
-def edit_xml(source, output, select_part, edit, allow_new=False):
+def edit_xml(source, output, select_part, edit, allow_new=False, allow_remove=False):
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
     if source.suffix.lower() not in ('.docx', '.pptx', '.xlsx') or source.suffix.lower() != output.suffix.lower():
         raise ValueError('Input and output must use the same supported Office format')
@@ -77,7 +77,7 @@ def edit_xml(source, output, select_part, edit, allow_new=False):
             part = select_part(source)
             document = archive.read(part); tree = parse_xml(document)
             additional = edit(tree, archive) or {}
-            if not isinstance(additional, dict) or any((name not in names and not allow_new) or name == part or not isinstance(name, str) or not isinstance(data, bytes) or name.startswith('/') or '..' in name.split('/') for name, data in additional.items()):
+            if not isinstance(additional, dict) or any((name not in names and not allow_new) or name == part or not isinstance(name, str) or (not isinstance(data, bytes) and not (data is None and allow_remove and name in names and name not in ('[Content_Types].xml', '_rels/.rels'))) or name.startswith('/') or '..' in name.split('/') for name, data in additional.items()):
                 raise ValueError('Invalid additional package changes')
             if sum(entry.file_size for entry in entries) + sum(len(data) for name, data in additional.items() if name not in names) > 128 * 1024 * 1024 or len(entries) + sum(name not in names for name in additional) > 5000:
                 raise ValueError('Edited package exceeds limits')
@@ -87,6 +87,7 @@ def edit_xml(source, output, select_part, edit, allow_new=False):
                 with zipfile.ZipFile(candidate, 'w') as result:
                     result.comment = archive.comment
                     for entry in entries:
+                        if entry.filename in changed and changed[entry.filename] is None: continue
                         result.writestr(entry, changed[entry.filename] if entry.filename in changed else archive.read(entry))
                     for name, data in additional.items():
                         if name not in names:

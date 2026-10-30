@@ -632,7 +632,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
     normalized = [{'cell': op['path'].rsplit('/', 1)[1], 'value': next(iter(op['props'].values()))} for op in operations]
     try: result = grid_values.apply(source, output, sheet, normalized, operations)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True}
+    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True, 'calculation_chain': result['calculation_chain']}
 
 
 def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):

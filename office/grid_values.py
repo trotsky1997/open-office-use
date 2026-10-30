@@ -1,10 +1,12 @@
 """Transplant validated grid values into the original XLSX package."""
 import copy
 import math
+import posixpath
 import re
 import tempfile
 import zipfile
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 from lxml import etree
 import cell_text
 import grid_styles
@@ -15,6 +17,58 @@ import spreadsheet
 X = grid_styles.X
 CT = '{http://schemas.openxmlformats.org/package/2006/content-types}'
 SHARED = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml'
+
+
+CHAIN_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain'
+CHAIN_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml'
+
+
+def remove_calculation_chain(archive, manifest):
+    rel_path = 'xl/_rels/workbook.xml.rels'
+    rel_raw = archive.read(rel_path); rel_tree = ooxml.parse_xml(rel_raw); rels = rel_tree.getroot()
+    if rels.tag != grid_styles.REL + 'Relationships': raise ValueError('Invalid workbook relationships')
+    chains = [item for item in rels.findall(grid_styles.REL + 'Relationship') if item.get('Type', '').endswith('/calcChain')]
+    overrides = [item for item in manifest.getroot().findall(CT + 'Override') if item.get('ContentType', '').endswith('.calcChain+xml')]
+    if not chains and not overrides: return {}, 'absent'
+    if len(chains) != 1 or len(overrides) != 1 or chains[0].get('Type') != CHAIN_REL or overrides[0].get('ContentType') != CHAIN_TYPE:
+        raise ValueError('Ambiguous calculation chain')
+    chain = chains[0]; target = chain.get('Target', '')
+    if chain.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', '\\', ':')):
+        raise ValueError('Unsupported calculation chain target')
+    path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('xl', target))
+    if not path.startswith('xl/') or path not in archive.namelist() or overrides[0].get('PartName') != '/' + path or path in ('xl/workbook.xml', 'xl/styles.xml'):
+        raise ValueError('Invalid calculation chain part')
+    if len([item for item in manifest.getroot().findall(CT + 'Override') if item.get('PartName') == '/' + path]) != 1:
+        raise ValueError('Ambiguous calculation chain content type')
+    own_rels = posixpath.join(posixpath.dirname(path), '_rels', posixpath.basename(path) + '.rels')
+    if own_rels in archive.namelist(): raise ValueError('Calculation chain has relationships')
+    root = ooxml.parse_xml(archive.read(path)).getroot()
+    if root.tag != X + 'calcChain' or root.attrib or (root.text and root.text.strip()): raise ValueError('Unsupported calculation chain content')
+    for cell in root:
+        if cell.tag != X + 'c' or len(cell) or (cell.text and cell.text.strip()) or (cell.tail and cell.tail.strip()) or any(key not in ('r', 'i', 'l', 's', 'a') for key in cell.attrib) or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', cell.get('r', '')):
+            raise ValueError('Unsupported calculation chain content')
+    for name in archive.namelist():
+        if not name.endswith('.rels'): continue
+        if name == '_rels/.rels': base = ''
+        elif '/_rels/' in name:
+            parent, leaf = name.rsplit('/_rels/', 1); base = parent
+            if not leaf.endswith('.rels') or '/' in leaf: raise ValueError('Invalid relationship part')
+        elif name.startswith('_rels/') and '/' not in name[6:]: base = ''
+        else: raise ValueError('Invalid relationship part')
+        relationships = ooxml.parse_xml(archive.read(name)).getroot()
+        if relationships.tag != grid_styles.REL + 'Relationships': raise ValueError('Invalid relationship part')
+        for item in relationships.findall(grid_styles.REL + 'Relationship'):
+            mode = item.get('TargetMode', 'Internal')
+            if mode == 'External': continue
+            if mode != 'Internal': raise ValueError('Invalid relationship target mode')
+            uri = urlsplit(item.get('Target', ''))
+            decoded = unquote(uri.path, errors='strict')
+            if uri.scheme or uri.netloc or '%' in decoded or '\\' in decoded: raise ValueError('Unsupported relationship target')
+            resolved = posixpath.normpath(decoded.lstrip('/') if decoded.startswith('/') else posixpath.join(base, decoded))
+            if resolved == path and not (name == rel_path and item.get('Id') == chain.get('Id') and item.get('Type') == CHAIN_REL):
+                raise ValueError('Calculation chain has additional references')
+    rels.remove(chain); manifest.getroot().remove(overrides[0])
+    return {rel_path: ooxml.serialize_xml(rel_tree, rel_raw), '[Content_Types].xml': ooxml.serialize_xml(manifest, archive.read('[Content_Types].xml')), path: None}, 'removed'
 
 
 def apply(source, output, sheet, changes, operations):
@@ -83,7 +137,9 @@ def apply(source, output, sheet, changes, operations):
                 elif kind == 'b' and text not in ('0', '1'): raise ValueError('Invalid candidate boolean')
                 elif kind == 'e' and text not in ('#NULL!', '#DIV/0!', '#VALUE!', '#REF!', '#NAME?', '#NUM!', '#N/A'): raise ValueError('Invalid candidate error value')
                 values[address] = (style, kind, [copy.deepcopy(children[0])])
+        chain_status = 'unchanged'
         def edit(tree, archive):
+            nonlocal chain_status
             root = tree.getroot()
             if root.tag != X + 'worksheet': raise ValueError('Invalid worksheet')
             original_styles = archive.read(style_name); merged, style_count = grid_styles.merge_styles(original_styles, candidate_styles)
@@ -126,17 +182,14 @@ def apply(source, output, sheet, changes, operations):
                 else: cell.set('t', kind)
                 for child in list(cell): cell.remove(child)
                 for child in children or (): cell.append(child)
-            if formula_changed:
-                rels = ooxml.parse_xml(archive.read('xl/_rels/workbook.xml.rels')).getroot()
-                if rels.tag != grid_styles.REL + 'Relationships': raise ValueError('Invalid workbook relationships')
-                if any(item.get('Type', '').endswith('/calcChain') for item in rels.findall(grid_styles.REL + 'Relationship')):
-                    raise ValueError('Formula changes are unsupported while a calculation chain is present')
             additional = {}
             if grid_styles.equivalent(ooxml.parse_xml(original_styles).getroot()) != grid_styles.equivalent(ooxml.parse_xml(merged).getroot()): additional[style_name] = merged
-            manifest = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
+            manifest_tree = ooxml.parse_xml(archive.read('[Content_Types].xml')); manifest = manifest_tree.getroot()
             if manifest.tag != CT + 'Types': raise ValueError('Invalid content types')
-            if formula_changed and any(item.get('ContentType', '').endswith('.calcChain+xml') for item in manifest.findall(CT + 'Override')):
-                raise ValueError('Formula changes are unsupported while a calculation chain is present')
+            if formula_changed:
+                chain_changes, chain_status = remove_calculation_chain(archive, manifest_tree)
+                if source_part in chain_changes or style_name in chain_changes: raise ValueError('Calculation chain conflicts with workbook parts')
+                additional.update(chain_changes)
             shared_parts = [item.get('PartName', '').lstrip('/') for item in manifest.findall(CT + 'Override') if item.get('ContentType') == SHARED]
             if len(shared_parts) > 1 or (shared_parts and (not shared_parts[0] or shared_parts[0] not in archive.namelist())): raise ValueError('Ambiguous shared string table')
             if shared_parts:
@@ -148,5 +201,5 @@ def apply(source, output, sheet, changes, operations):
                     table.attrib.pop('count', None); table.attrib.pop('uniqueCount', None)
                     additional[path] = ooxml.serialize_xml(shared_tree, raw)
             return additional
-        ooxml.edit_xml(source, output, lambda _: source_part, edit)
-        return {'output': str(output), 'result': batch['result'], 'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True}
+        ooxml.edit_xml(source, output, lambda _: source_part, edit, allow_remove=True)
+        return {'output': str(output), 'result': batch['result'], 'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True, 'calculation_chain': chain_status}

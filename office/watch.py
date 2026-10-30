@@ -431,7 +431,7 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
   const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
   inputs.forEach(input=>input.dataset.baseline=input.value);
-  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Formula caches may be stale; recalculation is requested on open.`); await refresh();
+  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Formula caches may be stale; recalculation is requested on open.${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; }
