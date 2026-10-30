@@ -376,12 +376,14 @@ def append_slides(presentation, slides):
             runs = [{'text': para['text']}] if 'text' in para else para['runs']
             if not isinstance(runs, list) or not 1 <= len(runs) <= 100: raise ValueError('Slide paragraph requires 1 to 100 runs')
             for run in runs:
-                if not isinstance(run, dict) or set(run) - {'text', 'font', 'font_size', 'color', 'bold', 'italic', 'underline', 'url'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(c in run['text'] for c in '\r\n'): raise ValueError('Invalid slide text run')
+                if not isinstance(run, dict) or set(run) - {'text', 'font', 'font_size', 'color', 'bold', 'italic', 'underline', 'url', 'target_slide'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(c in run['text'] for c in '\r\n'): raise ValueError('Invalid slide text run')
                 for key in ('bold', 'italic', 'underline'):
                     if key in run and not isinstance(run[key], bool): raise ValueError(f'{key} must be a boolean')
                 if 'font' in run and (not isinstance(run['font'], str) or not 1 <= len(run['font']) <= 100): raise ValueError('Font must be a name of at most 100 characters')
                 if 'font_size' in run: number(run['font_size'], 'font_size', 1, 400)
                 if 'color' in run: color(run['color'])
+                if 'target_slide' in run:
+                    if 'url' in run or isinstance(run['target_slide'], bool) or not isinstance(run['target_slide'], int) or not 1 <= run['target_slide'] <= final_slide_count: raise ValueError('Run target_slide must be a valid one-based slide number and cannot be combined with url')
                 if 'url' in run:
                     url = run['url']
                     if not isinstance(url, str) or len(url) > 2048 or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url): raise ValueError('Invalid hyperlink URL')
@@ -411,7 +413,8 @@ def append_slides(presentation, slides):
                     elif key == 'color': font.color.rgb = color(value)
                     else: setattr(font, key, value)
                 if 'url' in run_spec: run.hyperlink.address = run_spec['url']
-    image_bytes = 0; chart_count = 0; chart_points = 0; pending_navigation = []
+                if 'target_slide' in run_spec: pending_run_navigation.append((run, run_spec['target_slide']))
+    image_bytes = 0; chart_count = 0; chart_points = 0; pending_navigation = []; pending_run_navigation = []
     final_slide_count = len(presentation.slides) + len(slides)
     for item in slides:
         if not isinstance(item, dict) or set(item) - {'layout', 'title', 'body', 'background', 'elements', 'notes'}: raise ValueError('Invalid slide properties')
@@ -731,6 +734,9 @@ def append_slides(presentation, slides):
             describe(shape)
     for shape, number in pending_navigation:
         shape.click_action.target_slide = presentation.slides[number - 1]
+    for run, number in pending_run_navigation:
+        relationship = run.part.relate_to(presentation.slides[number - 1].part, RELATIONSHIP_TYPE.SLIDE)
+        action = run._r.get_or_add_rPr().get_or_add_hlinkClick(); action.set('action', 'ppaction://hlinksldjump'); action.set(qn('r:id'), relationship)
 
 
 def format_workbook(workbook, options):

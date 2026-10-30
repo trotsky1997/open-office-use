@@ -230,7 +230,7 @@ For rich slide text, use `paragraphs` instead of `text` on a textbox:
 {"type":"textbox","x":1,"y":1,"width":8,"height":3,"font":"Arial","font_size":24,"paragraphs":[{"runs":[{"text":"Revenue "},{"text":"+18%","bold":true,"color":"236B8E"}]},{"text":"Retention 92%","bullet":true},{"text":"Renewals improved","bullet":true,"level":1}]}
 ```
 
-Each paragraph takes `text` or `runs`, optional `align`, boolean `bullet`, `level` (0–8) and `space_after` in points (0–400). Runs support `font`, `font_size`, `color`, boolean `bold`, `italic`, `underline` and HTTP(S)/mailto `url`; run settings override textbox defaults. Use separate paragraphs for line breaks. Limits are 100 paragraphs per textbox, 100 runs per paragraph and 10,000 characters per run, within the slide request limit. Inspect rendering and links in the destination application.
+Each paragraph takes `text` or `runs`, optional `align`, boolean `bullet`, `level` (0–8) and `space_after` in points (0–400). Runs support `font`, `font_size`, `color`, boolean `bold`, `italic`, `underline`, HTTP(S)/mailto `url`, and `target_slide` for an internal click jump. `target_slide` is a one-based position in the final deck, including source slides; forward references work. A run accepts either `url` or `target_slide`. Run settings override textbox defaults. Use separate paragraphs for line breaks. Limits are 100 paragraphs per textbox, 100 runs per paragraph and 10,000 characters per run, within the slide request limit. Inspect rendering and links in the destination application.
 
 PowerPoint table cells can use the same paragraph and run format:
 

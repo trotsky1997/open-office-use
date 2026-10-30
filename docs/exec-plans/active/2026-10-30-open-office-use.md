@@ -324,3 +324,5 @@ Existing PowerPoint shape-to-slide click actions can be set or removed in snapsh
 The viewer inspects shape click actions and can set or remove supported slide jumps against the displayed snapshot. It requires path re-selection after a revision changes and blocks pending edits; browser and endpoint checks cover the workflow.
 
 PowerPoint navigation inspection covers regular text-run and shape click/hover links, including table cells. Notes, masters, layouts and unsupported text constructs remain outside the inventory; the viewer edits shape click jumps only.
+
+Rich PowerPoint text runs, including table cells, can be authored with internal slide jumps. Targeted text replacement and slide reordering retain the destination, and LibreOffice PDF export resolved a run jump to the destination page. Native PowerPoint validation remains outstanding.

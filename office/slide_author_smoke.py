@@ -62,8 +62,9 @@ with tempfile.TemporaryDirectory() as tmp:
     nav = slides.inspect_navigation(nav_file); assert nav['complete'] and [(item['slide'],item['target_slide']) for item in nav['actions']] == [(1,2),(2,1)], nav
     code, validation, _ = officecli_backend.invoke('validate',nav_file); assert code == 0 and validation['success'],validation
     appended_nav = root/'appended-navigation.pptx'
-    open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'shape','shape_kind':'rectangle','x':1,'y':1,'width':2,'height':1,'fill':'236B8E','target_slide':4}]},{'title':'Appended target'}]},appended_nav,nav_file)
+    open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'shape','shape_kind':'rectangle','x':1,'y':1,'width':2,'height':1,'fill':'236B8E','target_slide':4,'paragraphs':[{'runs':[{'text':'Go to new page','target_slide':4}]}]}]},{'title':'Appended target'}]},appended_nav,nav_file)
     appended = Presentation(appended_nav); assert appended.slides[2].shapes[0].click_action.target_slide.slide_id == appended.slides[3].slide_id
+    assert next(item for item in slides.inspect_navigation(appended_nav)['actions'] if item['kind'] == 'text_run')['target_slide'] == 4
     external_file = root/'external-navigation.pptx'; with_external = Presentation(nav_file)
     external_shape = with_external.slides[1].shapes.add_textbox(Inches(5),Inches(1),Inches(3),Inches(1)); external_shape.text = 'External'; external_shape.click_action.hyperlink.address = 'https://example.com/report'; with_external.save(external_file)
     ext_nav = slides.inspect_navigation(external_file); assert ext_nav['complete'] and ext_nav['actions'][-1]['status'] == 'external' and ext_nav['actions'][-1]['target_url'] == 'https://example.com/report', ext_nav
@@ -99,19 +100,33 @@ with tempfile.TemporaryDirectory() as tmp:
     else: raise AssertionError('External click action silently replaced')
     assert session.info(external_draft)['latest_revision'] == 0
     text_nav = root/'text-navigation.pptx'
-    text_spec = {'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':5,'height':1,'target_slide':2,'paragraphs':[{'runs':[{'text':'Source','url':'https://example.org/source'},{'text':'Internal'}]}]},{'type':'table','x':1,'y':2,'width':4,'height':1,'rows':[[{'paragraphs':[{'runs':[{'text':'Table link','url':'https://example.org/table'}]}]}]]}]},{'title':'Destination'}]}
+    text_spec = {'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':5,'height':1,'target_slide':2,'paragraphs':[{'runs':[{'text':'Source','url':'https://example.org/source'},{'text':'Internal','target_slide':2}]}]},{'type':'table','x':1,'y':2,'width':4,'height':1,'rows':[[{'paragraphs':[{'runs':[{'text':'Table link','url':'https://example.org/table'}]}]},{'paragraphs':[{'runs':[{'text':'Table jump','target_slide':2}]}]}]]}]},{'title':'Destination'}]}
     open_office_use.author(text_spec,text_nav); editable = Presentation(text_nav); shape = editable.slides[0].shapes[0]; frame = shape.text_frame.paragraphs[0]
     a = '{http://schemas.openxmlformats.org/drawingml/2006/main}'; r = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
     hover_id = shape.part.relate_to('https://example.org/hover',RELATIONSHIP_TYPE.HYPERLINK,is_external=True)
     hover = etree.SubElement(shape._element.nvSpPr.cNvPr,a+'hlinkHover'); hover.set(r+'id',hover_id)
     run_hover = etree.SubElement(frame.runs[0]._r.get_or_add_rPr(),a+'hlinkMouseOver'); run_hover.set(r+'id',hover_id)
-    internal_id = shape.part.relate_to(editable.slides[1].part,RELATIONSHIP_TYPE.SLIDE)
-    run_internal = etree.SubElement(frame.runs[1]._r.get_or_add_rPr(),a+'hlinkClick'); run_internal.set(r+'id',internal_id); run_internal.set('action','ppaction://hlinksldjump')
     editable.save(text_nav)
     action_report = slides.inspect_navigation(text_nav); assert action_report['complete'], action_report
-    assert [(item['kind'],item['trigger'],item['status']) for item in action_report['actions']] == [('shape','click','slide'),('shape','hover','external'),('text_run','click','external'),('text_run','hover','external'),('text_run','click','slide'),('text_run','click','external')], action_report
-    assert action_report['actions'][4]['target_slide'] == 2 and action_report['actions'][5]['path'].endswith('/tr[1]/tc[1]/paragraph[1]/run[1]')
+    assert [(item['kind'],item['trigger'],item['status']) for item in action_report['actions']] == [('shape','click','slide'),('shape','hover','external'),('text_run','click','external'),('text_run','hover','external'),('text_run','click','slide'),('text_run','click','external'),('text_run','click','slide')], action_report
+    assert action_report['actions'][4]['target_slide'] == 2 and action_report['actions'][5]['path'].endswith('/tr[1]/tc[1]/paragraph[1]/run[1]') and action_report['actions'][6]['target_slide'] == 2
     code, validation, _ = officecli_backend.invoke('validate',text_nav); assert code == 0 and validation['success'],validation
+    text_draft = root/'text-navigation-draft'; session.start(text_draft,source=text_nav)
+    paragraph_path = action_report['actions'][4]['path'].rsplit('/run[',1)[0]
+    changed_text = session.replace_text(text_draft,0,paragraph_path,'Internal','Destination')
+    replaced_actions = session.inspect_slide_navigation(text_draft,1)['actions']
+    assert next(item for item in replaced_actions if item.get('text') == 'Destination')['target_slide'] == 2
+    session.reorder_slides(text_draft,1,[2,1])
+    moved_actions = session.inspect_slide_navigation(text_draft,2)['actions']
+    assert next(item for item in moved_actions if item.get('text') == 'Destination')['target_slide'] == 1
+
+    for index, invalid_run in enumerate(({'text':'Bad','target_slide':0},{'text':'Bad','target_slide':3},{'text':'Bad','target_slide':True},{'text':'Bad','target_slide':2,'url':'https://example.com'})):
+        invalid = root/f'invalid-run-navigation-{index}.pptx'
+        bad = {'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':2,'height':1,'paragraphs':[{'runs':[invalid_run]}]}]},{'title':'Next'}]}
+        try: open_office_use.author(bad,invalid)
+        except ValueError: pass
+        else: raise AssertionError('Invalid run navigation accepted')
+        assert not invalid.exists()
     nav_draft = root/'navigation-draft'; session.start(nav_draft,source=nav_file)
     reordered = session.reorder_slides(nav_draft,0,[2,1],expected_sha256=nav['snapshot_sha256'])
     after_nav = session.inspect_slide_navigation(nav_draft,1)
