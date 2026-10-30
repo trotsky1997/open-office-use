@@ -2910,7 +2910,7 @@ export class OpenBrowserUseCssLocator {
     const deadline = performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot = await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope);
+        const snapshot = await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,`Locator target unavailable before timeout (${timeoutMs} ms)`);
         const ids = snapshot.ids;
         if (ids.length > 1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
         if (ids.length) return await action(snapshot,ids[0]);
@@ -3257,7 +3257,7 @@ export class OpenBrowserUseRoleLocator {
     let lastError: Error = new Error(`Locator matched 0 elements before timeout (${timeoutMs} ms)`);
     while (true) {
       try {
-        const {state, matches} = await this.find();
+        const {state, matches} = await locatorReadBeforeDeadline(this.find(),timeoutMs,deadline,`Locator target unavailable before timeout (${timeoutMs} ms)`);
         if (matches.length > 1) throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
         if (matches.length === 1) {
           this.tab.bindLocatorScope(state.snapshotId,matches[0].node.index,matches[0].path,matches[0].filters,this.framePath ? [...this.framePath] : undefined,matches[0].css,this.guard(state.snapshotId,matches));

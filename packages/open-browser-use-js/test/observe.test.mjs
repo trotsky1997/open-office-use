@@ -1609,3 +1609,16 @@ test('bulk locator text deadline bounds stalled reads',async()=>{
   const role=tab.playwright.getByRole('button');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};tab.locatorRead=()=>new Promise(()=>{});
   await assert.rejects(role.allTextContents({timeoutMs:20}),/Timed out reading/);
 });
+
+test('locator preparation timeout prevents late actions',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  let resolveCss,resolveRole,actions=0;
+  tab.queryCss=()=>new Promise(resolve=>{resolveCss=resolve});tab.actCss=async()=>{actions++};
+  const css=tab.playwright.locator('button');
+  await assert.rejects(css.click({timeoutMs:20}),/timeout/);
+  resolveCss({ids:[1]});
+  const role=tab.playwright.getByRole('button');role.find=()=>new Promise(resolve=>{resolveRole=resolve});tab.click=async()=>{actions++};
+  await assert.rejects(role.click({timeoutMs:20}),/timeout/);
+  resolveRole({state:{snapshotId:'s'},matches:[{node:{index:1}}]});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(actions,0);
+});

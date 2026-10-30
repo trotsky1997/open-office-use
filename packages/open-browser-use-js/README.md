@@ -255,6 +255,8 @@ coordinates can be negative; rotated or skewed ancestor frames are rejected.
 The locator and frame geometry are rechecked, but can change after the call.
 `isChecked()` reads a binary checked state from the accessibility tree and rejects
 mixed or unsupported states.
+Locator action timeouts bound the initial target query; a timed-out query cannot
+issue a late action. Later action preparation and issued input may take longer.
 `waitFor()` bounds browser reads when `timeoutMs` is positive. Timed-out reads may finish later; `timeoutMs: 0` performs one read.
 `isHidden()` returns the inverse of `isVisible()`, including for an absent match;
 `isDisabled()` returns the inverse of `isEnabled()` and waits for a match.

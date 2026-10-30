@@ -425,3 +425,5 @@ CSS 与语义定位器的 allTextContents/allInnerTexts 正数期限覆盖查询
 新增 getByTitle，支持页面、frame、CSS 和语义作用域；字符串支持空白归一化、忽略大小写的子串与区分大小写的精确匹配，正则保留标志。SDK 90 项测试和 macOS Electron 44.7 完整 smoke 通过；真实页面验证四类作用域、正则及精确匹配。Linux 和 Windows 本轮未测。
 
 macOS Electron 44.7 完整 smoke 补充验证：测试 ID 包含 emoji、引号与反斜杠时可在页面和 CSS 作用域中匹配，孤立代理项被拒绝；title 属性变化后原定位器重新查询并反映新值。Linux 和 Windows 本轮未测。
+
+CSS 与语义定位器的操作和单目标读取使用正数期限约束首次目标查询；查询超时后迟到结果不会触发操作。SDK 91 项测试及 macOS Electron 44.7 完整 smoke 通过。后续动作准备及已发出的输入仍可能超过期限，Linux 与 Windows 本轮未测。
