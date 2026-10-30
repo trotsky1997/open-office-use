@@ -27,6 +27,17 @@ test('failed new-tab navigation closes the created tab and reports cleanup failu
   failCleanup=true;await assert.rejects(browser.newTab({url:'https://example.test'}),error=>error instanceof AggregateError && error.errors[0]===navigationError && error.errors[1]===cleanupError);assert.equal(closes,2);
 });
 
+test('popup expectation matches a new owned child and never repeats the action',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let tabs=[{id:1},{id:2,openerTabId:1}],actions=0;
+  client.request=async method=>{if(method==='getTabs')return tabs;throw new Error('unexpected request')};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const popup=await tab.playwright.expectPopup(async()=>{actions++;tabs=[...tabs,{id:3,openerTabId:9},{id:4,openerTabId:1}]},{timeoutMs:500});assert.equal(popup.id,4);assert.equal(actions,1);
+  await assert.rejects(tab.playwright.expectPopup(async()=>{actions++;tabs=[...tabs,{id:5,openerTabId:1},{id:6,openerTabId:1}]},{timeoutMs:500}),/Multiple popups/);assert.equal(actions,2);
+  await assert.rejects(tab.playwright.expectPopup(async()=>{actions++},{timeoutMs:30}),/outcome unknown/);assert.equal(actions,3);
+  const pending=tab.playwright.expectPopup(async()=>{actions++},{timeoutMs:30});await assert.rejects(tab.browser.tab(1).playwright.expectPopup(async()=>{actions++},{timeoutMs:30}),/already active/);await assert.rejects(pending,/outcome unknown/);assert.equal(actions,4);
+  await assert.rejects(tab.playwright.expectPopup(async()=>{tabs=[...tabs,{id:7,openerTabId:1}];await new Promise(r=>setTimeout(r,120));tabs=tabs.filter(item=>item.id!==7)},{timeoutMs:500}),/changed or closed/);
+});
+
 test('DOM CUA is shared by tab handles in one browser',()=>{
   const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})});
   assert.equal(browser.tab(1).dom_cua,browser.tab(1).dom_cua);

@@ -194,6 +194,7 @@ type BrowserTabInfo = {
     title?: string;
     url?: string;
     active?: boolean;
+    openerTabId?: string;
 };
 type BrowserUserTabInfo = {
     id: string;
@@ -538,6 +539,9 @@ export declare class OpenBrowserUseTabPlaywright {
         waitUntil?: OpenBrowserUseLoadState;
         timeoutMs?: number;
     }): Promise<void>;
+    expectPopup(action: () => Promise<unknown>, options?: {
+        timeoutMs?: number;
+    }): Promise<OpenBrowserUseTab>;
     domSnapshot(): Promise<string>;
     evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((arg: T) => unknown), arg?: T): Promise<JsonValue>;
     screenshot(options?: {

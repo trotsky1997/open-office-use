@@ -95,6 +95,7 @@ dispatch, inspect before retrying.
 After navigation or a history API route change, use
 `tab.waitForURL("https://example.com/target")` or a regular expression to wait
 for the main document URL and load state. Sampling can miss transient URLs.
+For a user-authorized action that opens a tab, use `tab.playwright.expectPopup(() => locator.click())` and inspect the returned tab. It matches new session tabs by opener; a popup closed too quickly or lacking opener metadata may time out. After an uncertain outcome, inspect the session before retrying.
 For an action that should navigate, use `tab.playwright.expectNavigation(() =>
 locator.click(), {url: "https://example.com/target"})` to arm the main-frame
 navigation listener before the action.

@@ -439,7 +439,7 @@ export async function connectOpenBrowserUse(options: OpenBrowserUseBrowserOption
   return browser;
 }
 
-type BrowserTabInfo = {id:string;title?:string;url?:string;active?:boolean};
+type BrowserTabInfo = {id:string;title?:string;url?:string;active?:boolean;openerTabId?:string};
 type BrowserUserTabInfo = {id:string;title?:string;url?:string;lastOpened?:string;tabGroup?:string};
 function browserTabId(value:unknown):number {
   const raw=value instanceof OpenBrowserUseTab ? value.id : value && typeof value==='object' && 'id' in value ? value.id : value;
@@ -453,7 +453,7 @@ function browserTabs(value:JsonValue):BrowserTabInfo[] {
     if(!isObject(item))throw new Error('Browser returned an invalid tab');
     const id=browserTabId(item.id);if(ids.has(id))throw new Error('Browser returned duplicate tab IDs');ids.add(id);
     if((item.title!==undefined && item.title!==null && typeof item.title!=='string') || (item.url!==undefined && item.url!==null && typeof item.url!=='string') || (item.active!==undefined && typeof item.active!=='boolean'))throw new Error('Browser returned an invalid tab');
-    return {id:String(id),...(typeof item.title==='string' ? {title:item.title} : {}),...(typeof item.url==='string' ? {url:item.url} : {}),...(typeof item.active==='boolean' ? {active:item.active} : {})};
+    return {id:String(id),...(typeof item.title==='string' ? {title:item.title} : {}),...(typeof item.url==='string' ? {url:item.url} : {}),...(typeof item.active==='boolean' ? {active:item.active} : {}),...(item.openerTabId == null ? {} : {openerTabId:String(browserTabId(item.openerTabId))})};
   });
 }
 
@@ -465,6 +465,7 @@ export class OpenBrowserUseBrowser {
   readonly capabilities:OpenBrowserUseCapabilities;
   readonly user: OpenBrowserUseBrowserUser;
   #domCua = new Map<number,WeakRef<OpenBrowserUseTabDomCUA>>();
+  #popupWaits = new Set<number>();
 
   constructor(options: OpenBrowserUseBrowserOptions) {
     this.client = "client" in options ? options.client : new OpenBrowserUseClient(options);
@@ -512,6 +513,12 @@ export class OpenBrowserUseBrowser {
     const existing=this.#domCua.get(tab.id)?.deref();
     if(existing)return existing;
     const dom=new OpenBrowserUseTabDomCUA(tab);this.#domCua.set(tab.id,new WeakRef(dom));return dom;
+  }
+
+  /** @internal */
+  beginPopupWait(tabId:number):()=>void {
+    if(this.#popupWaits.has(tabId))throw new Error("A popup expectation is already active for this tab");
+    this.#popupWaits.add(tabId);return ()=>{this.#popupWaits.delete(tabId);};
   }
 
   getTabs(): Promise<JsonValue> {
@@ -2586,6 +2593,44 @@ export class OpenBrowserUseTabPlaywright {
 
   waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {
     return this.tab.waitForURL(url, options);
+  }
+
+  async expectPopup(action:()=>Promise<unknown>, options:{timeoutMs?:number} = {}):Promise<OpenBrowserUseTab> {
+    if(typeof action!=="function" || !options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>key!=="timeoutMs"))throw new Error("Invalid popup expectation");
+    const timeoutMs=options.timeoutMs ?? defaultNavigationTimeoutMs;
+    if(!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000)throw new Error("Invalid popup timeout");
+    const release=this.tab.browser.beginPopupWait(this.tab.id);
+    try {
+    const baseline=await this.tab.browser.tabs.list(),generation=this.tab.browser.client.connectionGeneration;
+    if(!baseline.some(item=>item.id===String(this.tab.id)))throw new Error("Opener is outside this browser session");
+    const existing=new Set(baseline.map(item=>item.id)),deadline=performance.now()+timeoutMs;
+    let done=false,timer:ReturnType<typeof setTimeout>|undefined;
+    try {
+      const watch=async():Promise<OpenBrowserUseTab>=>{
+        while(!done) {
+          const tabs=await this.tab.browser.tabs.list();
+          if(done)throw new Error("Popup wait cancelled");
+          if(generation!==this.tab.browser.client.connectionGeneration)throw new Error("Connection changed while waiting for popup");
+          const matches=tabs.filter(item=>!existing.has(item.id) && item.openerTabId===String(this.tab.id));
+          if(matches.length>1)throw new Error("Multiple popups matched; inspect the session before continuing");
+          if(matches.length===1)return this.tab.browser.tab(browserTabId(matches[0].id));
+          const remaining=deadline-performance.now();if(remaining<=0)throw new Error("Popup outcome unknown after timeout; inspect the session before retrying");
+          await new Promise(resolve=>setTimeout(resolve,Math.min(50,remaining)));
+        }
+        throw new Error("Popup wait cancelled");
+      };
+      const work=Promise.all([Promise.resolve().then(action),watch()]).then(async ([,popup])=>{
+        const tabs=await this.tab.browser.tabs.list();
+        if(done)throw new Error("Popup wait cancelled");
+        if(generation!==this.tab.browser.client.connectionGeneration)throw new Error("Connection changed while waiting for popup");
+        const matches=tabs.filter(item=>!existing.has(item.id) && item.openerTabId===String(this.tab.id));
+        if(matches.length>1)throw new Error("Multiple popups matched; inspect the session before continuing");
+        if(matches.length!==1 || matches[0].id!==String(popup.id))throw new Error("Popup changed or closed; inspect the session before continuing");
+        return popup;
+      });
+      return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("Popup outcome unknown after timeout; inspect the session before retrying")),timeoutMs);})]);
+    } finally {done=true;if(timer)clearTimeout(timer);}
+    } finally {release();}
   }
 
   domSnapshot(): Promise<string> {

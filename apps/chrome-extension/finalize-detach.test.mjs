@@ -259,6 +259,18 @@ async function run() {
     console.log("test 2 ok: keep=[] closes tab, detaches, ends session");
   }
 
+  // Opener metadata never crosses a session boundary.
+  {
+    const {chrome,state,helpers}=createChromeFake();const {BrowserBackend}=await loadBackground(bgSource,chrome);const backend=new BrowserBackend();await backend.store.ready;
+    const groupId=helpers.createGroup({windowId:1,title:"Popup scope"}),otherGroup=helpers.createGroup({windowId:1,title:"Other"});
+    const opener=helpers.createTab({windowId:1,groupId}),child=helpers.createTab({windowId:1,groupId}),claimed=helpers.createTab({windowId:1,groupId}),external=helpers.createTab({windowId:1,groupId:otherGroup});
+    state.tabs.get(child).openerTabId=opener;state.tabs.get(claimed).openerTabId=external;
+    await seedSession(backend,chrome,{sessionId:"popup-scope",groupId,tabOrigins:{[opener]:"agent",[claimed]:"user"},activeTabId:opener,attached:[]});
+    const tabs=await backend.getTabs({session_id:"popup-scope",turn_id:"turn"});
+    assert.equal(tabs.find(tab=>tab.id===child).openerTabId,opener);assert.equal(tabs.find(tab=>tab.id===claimed).openerTabId,undefined);
+    await backend.finalizeTabs({session_id:"popup-scope",turn_id:"turn",keep:[]});assert.equal(state.tabs.has(opener),false);assert.equal(state.tabs.has(child),true);assert.equal(state.tabs.get(child).groupId,-1);assert.equal(state.tabs.has(external),true);
+  }
+
   console.log("\nAll finalizeTabs detach tests passed.");
 }
 

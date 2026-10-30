@@ -367,7 +367,8 @@ class BrowserBackend {
   async getTabs(params) {
     const session = await this.requireSession(params);
     const tabs = await this.getSessionTabs(session.sessionId);
-    return await this.withLogicalActive(session.sessionId, tabs.map(toBrowserTab));
+    const owned = new Set(tabs.map(tab => tab.id));
+    return await this.withLogicalActive(session.sessionId, tabs.map(tab => ({...toBrowserTab(tab),...(owned.has(tab.openerTabId) ? {openerTabId:tab.openerTabId} : {})})));
   }
 
   async getTabPresentation(params) {

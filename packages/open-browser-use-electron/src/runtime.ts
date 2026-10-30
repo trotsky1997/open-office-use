@@ -22,7 +22,7 @@ export type ElectronAdapter = {
   };
 };
 type Tab = {
-  id: number; scopeId: string; view: WebContentsView; contents: WebContents; lifetime: 'temporary' | 'persistent';
+  id: number; scopeId: string; openerTabId?:number; view: WebContentsView; contents: WebContents; lifetime: 'temporary' | 'persistent';
   touched: Set<string>; marks: Map<string, 'handoff' | 'deliverable'>;
   attached: boolean; webMcpReady:boolean; mouseReady: boolean; pending: number; queue: Promise<any>; removers: (() => void)[];
   frameSessions: Map<string, string | undefined>;
@@ -130,17 +130,18 @@ export class IabRuntime implements Backend {
   }
   private snapshot(tab: Tab): Record<string, any> {
     return { id: tab.id, title: tab.contents.getTitle(), url: tab.contents.getURL(),
+        ...(tab.openerTabId !== undefined && this.states.get(tab.scopeId)?.tabs.has(tab.openerTabId) ? {openerTabId:tab.openerTabId} : {}),
         active: [...this.surfaceStates.values()].some(s => s.tabId === tab.id), lifetime: tab.lifetime,
         loading: tab.loading, pendingUrl: tab.pendingUrl, loadError: tab.loadError };
   }
-  private allocate(scopeId: string, contents?: WebContents): Tab {
+  private allocate(scopeId: string, contents?: WebContents, openerTabId?:number): Tab {
     const scope = this.scope(scopeId);
     if (scope.tabs.size >= 32 || this.tabsById.size >= 128) throw new Error('IAB_TAB_LIMIT');
     const profile = this.profileSessions.get(scope.profileId)!;
     if (contents && contents.session !== profile) throw new Error('Popup profile mismatch');
     const view = this.adapter.createView(profile, contents, scope.webmcp);
     view.setBounds({ x: 0, y: 0, width: 800, height: 600 }); view.setVisible(false);
-    const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, webMcpReady:false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
+    const tab: Tab = { id: this.nextTabId++, scopeId, ...(openerTabId === undefined ? {} : {openerTabId}), view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, webMcpReady:false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
     scope.tabs.set(tab.id, tab); this.tabsById.set(tab.id, tab);
     const wc = view.webContents;
     this.feedbackController.register(wc);
@@ -197,7 +198,7 @@ export class IabRuntime implements Backend {
         // Electron internally supplies a precreated WebContents for some popup
         // dispositions; preserve it when present to retain opener semantics.
         const contents = (options as typeof options & { webContents?: WebContents }).webContents;
-        const popup = this.allocate(scopeId, contents);
+        const popup = this.allocate(scopeId, contents, tab.id);
         return popup.contents;
       } };
     });

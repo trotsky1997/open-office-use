@@ -377,7 +377,7 @@ function browserTabs(value) {
         ids.add(id);
         if ((item.title !== undefined && item.title !== null && typeof item.title !== 'string') || (item.url !== undefined && item.url !== null && typeof item.url !== 'string') || (item.active !== undefined && typeof item.active !== 'boolean'))
             throw new Error('Browser returned an invalid tab');
-        return { id: String(id), ...(typeof item.title === 'string' ? { title: item.title } : {}), ...(typeof item.url === 'string' ? { url: item.url } : {}), ...(typeof item.active === 'boolean' ? { active: item.active } : {}) };
+        return { id: String(id), ...(typeof item.title === 'string' ? { title: item.title } : {}), ...(typeof item.url === 'string' ? { url: item.url } : {}), ...(typeof item.active === 'boolean' ? { active: item.active } : {}), ...(item.openerTabId == null ? {} : { openerTabId: String(browserTabId(item.openerTabId)) }) };
     });
 }
 export class OpenBrowserUseBrowser {
@@ -388,6 +388,7 @@ export class OpenBrowserUseBrowser {
     capabilities;
     user;
     #domCua = new Map();
+    #popupWaits = new Set();
     constructor(options) {
         this.client = "client" in options ? options.client : new OpenBrowserUseClient(options);
         this.cdp = new OpenBrowserUseCdp(this.client);
@@ -438,6 +439,13 @@ export class OpenBrowserUseBrowser {
         const dom = new OpenBrowserUseTabDomCUA(tab);
         this.#domCua.set(tab.id, new WeakRef(dom));
         return dom;
+    }
+    /** @internal */
+    beginPopupWait(tabId) {
+        if (this.#popupWaits.has(tabId))
+            throw new Error("A popup expectation is already active for this tab");
+        this.#popupWaits.add(tabId);
+        return () => { this.#popupWaits.delete(tabId); };
     }
     getTabs() {
         return this.client.getTabs();
@@ -3146,6 +3154,64 @@ export class OpenBrowserUseTabPlaywright {
     }
     waitForURL(url, options = {}) {
         return this.tab.waitForURL(url, options);
+    }
+    async expectPopup(action, options = {}) {
+        if (typeof action !== "function" || !options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => key !== "timeoutMs"))
+            throw new Error("Invalid popup expectation");
+        const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+            throw new Error("Invalid popup timeout");
+        const release = this.tab.browser.beginPopupWait(this.tab.id);
+        try {
+            const baseline = await this.tab.browser.tabs.list(), generation = this.tab.browser.client.connectionGeneration;
+            if (!baseline.some(item => item.id === String(this.tab.id)))
+                throw new Error("Opener is outside this browser session");
+            const existing = new Set(baseline.map(item => item.id)), deadline = performance.now() + timeoutMs;
+            let done = false, timer;
+            try {
+                const watch = async () => {
+                    while (!done) {
+                        const tabs = await this.tab.browser.tabs.list();
+                        if (done)
+                            throw new Error("Popup wait cancelled");
+                        if (generation !== this.tab.browser.client.connectionGeneration)
+                            throw new Error("Connection changed while waiting for popup");
+                        const matches = tabs.filter(item => !existing.has(item.id) && item.openerTabId === String(this.tab.id));
+                        if (matches.length > 1)
+                            throw new Error("Multiple popups matched; inspect the session before continuing");
+                        if (matches.length === 1)
+                            return this.tab.browser.tab(browserTabId(matches[0].id));
+                        const remaining = deadline - performance.now();
+                        if (remaining <= 0)
+                            throw new Error("Popup outcome unknown after timeout; inspect the session before retrying");
+                        await new Promise(resolve => setTimeout(resolve, Math.min(50, remaining)));
+                    }
+                    throw new Error("Popup wait cancelled");
+                };
+                const work = Promise.all([Promise.resolve().then(action), watch()]).then(async ([, popup]) => {
+                    const tabs = await this.tab.browser.tabs.list();
+                    if (done)
+                        throw new Error("Popup wait cancelled");
+                    if (generation !== this.tab.browser.client.connectionGeneration)
+                        throw new Error("Connection changed while waiting for popup");
+                    const matches = tabs.filter(item => !existing.has(item.id) && item.openerTabId === String(this.tab.id));
+                    if (matches.length > 1)
+                        throw new Error("Multiple popups matched; inspect the session before continuing");
+                    if (matches.length !== 1 || matches[0].id !== String(popup.id))
+                        throw new Error("Popup changed or closed; inspect the session before continuing");
+                    return popup;
+                });
+                return await Promise.race([work, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Popup outcome unknown after timeout; inspect the session before retrying")), timeoutMs); })]);
+            }
+            finally {
+                done = true;
+                if (timer)
+                    clearTimeout(timer);
+            }
+        }
+        finally {
+            release();
+        }
     }
     domSnapshot() {
         return this.tab.domSnapshot();

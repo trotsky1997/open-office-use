@@ -75,6 +75,18 @@ try {
 }
 ```
 
+`tab.playwright.expectPopup(() => action(), {timeoutMs})` returns a newly
+created session tab whose reported opener is `tab`; the action is sent once.
+`browser.tabs.list()` exposes an `openerTabId` when both tabs are in the
+same session and the backend knows the opener.
+It polls owned tabs, so a popup closed before observation or without an opener
+can time out. Concurrent matching popups are rejected as ambiguous, and only one popup
+expectation per opener can run in a browser instance. On timeout, the action
+may still be running; inspect the session before retrying. Chrome popups with
+no recorded session origin are released rather than closed by finalization;
+close a popup explicitly when appropriate. Electron finalization closes unkept
+popups when they have no pending operation.
+
 `browser.newTab({url})` closes the newly created tab when navigation fails. If
 cleanup also fails, it reports both errors so the session can be inspected.
 
