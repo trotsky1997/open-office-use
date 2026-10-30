@@ -335,3 +335,5 @@ Playwright 风格入口新增 evaluate，接受函数和单个 JSON 参数或表
 页面 evaluate 检查 CDP 远程值：undefined 返回 null，NaN、BigInt 等 CDP 标记为不可序列化的结果明确报错，缺失结果的协议响应也报错。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 以及 Linux ARM64 Chromium 原生扩展实页验证 undefined、NaN、BigInt 和正常异步对象。Windows 未测；嵌套对象采用浏览器 CDP 的按值序列化规则。
 
 Playwright evaluate 的 JSON 参数使用带计算属性的安全字面量编码，页面覆盖 JSON.parse 时参数保持原值，__proto__ 作为普通数据键保留。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 及 Linux ARM64 Chromium 原生扩展实页均验证页面篡改、特殊键和异步求值。参数依旧遵循 JSON.stringify 转换规则，Windows 未测。
+
+Playwright evaluate 参数在请求发送前拒绝非有限数、负零、嵌套 undefined、稀疏数组、函数、符号和 BigInt，防止 JSON 转换静默改变这些值；对象的 toJSON 仍按 JSON 转换执行。SDK 71 项通过，专项验证拒绝时零浏览器请求；Linux ARM64 Chromium 原生扩展与 Electron 44 完整实页回归通过。macOS 和 Windows 本轮未测。

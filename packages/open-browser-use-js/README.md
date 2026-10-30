@@ -88,7 +88,10 @@ const png = await tab.getScreenshot(); // PNG Buffer
 ```
 
 `playwright.evaluate` accepts a function with one JSON-serializable argument or
-an expression string, awaits promises, and returns a JSON value. `undefined` is
+an expression string, awaits promises, and returns a JSON value. Non-finite
+numbers, negative zero, nested undefined values, functions, symbols and BigInts
+are rejected before sending the request. Objects with `toJSON` follow their JSON
+conversion. `undefined` is
 returned as `null`; non-JSON CDP results such as `NaN` and `BigInt` raise an error.
 The function
 runs in the page context without access to its caller’s closures; like

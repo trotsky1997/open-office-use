@@ -2553,7 +2553,13 @@ export class OpenBrowserUseTabPlaywright {
     }
     if (typeof pageFunction !== "function") throw new Error("Evaluation requires a function or expression");
     let serialized: string | undefined;
-    try { serialized=arg === undefined ? undefined : JSON.stringify(arg); } catch { throw new Error("Evaluation argument must be JSON serializable"); }
+    try {
+      serialized=arg === undefined ? undefined : JSON.stringify(arg,(_key,value)=>{
+        if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value,-0))) throw new Error("Invalid JSON number");
+        if (["undefined","function","symbol","bigint"].includes(typeof value) || (value && typeof value === "object" && Object.getOwnPropertySymbols(value).length)) throw new Error("Invalid JSON value");
+        return value;
+      });
+    } catch { throw new Error("Evaluation argument must be JSON serializable without losing values"); }
     if (arg !== undefined && serialized === undefined) throw new Error("Evaluation argument must be JSON serializable");
     // Computed keys preserve __proto__ as data without using the page’s JSON.parse.
     const encode=(value:JsonValue):string => Array.isArray(value) ? `[${value.map(encode).join(",")}]` : value !== null && typeof value === "object" ? `{${Object.entries(value).map(([key,item])=>`[${JSON.stringify(key)}]:${encode(item)}`).join(",")}}` : JSON.stringify(value);

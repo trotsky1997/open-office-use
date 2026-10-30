@@ -10,6 +10,14 @@ test('DOM CUA rejects superseded snapshots and snapshots during input',async()=>
   blocked=true;const pending=dom.get_visible_dom();await Promise.resolve();const typing=dom.type({text:'x'});await assert.rejects(dom.get_visible_dom(),/action is already in progress/);unblock();await assert.rejects(pending,/snapshot superseded/);releaseInput();await typing;assert.deepEqual((await dom.get_visible_dom()).nodes,[]);
 });
 
+test('evaluate rejects arguments JSON would silently change before contacting the browser',()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let requests=0;client.request=async()=>{requests++;return {}};
+  const playwright=new OpenBrowserUseBrowser({client}).tab(1).playwright;
+  const circular={};circular.self=circular;
+  for(const value of [NaN,Infinity,-0,{x:undefined},[1,,3],{x:1n},{[Symbol('x')]:1},circular]) assert.throws(()=>playwright.evaluate(arg=>arg,value),/JSON serializable/);
+  assert.equal(requests,0);
+});
+
 test('DOM CUA is shared by tab handles in one browser',()=>{
   const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})});
   assert.equal(browser.tab(1).dom_cua,browser.tab(1).dom_cua);

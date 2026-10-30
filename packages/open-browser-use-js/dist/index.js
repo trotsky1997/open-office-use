@@ -3074,10 +3074,16 @@ export class OpenBrowserUseTabPlaywright {
             throw new Error("Evaluation requires a function or expression");
         let serialized;
         try {
-            serialized = arg === undefined ? undefined : JSON.stringify(arg);
+            serialized = arg === undefined ? undefined : JSON.stringify(arg, (_key, value) => {
+                if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))
+                    throw new Error("Invalid JSON number");
+                if (["undefined", "function", "symbol", "bigint"].includes(typeof value) || (value && typeof value === "object" && Object.getOwnPropertySymbols(value).length))
+                    throw new Error("Invalid JSON value");
+                return value;
+            });
         }
         catch {
-            throw new Error("Evaluation argument must be JSON serializable");
+            throw new Error("Evaluation argument must be JSON serializable without losing values");
         }
         if (arg !== undefined && serialized === undefined)
             throw new Error("Evaluation argument must be JSON serializable");
