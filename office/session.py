@@ -1,5 +1,6 @@
 """Persistent local draft sessions with immutable, optimistic revisions."""
 import json
+import hashlib
 import math
 import os
 import posixpath
@@ -187,6 +188,59 @@ def sync_slide_chart_cache(directory, base_revision, part, reference, allow_form
     try: result = slide_charts.sync(source, output, part, reference, allow_formula_caches)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, **result}
+
+
+def slide_chart_workbook(source, part, temporary):
+    if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from slide chart inspection')
+    inventory = slide_charts.inspect(source)
+    charts = [chart for chart in inventory['charts'] if chart.get('chart_part') == part]
+    if not charts or any(chart['workbook']['status'] != 'embedded' for chart in charts): raise ValueError('Chart with embedded workbook was not available in the bounded inventory')
+    if any(chart['workbook']['part'] != charts[0]['workbook']['part'] for chart in charts): raise ValueError('Ambiguous embedded workbook')
+    workbook = charts[0]['workbook']
+    if workbook['size'] > 16 * 1024 * 1024: raise ValueError('Embedded workbook exceeds 16 MiB')
+    path = Path(temporary) / 'embedded.xlsx'
+    with zipfile.ZipFile(source) as archive: blob = archive.read(workbook['part'].lstrip('/'))
+    if len(blob) != workbook['size'] or hashlib.sha256(blob).hexdigest() != workbook['sha256']: raise ValueError('Embedded workbook changed during inspection')
+    path.write_bytes(blob)
+    return path, workbook
+
+
+def read_slide_chart_grid(directory, revision, part, sheet, cell_range):
+    state = info(directory); source = revision_file(state, revision)
+    if state['format'] != 'pptx': raise ValueError('Slide chart grid requires a PPTX session')
+    with tempfile.TemporaryDirectory(prefix='office-slide-chart-grid-') as tmp:
+        snapshot, digest = snapshots.copy(source, tmp)
+        path, workbook = slide_chart_workbook(snapshot, part, tmp)
+        nested = Path(tmp) / 'draft'; start(nested, source=path)
+        result = read_grid(nested, 0, sheet, cell_range)
+    result['revision'] = revision; result['snapshot_sha256'] = digest; result['chart_part'] = part; result['workbook'] = workbook
+    return result
+
+
+def edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, changes):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'pptx': raise ValueError('Slide chart grid requires a PPTX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
+    with tempfile.TemporaryDirectory(dir=state['directory'], prefix='.office-slide-chart-grid-') as tmp:
+        snapshot, digest = snapshots.copy(source, tmp)
+        path, workbook = slide_chart_workbook(snapshot, part, tmp)
+        nested = Path(tmp) / 'draft'; start(nested, source=path)
+        result = edit_grid(nested, 0, sheet, cell_range, changes)
+        updated = Path(result['file']).read_bytes()
+        if len(updated) > 16 * 1024 * 1024: raise ValueError('Edited embedded workbook exceeds 16 MiB')
+        def replace_workbook(_tree, archive):
+            workbook_part = workbook['part'].lstrip('/')
+            if sum(item.file_size for item in archive.infolist()) - archive.getinfo(workbook_part).file_size + len(updated) > 128 * 1024 * 1024:
+                raise ValueError('Edited presentation exceeds package size limit')
+            return {workbook_part: updated}
+        try:
+            ooxml.edit_xml(snapshot, output, lambda _: part.lstrip('/'), replace_workbook)
+        except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'chart_part': part, 'workbook_part': workbook['part'],
+            'source_sha256': digest, 'chart_cache_effect': 'may_be_stale', 'formula_cache_effect': result['formula_cache_effect'],
+            'data_validation': result['data_validation']}
 
 
 def inspect_layout(directory, revision):

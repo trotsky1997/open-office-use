@@ -169,12 +169,14 @@ Basic Word blocks now support external HTTP(S)/mailto hyperlinks and aspect-pres
 
 ## PowerPoint chart creation
 
-Basic CLI/MCP slide specs support native column and line charts with bounded literal categories, series, colors, cached values and an embedded XLSX workbook. The generated workbook is checked for literal labels and preserved numbers. LibreOffice rendering and direct MCP authoring were verified; later chart-data editing and native PowerPoint fidelity remain open.
+Basic CLI/MCP slide specs support native column and line charts with bounded literal categories, series, colors, cached values and an embedded XLSX workbook. The generated workbook is checked for literal labels and preserved numbers. LibreOffice rendering and direct MCP authoring were verified; native PowerPoint fidelity remains open.
 
 ## PowerPoint chart cache inspection
 
 CLI, MCP, session revisions and review bundles expose bounded PowerPoint chart cache inventories, source references and embedded-workbook metadata. Complex charts and scan limits are flagged; formula cache freshness remains unknown.
 
-PowerPoint chart inspection now compares supported chart caches with saved values in embedded workbooks, with bounded per-chart results and review flags. Formula-result freshness and targeted chart-data updates remain open.
+PowerPoint chart inspection now compares supported chart caches with saved values in embedded workbooks, with bounded per-chart results and review flags. Formula-result freshness remains open.
 
-Supported PowerPoint chart cache mismatches can be synchronized from saved embedded workbook values, one reference per revision, via CLI and MCP; formula caches require explicit opt-in. Editing workbook values remains open.
+Supported PowerPoint chart cache mismatches can be synchronized from saved embedded workbook values, one reference per revision, via CLI and MCP; formula caches require explicit opt-in. Embedded workbook grid edits are available in session revisions; cache synchronization remains a separate explicit step.
+
+PowerPoint sessions expose embedded workbook grid reads and edits through CLI/MCP, reusing workbook protections and immutable revisions. Editing can stale chart and formula caches; targeted cache sync and rendered review follow separately.

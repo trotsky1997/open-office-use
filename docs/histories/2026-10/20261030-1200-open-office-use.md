@@ -243,3 +243,7 @@ Added bounded comparison of chart caches against saved embedded workbook values,
 ### PowerPoint chart cache synchronization
 
 Added revision-bound synchronization of existing mismatched chart cache points from embedded workbook values. Verified a modified workbook, cache repair, unchanged package parts, stale revisions and CLI. Formula freshness and embedded workbook editing remain open.
+
+### Embedded PowerPoint chart grid editing
+
+Added revision-bound embedded workbook grid reads and edits using the existing protected spreadsheet editor. Verified changed data, chart mismatch detection and sync, revision isolation, invalid changes and CLI; caches and formula values can be stale and shared workbooks affect multiple charts.

@@ -201,6 +201,18 @@ def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range
 
 
 @server.tool()
+def session_read_slide_chart_grid(directory: str, revision: int, part: str, sheet: str, cell_range: str) -> dict[str, Any]:
+    """Read an embedded chart workbook grid from an exact PowerPoint revision."""
+    return session.read_slide_chart_grid(directory, revision, part, sheet, cell_range)
+
+
+@server.tool()
+def session_edit_slide_chart_grid(directory: str, base_revision: int, part: str, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
+    """Edit an embedded chart workbook grid in a new revision; chart and formula caches may be stale."""
+    return session.edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, changes)
+
+
+@server.tool()
 def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
     """Edit grid values; each change may set type to text. Unrelated caches are retained; dynamic formula anchors are returned for spill review, validation rules are not evaluated, and recalculation is requested."""
     return session.edit_grid(directory, base_revision, sheet, cell_range, changes)
