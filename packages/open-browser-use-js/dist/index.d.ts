@@ -113,6 +113,10 @@ type LocatorClickOptions = {
     modifiers?: Array<"Alt" | "Control" | "ControlOrMeta" | "Meta" | "Shift">;
     force?: boolean;
 };
+type LocatorCheckOptions = {
+    timeoutMs?: number;
+    force?: boolean;
+};
 type MouseClick = {
     button: "left" | "middle" | "right";
     buttons: number;
@@ -681,15 +685,9 @@ export declare class OpenBrowserUseCssLocator {
     hover(options?: {
         timeoutMs?: number;
     }): Promise<void>;
-    check(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
-    uncheck(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
-    setChecked(checked: boolean, options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
+    check(options?: LocatorCheckOptions): Promise<void>;
+    uncheck(options?: LocatorCheckOptions): Promise<void>;
+    setChecked(checked: boolean, options?: LocatorCheckOptions): Promise<void>;
     press(key: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
@@ -814,15 +812,9 @@ export declare class OpenBrowserUseRoleLocator {
     type(text: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
-    check(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
-    uncheck(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
-    setChecked(checked: boolean, options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
+    check(options?: LocatorCheckOptions): Promise<void>;
+    uncheck(options?: LocatorCheckOptions): Promise<void>;
+    setChecked(checked: boolean, options?: LocatorCheckOptions): Promise<void>;
     selectOption(values: SelectOption | SelectOption[], options?: {
         timeoutMs?: number;
     }): Promise<string[]>;

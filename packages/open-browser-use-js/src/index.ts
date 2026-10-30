@@ -82,6 +82,11 @@ function applyLocatorOptions(locator:OpenBrowserUseCssLocator, options?:LocatorL
   return Object.values(options).every(value=>value === undefined) ? locator : locator.filter(options);
 }
 type LocatorClickOptions = {timeoutMs?:number; button?:"left" | "middle" | "right"; modifiers?:Array<"Alt" | "Control" | "ControlOrMeta" | "Meta" | "Shift">; force?:boolean};
+type LocatorCheckOptions = {timeoutMs?:number; force?:boolean};
+function validateCheckOptions(options:LocatorCheckOptions):void {
+  if(!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>!["timeoutMs","force"].includes(key)) || (options.force!==undefined && typeof options.force!=="boolean"))throw new Error("Invalid locator check options");
+  if(options.force)throw new Error("Forced locator checks are not supported");
+}
 type MouseClick = {button:"left" | "middle" | "right"; buttons:number; modifiers:number};
 function locatorClickOptions(options:LocatorClickOptions):MouseClick {
   if (!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>!["timeoutMs","button","modifiers","force"].includes(key)) || (options.force!==undefined && typeof options.force!=="boolean")) throw new Error("Invalid locator click options");
@@ -2922,9 +2927,10 @@ export class OpenBrowserUseCssLocator {
   click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,mouse);},options.timeoutMs); }
   dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,true,undefined,undefined,false,mouse);},options.timeoutMs); }
   hover(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,true);},options.timeoutMs); }
-  check(options: {timeoutMs?: number} = {}): Promise<void> { return this.setChecked(true,options); }
-  uncheck(options: {timeoutMs?: number} = {}): Promise<void> { return this.setChecked(false,options); }
-  setChecked(checked: boolean, options: {timeoutMs?: number} = {}): Promise<void> {
+  check(options: LocatorCheckOptions = {}): Promise<void> { return this.setChecked(true,options); }
+  uncheck(options: LocatorCheckOptions = {}): Promise<void> { return this.setChecked(false,options); }
+  setChecked(checked: boolean, options: LocatorCheckOptions = {}): Promise<void> {
+    validateCheckOptions(options);
     if (typeof checked !== "boolean") throw new Error("Checked state must be a boolean");
     return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,checked);},options.timeoutMs);
   }
@@ -3247,9 +3253,10 @@ export class OpenBrowserUseRoleLocator {
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }
   async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }
   async type(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.typeText(node.index,id,text), options.timeoutMs); }
-  async check(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.setChecked(node.index,id,true), options.timeoutMs); }
-  async uncheck(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.setChecked(node.index,id,false), options.timeoutMs); }
-  async setChecked(checked: boolean, options: {timeoutMs?: number} = {}): Promise<void> {
+  async check(options: LocatorCheckOptions = {}): Promise<void> { await this.setChecked(true,options); }
+  async uncheck(options: LocatorCheckOptions = {}): Promise<void> { await this.setChecked(false,options); }
+  async setChecked(checked: boolean, options: LocatorCheckOptions = {}): Promise<void> {
+    validateCheckOptions(options);
     if (typeof checked !== "boolean") throw new Error("Checked state must be a boolean");
     await this.perform((node,id)=>this.tab.setChecked(node.index,id,checked), options.timeoutMs);
   }

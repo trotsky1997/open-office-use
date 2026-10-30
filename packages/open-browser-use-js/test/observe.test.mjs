@@ -1201,6 +1201,17 @@ test('label locator checks and unchecks once, validates state and refuses mixed 
   checked='true';role='radio';await assert.rejects(target.uncheck(),/radio cannot be unchecked/);assert.equal(mouse,4);
 });
 
+test('checkbox locator options are validated before browser input',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let requests=0;client.request=async()=>{requests++;return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  for(const locator of [tab.playwright.locator('input'),tab.playwright.getByRole('checkbox')]) {
+    await assert.rejects(async()=>locator.check({force:true}),/Forced locator checks are not supported/);
+    await assert.rejects(async()=>locator.uncheck({force:'yes'}),/Invalid locator check options/);
+    await assert.rejects(async()=>locator.setChecked(true,{unexpected:true}),/Invalid locator check options/);
+  }
+  assert.equal(requests,0);
+});
+
 test('select locator waits for options and never repeats an uncertain mutation', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let preflights=0,mutations=0,failMutation=false;
   client.request=async(method,params)=>{

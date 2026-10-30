@@ -27,6 +27,12 @@ function applyLocatorOptions(locator, options) {
         throw new Error("Invalid locator options");
     return Object.values(options).every(value => value === undefined) ? locator : locator.filter(options);
 }
+function validateCheckOptions(options) {
+    if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["timeoutMs", "force"].includes(key)) || (options.force !== undefined && typeof options.force !== "boolean"))
+        throw new Error("Invalid locator check options");
+    if (options.force)
+        throw new Error("Forced locator checks are not supported");
+}
 function locatorClickOptions(options) {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["timeoutMs", "button", "modifiers", "force"].includes(key)) || (options.force !== undefined && typeof options.force !== "boolean"))
         throw new Error("Invalid locator click options");
@@ -3613,6 +3619,7 @@ export class OpenBrowserUseCssLocator {
     check(options = {}) { return this.setChecked(true, options); }
     uncheck(options = {}) { return this.setChecked(false, options); }
     setChecked(checked, options = {}) {
+        validateCheckOptions(options);
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be a boolean");
         return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked); }, options.timeoutMs);
@@ -4034,9 +4041,10 @@ export class OpenBrowserUseRoleLocator {
     async press(key, options = {}) { await this.perform((node, id) => this.tab.press(node.index, id, key), options.timeoutMs); }
     async fill(text, options = {}) { await this.perform((node, id) => this.tab.fill(node.index, id, text), options.timeoutMs); }
     async type(text, options = {}) { await this.perform((node, id) => this.tab.typeText(node.index, id, text), options.timeoutMs); }
-    async check(options = {}) { await this.perform((node, id) => this.tab.setChecked(node.index, id, true), options.timeoutMs); }
-    async uncheck(options = {}) { await this.perform((node, id) => this.tab.setChecked(node.index, id, false), options.timeoutMs); }
+    async check(options = {}) { await this.setChecked(true, options); }
+    async uncheck(options = {}) { await this.setChecked(false, options); }
     async setChecked(checked, options = {}) {
+        validateCheckOptions(options);
         if (typeof checked !== "boolean")
             throw new Error("Checked state must be a boolean");
         await this.perform((node, id) => this.tab.setChecked(node.index, id, checked), options.timeoutMs);
