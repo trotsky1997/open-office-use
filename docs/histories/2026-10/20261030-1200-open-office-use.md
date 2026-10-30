@@ -183,3 +183,7 @@ Exercised a structured PowerPoint creation and render/review workflow, and added
 ### Viewer small-text candidates
 
 Connected small-text candidates to the layout viewer list, coverage status and visible-object overlay. Verified the browser flow on a real presentation and checked text-box and table polygons. Table highlights cover the object, and hidden-slide or uncertain page mapping disables highlighting.
+
+### Paragraph-default font sizes
+
+Extended PowerPoint small-text review to paragraph `defRPr` sizes when the run lacks a direct size. Candidates include their source, with direct runs taking precedence. Tested mixed run sizes, tables and unresolved inheritance using real PPTX files and the review bundle. Theme and layout/master inheritance remain outside the scan.

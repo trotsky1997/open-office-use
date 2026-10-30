@@ -1,5 +1,6 @@
 """Bounded geometric review of PowerPoint slide objects."""
 import math
+import re
 import shutil
 import tempfile
 import zipfile
@@ -132,12 +133,16 @@ def inspect(file, selection=None):
             selected_count = 0
             totals = {'shapes_scanned': 0, 'text_shapes': 0, 'pairs_checked': 0, 'off_slide_count': 0, 'overlap_count': 0, 'skipped_count': 0}
             complete, overlap_complete, shape_limit = True, True, False
-            fonts = {'threshold_pt': 14, 'runs_scanned': 0, 'unresolved_runs': 0, 'candidate_count': 0, 'candidates': [], 'scan_limit_reached': False}
-            # shortcut: explicit run sizes only; resolve theme and effective rendered sizes when supported.
+            fonts = {'threshold_pt': 14, 'runs_scanned': 0, 'paragraph_default_runs': 0, 'unresolved_runs': 0, 'candidate_count': 0, 'candidates': [], 'scan_limit_reached': False}
+            # shortcut: run and paragraph defaults only; resolve theme and effective rendered sizes when supported.
             def scan_fonts(frame, descriptor, cell=None):
                 if fonts['scan_limit_reached']: return
                 for paragraph in frame.paragraphs:
                     runs = paragraph.runs
+                    paragraph_defaults = paragraph._p.findall(A + 'pPr')
+                    defaults = paragraph_defaults[0].findall(A + 'defRPr') if len(paragraph_defaults) == 1 else []
+                    raw_size = defaults[0].get('sz') if len(defaults) == 1 else None
+                    default_size = int(raw_size) / 100 if raw_size and re.fullmatch(r'[0-9]{1,6}', raw_size) and 100 <= int(raw_size) <= 400000 else None
                     if paragraph._p.findall(A + 'fld') or paragraph.text.strip() and not runs: fonts['unresolved_runs'] += 1
                     for run in runs:
                         if not run.text.strip(): continue
@@ -145,12 +150,15 @@ def inspect(file, selection=None):
                             fonts['scan_limit_reached'] = True; return
                         fonts['runs_scanned'] += 1
                         size = run.font.size
-                        if size is None:
+                        size_source = 'run' if size is not None else 'paragraph'
+                        size_pt = size.pt if size is not None else default_size
+                        if size_pt is None:
                             fonts['unresolved_runs'] += 1; continue
-                        if size.pt < fonts['threshold_pt']:
+                        if size_source == 'paragraph': fonts['paragraph_default_runs'] += 1
+                        if size_pt < fonts['threshold_pt']:
                             fonts['candidate_count'] += 1
                             if len(fonts['candidates']) < MAX_ISSUES:
-                                fonts['candidates'].append({'slide': descriptor['slide'], 'path_hint': descriptor['path_hint'], 'id': descriptor['id'], 'name': descriptor['name'], 'cell': cell, 'size_pt': size.pt, 'text_preview': run.text[:160], 'visible_polygon_inches': descriptor['visible_polygon_inches']})
+                                fonts['candidates'].append({'slide': descriptor['slide'], 'path_hint': descriptor['path_hint'], 'id': descriptor['id'], 'name': descriptor['name'], 'cell': cell, 'size_pt': size_pt, 'size_source': size_source, 'text_preview': run.text[:160], 'visible_polygon_inches': descriptor['visible_polygon_inches']})
             def issue(bucket, item):
                 if len(bucket) < MAX_ISSUES:
                     bucket.append(item)
@@ -262,7 +270,7 @@ def inspect(file, selection=None):
                     'skipped': skipped, 'skipped_truncated': totals['skipped_count'] > len(skipped),
                     'font_size': {**fonts, 'candidates_truncated': fonts['candidate_count'] > len(fonts['candidates']),
                                   'complete': complete and not fonts['scan_limit_reached'] and not fonts['unresolved_runs'],
-                                  'scope': 'Explicit run sizes only; inheritance, autofit, group scaling, masters and rendered legibility require review.'},
+                                  'scope': 'Run and paragraph-default sizes only; other inheritance, autofit, group scaling, masters and rendered legibility require review.'},
                     'units': 'inches', 'overlaps_are_candidates': True}
         except (zipfile.BadZipFile, PackageNotFoundError, etree.XMLSyntaxError, KeyError) as exc:
             raise ValueError(f'Invalid presentation package: {exc}') from exc
