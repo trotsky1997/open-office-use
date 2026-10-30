@@ -66,7 +66,7 @@ def reconcile(chart, budget):
         found = [item for item in report['charts'] if item['part'] == synthetic_part]
         if len(found) != 1 or found[0]['status'] != 'scanned': return {'status': 'incomplete', 'reason': 'unsupported_chart', 'complete': False}
         chart_report = found[0]; refs = chart_report['references']
-        incomplete = chart_report['extensions_present'] or chart_report['external_data'] or any(ref['status'] not in ('match', 'mismatch') for ref in refs)
+        incomplete = chart_report['extensions_present'] or chart_report['external_data'] or any(ref['status'] not in ('match', 'mismatch') or ref.get('unverified_points', 0) for ref in refs)
         mismatch_count = sum(ref.get('mismatch_count', 0) for ref in refs)
         visible = []
         for ref in refs[:30]:

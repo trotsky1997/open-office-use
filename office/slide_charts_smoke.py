@@ -97,6 +97,25 @@ with tempfile.TemporaryDirectory() as tmp:
                 workbook=load_workbook(io.BytesIO(data)); workbook.active['B2']=999
                 buffer=io.BytesIO(); workbook.save(buffer); data=buffer.getvalue()
             dst.writestr(entry,data)
+    mixed=root/'mixed-unverified.pptx'
+    with zipfile.ZipFile(mismatch) as src, zipfile.ZipFile(mixed,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename.startswith('ppt/embeddings/') and entry.filename.endswith('.xlsx'):
+                book=load_workbook(io.BytesIO(data)); book.active['B3']=None
+                buffer=io.BytesIO(); book.save(buffer); data=buffer.getvalue()
+            dst.writestr(entry,data)
+    mixed_chart=slide_charts.inspect(mixed)['charts'][0]['reconciliation']
+    assert mixed_chart['status']=='mismatch' and not mixed_chart['complete']
+    mixed_reference=next(ref['index'] for ref in mixed_chart['references'] if ref.get('mismatch_count',0)>0 and ref.get('unverified_points',0)>0)
+    mixed_draft=root/'mixed-draft'; session.start(mixed_draft,source=mixed)
+    try: session.sync_slide_chart_cache(mixed_draft,0,chart['chart_part'],mixed_reference)
+    except ValueError: pass
+    else: raise AssertionError('Unverified cache reference accepted')
+    assert session.info(mixed_draft)['latest_revision']==0
+    def no_render(_source, _output): raise RuntimeError('render unavailable')
+    mixed_review=review_bundle.create(mixed,root/'mixed-review',no_render)
+    assert {'slide_chart_cache_mismatch','slide_chart_cache_unverified'} <= set(mixed_review['flags'])
     mismatch_atomic=root/'mismatch-atomic';session.start(mismatch_atomic,source=mismatch)
     try: session.edit_slide_chart_grid(mismatch_atomic,0,chart['chart_part'],'Sheet1','B2',[{'cell':'B2','value':'200'}],True)
     except ValueError: pass

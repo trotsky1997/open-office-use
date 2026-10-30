@@ -251,3 +251,7 @@ Added revision-bound embedded workbook grid reads and edits using the existing p
 ### Atomic chart data and cache updates
 
 Added optional atomic cache synchronization to embedded chart grid edits. Covered shared workbooks, one-revision publication, formula and pre-existing mismatch rollback, and CLI/MCP calls. Formula results may be stale; unsupported chart coverage fails closed.
+
+### Mixed chart mismatch coverage
+
+Corrected PowerPoint chart reconciliation completeness when a reference contains both mismatched and unverified points. Verified the mixed case and both corresponding review-bundle flags.
