@@ -88,8 +88,10 @@ const png = await tab.getScreenshot(); // PNG Buffer
 
 `domSnapshot()` returns a bounded accessibility snapshot with roles, names,
 states and readable frame content. Indentation follows the reported accessibility
-parent-child tree, capped at 80 levels; frame documents appear as separate
-sections. It marks truncated output and inaccessible
+parent-child tree, capped at 80 levels; readable frame documents appear under
+their iframe when the browser exposes the owner node. A frame whose location
+cannot be established appears in a separate section marked `frame placement
+unavailable`. It marks truncated output and inaccessible
 frames, does not explicitly read form values, and replaces the previous
 `observe()` result; call `observe()` again before using an observation index.
 Page-provided accessible names and text can still contain sensitive data.

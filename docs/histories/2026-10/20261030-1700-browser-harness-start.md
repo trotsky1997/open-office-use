@@ -207,3 +207,5 @@ Electron 44 新增系统剪贴板访问，客户端需持有 page.control 及独
 domSnapshot 从页面正文文本改为有界可访问性快照，包含角色、名称、状态和可读取 frame；截断或读取失败明确标注，并刷新已有观察。SDK 60 项通过；Linux ARM64 隔离 Chromium 原生消息及 Electron 44/Xvfb socket 验证跨进程 frame 控件，Chromium 验证密码样本未出现在输出。快照不主动读取字段值，页面提供的可访问名称和文本可能包含敏感内容。
 
 可访问性观察改为按 AX parentId 深度优先排列并缩进，忽略节点的可见后代仍保留，缩进上限为 80 层；domSnapshot 去除操作索引时保留层级。SDK 61 项通过；Linux ARM64 隔离 Chromium 原生消息和 Electron 44/Xvfb socket 实测容器与按钮层级、跨 frame 和原有交互。frame 文档仍分节显示。
+
+可读取 frame 的内容通过 DOM.getFrameOwner 嵌入宿主可访问节点下，支持多层嵌套；宿主位置不可用时保留内容并明确标记。SDK 61 项通过，覆盖嵌套和位置回退；Linux ARM64 隔离 Chromium 原生消息验证跨进程容器及其嵌套 frame，Electron 44/Xvfb socket 验证跨进程 frame 位于宿主容器下。macOS 和 Windows 尚未实测此次变更。

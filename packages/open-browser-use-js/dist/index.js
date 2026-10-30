@@ -582,12 +582,14 @@ export class OpenBrowserUseTab {
         const valueBudget = { remaining: 8_000, truncated: false };
         if (options.includeValues)
             await this.readAXValues(tree, nodes, valueBudget);
-        const full = renderAXState(tree, nodes);
+        let full = options.includeFrames ? { text: "", truncated: false } : renderAXState(tree, nodes);
         const unavailableFrames = [];
         let crossProcess = false;
         if (options.includeFrames) {
             crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
             const frames = await this.frameTree();
+            const trees = new Map();
+            trees.set(frames[0].id, { tree, nodes: [...nodes] });
             for (const frame of frames.slice(1)) {
                 try {
                     const childTree = await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: frame.id }, { sessionId: frame.sessionId });
@@ -597,15 +599,44 @@ export class OpenBrowserUseTab {
                     if (options.includeValues)
                         await this.readAXValues(childTree, childNodes, valueBudget, frame.sessionId);
                     nodes.push(...childNodes);
-                    const rendered = renderAXState(childTree, childNodes);
-                    const text = `${full.text}${full.text ? "\n" : ""}frame ${JSON.stringify(frame.url)}\n${rendered.text}`;
-                    full.text = text.slice(0, 30_000);
-                    full.truncated ||= rendered.truncated || text.length > 30_000;
+                    let owner;
+                    try {
+                        const parent = frames.find(item => item.id === frame.parentId);
+                        const result = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: frame.id }, { sessionId: parent?.sessionId });
+                        if (isObject(result) && typeof result.backendNodeId === "number")
+                            owner = result.backendNodeId;
+                    }
+                    catch { /* A readable frame can still be shown without its position. */ }
+                    trees.set(frame.id, { tree: childTree, nodes: childNodes, owner });
                 }
                 catch {
                     unavailableFrames.push(frame.id);
                 }
             }
+            const attachments = new Map();
+            const unplaced = [];
+            for (const frame of [...frames].reverse()) {
+                const entry = trees.get(frame.id);
+                if (!entry)
+                    continue;
+                const rendered = renderAXState(entry.tree, entry.nodes, attachments.get(frame.id));
+                if (!frame.parentId) {
+                    full = rendered;
+                    continue;
+                }
+                const child = { url: frame.url, ...rendered };
+                if (entry.owner === undefined || !trees.has(frame.parentId)) {
+                    unplaced.unshift(child);
+                    continue;
+                }
+                const parent = attachments.get(frame.parentId) ?? new Map();
+                const siblings = parent.get(entry.owner) ?? [];
+                siblings.unshift(child);
+                parent.set(entry.owner, siblings);
+                attachments.set(frame.parentId, parent);
+            }
+            if (unplaced.length)
+                full = appendUnplacedFrames(full, unplaced);
             const current = await this.frameTree();
             if (JSON.stringify(current) !== JSON.stringify(frames))
                 throw new RetryablePreflightError("Frame tree changed during observation; observe again");
@@ -2418,7 +2449,12 @@ function axProperties(node) {
         return typeof value === "boolean" || typeof value === "string" || (property.name === "level" && typeof value === "number" && Number.isSafeInteger(value) && value > 0) ? [`${property.name}=${JSON.stringify(value)}`] : [];
     }).sort() : [];
 }
-function renderAXState(tree, targets) {
+function appendUnplacedFrames(base, frames) {
+    const extra = frames.map(frame => `[frame placement unavailable]\nframe ${JSON.stringify(frame.url)}${frame.text ? `\n${frame.text}` : ""}`).join("\n");
+    const text = [base.text, extra].filter(Boolean).join("\n");
+    return { text: text.slice(0, 30_000), truncated: base.truncated || frames.some(frame => frame.truncated) || text.length > 30_000 };
+}
+function renderAXState(tree, targets, embedded = new Map()) {
     if (!isObject(tree) || !Array.isArray(tree.nodes))
         throw new Error("Invalid accessibility tree");
     const indexed = new Map(targets.map(node => [node.backendNodeId, node]));
@@ -2438,7 +2474,19 @@ function renderAXState(tree, targets) {
     }
     const lines = [];
     const visited = new Set();
-    let length = 0;
+    const remaining = new Map(embedded);
+    let length = 0, truncated = false;
+    const append = (line) => {
+        if (length + line.length + 1 > 30_000) {
+            const available = 30_000 - length - 1;
+            if (available > 1)
+                lines.push(`${line.slice(0, available - 1)}…`);
+            return false;
+        }
+        lines.push(line);
+        length += line.length + 1;
+        return true;
+    };
     const pending = roots.reverse().map(index => ({ index, depth: 0 }));
     let next = 0;
     while (pending.length || next < nodes.length) {
@@ -2458,37 +2506,43 @@ function renderAXState(tree, targets) {
         const descendants = children.get(current.index) ?? [];
         for (let i = descendants.length - 1; i >= 0; i--)
             pending.push({ index: descendants[i], depth: current.depth + (show ? 1 : 0) });
-        if (!show || !isObject(node.role))
-            continue;
-        const role = node.role.value;
-        const name = isObject(node.name) && typeof node.name.value === "string" ? node.name.value : "";
-        const index = target?.index;
-        if (typeof role !== "string" || (!name && index === undefined))
-            continue;
-        const properties = axProperties(node);
-        if (target?.altText !== undefined)
-            properties.push(`alt=${JSON.stringify(target.altText)}${target.altTextTruncated ? "…" : ""}`);
-        if (target?.placeholder !== undefined)
-            properties.push(`placeholder=${JSON.stringify(target.placeholder)}${target.placeholderTruncated ? "…" : ""}`);
-        if (target?.valueRedacted)
-            properties.push("value=[redacted]");
-        else if (target?.valueUnavailable)
-            properties.push("value=[unavailable]");
-        else if (target?.value !== undefined)
-            properties.push(`value=${JSON.stringify(target.value)}${target.valueTruncated ? "…" : ""}`);
-        else if (target?.valueTruncated)
-            properties.push("value=[truncated]");
-        const line = `${"  ".repeat(Math.min(current.depth, 80))}${index === undefined ? "" : `[${index}] `}${role}${name ? ` ${JSON.stringify(name)}` : ""}${properties.length ? ` ${properties.join(" ")}` : ""}`;
-        if (length + line.length + 1 > 30_000) {
-            const available = 30_000 - length - 1;
-            if (available > 1)
-                lines.push(`${line.slice(0, available - 1)}…`);
-            return { text: lines.join("\n"), truncated: true };
+        if (show && isObject(node.role)) {
+            const role = node.role.value;
+            const name = isObject(node.name) && typeof node.name.value === "string" ? node.name.value : "";
+            const index = target?.index;
+            const properties = axProperties(node);
+            if (target?.altText !== undefined)
+                properties.push(`alt=${JSON.stringify(target.altText)}${target.altTextTruncated ? "…" : ""}`);
+            if (target?.placeholder !== undefined)
+                properties.push(`placeholder=${JSON.stringify(target.placeholder)}${target.placeholderTruncated ? "…" : ""}`);
+            if (target?.valueRedacted)
+                properties.push("value=[redacted]");
+            else if (target?.valueUnavailable)
+                properties.push("value=[unavailable]");
+            else if (target?.value !== undefined)
+                properties.push(`value=${JSON.stringify(target.value)}${target.valueTruncated ? "…" : ""}`);
+            else if (target?.valueTruncated)
+                properties.push("value=[truncated]");
+            const line = `${"  ".repeat(Math.min(current.depth, 80))}${index === undefined ? "" : `[${index}] `}${role}${name ? ` ${JSON.stringify(name)}` : ""}${properties.length ? ` ${properties.join(" ")}` : ""}`;
+            if (!append(line))
+                return { text: lines.join("\n"), truncated: true };
         }
-        lines.push(line);
-        length += line.length + 1;
+        const owner = typeof node.backendDOMNodeId === "number" ? node.backendDOMNodeId : undefined;
+        const frames = owner === undefined ? undefined : remaining.get(owner);
+        if (owner !== undefined && frames)
+            remaining.delete(owner);
+        for (const frame of frames ?? []) {
+            const indent = "  ".repeat(Math.min(current.depth + (show ? 1 : 0), 80));
+            if (!append(`${indent}frame ${JSON.stringify(frame.url)}`))
+                return { text: lines.join("\n"), truncated: true };
+            for (const line of frame.text ? frame.text.split("\n") : [])
+                if (!append(`${indent}  ${line}`))
+                    return { text: lines.join("\n"), truncated: true };
+            truncated ||= frame.truncated;
+        }
     }
-    return { text: lines.join("\n"), truncated: false };
+    const rendered = { text: lines.join("\n"), truncated };
+    return remaining.size ? appendUnplacedFrames(rendered, [...remaining.values()].flat()) : rendered;
 }
 function diffAXState(before, after) {
     const oldLines = before ? before.split("\n") : [];

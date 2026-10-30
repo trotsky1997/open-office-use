@@ -110,6 +110,7 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
   const directory = await mkdtemp(join(tmpdir(), "obu-sdk-js-"));
   const socketPath = join(directory, "obu.sock");
   const calls = [];
+  let ownerAvailable = true;
   const server = createServer((socket) => {
     let pending = Buffer.alloc(0);
     socket.on("data", (chunk) => {
@@ -146,9 +147,14 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
         } else if (request.params.method === "DOM.getDocument") {
           result = { root: { backendNodeId: 1 } };
         } else if (request.params.method === "Page.getFrameTree") {
-          result = { frameTree: { frame: { id: "main", loaderId: "one", url: "https://example.test/" }, childFrames: [{ frame: { id: "child", loaderId: "two", url: "https://child.test/" } }] } };
+          result = { frameTree: { frame: { id: "main", loaderId: "one", url: "https://example.test/" }, childFrames: [{ frame: { id: "child", loaderId: "two", url: "https://child.test/" }, childFrames:[{frame:{id:"grandchild",loaderId:"three",url:"https://nested.test/"}}] }] } };
+        } else if (request.params.method === "DOM.getFrameOwner") {
+          result = ownerAvailable ? {backendNodeId:request.params.commandParams.frameId === "child" ? 9 : 19} : {};
         } else if (request.params.method === "Accessibility.getFullAXTree") {
-          result = { nodes: [{ nodeId: "1", role: { value: "button" }, name: { value: request.params.commandParams?.frameId === "child" ? "Frame action" : "Submit" }, backendDOMNodeId: 2 }] };
+          result = request.params.commandParams?.frameId === "grandchild" ? {nodes:[{nodeId:"nested-button",role:{value:"button"},name:{value:"Nested action"},backendDOMNodeId:5}]}
+            : request.params.commandParams?.frameId === "child"
+            ? {nodes:[{nodeId:"child-button",role:{value:"button"},name:{value:"Frame action"},backendDOMNodeId:4},{nodeId:"nested-frame",ignored:true,backendDOMNodeId:19}]}
+            : {nodes:[{nodeId:"group",role:{value:"group"},name:{value:"Form"},backendDOMNodeId:3},{nodeId:"main-button",parentId:"group",role:{value:"button"},name:{value:"Submit"},backendDOMNodeId:2},{nodeId:"iframe",parentId:"group",ignored:true,backendDOMNodeId:9}]};
         } else if (request.params.method === "Page.captureScreenshot") {
           result = { data: Buffer.from("png-data").toString("base64") };
         }
@@ -166,8 +172,10 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
     const tab = await browser.newTab();
     await tab.goto("https://example.test/issues", { waitUntil: "domcontentloaded", timeoutMs: 1000 });
     await tab.playwright.waitForLoadState({ state: "domcontentloaded", timeoutMs: 1000 });
-    assert.equal(await tab.playwright.domSnapshot(), 'button "Submit"\nframe "https://child.test/"\nbutton "Frame action"');
-    assert.equal((await tab.getAXState()).nodes[0].name.value, "Submit");
+    assert.equal(await tab.playwright.domSnapshot(), 'group "Form"\n  button "Submit"\n  frame "https://child.test/"\n    button "Frame action"\n    frame "https://nested.test/"\n      button "Nested action"');
+    ownerAvailable = false;
+    assert.match(await tab.playwright.domSnapshot(), /\[frame placement unavailable\]\nframe "https:\/\/child.test\/"\nbutton "Frame action"/);
+    assert.equal((await tab.getAXState()).nodes[1].name.value, "Submit");
     assert.deepEqual(await tab.getScreenshot(), Buffer.from("png-data"));
     assert.ok(calls.some(([method,command])=>method === "executeCdp" && command === "Page.getFrameTree"));
   } finally {

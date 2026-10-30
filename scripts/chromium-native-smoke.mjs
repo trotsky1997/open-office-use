@@ -212,7 +212,9 @@ try {
  await tab.evaluate(`(()=>{window.frameMessages=[];window.addEventListener('message',e=>window.frameMessages.push(e.data));const scope=document.createElement('section');scope.setAttribute('role','dialog');scope.setAttribute('aria-label','Cross container');const frame=document.createElement('iframe');frame.id='cross';frame.src='http://localhost:${http.address().port}/cross';scope.append(frame);document.body.append(scope)})()`);
  await new Promise(r=>setTimeout(r,500));
  const crossState=await tab.observe({includeFrames:true});const cross=crossState.nodes.find(node=>node.name==='Cross-process action');assert.ok(cross?.frameId,JSON.stringify(crossState));assert.equal(crossState.frameCoverage,'cross-process');
- const snapshot=await tab.playwright.domSnapshot();assert.match(snapshot,/button "Cross-process action"/);assert.match(snapshot,/frame "http:\/\/localhost:/);assert.doesNotMatch(snapshot,/fixture-private-123/);
+ const snapshot=await tab.playwright.domSnapshot();assert.match(snapshot,/button "Cross-process action"/);assert.match(snapshot,/dialog "Cross container"[\s\S]{0,300}\n\s+frame "http:\/\/localhost:/);assert.doesNotMatch(snapshot,/fixture-private-123/);
+ const snapshotLines=snapshot.split('\n'),crossLine=snapshotLines.findIndex(line=>line.includes(`frame "http://localhost:${http.address().port}/cross"`)),innerLine=snapshotLines.findIndex((line,index)=>index>crossLine && line.includes(`frame "http://127.0.0.1:${http.address().port}/inner"`));
+ assert.ok(crossLine>=0 && innerLine>crossLine);assert.ok(snapshotLines[innerLine].search(/\S/) > snapshotLines[crossLine].search(/\S/));
  assert.equal(await tab.playwright.getByRole('dialog',{name:/cross container/i}).filter({hasText:/cross-process action/i}).getByRole('button',{name:/^cross-process action$/i}).count(),1);
  assert.equal(await tab.playwright.getByLabel(/cross-process text/i).count(),1);
  assert.equal(await tab.playwright.getByPlaceholder(/type cross message/i).count(),1);
