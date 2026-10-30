@@ -250,3 +250,5 @@ Workbook authoring supports scatter charts with numeric or sub-day datetime X va
 Workbook chart authoring supports series colors, legend and gridline visibility, and Y-axis bounds; verify visual output in the target application.
 
 Workbook charts can display value labels. Independent label number formats and native Excel rendering remain to be verified.
+
+Session slide reordering retains slide IDs and related parts, rejects presentation extensions, and requires rediscovering positional slide paths. Custom shows retain their own order.

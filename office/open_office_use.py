@@ -1262,6 +1262,7 @@ def main():
     track_replace = sub.add_parser('track-replace-text'); track_replace.add_argument('directory'); track_replace.add_argument('--base', type=int, required=True); track_replace.add_argument('--path', required=True); track_replace.add_argument('--find', required=True); track_replace.add_argument('--replace', required=True, dest='replacement'); track_replace.add_argument('--author', required=True)
     track_insert = sub.add_parser('track-insert-text'); track_insert.add_argument('directory'); track_insert.add_argument('--base', type=int, required=True); track_insert.add_argument('--path', required=True); track_insert.add_argument('--anchor', required=True); track_insert.add_argument('--text', required=True); track_insert.add_argument('--position', choices=('before', 'after'), required=True); track_insert.add_argument('--author', required=True)
     track_resolve = sub.add_parser('resolve-tracked-runs'); track_resolve.add_argument('directory'); track_resolve.add_argument('--base', type=int, required=True); track_resolve.add_argument('--part', required=True); track_resolve.add_argument('--id', action='append', required=True, dest='ids'); track_resolve.add_argument('--decision', choices=['accept', 'reject'], required=True)
+    reorder = sub.add_parser('reorder-slides'); reorder.add_argument('directory'); reorder.add_argument('--base', type=int, required=True); reorder.add_argument('--order', required=True, help='JSON array of one-based slide numbers')
     note_session = sub.add_parser('notes'); note_session.add_argument('directory'); note_session.add_argument('--revision', type=int, required=True); note_session.add_argument('--slide', type=int, required=True)
     note_compare = sub.add_parser('compare-notes'); note_compare.add_argument('directory'); note_compare.add_argument('--before', type=int, required=True); note_compare.add_argument('--after', type=int, required=True); note_compare.add_argument('--before-slide', type=int, required=True); note_compare.add_argument('--after-slide', type=int, required=True)
     note_write = sub.add_parser('replace-notes'); note_write.add_argument('directory'); note_write.add_argument('--base', type=int, required=True); note_write.add_argument('--slide', type=int, required=True); note_write.add_argument('--text-file', required=True)
@@ -1348,6 +1349,8 @@ def main():
                 result = session.track_replace_text(args.directory, args.base, args.path, args.find, args.replacement, args.author)
             elif args.action == 'resolve-tracked-runs':
                 result = session.resolve_tracked_runs(args.directory, args.base, args.part, args.ids, args.decision == 'accept')
+            elif args.action == 'reorder-slides':
+                result = session.reorder_slides(args.directory, args.base, json.loads(args.order))
             elif args.action == 'notes':
                 result = session.read_notes(args.directory, args.revision, args.slide)
             elif args.action == 'compare-notes':

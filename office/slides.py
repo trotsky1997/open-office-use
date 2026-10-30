@@ -140,6 +140,38 @@ def slide_part(file, index):
     return parts[index]
 
 
+
+def reorder(source, output, order):
+    """Reorder the presentation's existing slide IDs in a new package."""
+    if not isinstance(order, list) or not order or len(order) > 1000 or any(isinstance(i, bool) or not isinstance(i, int) for i in order):
+        raise ValueError('Slide order must be a nonempty list of at most 1000 slide numbers')
+    if Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx': raise ValueError('Slide reorder requires PPTX input and output')
+    def select(file):
+        presentation = Presentation(file)
+        return str(presentation.part.partname).lstrip('/')
+    def edit(tree, archive):
+        root = tree.getroot()
+        if root.tag != P + 'presentation' or root.find(P + 'extLst') is not None or root.find(MC + 'AlternateContent') is not None:
+            raise ValueError('Presentation extensions or alternate content are unsupported for slide reorder')
+        lists = root.findall(P + 'sldIdLst')
+        if len(lists) != 1: raise ValueError('Presentation slide list is missing or ambiguous')
+        listing = lists[0]; entries = list(listing)
+        if any(item.tag != P + 'sldId' for item in entries) or len(entries) != len(order) or sorted(order) != list(range(1, len(entries) + 1)):
+            raise ValueError('Slide order must contain every slide number exactly once')
+        ids = [item.get('id') for item in entries]; relationships = [item.get(R + 'id') for item in entries]
+        if any(not value for value in ids + relationships) or len(set(ids)) != len(ids) or len(set(relationships)) != len(relationships): raise ValueError('Presentation slide IDs or relationships are ambiguous')
+        presentation = Presentation(source)
+        targets = []
+        for relationship_id in relationships:
+            try: relationship = presentation.part.rels[relationship_id]
+            except KeyError: raise ValueError('Slide relationship is missing') from None
+            if relationship.is_external or relationship.reltype != RELATIONSHIP_TYPE.SLIDE: raise ValueError('Slide relationship is invalid')
+            targets.append(str(relationship.target_part.partname))
+        if len(set(targets)) != len(targets): raise ValueError('Slide part is referenced by multiple slides')
+        for item in entries: listing.remove(item)
+        for number in order: listing.append(entries[number - 1])
+    return ooxml.edit_xml(source, output, select, edit)
+
 def find_paragraph(tree, path):
     match = PATH.fullmatch(path) if paragraph_path(path) else None
     if not match: raise ValueError('Target must be a slide shape or table-cell paragraph path')
