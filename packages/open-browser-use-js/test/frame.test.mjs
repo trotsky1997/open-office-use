@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { endianness, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+const pngFixture=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==","base64");
 
 import { OpenBrowserUseClient, OpenBrowserUseCdp, connectOpenBrowserUse, encodeFrame } from "../dist/index.js";
 
@@ -158,7 +159,7 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
             ? {nodes:[{nodeId:"child-button",role:{value:"button"},name:{value:"Frame action"},backendDOMNodeId:4},{nodeId:"nested-frame",ignored:true,backendDOMNodeId:19}]}
             : {nodes:[{nodeId:"group",role:{value:"group"},name:{value:"Form"},backendDOMNodeId:3},{nodeId:"main-button",parentId:"group",role:{value:"button"},name:{value:"Submit"},backendDOMNodeId:2},{nodeId:"iframe",parentId:"group",ignored:true,backendDOMNodeId:9}]};
         } else if (request.params.method === "Page.captureScreenshot") {
-          result = { data: Buffer.from("png-data").toString("base64") };
+          result = { data: pngFixture.toString("base64") };
         }
         socket.write(encodeFrame({ jsonrpc: "2.0", id: request.id, result }));
       }
@@ -179,7 +180,7 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
     ownerAvailable = false;
     assert.match(await tab.playwright.domSnapshot(), /\[frame placement unavailable\]\nframe "https:\/\/child.test\/"\nbutton "Frame action"/);
     assert.equal((await tab.getAXState()).nodes[1].name.value, "Submit");
-    assert.deepEqual(await tab.getScreenshot(), Buffer.from("png-data"));
+    assert.deepEqual(await tab.getScreenshot(), pngFixture);
     assert.ok(calls.some(([method,command])=>method === "executeCdp" && command === "Page.getFrameTree"));
   } finally {
     browser.close();

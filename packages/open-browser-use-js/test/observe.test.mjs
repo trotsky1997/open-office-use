@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import assert from "node:assert/strict";
 import test from "node:test";
+const pngFixture=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==","base64");
 import { OpenBrowserUseBrowser, OpenBrowserUseClient, OpenBrowserUseFileChooser, OpenBrowserUseTabDomCUA } from "../dist/index.js";
 
 test('DOM CUA rejects superseded snapshots and snapshots during input',async()=>{
@@ -326,21 +327,22 @@ test('URL wait checks the matching document state and propagates transport error
 });
 
 test('screenshot clips use viewport coordinates and reject invalid regions', async () => {
-  const client=new OpenBrowserUseClient({socketPath:'unused'}), calls=[];
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), calls=[];let screenshotData=pngFixture.toString('base64');
   client.request=async(method,params)=>{
     if(method==='attach')return {};
     calls.push(params);
     if(params.method==='Page.getLayoutMetrics')return {cssVisualViewport:{pageX:10,pageY:500,clientWidth:800,clientHeight:600}};
-    return {data:Buffer.from('png').toString('base64')};
+    return {data:screenshotData};
   };
   const tab=new OpenBrowserUseBrowser({client}).tab(1);
   const options={clip:{x:20,y:30,width:40,height:50}};
   const screenshot=tab.getScreenshot(options);options.clip.x=-1;
-  assert.equal((await screenshot).toString(),'png');
+  assert.deepEqual(await screenshot,pngFixture);
   assert.deepEqual(calls.at(-1).commandParams,{format:'png',clip:{x:30,y:530,width:40,height:50,scale:1},captureBeyondViewport:false});
   await assert.rejects(tab.getScreenshot({clip:{x:0,y:0,width:NaN,height:1}}),/Invalid screenshot clip/);
   await assert.rejects(tab.getScreenshot({clip:{x:799,y:0,width:2,height:1}}),/outside the viewport/);
   assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
+  for(const value of ['not base64',Buffer.from('not png').toString('base64'),pngFixture.subarray(0,24).toString('base64')]) {screenshotData=value;await assert.rejects(tab.getScreenshot(),/invalid PNG/);}
 });
 
 test('full-page screenshots use content dimensions and enforce size limits', async () => {
@@ -349,11 +351,11 @@ test('full-page screenshots use content dimensions and enforce size limits', asy
     if(method==='attach')return {};
     calls.push(params);
     if(params.method==='Page.getLayoutMetrics')return {cssContentSize:{x:0,y:0,width:800,height}};
-    return {data:Buffer.from('png').toString('base64')};
+    return {data:pngFixture.toString('base64')};
   };
   const tab=new OpenBrowserUseBrowser({client}).tab(1),options={fullPage:true};
   const screenshot=tab.getScreenshot(options);options.fullPage=false;
-  assert.equal((await screenshot).toString(),'png');
+  assert.deepEqual(await screenshot,pngFixture);
   assert.deepEqual(calls.at(-1).commandParams,{format:'png',clip:{x:0,y:0,width:800,height:3000,scale:1},captureBeyondViewport:true});
   height=40001;await assert.rejects(tab.getScreenshot({fullPage:true}),/too large/);
   await assert.rejects(tab.getScreenshot({fullPage:true,clip:{x:0,y:0,width:1,height:1}}),/cannot use a clip/);
@@ -703,7 +705,7 @@ test("CUA routes pointer paths, modifiers and screenshot images", async () => {
     if(method==='attach')return {};
     if(params.method==='Page.getLayoutMetrics')return {cssVisualViewport:{clientWidth:100,clientHeight:80}};
     if(params.method==='Input.synthesizeScrollGesture' && wheelTimeout)throw new Error('Timed out after 10000ms waiting for CDP command.');
-    if(params.method==='Page.captureScreenshot')return {data:Buffer.from('png').toString('base64')};
+    if(params.method==='Page.captureScreenshot')return {data:pngFixture.toString('base64')};
     if(params.method==='Input.dispatchMouseEvent') {events.push(params.commandParams);if(fail && params.commandParams.type==='mouseMoved' && params.commandParams.buttons===1)throw new Error('move failed');if(wheelTimeout && params.commandParams.type==='mouseWheel')throw new Error('Timed out after 10000ms waiting for CDP command.');if(iabTimeout && params.commandParams.type==='mouseWheel')throw new Error('IAB_BACKGROUND_SCROLL_TIMEOUT');}
     return {};
   };
@@ -715,7 +717,7 @@ test("CUA routes pointer paths, modifiers and screenshot images", async () => {
   assert.deepEqual(events.filter(event=>event.type==='mouseMoved' && event.buttons===1).map(event=>[event.x,event.y,event.modifiers]),[[20,15,1],[30,25,1]]);
   await tab.cua.scroll({x:10,y:10,scrollX:2,scrollY:5,keypress:['Shift']});assert.deepEqual([events.at(-1).type,events.at(-1).deltaY,events.at(-1).modifiers],['mouseWheel',5,8]);
   wheelTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5}),/Wheel outcome unknown/);wheelTimeout=false;iabTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);iabTimeout=false;
-  const image=await tab.cua.get_visible_screenshot();assert.ok(image instanceof Uint8Array);assert.equal(image.toBase64(),Buffer.from('png').toString('base64'));
+  const image=await tab.cua.get_visible_screenshot();assert.ok(image instanceof Uint8Array);assert.equal(image.toBase64(),pngFixture.toString('base64'));
   fail=true;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:2,y:2}]}),/move failed/);assert.equal(events.at(-1).type,'mouseReleased');
   const count=events.length;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:100,y:2}]}),/outside/);assert.equal(events.length,count);
 });

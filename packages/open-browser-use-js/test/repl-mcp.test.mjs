@@ -8,6 +8,7 @@ import { createInterface } from "node:readline";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+const pngFixture=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==","base64");
 import { encodeFrame } from "../dist/index.js";
 
 test("MCP REPL retains bindings, uses one browser session and emits images", async () => {
@@ -25,7 +26,7 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
         data = data.subarray(length + 4);
         requests.push(request);
         const result = request.method === "createTab" ? { id: 42 } : request.method === "getTabs" ? [{id:42,title:"Fixture"}] :
-          request.params.method === "Page.captureScreenshot" ? { data: Buffer.from("image").toString("base64") } : {};
+          request.params.method === "Page.captureScreenshot" ? { data: pngFixture.toString("base64") } : {};
         socket.write(encodeFrame({ jsonrpc: "2.0", id: request.id, result }));
       }
     });
@@ -80,10 +81,10 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     assert.equal((await js("nodeRepl.write((await getBrowserState()).sessions.some(session => session.tabs?.[0]?.title === 'Fixture'))")).content[0].text, "true");
     assert.equal((await js("selected.close(); nodeRepl.write((await getBrowserState()).sessions.length)")).content[0].text,"1");
     const image = (await js("nodeRepl.emitImage(await tab.getScreenshot())")).content[0];
-    assert.deepEqual(image, { type: "image", mimeType: "image/png", data: Buffer.from("image").toString("base64") });
+    assert.deepEqual(image, { type: "image", mimeType: "image/png", data: pngFixture.toString("base64") });
     const playwrightImage = (await js("nodeRepl.emitImage(await tab.playwright.screenshot({fullPage:false}))")).content[0];
     assert.deepEqual(playwrightImage,image);
-    assert.equal((await js("nodeRepl.write((await tab.playwright.screenshot()).toBase64())")).content[0].text,Buffer.from("image").toString("base64"));
+    assert.equal((await js("nodeRepl.write((await tab.playwright.screenshot()).toBase64())")).content[0].text,pngFixture.toString("base64"));
     assert.equal((await js("await tab.playwright.waitForTimeout(0)")).isError,undefined);
     assert.equal((await js("await tab.playwright.waitForTimeout(-1)")).isError,true);
     const cuaImage = (await js("nodeRepl.emitImage(await tab.cua.get_visible_screenshot())")).content[0];

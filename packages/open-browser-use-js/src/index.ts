@@ -2317,10 +2317,10 @@ export class OpenBrowserUseTab {
       clip = {x:pageX+rect.x,y:pageY+rect.y,width:rect.width,height:rect.height,scale:1};
     }
     const result = await this.browser.cdp.call(this.id, "Page.captureScreenshot", { format: "png", ...(clip ? {clip,captureBeyondViewport:fullPage} : {}) });
-    if (!isObject(result) || typeof result.data !== "string" || !result.data) {
-      throw new Error("Browser returned an invalid screenshot");
-    }
-    return Buffer.from(result.data, "base64");
+    if (!isObject(result) || typeof result.data !== "string" || !result.data) throw new Error("Browser returned an invalid screenshot");
+    const png=Buffer.from(result.data,"base64");
+    if (png.toString("base64") !== result.data || png.length < 45 || !png.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || png.readUInt32BE(8) !== 13 || png.toString("ascii",12,16) !== "IHDR" || !png.readUInt32BE(16) || !png.readUInt32BE(20) || !png.subarray(-12).equals(Buffer.from([0,0,0,0,73,69,78,68,174,66,96,130]))) throw new Error("Browser returned an invalid PNG screenshot");
+    return png;
   }
 
   evaluate(expression: string, options: { awaitPromise?: boolean } = {}): Promise<JsonValue> {

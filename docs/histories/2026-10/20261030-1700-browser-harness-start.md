@@ -343,3 +343,5 @@ browser.newTab({url}) 在导航失败时关闭刚创建的标签；清理失败�
 更新仓库随附 skill：优先使用 fork 的持久 JS REPL、浏览器发现及标签生命周期，补充 DOM CUA、页面求值和 WebMCP 的使用边界；安装参考区分源码与上游发布包，SDK 参考明确发布包能力可能不同。skill 格式验证、打包检查及当前 CLI install-manifest 参数核对通过；未更改用户现有浏览器注册或 MCP 配置。
 
 调整随附 skill 的授权提示：已明确请求的浏览器交互遵循用户授权与宿主权限，需要用户亲自完成或范围不明确时再请求协助。skill 格式和打包检查通过；浏览器权限与运行时代码未更改。
+
+截图结果在输出前校验 Base64、PNG 签名、IHDR 尺寸和 IEND 结束标记；无效数据直接报错，测试桩改用真实 PNG。SDK 72 项通过，覆盖无效编码、错误格式和截断；macOS 与 Linux ARM64 Electron 44、Linux ARM64 Chromium 原生扩展实页截图及完整回归通过。该检查不完整解码图像或校验所有 chunk；Windows 未测。

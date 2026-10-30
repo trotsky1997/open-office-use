@@ -90,6 +90,9 @@ const axTree = await tab.getAXState(); // CDP accessibility tree
 const png = await tab.getScreenshot(); // PNG Buffer
 ```
 
+Screenshot results are checked for canonical Base64 and PNG framing before they
+are returned; this does not fully decode the image or verify every chunk.
+
 `playwright.evaluate` accepts a function with one JSON-serializable argument or
 an expression string, awaits promises, and returns a JSON value. Non-finite
 numbers, negative zero, nested undefined values, functions, symbols and BigInts
