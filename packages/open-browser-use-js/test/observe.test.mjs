@@ -18,6 +18,14 @@ test('evaluate rejects arguments JSON would silently change before contacting th
   assert.equal(requests,0);
 });
 
+test('failed new-tab navigation closes the created tab and reports cleanup failure',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})});browser.client.createTab=async()=>({id:8});
+  const navigationError=new Error('navigation failed'),cleanupError=new Error('cleanup failed');let closes=0,failCleanup=false;
+  browser.tab=()=>({goto:async()=>{throw navigationError},close:async()=>{closes++;if(failCleanup)throw cleanupError}});
+  await assert.rejects(browser.newTab({url:'https://example.test'}),error=>error===navigationError);assert.equal(closes,1);
+  failCleanup=true;await assert.rejects(browser.newTab({url:'https://example.test'}),error=>error instanceof AggregateError && error.errors[0]===navigationError && error.errors[1]===cleanupError);assert.equal(closes,2);
+});
+
 test('DOM CUA is shared by tab handles in one browser',()=>{
   const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})});
   assert.equal(browser.tab(1).dom_cua,browser.tab(1).dom_cua);

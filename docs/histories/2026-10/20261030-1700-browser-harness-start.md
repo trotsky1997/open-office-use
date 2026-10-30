@@ -337,3 +337,5 @@ Playwright 风格入口新增 evaluate，接受函数和单个 JSON 参数或表
 Playwright evaluate 的 JSON 参数使用带计算属性的安全字面量编码，页面覆盖 JSON.parse 时参数保持原值，__proto__ 作为普通数据键保留。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 及 Linux ARM64 Chromium 原生扩展实页均验证页面篡改、特殊键和异步求值。参数依旧遵循 JSON.stringify 转换规则，Windows 未测。
 
 Playwright evaluate 参数在请求发送前拒绝非有限数、负零、嵌套 undefined、稀疏数组、函数、符号和 BigInt，防止 JSON 转换静默改变这些值；对象的 toJSON 仍按 JSON 转换执行。SDK 71 项通过，专项验证拒绝时零浏览器请求；Linux ARM64 Chromium 原生扩展与 Electron 44 完整实页回归通过。macOS 和 Windows 本轮未测。
+
+browser.newTab({url}) 在导航失败时关闭刚创建的标签；清理失败时以 AggregateError 同时保留导航和清理错误，便于重新检查会话。SDK 72 项通过；macOS 和 Linux ARM64 Electron 44 与 Linux ARM64 Chromium 原生扩展实页验证无效地址失败后会话标签数量恢复。清理结果未知时仍可能留有标签；Windows 未测。

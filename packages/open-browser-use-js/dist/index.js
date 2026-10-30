@@ -411,7 +411,18 @@ export class OpenBrowserUseBrowser {
         const tabId = tabIdFromValue(created, "createTab response");
         const tab = this.tab(tabId);
         if (options.url) {
-            await tab.goto(options.url, options);
+            try {
+                await tab.goto(options.url, options);
+            }
+            catch (error) {
+                try {
+                    await tab.close();
+                }
+                catch (cleanupError) {
+                    throw new AggregateError([error, cleanupError], "Navigation failed and cleanup of the new tab could not be confirmed");
+                }
+                throw error;
+            }
         }
         return tab;
     }

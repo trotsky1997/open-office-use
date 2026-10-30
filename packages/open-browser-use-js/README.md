@@ -75,6 +75,9 @@ try {
 }
 ```
 
+`browser.newTab({url})` closes the newly created tab when navigation fails. If
+cleanup also fails, it reports both errors so the session can be inspected.
+
 The same tab helpers are available without the `playwright` alias:
 
 ```js
