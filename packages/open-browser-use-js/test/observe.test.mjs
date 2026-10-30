@@ -44,7 +44,7 @@ test('popup deadline includes preparation and does not issue a late action',asyn
   const tab=new OpenBrowserUseBrowser({client}).tab(1);
   await assert.rejects(tab.playwright.expectPopup(async()=>{actions++},{timeoutMs:10}),/preparation timed out before action/);
   await new Promise(resolve=>setTimeout(resolve,100));assert.equal(actions,0);
-  let generation=1;Object.defineProperty(client,'connectionGeneration',{get:()=>generation});client.request=async()=>{generation++;return [{id:1}];};
+  let generation=1;Object.defineProperty(client,'connectionGeneration',{get:()=>generation});Object.defineProperty(client,'isConnected',{value:true});client.request=async()=>{generation++;return [{id:1}];};
   await assert.rejects(tab.playwright.expectPopup(async()=>{actions++},{timeoutMs:500}),/Connection changed during popup preparation before action/);assert.equal(actions,0);
 });
 
@@ -259,7 +259,7 @@ test('navigation deadline includes preparation and stops before a late action',a
   const tab=new OpenBrowserUseBrowser({client}).tab(1);
   await assert.rejects(tab.expectNavigation(async()=>{actions++},{timeoutMs:10}),/preparation timed out before action/);
   await new Promise(resolve=>setTimeout(resolve,100));assert.equal(actions,0);assert.ok(!calls.includes('Page.getFrameTree'));
-  let generation=1;Object.defineProperty(client,'connectionGeneration',{get:()=>generation});client.request=async(method)=>{if(method!=='attach')generation++;return {};};
+  let generation=1;Object.defineProperty(client,'connectionGeneration',{get:()=>generation});Object.defineProperty(client,'isConnected',{value:true});client.request=async(method)=>{if(method!=='attach')generation++;return {};};
   await assert.rejects(tab.expectNavigation(async()=>{actions++},{timeoutMs:500}),/Connection changed during navigation preparation before action/);assert.equal(actions,0);
 });
 
@@ -400,6 +400,20 @@ test('full-page screenshots use content dimensions and enforce size limits', asy
   height=40001;await assert.rejects(tab.getScreenshot({fullPage:true}),/too large/);
   await assert.rejects(tab.getScreenshot({fullPage:true,clip:{x:0,y:0,width:1,height:1}}),/cannot use a clip/);
   assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
+});
+
+test('load state deadline covers preparation and leaves no late listener',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let release,reads=0;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async(method,params)=>{if(method==='attach')return {};if(params.method==='Page.enable')await new Promise(resolve=>{release=resolve;});if(params.method==='Runtime.evaluate')reads++;return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);await assert.rejects(tab.waitForLoadState({timeoutMs:10}),/Timed out waiting for load/);assert.equal(handlers.size,1);
+  release();await new Promise(resolve=>setImmediate(resolve));assert.equal(handlers.size,1);assert.equal(reads,0);
+  client.request=async(method,params)=>{if(method==='attach')return {};if(params.method==='Runtime.evaluate')return await new Promise(resolve=>{release=resolve;});return {};};
+  await assert.rejects(tab.waitForLoadState({timeoutMs:10}),/Timed out waiting for load/);assert.equal(handlers.size,1);release({result:{value:{readyState:'complete'}}});
+  client.request=async(method,params)=>method==='attach' ? {} : params.method==='Runtime.evaluate' ? {result:{value:{readyState:'complete'}}} : {};
+  await tab.waitForLoadState({timeoutMs:0});await assert.rejects(tab.waitForLoadState({timeoutMs:-1}),/Invalid load state timeout/);
+  let generation=1;Object.defineProperty(client,'connectionGeneration',{get:()=>generation});Object.defineProperty(client,'isConnected',{value:true});client.request=async(method)=>{if(method!=='attach')generation++;return {};};
+  await assert.rejects(tab.waitForLoadState({timeoutMs:500}),/Connection changed while preparing load state wait/);
 });
 
 test('waitForURL bounds a stalled read without retrying it',async()=>{

@@ -108,6 +108,7 @@ export class OpenBrowserUseClient {
     #disconnectHandlers = new Set();
     #generation = 0;
     get connectionGeneration() { return this.#generation; }
+    get isConnected() { return this.#socket !== null && this.#connection === null; }
     constructor(options) {
         this.socketPath = options.socketPath;
         this.sessionId = options.sessionId ?? "open-browser-use-js";
@@ -773,13 +774,15 @@ export class OpenBrowserUseTab {
         assertSupportedLoadState(waitUntil);
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid navigation timeout");
-        const deadline = performance.now() + timeoutMs, generation = this.browser.client.connectionGeneration;
+        const deadline = performance.now() + timeoutMs;
+        let generation = this.browser.client.isConnected ? this.browser.client.connectionGeneration : undefined;
         let stopped = false, preflightTimer;
         const ensureReady = () => {
             if (stopped || performance.now() >= deadline)
                 throw new Error("Navigation preparation timed out before action");
-            if (generation !== this.browser.client.connectionGeneration)
+            if (generation !== undefined && generation !== this.browser.client.connectionGeneration)
                 throw new Error("Connection changed during navigation preparation before action");
+            generation = this.browser.client.connectionGeneration;
         };
         let tree;
         try {
@@ -3198,7 +3201,8 @@ export class OpenBrowserUseTabPlaywright {
         const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid popup timeout");
-        const release = this.tab.browser.beginPopupWait(this.tab.id), deadline = performance.now() + timeoutMs, generation = this.tab.browser.client.connectionGeneration;
+        const release = this.tab.browser.beginPopupWait(this.tab.id), deadline = performance.now() + timeoutMs;
+        let generation = this.tab.browser.client.isConnected ? this.tab.browser.client.connectionGeneration : undefined;
         try {
             let preflightTimer;
             let baseline;
@@ -3209,8 +3213,9 @@ export class OpenBrowserUseTabPlaywright {
                 if (preflightTimer)
                     clearTimeout(preflightTimer);
             }
-            if (generation !== this.tab.browser.client.connectionGeneration)
+            if (generation !== undefined && generation !== this.tab.browser.client.connectionGeneration)
                 throw new Error("Connection changed during popup preparation before action");
+            generation = this.tab.browser.client.connectionGeneration;
             if (!baseline.some(item => item.id === String(this.tab.id)))
                 throw new Error("Opener is outside this browser session");
             const remaining = deadline - performance.now();
@@ -4298,20 +4303,37 @@ export class OpenBrowserUseCdp {
         }
     }
     async waitForLoadState(tabId, options = {}) {
-        const state = options.state ?? "load";
+        const state = options.state ?? "load", timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
         assertSupportedLoadState(state);
-        await this.call(tabId, "Page.enable");
-        const controller = new AbortController();
-        const wait = this.waitForLoadEvent(tabId, state, options.timeoutMs ?? defaultNavigationTimeoutMs, controller.signal);
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+            throw new Error("Invalid load state timeout");
+        const timedOut = () => new Error(`Timed out waiting for ${state} in tab ${tabId}`);
+        if (timeoutMs === 0) {
+            if (!documentStateMatches(await this.readDocumentState(tabId), state))
+                throw timedOut();
+            return;
+        }
+        const deadline = performance.now() + timeoutMs, generation = this.client.isConnected ? this.client.connectionGeneration : undefined, controller = new AbortController();
+        let timer;
         try {
-            const ready = await Promise.race([
-                wait.then(() => true),
-                this.readDocumentState(tabId).then(documentState => documentStateMatches(documentState, state))
-            ]);
-            if (!ready)
-                await wait;
+            const work = (async () => {
+                await this.call(tabId, "Page.enable");
+                if (controller.signal.aborted || performance.now() >= deadline)
+                    throw timedOut();
+                if (generation !== undefined && generation !== this.client.connectionGeneration)
+                    throw new Error("Connection changed while preparing load state wait");
+                const wait = this.waitForLoadEvent(tabId, state, deadline - performance.now(), controller.signal);
+                const ready = await Promise.race([wait.then(() => true), this.readDocumentState(tabId).then(value => documentStateMatches(value, state))]);
+                if (!ready)
+                    await wait;
+            })();
+            await Promise.race([work, new Promise((_, reject) => { timer = setTimeout(() => reject(timedOut()), Math.max(0, deadline - performance.now())); })]);
+            if (performance.now() >= deadline)
+                throw timedOut();
         }
         finally {
+            if (timer)
+                clearTimeout(timer);
             controller.abort();
         }
     }

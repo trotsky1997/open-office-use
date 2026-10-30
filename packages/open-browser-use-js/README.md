@@ -604,6 +604,11 @@ checks once. URLs are sampled roughly every 100 ms, so transient intermediate
 URLs can be missed. Positive timeouts bound each browser read; a read already
 issued can finish later. A zero-timeout single check waits for its browser read.
 
+`waitForLoadState({state, timeoutMs})` includes setup and state reads in a
+positive timeout and removes its event listener on timeout. With `timeoutMs: 0`
+it checks the current state once and waits for that read to finish. A read
+already issued can complete after a positive timeout.
+
 To observe navigation triggered by an action, register the wait before the
 action runs:
 

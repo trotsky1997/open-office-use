@@ -158,6 +158,7 @@ export declare class OpenBrowserUseClient {
     readonly turnId: string;
     readonly timeoutMs: number;
     get connectionGeneration(): number;
+    get isConnected(): boolean;
     constructor(options: OpenBrowserUseClientOptions);
     connect(): Promise<this>;
     close(): void;
