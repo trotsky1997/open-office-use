@@ -515,6 +515,9 @@ export declare class OpenBrowserUseCssLocator {
         state: "attached" | "detached" | "visible" | "hidden";
         timeoutMs?: number;
     }): Promise<void>;
+    downloadMedia(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
     click(options?: LocatorClickOptions): Promise<void>;
     dblclick(options?: LocatorClickOptions): Promise<void>;
     hover(options?: {
@@ -616,6 +619,9 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<string | null>;
     private perform;
+    downloadMedia(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
     click(options?: LocatorClickOptions): Promise<void>;
     dblclick(options?: LocatorClickOptions): Promise<void>;
     hover(options?: {

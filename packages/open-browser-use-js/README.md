@@ -860,6 +860,16 @@ await tab.playwright.getByRole("link", {name: "Download", exact: true}).click();
 const download = await waiting;
 ```
 
+`locator.downloadMedia()` triggers a download from the first match's image,
+video, audio, source, or link URL. Register the download wait first, as above;
+replace the click with `await locator.downloadMedia()`. The trigger uses a
+synthetic anchor, and the browser can block automatic downloads. HTTP(S) media
+must be same-origin; cross-origin URLs are rejected because the browser may
+ignore the download attribute. Blob and data URLs are accepted; redirects remain
+subject to browser behavior.
+A returned trigger does not guarantee a completed download: await the download
+event and its path, and inspect the result before retrying after an error.
+
 SDK CDP page operations issued after `waitForEvent` wait for registration confirmation;
 registration failure rejects those pending commands. Direct low-level client
 requests and actions outside this SDK do not use that barrier. Attach a rejection

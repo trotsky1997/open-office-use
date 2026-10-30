@@ -1247,6 +1247,46 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
+    async triggerMediaDownload(backendNodeId, frame, verify) {
+        const sessionId = frame.sessionId;
+        const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "open-browser-use-selector" }, { sessionId });
+        if (!isObject(world) || typeof world.executionContextId !== "number")
+            throw new RetryablePreflightError("Selector context is unavailable; observe again");
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId, executionContextId: world.executionContextId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string")
+            throw new RetryablePreflightError("Download target is unavailable; observe again");
+        try {
+            await verify();
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, userGesture: true, functionDeclaration: `function() {
+        if (!this.isConnected) return 'stale';
+        const element=this.nodeType===3 ? this.parentElement : this;
+        const target=element?.closest?.('img,video,audio,source,a[href]') ?? element?.querySelector?.('img,video,audio,source,a[href]');
+        const value=target?.currentSrc || target?.src || target?.href;
+        if (!value) return 'missing';
+        let url;try {url=new URL(value,document.baseURI)} catch {return 'invalid'}
+        if (!['http:','https:','blob:','data:'].includes(url.protocol)) return 'invalid';
+        if (['http:','https:'].includes(url.protocol) && url.origin!==location.origin) return 'cross-origin';
+        const anchor=document.createElement('a');anchor.href=url.href;anchor.download='';anchor.rel='noopener';anchor.style.display='none';document.documentElement.append(anchor);
+        try {anchor.click()} finally {anchor.remove()};return 'ok';
+      }` }, { sessionId });
+            const value = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (value === 'stale')
+                throw new RetryablePreflightError("Download target changed; observe again");
+            if (value === 'missing')
+                throw new Error("Target does not expose a media URL");
+            if (value === 'invalid')
+                throw new Error("Invalid media URL");
+            if (value === 'cross-origin')
+                throw new Error("Cross-origin media downloads are not supported");
+            if (value !== 'ok')
+                throw new Error("Media download outcome is unknown");
+        }
+        finally {
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+        }
+    }
+    /** @internal */
     async locatorRead(snapshotId, index, mode, attribute = "") {
         const observation = this.#observation;
         if (!observation || observation.id !== snapshotId)
@@ -2760,6 +2800,10 @@ export class OpenBrowserUseCssLocator {
             await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
         }
     }
+    downloadMedia(options = {}) {
+        return this.first().perform(async (snapshot, id) => { if (!snapshot.frame)
+            throw new RetryablePreflightError("Download target is unavailable; observe again"); await this.tab.triggerMediaDownload(id, snapshot.frame, () => this.tab.readCss(snapshot, id, "attribute", "src")); }, options.timeoutMs);
+    }
     click(options = {}) { const mouse = locatorClickOptions(options); return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, undefined, undefined, false, mouse); }, options.timeoutMs); }
     dblclick(options = {}) { const mouse = locatorClickOptions(options); return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, true, undefined, undefined, false, mouse); }, options.timeoutMs); }
     hover(options = {}) { return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, true); }, options.timeoutMs); }
@@ -3115,6 +3159,16 @@ export class OpenBrowserUseRoleLocator {
                 throw lastError;
             await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
         }
+    }
+    async downloadMedia(options = {}) {
+        const locator = this.first();
+        await locator.perform(async (node, id) => {
+            const observation = this.tab.currentObservation(id), target = observation.nodes.find(item => item.index === node.index);
+            const frame = observation.frames?.find(item => item.id === (target?.frameId ?? observation.frames?.[0]?.id));
+            if (!target || !frame)
+                throw new RetryablePreflightError("Download target is unavailable; observe again");
+            await this.tab.triggerMediaDownload(target.backendNodeId, frame, () => this.tab.locatorRead(id, node.index, "attribute", "src"));
+        }, options.timeoutMs);
     }
     async click(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id) => this.tab.click(node.index, id, mouse), options.timeoutMs); }
     async dblclick(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id) => this.tab.dblclick(node.index, id, mouse), options.timeoutMs); }

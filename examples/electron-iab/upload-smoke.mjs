@@ -59,6 +59,9 @@ app.whenReady().then(async()=>{
     const downloadWait=sdk.playwright.waitForEvent("download",{timeoutMs:20000});void downloadWait.catch(()=>{});
     await sdk.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});
     const download=await downloadWait, downloadPath=await download.path(20000);assert.equal(download.url,fixture.url+'/download-fixture');assert.ok(downloadPath);assert.equal(readFileSync(downloadPath,'utf8'),'isolated download fixture');
+    for(const locator of [sdk.playwright.locator('#fixture-download'),sdk.playwright.getByRole('link',{name:'Download fixture',exact:true})]) {const waiting=sdk.playwright.waitForEvent('download',{timeoutMs:20000});void waiting.catch(()=>{});await locator.downloadMedia();const media=await waiting;assert.equal(readFileSync(await media.path(20000),'utf8'),'isolated download fixture');}
+    await sdk.evaluate(`(()=>{const img=document.createElement('img');img.alt='Media fixture';img.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';document.body.append(img)})()`);
+    const imageWait=sdk.playwright.waitForEvent('download',{timeoutMs:20000});void imageWait.catch(()=>{});await sdk.playwright.getByRole('img',{name:'Media fixture',exact:true}).downloadMedia();assert.equal(readFileSync(await (await imageWait).path(20000)).subarray(0,6).toString(),'GIF89a');
     await scope.downloads.configure({directory:root,maxBytes:1});
     const limitReady=await sdk.prepareDownload({timeoutMs:20000}),limitedWait=limitReady.wait();void limitedWait.catch(()=>{});
     await sdk.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});
@@ -119,6 +122,9 @@ app.whenReady().then(async()=>{
     const selected=await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:"Array.from(document.querySelector('#child-upload').files,f=>f.name)",returnByValue:true},{sessionId:session});
     assert.deepEqual(selected.result.value,['fixture.txt']);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(fixture.url+'/download-fixture')};a.textContent='Child download';document.body.prepend(a)})()`},{sessionId:session});
+    await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('a').href='/download-fixture'`},{sessionId:session});
+    const mediaWait=sdk.playwright.waitForEvent('download',{timeoutMs:20000});void mediaWait.catch(()=>{});await crossFrame.getByRole('link',{name:'Child download',exact:true}).downloadMedia();assert.equal(readFileSync(await (await mediaWait).path(20000),'utf8'),'isolated download fixture');
+    await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('a').href=${JSON.stringify(fixture.url+'/download-fixture')}`},{sessionId:session});
     const childDownloadReady=await sdk.prepareDownload({timeoutMs:20000});const childDownloading=childDownloadReady.wait();void childDownloading.catch(()=>{});
     await sdk.playwright.getByRole('link',{name:'Child download',exact:true}).click({timeoutMs:20000});
     const childDownload=await childDownloading,childPath=await childDownload.path(20000);assert.ok(childPath);assert.equal(readFileSync(childPath,'utf8'),'isolated download fixture');
