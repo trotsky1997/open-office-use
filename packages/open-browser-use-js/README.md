@@ -151,6 +151,14 @@ Page-provided accessible names and text can still contain sensitive data.
 The accessibility tree is the raw CDP response. It does not provide stable
 interaction indices or state diffs; request a fresh tree after page changes.
 
+To obtain accessibility text and a screenshot together, call
+`const view = await tab.getAXStateAndScreenshot()` and emit `view.screenshot`
+with `nodeRepl.emitImage(view.screenshot)`. `view.observation` contains the
+indexed targets and snapshot ID. The SDK captures the state and image in
+sequence, then rejects the result if navigation, the frame tree, the connection,
+or the active observation changed during capture. Frame-tree checking applies
+when frames are included. Dynamic content can still change between the two captures.
+
 For indexed interaction, call `observe` immediately before choosing a target:
 
 ```js

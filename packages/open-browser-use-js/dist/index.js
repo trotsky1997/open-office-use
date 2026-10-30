@@ -999,6 +999,26 @@ export class OpenBrowserUseTab {
     getAXState() {
         return this.browser.cdp.call(this.id, "Accessibility.getFullAXTree");
     }
+    async getAXStateAndScreenshot(options = {}) {
+        if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["diff", "includeFrames", "includeValues", "includeText"].includes(key)) || Object.values(options).some(value => value !== undefined && typeof value !== "boolean"))
+            throw new Error("Invalid observation options");
+        const observation = await this.observe({ diff: options.diff ?? false, includeFrames: options.includeFrames ?? true, includeValues: options.includeValues ?? false, includeText: options.includeText ?? true }), snapshot = this.currentObservation(observation.snapshotId), generation = this.browser.client.connectionGeneration;
+        try {
+            const screenshot = new OpenBrowserUseImage(await this.getScreenshot());
+            if (this.currentObservation(observation.snapshotId) !== snapshot || this.browser.client.connectionGeneration !== generation || await this.documentId() !== snapshot.documentId || (snapshot.frames && JSON.stringify(await this.frameTree()) !== JSON.stringify(snapshot.frames)))
+                throw new Error("Page changed while capturing observation; observe again");
+            if (this.currentObservation(observation.snapshotId) !== snapshot || this.browser.client.connectionGeneration !== generation)
+                throw new Error("Observation changed during capture; observe again");
+            return { state: observation.text, screenshot, observation };
+        }
+        catch (error) {
+            if (this.#observation === snapshot) {
+                this.#observation = undefined;
+                this.#lastText = undefined;
+            }
+            throw error;
+        }
+    }
     async observe(options = {}) {
         this.#observation = undefined;
         const documentId = await this.documentId();

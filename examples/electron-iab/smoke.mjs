@@ -104,6 +104,16 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.match(changedState.text, /\+ .*"2"/);
   check('SDK observation: indexed trusted click and stale snapshot rejection');
 
+  const combined=await sdkTab.getAXStateAndScreenshot();assert.match(combined.state,/加 1/);assert.ok(combined.screenshot instanceof Uint8Array);assert.deepEqual([...combined.screenshot.slice(0,8)],[137,80,78,71,13,10,26,10]);assert.ok(sdkTab.currentObservation(combined.observation.snapshotId));
+  const originalScreenshot=sdkTab.getScreenshot.bind(sdkTab);let unblockCombined,startedCombined;const combinedStarted=new Promise(resolve=>{startedCombined=resolve});
+  sdkTab.getScreenshot=async (...args)=>{await new Promise(resolve=>{unblockCombined=resolve;startedCombined();});return originalScreenshot(...args);};
+  try {const pending=sdkTab.getAXStateAndScreenshot();await combinedStarted;const newer=await sdkTab.observe({includeFrames:true,includeText:true});unblockCombined();await assert.rejects(pending,/stale|changed/i);assert.ok(sdkTab.currentObservation(newer.snapshotId));}
+  finally {unblockCombined?.();sdkTab.getScreenshot=originalScreenshot;}
+  sdkTab.getScreenshot=async()=>{throw new Error('capture failed');};
+  try {await assert.rejects(sdkTab.getAXStateAndScreenshot(),/capture failed/);const fresh=await sdkTab.observe({includeFrames:true,includeText:true,diff:true});assert.equal(fresh.textMode,'full');}
+  finally {sdkTab.getScreenshot=originalScreenshot;}
+  check('SDK combined observation: screenshot and superseded snapshot');
+
   await evaluate(a.id,"window.readOnlyProbe=0;document.querySelector('#increment').addEventListener('click',()=>window.readOnlyProbe++)");
   assert.equal(await sdkTab.playwright.evaluate(()=>document.querySelector('#increment').id),'increment');
   for(const expression of ["window.readOnlyProbe=9","document.querySelector('#increment').click()","Promise.resolve().then(()=>{window.readOnlyProbe=9})"])await assert.rejects(sdkTab.playwright.evaluate(expression),/side.effect/i);

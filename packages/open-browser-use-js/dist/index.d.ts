@@ -368,6 +368,16 @@ export declare class OpenBrowserUseTab {
     }): Promise<void>;
     domSnapshot(): Promise<string>;
     getAXState(): Promise<JsonValue>;
+    getAXStateAndScreenshot(options?: {
+        diff?: boolean;
+        includeFrames?: boolean;
+        includeValues?: boolean;
+        includeText?: boolean;
+    }): Promise<{
+        state: string;
+        screenshot: OpenBrowserUseImage;
+        observation: InteractiveState;
+    }>;
     observe(options?: {
         diff?: boolean;
         includeFrames?: boolean;
