@@ -225,3 +225,26 @@ test('discovered session tabs record their current owner',async()=>{
   try{const tabs=await backend.getSessionTabs('owner');assert.equal(tabs.length,1);assert.equal(backend.sessionByTabId.get(7),'owner');assert.equal(backend.sessionByTabId.has(8),false);}
   finally{chrome.tabs=previous;}
 });
+
+test('moving a tab revokes previous ownership and pending waits',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};backend.store.state.sessions.b={chromeGroupId:2};
+  backend.sessionByTabId.set(7,'a');backend.debuggerSessionByTabId.set(7,'a');let lost;backend.ownershipLostListeners.add((tabId,session)=>{lost={tabId,session};});
+  const controller=new AbortController();backend.downloadStartWait={tabId:7,sessionId:'a',controller};backend.fileChoosersById.set('chooser',{tabId:7});
+  backend.handleTabGroupChange(7,2);assert.deepEqual(lost,{tabId:7,session:'a'});assert.equal(backend.sessionByTabId.get(7),'b');assert.equal(backend.debuggerSessionByTabId.has(7),false);assert.equal(controller.signal.aborted,true);assert.equal(backend.fileChoosersById.has('chooser'),false);
+});
+
+test('delayed group query cannot restore stale tab ownership',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};backend.store.state.sessions.b={chromeGroupId:2};backend.sessionByTabId.set(7,'a');
+  let release;const previous=chrome.tabs;chrome.tabs={query:async()=>await new Promise(resolve=>{release=resolve;})};
+  try{const pending=backend.getSessionTabs('a');while(!release)await new Promise(resolve=>setImmediate(resolve));backend.handleTabGroupChange(7,2);release([{id:7,url:'https://example.test/'}]);assert.equal((await pending).length,0);assert.equal(backend.sessionByTabId.get(7),'b');}
+  finally{chrome.tabs=previous;}
+});
+
+test('ungrouping distinguishes tab closure from ownership loss',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};let release;const previous=chrome.tabs;chrome.tabs={get:async()=>await new Promise(resolve=>{release=resolve;})};const lost=[];backend.ownershipLostListeners.add((tab,session)=>lost.push({tab,session}));
+  try {
+    backend.sessionByTabId.set(7,'a');backend.handleTabGroupChange(7,-1);assert.equal(backend.takeClosedOwner(7),'a');release({id:7,groupId:-1});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(lost,[]);
+    backend.sessionByTabId.set(8,'a');backend.handleTabGroupChange(8,-1);release({id:8,groupId:-1});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(lost,[{tab:8,session:'a'}]);assert.equal(backend.takeClosedOwner(8),undefined);
+    backend.sessionByTabId.set(9,'a');backend.handleTabGroupChange(9,-1);backend.handleTabGroupChange(9,1);release({id:9,groupId:1});await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(lost,[{tab:8,session:'a'},{tab:9,session:'a'}]);assert.equal(backend.sessionByTabId.get(9),'a');
+  } finally{chrome.tabs=previous;}
+});

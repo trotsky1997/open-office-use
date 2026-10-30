@@ -1865,3 +1865,11 @@ test('CDP cancellation interrupts pending preparation and attachment',async()=>{
   const second=new AbortController(),waiting=browser.cdp.call(1,'Input.insertText',{text:'late'},{signal:second.signal});
   while(!releaseAttach)await new Promise(resolve=>setImmediate(resolve));second.abort();await assert.rejects(waiting,/cancelled before dispatch/);releaseAttach();await new Promise(resolve=>setImmediate(resolve));assert.equal(commands,0);
 });
+
+test('tab ownership loss interrupts event waits',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),browser=new OpenBrowserUseBrowser({client}),handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return()=>handlers.delete(handler);};client.onDisconnect=()=>()=>{};
+  const waiting=browser.cdp.waitForEvent(7,()=>false,{timeoutMs:1000});
+  for(const handler of handlers)handler({method:'onTabOwnershipLost',params:{tabId:7}});
+  await assert.rejects(waiting,/ownership changed/);assert.equal(handlers.size,0);
+});

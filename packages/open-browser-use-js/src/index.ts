@@ -3741,7 +3741,7 @@ export class OpenBrowserUseCdp {
     this.client = client;
     client.onDisconnect(() => this.#logs.clear());
     client.onNotification(notification => {
-      if (["onDebuggerDetach","onTabClosed"].includes(notification.method) && isObject(notification.params) && typeof notification.params.tabId === "number") {
+      if (["onDebuggerDetach","onTabClosed","onTabOwnershipLost"].includes(notification.method) && isObject(notification.params) && typeof notification.params.tabId === "number") {
         const tabId = notification.params.tabId;
         this.#frames.get(tabId)?.clear();
         this.#frames.delete(tabId);
@@ -4067,8 +4067,8 @@ export class OpenBrowserUseCdp {
       removeDisconnect = this.client.onDisconnect(error => { if (finish()) reject(error); });
       removeHandler = this.client.onNotification((notification) => {
         try {
-          if (["onTabClosed", "onDebuggerDetach"].includes(notification.method) && isObject(notification.params) && notification.params.tabId === tabId) {
-            throw new Error(`Tab ${tabId} ${notification.method === "onTabClosed" ? "closed" : "debugger detached"}`);
+          if (["onTabClosed", "onDebuggerDetach", "onTabOwnershipLost"].includes(notification.method) && isObject(notification.params) && notification.params.tabId === tabId) {
+            throw new Error(`Tab ${tabId} ${notification.method === "onTabClosed" ? "closed" : notification.method === "onTabOwnershipLost" ? "ownership changed" : "debugger detached"}`);
           }
           if (predicate(notification)) {
             if (finish()) {

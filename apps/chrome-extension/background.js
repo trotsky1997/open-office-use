@@ -319,6 +319,10 @@ class BrowserBackend {
     this.attachedTabs = new Set();
     this.debuggerSessionByTabId = new Map();
     this.sessionByTabId = new Map();
+    this.groupRevision = 0;
+    this.tabGroupRevisions = new Map();
+    this.pendingUngrouped = new Map();
+    this.ownershipLostListeners = new Set();
     this.activeTabsBySession = new Map();
     this.cursorByTabId = new Map();
     this.downloadFilenamesById = new Map();
@@ -344,8 +348,40 @@ class BrowserBackend {
       }
     });
     chrome.tabs?.onRemoved?.addListener((tabId) => {
+      this.tabGroupRevisions.set(tabId, ++this.groupRevision);
       if (this.downloadStartWait?.tabId === tabId) this.downloadStartWait.controller.abort();
     });
+    chrome.tabs?.onUpdated?.addListener((tabId, change) => {
+      if (typeof change.groupId === "number") this.handleTabGroupChange(tabId, change.groupId);
+    });
+  }
+
+  handleTabGroupChange(tabId, groupId) {
+    this.tabGroupRevisions.set(tabId, ++this.groupRevision);
+    const owner = Object.entries(this.store.state.sessions).find(([,session]) => session?.chromeGroupId === groupId && groupId !== -1)?.[0];
+    const ungrouped = this.pendingUngrouped.get(tabId);
+    const previous = this.sessionByTabId.get(tabId) ?? this.debuggerSessionByTabId.get(tabId) ?? ungrouped?.sessionId;
+    if (groupId !== -1) this.pendingUngrouped.delete(tabId);
+    if (owner) this.sessionByTabId.set(tabId, owner); else this.sessionByTabId.delete(tabId);
+    if (!previous || (previous === owner && !ungrouped)) return;
+    this.debuggerSessionByTabId.delete(tabId);
+    if (this.downloadStartWait?.tabId === tabId) this.downloadStartWait.controller.abort();
+    this.invalidateFileChoosers(tabId);
+    this.fileChooserWaitersByTabId.get(tabId)?.reject(new Error("Tab ownership changed"));
+    const notify = () => { for (const listener of this.ownershipLostListeners) listener(tabId, previous); };
+    if (groupId !== -1) { notify(); return; }
+    const pending = {sessionId:previous}; this.pendingUngrouped.set(tabId, pending);
+    void chrome.tabs.get(tabId).then(() => {
+      if (this.pendingUngrouped.get(tabId) === pending) { this.pendingUngrouped.delete(tabId); notify(); }
+    }, () => {
+      setTimeout(() => { if (this.pendingUngrouped.get(tabId) === pending) this.pendingUngrouped.delete(tabId); }, 1000);
+    });
+  }
+
+  takeClosedOwner(tabId) {
+    const owner = this.sessionByTabId.get(tabId) ?? this.pendingUngrouped.get(tabId)?.sessionId;
+    this.sessionByTabId.delete(tabId); this.pendingUngrouped.delete(tabId);
+    return owner;
   }
 
   ping() {
@@ -633,6 +669,7 @@ class BrowserBackend {
         : DEFAULT_CDP_TIMEOUT_MS;
     return await withTimeout(timeoutMs, async () => {
       if (signal?.aborted) throw new Error("Command cancelled before dispatch");
+      if (typeof tabId === "number" && this.sessionByTabId.get(tabId) !== params.session_id) throw new Error("Tab ownership changed");
       if (params.method === "Target.getTargets") {
         return { targetInfos: await chrome.debugger.getTargets() };
       }
@@ -1247,8 +1284,9 @@ class BrowserBackend {
       return [];
     }
     try {
+      const revision = this.groupRevision;
       const tabs = (await chrome.tabs.query({ groupId: session.chromeGroupId })).filter(
-        (tab) => hasTabId(tab) && !tab.url?.startsWith("chrome://")
+        (tab) => hasTabId(tab) && !tab.url?.startsWith("chrome://") && (this.tabGroupRevisions.get(tab.id) ?? 0) <= revision
       );
       for (const tab of tabs) this.sessionByTabId.set(tab.id, sessionId);
       return tabs;
@@ -1730,10 +1768,12 @@ chrome.debugger.onDetach.addListener((source) => {
     backend.debuggerSessionByTabId.delete(source.tabId);
   }
 });
+backend.ownershipLostListeners.add((tabId, sessionId) => {
+  safeSendNotification(peer, "onTabOwnershipLost", {tabId}, sessionId);
+});
 chrome.tabs?.onRemoved?.addListener((tabId) => {
-  const sessionId = backend.sessionByTabId.get(tabId);
+  const sessionId = backend.takeClosedOwner(tabId);
   if (sessionId) safeSendNotification(peer, "onTabClosed", {tabId}, sessionId);
-  backend.sessionByTabId.delete(tabId);
 });
 backend.downloadReadyListeners.add((waitId, sessionId) => {
   if (sessionId) safeSendNotification(peer, "onDownloadWaitReady", { waitId }, sessionId);
