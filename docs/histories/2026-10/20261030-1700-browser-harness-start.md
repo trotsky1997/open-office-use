@@ -508,3 +508,5 @@ CSS 和语义定位器的 press 正数期限覆盖准备、聚焦和按键；聚
 CSS 与语义 locator 的 fill、clear 和 type 正数期限覆盖准备、聚焦、全选、文本写入与日期字段派发；超时停止后续输入并尝试释放已按下的键。SDK 104 项检查通过；macOS Electron 实页验证全选响应延迟后无迟到写入及恢复。Linux 和 Windows 本轮未验证。
 
 CSS 与语义 locator 的 selectOption 正数期限覆盖选项检查和提交；超时停止迟到提交，已开始提交时报结果未知，并保留正常返回值。SDK 105 项检查通过，macOS Electron 实页验证取消后不改变选项及恢复后正常选择。Linux 和 Windows 本轮未验证。
+
+Linux ARM64 Chromium 150 隔离 profile 的扩展、原生消息 host 和 SDK 实测 CSS/语义 locator 的 fill、press、check 和 selectOption：延迟准备或提交后超时无迟到修改，恢复后正常操作并返回选中值；跨进程 frame 另验证 press 超时后无迟到按键及后续 fill。Windows 未测。

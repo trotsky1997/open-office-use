@@ -119,3 +119,4 @@
 - [x] CSS 和语义 locator 的 press 正数期限覆盖准备、聚焦与按键；超时停止后续按键并释放已按下按键。macOS Electron 实页验证延迟聚焦后无迟到输入。
 - [x] CSS 与语义 locator 的 fill、clear、type 正数期限覆盖准备与写入；已派发时报告结果未知。macOS Electron 实页验证全选延迟后无迟到文本。
 - [x] CSS 与语义 locator 的 selectOption 正数期限覆盖准备与提交；macOS Electron 实页验证迟到提交被取消及正常结果。
+- [x] Linux ARM64 Chromium 150 原生消息链路验证 CSS 与语义 locator 的 fill、press、check、selectOption 期限及恢复；跨进程 frame 验证 press 超时与后续 fill。
