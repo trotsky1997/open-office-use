@@ -189,6 +189,7 @@ def main():
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
     session_chart_scan = sub.add_parser('scan-chart-caches'); session_chart_scan.add_argument('directory'); session_chart_scan.add_argument('--revision', type=int, required=True)
+    session_chart_sync = sub.add_parser('sync-chart-cache'); session_chart_sync.add_argument('directory'); session_chart_sync.add_argument('--base', type=int, required=True); session_chart_sync.add_argument('--part', required=True); session_chart_sync.add_argument('--reference', type=int, required=True); session_chart_sync.add_argument('--allow-formula-caches', action='store_true')
     session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     restore = sub.add_parser('restore'); restore.add_argument('directory'); restore.add_argument('--base', type=int, required=True); restore.add_argument('--revision', type=int, required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
@@ -258,6 +259,8 @@ def main():
                 result = session.scan_formulas(args.directory, args.base)
             elif args.action == 'scan-chart-caches':
                 result = session.scan_chart_caches(args.directory, args.revision)
+            elif args.action == 'sync-chart-cache':
+                result = session.sync_chart_cache(args.directory, args.base, args.part, args.reference, args.allow_formula_caches)
             elif args.action == 'inspect-workbook':
                 result = session.inspect_workbook(args.directory, args.revision)
             elif args.action == 'restore':

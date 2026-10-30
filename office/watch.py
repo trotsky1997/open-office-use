@@ -92,8 +92,8 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
 <p id="formula-status" role="status"></p><pre id="formula-scan-output"></pre></details>
 <details id="chart-cache-panel" hidden><summary>Chart cache checks</summary>
-<p>Compare supported chart caches with stored worksheet values. Formula caches may be stale; inspect chart rendering and unverified sources separately.</p>
-<button type="button" id="chart-cache-scan">Check displayed revision</button><p id="chart-cache-status" role="status"></p><pre id="chart-cache-output"></pre></details>
+<p>Compare supported chart caches with stored worksheet values. Sync affects every placement sharing a chart part. Formula caches may be stale; inspect chart rendering and unverified sources separately.</p>
+<button type="button" id="chart-cache-scan">Check displayed revision</button><p id="chart-cache-status" role="status"></p><ul id="chart-cache-actions"></ul><pre id="chart-cache-output"></pre></details>
 <details id="workbook-panel" hidden><summary>Workbook overview</summary>
 <p>Inspect a bounded sample of stored cells in each worksheet. Numbers and dates can be raw stored values; use a cell range for detailed reads.</p>
 <button type="button" id="workbook-load">Inspect displayed revision</button><p id="workbook-status" role="status"></p><div id="workbook-results"></div></details>
@@ -593,18 +593,34 @@ function clearWorkbookFor(revision) {
  if (workbookRevision!==null && workbookRevision!==revision) { workbookEpoch++; workbookRevision=null; document.getElementById('workbook-status').textContent=''; document.getElementById('workbook-results').replaceChildren(); }
 }
 function clearChartCacheFor(revision) {
- if (chartCacheRevision!==null && chartCacheRevision!==revision) { chartCacheEpoch++; chartCacheRevision=null; document.getElementById('chart-cache-status').textContent=''; document.getElementById('chart-cache-output').textContent=''; }
+ if (chartCacheRevision!==null && chartCacheRevision!==revision) { chartCacheEpoch++; chartCacheRevision=null; document.getElementById('chart-cache-status').textContent=''; document.getElementById('chart-cache-output').textContent=''; document.getElementById('chart-cache-actions').replaceChildren(); }
 }
 document.getElementById('chart-cache-scan').addEventListener('click', async () => {
  if (displayed<0) return;
  const revision=displayed, epoch=++chartCacheEpoch, button=document.getElementById('chart-cache-scan'), status=document.getElementById('chart-cache-status');
- chartCacheRevision=revision; button.disabled=true; document.getElementById('chart-cache-output').textContent=''; status.textContent=`Checking revision ${revision}…`;
+ chartCacheRevision=revision; button.disabled=true; document.getElementById('chart-cache-output').textContent=''; document.getElementById('chart-cache-actions').replaceChildren(); status.textContent=`Checking revision ${revision}…`;
  try {
   const response=await fetch('chart-cache-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Chart cache check failed');
   if (epoch!==chartCacheEpoch || displayed!==revision) return;
   status.textContent=`Revision ${revision}: ${result.chart_parts_total} chart part(s), ${result.mismatch_references} mismatch candidate(s), ${result.missing_caches} missing cache(s), ${result.unverified_references} unverified reference(s). ${result.complete ? 'Supported checks completed.' : 'Coverage incomplete.'}`;
   document.getElementById('chart-cache-output').textContent=JSON.stringify(result, null, 2);
+  const list=document.getElementById('chart-cache-actions');
+  for (const chart of result.charts) for (const ref of chart.references) {
+   if (ref.status!=='mismatch' || ref.unverified_points || ref.mismatches_truncated || ref.mismatches.some(m=>m.reason!=='value_differs') || chart.external_data || chart.extensions_present) continue;
+   const row=document.createElement('li'); row.appendChild(document.createTextNode(`${chart.part} · reference ${ref.index} · ${ref.formula} · ${ref.mismatch_count} mismatch(es) `));
+   const sync=document.createElement('button'); sync.type='button'; sync.textContent='Sync cache as new revision'; sync.disabled=revision!==current || pinned!==null;
+   sync.addEventListener('click', async () => {
+    if (revision!==current || pinned!==null || displayed!==revision || chartCacheRevision!==revision) { status.textContent='Version changed; check the latest revision again.'; return; }
+    sync.disabled=true; button.disabled=true; status.textContent='Syncing stored values into this chart cache…';
+    try {
+     const response=await fetch('chart-cache-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part:chart.part,reference:ref.index})});
+     const saved=await response.json(); if (!response.ok) throw new Error(saved.error || 'Cache sync failed');
+     list.replaceChildren(); await refresh(); status.textContent=`Synced ${saved.updated_points} point(s) as revision ${saved.revision}. Recheck the chart and render.`;
+    } catch(error) { status.textContent=`Chart cache sync error: ${error.message}`; if (revision===current && pinned===null && displayed===revision) sync.disabled=false; }
+    finally {button.disabled=false;}
+   }); row.appendChild(sync); list.appendChild(row);
+  }
  } catch(error) { if (epoch===chartCacheEpoch) status.textContent=`Chart cache error: ${error.message}`; }
  finally {button.disabled=false;}
 });
@@ -765,6 +781,7 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
 });
 function display(state, live) {
  clearChartCacheFor(state.revision);
+ if (!live) document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
  clearWorkbookFor(state.revision);
  clearStoriesFor(state.revision);
  if (!live) document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
@@ -792,6 +809,7 @@ function display(state, live) {
 }
 function displayComparison(state) {
  clearChartCacheFor(state.revision);
+ document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
  clearWorkbookFor(state.revision);
  clearStoriesFor(state.revision);
  document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
@@ -984,7 +1002,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/chart-cache-scan', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1082,7 +1100,10 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Selection changed; select the current page again')
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
                     with lock:
-                        if route.endswith('/notes-replace-text'):
+                        if route.endswith('/chart-cache-sync'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'part', 'reference'}: raise ValueError('Chart cache sync requires revision, part and reference')
+                            saved = session.sync_chart_cache(directory, payload['base_revision'], payload['part'], payload['reference'])
+                        elif route.endswith('/notes-replace-text'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'slide', 'paragraph', 'find', 'replacement'}:
                                 raise ValueError('Notes text replacement requires revision, slide, paragraph, find and replacement')
                             saved = session.replace_notes_text(directory, payload['base_revision'], payload['slide'], payload['paragraph'], payload['find'], payload['replacement'])

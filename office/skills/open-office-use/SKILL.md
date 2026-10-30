@@ -20,3 +20,5 @@ For an XLSX overview, use `inspect_file` or `session_inspect_workbook` to obtain
 Range reads use one saved snapshot and have a response size limit; narrow a range on a limit error. Grid cells longer than 4,000 UTF-16 units are read-only; use supported targeted text replacement when appropriate.
 
 After editing XLSX chart source cells, use `scan_chart_caches` or `session_scan_chart_caches` and inspect mismatches, missing caches and coverage. Formula caches may be stale and chart rendering still needs review.
+
+For a supported chart-cache mismatch, `session_sync_chart_cache` updates one reference from saved source values in a new revision. Check formula cache freshness before explicitly opting in to formula sources; rescan and inspect the chart after syncing.

@@ -12,12 +12,15 @@ from openpyxl.utils.cell import get_column_letter, range_boundaries
 from lxml import etree
 
 import ooxml
+import spreadsheet
 
 C = '{http://schemas.openxmlformats.org/drawingml/2006/chart}'
 CT = '{http://schemas.openxmlformats.org/package/2006/content-types}'
 CHART_TYPE = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
 CHARTEX_TYPE = 'application/vnd.ms-office.chartex+xml'
 REFERENCE = re.compile(r"(?:'((?:[^']|'')+)'|([A-Za-z0-9_.]+))!(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})(?::(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}))?\Z")
+ESCAPED = re.compile(r'_x[0-9a-fA-F]{4}_')
+REF_TYPES = (C+'numRef', C+'strRef', C+'multiLvlStrRef', C+'numLit', C+'strLit')
 
 
 def parse_reference(formula):
@@ -69,12 +72,12 @@ def scan(file):
                         if external_data or extensions: complete = False
                         references = []
                         for node in chart.iter():
-                            if node.tag not in (C+'numRef', C+'strRef', C+'multiLvlStrRef', C+'numLit', C+'strLit'): continue
+                            if node.tag not in REF_TYPES: continue
                             if sum(len(item['references']) for item in results) + len(references) >= 100:
                                 complete = False; limit_hit = True; break
                             parent = node.getparent(); role = parent.tag.rsplit('}',1)[-1] if parent is not None else None
                             formula_node = node.find(C+'f'); formula = formula_node.text if formula_node is not None else None
-                            item = {'role': role, 'kind': node.tag.rsplit('}',1)[-1], 'formula': (formula or '')[:500], 'status': 'unverified', 'mismatches': []}
+                            item = {'index': len(references) + 1, 'role': role, 'kind': node.tag.rsplit('}',1)[-1], 'formula': (formula or '')[:500], 'status': 'unverified', 'mismatches': []}
                             references.append(item)
                             if node.tag not in (C+'numRef', C+'strRef'):
                                 item['reason'] = 'unsupported_source'; complete = False; continue
@@ -121,6 +124,7 @@ def scan(file):
                                         except InvalidOperation: unknown += 1; continue
                                 else:
                                     if not isinstance(value, str): unknown += 1; continue
+                                    if ESCAPED.search(value) or cached is not None and ESCAPED.search(cached): unknown += 1; continue
                                     if cached is None: reason = 'missing_point'
                                     elif cached != value: reason = 'value_differs'
                                 compared += 1
@@ -146,3 +150,74 @@ def scan(file):
                 finally: workbook.close()
         except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
             raise ValueError(f'Invalid workbook package: {exc}') from exc
+
+
+def sync(source, output, part, reference, allow_formula_caches=False):
+    """Update existing mismatched cache points from stored worksheet values."""
+    source = Path(source).resolve(strict=True); output = Path(output).absolute()
+    if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx': raise ValueError('Chart cache sync requires XLSX input and output')
+    if not isinstance(part, str) or isinstance(reference, bool) or not isinstance(reference, int) or reference < 1:
+        raise ValueError('Provide a chart part and positive reference index')
+    if not isinstance(allow_formula_caches, bool): raise ValueError('allow_formula_caches must be a boolean')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+    if output.exists() or output.is_symlink(): raise FileExistsError(f'Output already exists: {output}')
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-chart-sync-') as tmp:
+        snapshot = Path(tmp) / 'source.xlsx'; shutil.copyfile(source, snapshot)
+        result = scan(snapshot)
+        matches = [item for item in result['charts'] if item['part'] == part]
+        if len(matches) != 1 or matches[0]['status'] != 'scanned': raise ValueError('Chart part was not available in the bounded scan')
+        chart = matches[0]
+        if chart['external_data'] or chart['extensions_present']: raise ValueError('Chart contains external data or extensions; sync requires separate review')
+        refs = [item for item in chart['references'] if item['index'] == reference]
+        if len(refs) != 1: raise ValueError('Chart reference was not available in the bounded scan')
+        ref = refs[0]
+        if ref['status'] != 'mismatch' or ref.get('unverified_points') != 0:
+            raise ValueError('Chart reference must have a fully comparable mismatch')
+        parsed = parse_reference(ref['formula'])
+        if parsed is None: raise ValueError('Chart source reference is unsupported')
+        sheet, c1, r1, c2, r2 = parsed
+        cell_range = f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}'
+        rows = spreadsheet.read_range(snapshot, sheet, cell_range)['rows']
+        cells = [cell for row in rows for cell in row]
+        formula_count = sum('formula' in cell for cell in cells)
+        if formula_count and not allow_formula_caches:
+            raise ValueError('Source contains formulas; recalculate if appropriate and explicitly allow stored formula caches')
+        updated = 0
+        def edit(tree, archive):
+            nonlocal updated
+            if tree.getroot().tag != C+'chartSpace': raise ValueError('Invalid chart XML')
+            nodes = [node for node in tree.getroot().iter() if node.tag in REF_TYPES]
+            if reference > len(nodes): raise ValueError('Chart reference no longer exists')
+            node = nodes[reference-1]
+            if node.tag not in (C+'numRef', C+'strRef') or node.find(C+'f') is None or node.find(C+'f').text != ref['formula']:
+                raise ValueError('Chart reference changed during sync')
+            cache_nodes = node.findall(C+('numCache' if node.tag == C+'numRef' else 'strCache'))
+            if len(cache_nodes) != 1: raise ValueError('Chart cache is missing or ambiguous')
+            points = {}
+            for point in cache_nodes[0].findall(C+'pt'):
+                raw = point.get('idx'); values = point.findall(C+'v')
+                if raw is None or not raw.isdecimal() or len(raw)>8 or len(values)!=1 or len(values[0]): raise ValueError('Invalid chart cache point')
+                index = int(raw)
+                if index in points or index >= len(cells): raise ValueError('Invalid or duplicate chart cache point index')
+                points[index] = values[0]
+            for index, cell in enumerate(cells):
+                value = cell.get('value'); node_value = points.get(index)
+                if node_value is None: raise ValueError('Chart cache has missing points; sync does not add points')
+                if value is None or isinstance(value, bool) or cell.get('type') == 'e': raise ValueError('Chart source contains unverified values')
+                old = node_value.text or ''
+                if node.tag == C+'numRef':
+                    if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value) or len(old)>256:
+                        raise ValueError('Chart source contains unsupported numeric values')
+                    try:
+                        left, right = Decimal(str(value)), Decimal(old)
+                        if not left.is_finite() or not right.is_finite(): raise InvalidOperation
+                    except InvalidOperation as exc: raise ValueError('Chart cache contains unsupported numeric values') from exc
+                    changed = left != right; new = str(value)
+                else:
+                    if not isinstance(value, str) or ESCAPED.search(value) or ESCAPED.search(old): raise ValueError('Chart source contains unsupported text values')
+                    changed = value != old; new = value
+                if changed: node_value.text = new; updated += 1
+            if updated != ref['mismatch_count']: raise ValueError('Chart source or cache did not match the scan')
+        ooxml.edit_xml(snapshot, output, lambda _: part, edit)
+    return {'output': str(output), 'part': part, 'reference': reference, 'source_sheet': sheet, 'source_range': cell_range,
+            'updated_points': updated, 'source_formula_cells': formula_count, 'formula_cache_freshness': 'unknown'}
