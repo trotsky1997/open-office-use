@@ -33,3 +33,5 @@ Speaker-note paragraph replacement also supports text within one hyperlink regio
 Speaker-note search paths like `/slide[1]/notes/paragraph[2]` work with `session_edit_target`, `session_replace_text`, and `session_replace_text_batch`. Batch note and slide edits together for one atomic revision.
 
 Use `session_reorder_slides` with the latest revision and a complete array of one-based slide positions to rearrange an existing deck. Slide IDs, slide parts, speaker notes and custom-show order are retained. Supported nonempty PowerPoint sections keep their members and may be reordered as contiguous groups; interleaving sections, empty sections, other presentation extensions and alternate content are rejected. Slide-number paths change after reordering, so rediscover targets in the new revision.
+
+Use `inspect_slides` or `session_inspect_slides` before reordering to list slide positions, IDs, titles, visibility, notes presence and recognized section membership. `section_status` reports `none`, `supported`, or `unsupported` with an explanation. Results are snapshot-bound, limited to 1,000 slides, and titles and section names are truncated at 500 characters.

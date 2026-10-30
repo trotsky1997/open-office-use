@@ -357,3 +357,5 @@ Added value labels for authored workbook column, line and scatter charts; explic
 Added revision-bound PowerPoint slide reordering via CLI and MCP; the slide list changes while all other package parts are preserved, and presentation extensions are rejected.
 
 Extended slide reordering to verified PowerPoint 2010 sections, keeping membership intact and updating section and member ordering. Rejects empty or interleaved sections and other presentation extensions.
+
+Added snapshot-bound slide and section inventory via CLI and MCP, including titles, hidden and notes flags, section status and revision-specific positions.

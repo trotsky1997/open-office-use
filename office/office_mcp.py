@@ -292,6 +292,18 @@ def session_resolve_tracked_runs(directory: str, base_revision: int, part: str, 
 
 
 @server.tool()
+def inspect_slides(file: str) -> dict[str, Any]:
+    """List slide positions, IDs, titles, visibility and supported section membership from a saved PPTX snapshot."""
+    return slides.inventory(file)
+
+
+@server.tool()
+def session_inspect_slides(directory: str, revision: int) -> dict[str, Any]:
+    """List slides and supported section membership from an exact PPTX revision."""
+    return session.inventory_slides(directory, revision)
+
+
+@server.tool()
 def session_reorder_slides(directory: str, base_revision: int, order: list[StrictInt]) -> dict[str, Any]:
     """Reorder every slide by one-based position in a new PPTX revision; supported sections remain contiguous and keep their members."""
     return session.reorder_slides(directory, base_revision, order)

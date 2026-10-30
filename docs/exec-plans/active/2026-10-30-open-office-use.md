@@ -254,3 +254,5 @@ Workbook charts can display value labels. Independent label number formats and n
 Session slide reordering retains slide IDs and related parts, rejects presentation extensions, and requires rediscovering positional slide paths. Custom shows retain their own order.
 
 Slide reordering supports contiguous nonempty PowerPoint 2010 sections and updates section/member ordering; other presentation extensions remain unsupported.
+
+Slide inventory exposes revision-bound positions and supported section membership before reordering, with explicit unsupported-section status and bounded output.

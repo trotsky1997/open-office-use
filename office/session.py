@@ -615,6 +615,12 @@ def resolve_tracked_runs(directory, base_revision, part, ids, accept):
 
 
 
+
+def inventory_slides(directory, revision):
+    state = info(directory); source = revision_file(state, revision)
+    if state['format'] != 'pptx': raise ValueError('Slide inventory requires a PPTX session')
+    return {'revision': revision, **slides.inventory(source)}
+
 def reorder_slides(directory, base_revision, order):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Slide reorder requires a PPTX session')

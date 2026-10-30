@@ -54,6 +54,7 @@ from PIL import Image
 import layout
 import slide_text_check
 import slide_charts
+import slides
 import chart_cache
 import notes
 import visual
@@ -1215,6 +1216,7 @@ def main():
     word_search = commands.add_parser('search-word'); word_search.add_argument('file'); word_search.add_argument('--query', required=True); word_search.add_argument('--offset', type=int, default=0); word_search.add_argument('--snapshot-sha256'); word_search.add_argument('--scope', choices=('body', 'stories', 'notes'), default='body')
     slide_search = commands.add_parser('search-slides'); slide_search.add_argument('file'); slide_search.add_argument('--query', required=True); slide_search.add_argument('--slide', type=int); slide_search.add_argument('--offset', type=int, default=0); slide_search.add_argument('--snapshot-sha256'); slide_search.add_argument('--scope', choices=('slides', 'notes'), default='slides')
     note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
+    slides_read = commands.add_parser('inspect-slides'); slides_read.add_argument('file')
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
     slide_charts_read = commands.add_parser('inspect-slide-charts'); slide_charts_read.add_argument('file')
     external_read = commands.add_parser('external-links'); external_read.add_argument('file')
@@ -1262,6 +1264,7 @@ def main():
     track_replace = sub.add_parser('track-replace-text'); track_replace.add_argument('directory'); track_replace.add_argument('--base', type=int, required=True); track_replace.add_argument('--path', required=True); track_replace.add_argument('--find', required=True); track_replace.add_argument('--replace', required=True, dest='replacement'); track_replace.add_argument('--author', required=True)
     track_insert = sub.add_parser('track-insert-text'); track_insert.add_argument('directory'); track_insert.add_argument('--base', type=int, required=True); track_insert.add_argument('--path', required=True); track_insert.add_argument('--anchor', required=True); track_insert.add_argument('--text', required=True); track_insert.add_argument('--position', choices=('before', 'after'), required=True); track_insert.add_argument('--author', required=True)
     track_resolve = sub.add_parser('resolve-tracked-runs'); track_resolve.add_argument('directory'); track_resolve.add_argument('--base', type=int, required=True); track_resolve.add_argument('--part', required=True); track_resolve.add_argument('--id', action='append', required=True, dest='ids'); track_resolve.add_argument('--decision', choices=['accept', 'reject'], required=True)
+    slide_inventory = sub.add_parser('inspect-slides'); slide_inventory.add_argument('directory'); slide_inventory.add_argument('--revision', type=int, required=True)
     reorder = sub.add_parser('reorder-slides'); reorder.add_argument('directory'); reorder.add_argument('--base', type=int, required=True); reorder.add_argument('--order', required=True, help='JSON array of one-based slide numbers')
     note_session = sub.add_parser('notes'); note_session.add_argument('directory'); note_session.add_argument('--revision', type=int, required=True); note_session.add_argument('--slide', type=int, required=True)
     note_compare = sub.add_parser('compare-notes'); note_compare.add_argument('directory'); note_compare.add_argument('--before', type=int, required=True); note_compare.add_argument('--after', type=int, required=True); note_compare.add_argument('--before-slide', type=int, required=True); note_compare.add_argument('--after-slide', type=int, required=True)
@@ -1349,6 +1352,8 @@ def main():
                 result = session.track_replace_text(args.directory, args.base, args.path, args.find, args.replacement, args.author)
             elif args.action == 'resolve-tracked-runs':
                 result = session.resolve_tracked_runs(args.directory, args.base, args.part, args.ids, args.decision == 'accept')
+            elif args.action == 'inspect-slides':
+                result = session.inventory_slides(args.directory, args.revision)
             elif args.action == 'reorder-slides':
                 result = session.reorder_slides(args.directory, args.base, json.loads(args.order))
             elif args.action == 'notes':
@@ -1433,6 +1438,8 @@ def main():
             result = notes.read(args.file, args.slide)
         elif args.command == 'inspect-slide-text':
             result = slide_text_check.scan(args.file, render)
+        elif args.command == 'inspect-slides':
+            result = slides.inventory(args.file)
         elif args.command == 'inspect-layout':
             result = layout.inspect(args.file)
         elif args.command == 'inspect-slide-charts':

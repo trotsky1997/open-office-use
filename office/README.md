@@ -572,3 +572,5 @@ python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
 ```
 
 `session_reorder_slides` (CLI: `session reorder-slides --base REV --order '[3,1,2]'`) creates a new PPTX revision with the requested complete one-based ordering. Slide IDs and related parts stay attached; custom shows retain their own order. Supported nonempty PowerPoint sections retain their members and may move as contiguous groups. Interleaved or empty sections, other presentation extensions and alternate content are rejected. Slide-number paths must be rediscovered after the edit.
+
+`inspect_slides` and `session_inspect_slides` (CLI: `inspect-slides FILE` or `session inspect-slides DIR --revision REV`) return slide positions, IDs, titles, hidden and notes flags, plus recognized section membership. The snapshot-bound inventory supports up to 1,000 slides; unsupported section structures report a reason. Titles and section names are truncated at 500 characters.

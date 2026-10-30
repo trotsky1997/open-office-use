@@ -1,5 +1,6 @@
 """Reorder slides while retaining each slide's parts and notes."""
 import tempfile
+import json
 import zipfile
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pptx import Presentation
 import officecli_backend
 import open_office_use
 import session
+import slides
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root/'deck.pptx'; draft = root/'draft'
@@ -44,6 +46,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 tree = etree.fromstring(data); etree.SubElement(tree, '{http://schemas.openxmlformats.org/presentationml/2006/main}extLst'); data = etree.tostring(tree, xml_declaration=True, encoding='UTF-8', standalone=True)
             modified.writestr(item, data)
     extended_draft = root/'extended-draft'; session.start(extended_draft, source=extended)
+    assert slides.inventory(extended)['section_status'] == 'unsupported'
     try: session.reorder_slides(extended_draft, 0, [3,1,2])
     except ValueError as exc: assert 'extensions' in str(exc)
     else: raise AssertionError('Presentation extensions accepted')
@@ -67,11 +70,19 @@ with tempfile.TemporaryDirectory() as tmp:
                 data = etree.tostring(tree,xml_declaration=True,encoding='UTF-8',standalone=True)
             modified.writestr(item,data)
     section_draft = root/'sections-draft'; session.start(section_draft,source=section_file)
+    before = session.inventory_slides(section_draft,0)
+    cli_inventory = subprocess.run([sys.executable,str(Path(open_office_use.__file__)),'session','inspect-slides',str(section_draft),'--revision','0'],capture_output=True,text=True,check=True)
+    assert json.loads(cli_inventory.stdout)['section_status'] == 'supported'
+    assert before['section_status'] == 'supported' and [section['slides'] for section in before['sections']] == [[1,2],[3,4]]
+    assert [item['title'] for item in before['slides']] == ['One','Two','Three','Four']
     try: session.reorder_slides(section_draft,0,[1,3,2,4])
     except ValueError as exc: assert 'contiguous' in str(exc)
     else: raise AssertionError('Interleaved sections accepted')
     assert session.info(section_draft)['latest_revision'] == 0
     section_result = session.reorder_slides(section_draft,0,[4,3,2,1])
+    after = session.inventory_slides(section_draft,1)
+    assert [section['name'] for section in after['sections']] == ['Section 2','Section 1'] and [section['slides'] for section in after['sections']] == [[1,2],[3,4]]
+    assert [item['id'] for item in after['slides']] == [item['id'] for item in before['slides']][::-1] and after['snapshot_sha256'] != before['snapshot_sha256']
     with zipfile.ZipFile(section_result['file']) as archive:
         presentation_xml = etree.fromstring(archive.read('ppt/presentation.xml'))
         section_nodes = presentation_xml.find(p+'extLst/'+p+'ext/'+p14+'sectionLst')
