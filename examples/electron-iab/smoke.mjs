@@ -142,6 +142,18 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   finally {await evaluate(a.id,"Object.defineProperty(Node.prototype,'isConnected',window.savedConnected);true");}
 
   check('SDK locators: focus without mouse or key events');
+
+  await evaluate(a.id,`(()=>{const input=document.createElement('textarea');input.id='selection-field';input.setAttribute('aria-label','Selection field');input.value='red one, blue one';const rich=document.createElement('div');rich.id='selection-rich';rich.contentEditable='true';rich.setAttribute('role','textbox');rich.setAttribute('aria-label','Rich selection');rich.innerHTML='alpha <b>bravo</b> charlie';document.body.append(input,rich)})()`);
+  async function selectionTarget(name){const state=await sdkTab.observe();const node=state.nodes.find(item=>item.name===name && item.role==='textbox');assert.ok(node);return [node.index,state.snapshotId];}
+  await sdkTab.selectText(...await selectionTarget('Selection field'),'one',{prefix:'blue '});
+  assert.deepEqual(await evaluate(a.id,`(()=>{const e=document.querySelector('#selection-field');return [e.selectionStart,e.selectionEnd,e.value.slice(e.selectionStart,e.selectionEnd)]})()`),[14,17,'one']);
+  await sdkTab.selectText(...await selectionTarget('Selection field'),'one',{prefix:'red ',selectionType:'cursor_after'});
+  assert.deepEqual(await evaluate(a.id,`(()=>{const e=document.querySelector('#selection-field');return [e.selectionStart,e.selectionEnd]})()`),[7,7]);
+  await assert.rejects(sdkTab.selectText(...await selectionTarget('Selection field'),'one'),/ambiguous/);
+  await sdkTab.selectText(...await selectionTarget('Rich selection'),'alpha bravo',{suffix:' charlie'});
+  assert.equal(await evaluate(a.id,'document.getSelection().toString()'),'alpha bravo');
+  await evaluate(a.id,"document.querySelector('#selection-field').remove();document.querySelector('#selection-rich').remove()");
+  check('SDK indexed text selection: context, caret, ambiguity and rich text');
   await evaluate(a.id,"document.querySelector('#increment').focus()");
   const originalCdpCall=sdkTab.browser.cdp.call.bind(sdkTab.browser.cdp);let unblockResolve,focusDispatches=0;
   sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.resolveNode' && !unblockResolve)await new Promise(resolve=>{unblockResolve=resolve});if(args[1]==='DOM.focus')focusDispatches++;return originalCdpCall(...args);};
@@ -280,6 +292,10 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   const crossTextState=await sdkTab.observe({includeFrames:true});const crossText=crossTextState.nodes.find(node=>node.name==='Cross-frame text');assert.ok(crossText);
   await sdkTab.typeText(crossText.index,crossTextState.snapshotId,'hello');await new Promise(resolve=>setTimeout(resolve,100));
   assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-text',value:'hello',trusted:true});
+  const selectFrameState=await sdkTab.observe({includeFrames:true});const selectFrame=selectFrameState.nodes.find(node=>node.name==='Cross-frame text');assert.ok(selectFrame);
+  await sdkTab.selectText(selectFrame.index,selectFrameState.snapshotId,'ell');
+  const selectionInFrame=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{const e=document.querySelector('[aria-label="Cross-frame text"]');return [e.selectionStart,e.selectionEnd]})()`,returnByValue:true},{sessionId:crossSession});
+  assert.deepEqual(selectionInFrame.result.value,[1,4]);
   const valueState=await sdkTab.observe({includeFrames:true,includeValues:true});
   assert.equal(valueState.nodes.find(node=>node.name==='Cross-frame text').value,'hello');
   assert.equal(valueState.nodes.find(node=>node.name==='Cross secret').valueRedacted,true);

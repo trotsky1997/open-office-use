@@ -394,6 +394,11 @@ export declare class OpenBrowserUseTab {
     click(index: number, snapshotId: string, mouse?: MouseClick, markClick?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     dblclick(index: number, snapshotId: string, mouse?: MouseClick, markClick?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     hover(index: number, snapshotId: string, mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
+    selectText(index: number, snapshotId: string, text: string, options?: {
+        prefix?: string;
+        suffix?: string;
+        selectionType?: "text" | "cursor_before" | "cursor_after";
+    }): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;
     hoverAt(x: number, y: number, modifiers?: number): Promise<void>;
     private dispatchClick;

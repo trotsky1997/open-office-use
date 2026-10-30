@@ -2277,6 +2277,68 @@ export class OpenBrowserUseTab {
     }
     /** @internal */
     async focus(index, snapshotId, markFocus = () => undefined) { await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, false, undefined, true, markFocus); }
+    async selectText(index, snapshotId, text, options = {}) {
+        if (typeof text !== "string" || !text.length || !options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["prefix", "suffix", "selectionType"].includes(key)) || (options.prefix !== undefined && typeof options.prefix !== "string") || (options.suffix !== undefined && typeof options.suffix !== "string") || (options.selectionType !== undefined && !["text", "cursor_before", "cursor_after"].includes(options.selectionType)))
+            throw new Error("Invalid text selection options");
+        const observation = this.currentObservation(snapshotId), node = observation.nodes.find(item => item.index === index);
+        if (!node || !["textbox", "searchbox", "combobox"].includes(node.role))
+            throw new Error("Target is not an editable text field");
+        await this.focus(index, snapshotId);
+        if (await this.documentId() !== observation.documentId)
+            throw new Error("Page changed after focus; observe again");
+        if (node.frameChain)
+            await this.validateFrames(node.frameChain);
+        const sessionId = node.frameChain?.[0]?.sessionId;
+        const tree = node.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: node.frameId }, { sessionId }) : await this.getAXState();
+        const fresh = interactiveNodes(tree, 0, true).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
+        if (!fresh || fresh.name !== node.name || fresh.stateKey !== node.stateKey)
+            throw new Error("Target changed after focus; observe again");
+        let frameId = node.frameId ?? observation.frames?.[0]?.id;
+        if (!frameId) {
+            const tree = await this.browser.cdp.call(this.id, "Page.getFrameTree");
+            const root = isObject(tree) && isObject(tree.frameTree) && isObject(tree.frameTree.frame) ? tree.frameTree.frame.id : undefined;
+            if (typeof root !== "string")
+                throw new Error("Target frame is unavailable; observe again");
+            frameId = root;
+        }
+        const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId, worldName: "open-browser-use-selector" }, { sessionId });
+        if (!isObject(world) || typeof world.executionContextId !== "number")
+            throw new Error("Target context is unavailable; observe again");
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: node.backendNodeId, executionContextId: world.executionContextId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string")
+            throw new Error("Target is unavailable; observe again");
+        try {
+            if (await this.documentId() !== observation.documentId)
+                throw new Error("Page changed; observe again");
+            if (node.frameChain)
+                await this.validateFrames(node.frameChain);
+            if (node.frameId && observation.frames && !await this.targetFrameFocused(node.frameId, node.backendNodeId, observation.frames))
+                throw new Error("Target lost focus; observe again");
+            await this.verifyLocatorScope(observation, node);
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }, { value: options.prefix ?? null }, { value: options.suffix ?? null }, { value: options.selectionType ?? "text" }], functionDeclaration: `function(text,prefix,suffix,kind){
+        if(!this.isConnected || !(this instanceof Element))return 'unavailable';
+        let element=this;while(true){const root=element.getRootNode();if(root.activeElement!==element)return 'focus';if(!(root instanceof ShadowRoot))break;element=root.host;}
+        for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null))if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return 'disabled';
+        const native=(this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','tel','url','password'].includes(this.type))) && !this.readOnly && this.getAttribute('aria-readonly')!=='true';
+        if(!native && (!this.isContentEditable || this.getAttribute('aria-readonly')==='true'))return 'unsupported';
+        const value=native ? this.value : this.textContent;if(typeof value!=='string' || value.length>1048576)return 'unavailable';
+        const hits=[];for(let at=value.indexOf(text);at!==-1;at=value.indexOf(text,at+1)){if((prefix===null || (at>=prefix.length && value.slice(at-prefix.length,at)===prefix)) && (suffix===null || value.slice(at+text.length,at+text.length+suffix.length)===suffix)){hits.push(at);if(hits.length>1)break;}}
+        if(!hits.length)return 'missing';if(hits.length>1)return 'ambiguous';
+        let start=hits[0],end=start+text.length;if(kind==='cursor_before')end=start;else if(kind==='cursor_after')start=end;
+        if(native){this.setSelectionRange(start,end);return this.selectionStart===start && this.selectionEnd===end ? 'ok' : 'failed';}
+        const walker=this.ownerDocument.createTreeWalker(this,NodeFilter.SHOW_TEXT),nodes=[];let node;while(node=walker.nextNode())nodes.push(node);
+        const point=offset=>{for(const item of nodes){if(offset<=item.data.length)return [item,offset];offset-=item.data.length;}return null;},a=point(start),b=point(end);if(!a || !b)return 'failed';
+        const range=this.ownerDocument.createRange();range.setStart(a[0],a[1]);range.setEnd(b[0],b[1]);const selection=this.getRootNode().getSelection?.() ?? this.ownerDocument.getSelection();if(!selection)return 'failed';selection.removeAllRanges();selection.addRange(range);return selection.rangeCount===1 && selection.getRangeAt(0).startContainer===a[0] && selection.getRangeAt(0).startOffset===a[1] && selection.getRangeAt(0).endContainer===b[0] && selection.getRangeAt(0).endOffset===b[1] ? 'ok' : 'failed';
+      }` }, { sessionId });
+            const status = isObject(result) && isObject(result.result) ? result.result.value : null;
+            if (status !== "ok")
+                throw new Error(`Text selection failed: ${typeof status === 'string' ? status : 'unknown'}`);
+        }
+        finally {
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+        }
+    }
     async press(index, snapshotId, key) {
         this.parseKey(key);
         await this.act(index, snapshotId, undefined, false, undefined, undefined, false, key);

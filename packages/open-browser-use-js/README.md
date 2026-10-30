@@ -158,7 +158,18 @@ if (button) await tab.click(button.index, state.snapshotId);
 const next = await tab.observe();
 const field = next.nodes.find(node => node.role === "textbox" && node.name === "Message");
 if (field) await tab.typeText(field.index, next.snapshotId, "Hello");
+
+const selectionState = await tab.observe();
+const editor = selectionState.nodes.find(node => node.role === "textbox" && node.name === "Message");
+if (editor) await tab.selectText(editor.index, selectionState.snapshotId, "Hello", {selectionType: "cursor_after"});
 ```
+
+`selectText` selects a unique exact match in an editable input, textarea or
+contenteditable target. `prefix` and `suffix` disambiguate adjacent text;
+`selectionType` can select the text or place the cursor before or after it.
+The operation focuses the target, so its focus handlers can run. Selection is
+limited to text content of at most 1 MiB and input types that support native
+text selection.
 
 `state.text` contains named accessibility nodes in the order returned by CDP;
 interactive nodes include their index and available checked, selected, expanded,
