@@ -27,12 +27,42 @@ export type OpenBrowserUseWaitForLoadStateOptions = {
 export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | {
     client: OpenBrowserUseClient;
 };
+export type InteractiveNode = {
+    index: number;
+    role: string;
+    name: string;
+    frameId?: string;
+    checked?: boolean | "mixed";
+    placeholder?: string;
+    placeholderTruncated?: boolean;
+    altText?: string;
+    altTextTruncated?: boolean;
+    value?: string | number;
+    valueRedacted?: boolean;
+    valueUnavailable?: boolean;
+    valueTruncated?: boolean;
+};
+export type SelectOption = string | {
+    value?: string;
+    label?: string;
+};
+export type InteractiveState = {
+    snapshotId: string;
+    nodes: InteractiveNode[];
+    text: string;
+    textMode: "full" | "diff";
+    truncated: boolean;
+    frameCoverage?: "same-process" | "cross-process";
+    unavailableFrames?: string[];
+    valuesTruncated?: boolean;
+};
 export declare class OpenBrowserUseClient {
     #private;
     readonly socketPath: string;
     readonly sessionId: string;
     readonly turnId: string;
     readonly timeoutMs: number;
+    get connectionGeneration(): number;
     constructor(options: OpenBrowserUseClientOptions);
     connect(): Promise<this>;
     close(): void;
@@ -73,8 +103,11 @@ export declare class OpenBrowserUseBrowser {
     }): Promise<OpenBrowserUseTab>;
     tab(tabId: number): OpenBrowserUseTab;
     getTabs(): Promise<JsonValue>;
+    getUserTabs(): Promise<JsonValue>;
+    claimTab(tabId: number): Promise<OpenBrowserUseTab>;
 }
 export declare class OpenBrowserUseTab {
+    #private;
     readonly browser: OpenBrowserUseBrowser;
     readonly id: number;
     readonly playwright: OpenBrowserUseTabPlaywright;
@@ -82,6 +115,36 @@ export declare class OpenBrowserUseTab {
     goto(url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
     domSnapshot(): Promise<string>;
+    getAXState(): Promise<JsonValue>;
+    observe(options?: {
+        diff?: boolean;
+        includeFrames?: boolean;
+        includeValues?: boolean;
+        includeText?: boolean;
+    }): Promise<InteractiveState>;
+    private readAXValues;
+    click(index: number, snapshotId: string): Promise<void>;
+    hover(index: number, snapshotId: string): Promise<void>;
+    hoverAt(x: number, y: number): Promise<void>;
+    clickAt(x: number, y: number): Promise<void>;
+    drag(from: [number, number], to: [number, number]): Promise<void>;
+    scrollAt(x: number, y: number, deltaX: number, deltaY: number): Promise<void>;
+    pressKey(key: string): Promise<void>;
+    private checkPoint;
+    getViewport(): Promise<{
+        width: number;
+        height: number;
+    }>;
+    typeText(index: number, snapshotId: string, text: string): Promise<void>;
+    fill(index: number, snapshotId: string, text: string): Promise<void>;
+    setChecked(index: number, snapshotId: string, checked: boolean): Promise<void>;
+    selectOption(index: number, snapshotId: string, values: SelectOption | SelectOption[]): Promise<string[]>;
+    private act;
+    private documentId;
+    private frameTree;
+    private validateFrames;
+    private framePoint;
+    getScreenshot(): Promise<Buffer>;
     evaluate(expression: string, options?: {
         awaitPromise?: boolean;
     }): Promise<JsonValue>;
@@ -92,13 +155,78 @@ export declare class OpenBrowserUseTabPlaywright {
     constructor(tab: OpenBrowserUseTab);
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
     domSnapshot(): Promise<string>;
+    getByRole(role: string, options?: {
+        name?: string;
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByLabel(name: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByText(text: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByAltText(altText: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByPlaceholder(placeholder: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+}
+export declare class OpenBrowserUseRoleLocator {
+    private tab;
+    private roles;
+    private options;
+    private position?;
+    private textMatch;
+    private field;
+    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: {
+        name?: string;
+        exact?: boolean;
+    }, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText");
+    nth(index: number): OpenBrowserUseRoleLocator;
+    first(): OpenBrowserUseRoleLocator;
+    private find;
+    count(): Promise<number>;
+    private perform;
+    click(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    hover(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    fill(text: string, options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    type(text: string, options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    check(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    uncheck(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    selectOption(values: SelectOption | SelectOption[], options?: {
+        timeoutMs?: number;
+    }): Promise<string[]>;
 }
 export declare class OpenBrowserUseCdp {
     #private;
     readonly client: OpenBrowserUseClient;
     constructor(client: OpenBrowserUseClient);
+    enableFrameSessions(tabId: number): Promise<boolean>;
+    frameSessions(tabId: number): Promise<Array<{
+        sessionId: string;
+        frameId: string;
+        parentFrameId: string;
+    }>>;
     call(tabId: number, method: string, commandParams?: BrowserUseRequestParams, options?: {
         timeoutMs?: number;
+        sessionId?: string;
+        visualPoint?: {
+            x: number;
+            y: number;
+        };
     }): Promise<JsonValue>;
     evaluate(tabId: number, expression: string, options?: {
         awaitPromise?: boolean;

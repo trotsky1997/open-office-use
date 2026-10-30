@@ -4,12 +4,19 @@
   "description": "JavaScript/TypeScript SDK for Open Browser Use.",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "obu-repl-mcp": "dist/repl-cli.js"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./repl": {
+      "types": "./dist/repl-mcp.d.ts",
+      "import": "./dist/repl-mcp.js"
     }
   },
   "scripts": {

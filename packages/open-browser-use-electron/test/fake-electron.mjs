@@ -13,10 +13,11 @@ export function fakeElectron() {
       const debuggerApi = Object.assign(new EventEmitter(), {
         attached: false, attach() { this.attached = true; }, isAttached() { return this.attached; },
         detach() { this.attached = false; this.emit('detach'); },
-        commands: [], async sendCommand(method, params) { this.commands.push({ method, params }); return {}; },
+        commands: [], async sendCommand(method, params, sessionId) { this.commands.push({ method, params, ...(sessionId ? {sessionId} : {}) }); return {}; },
       });
       const wc = contents ?? Object.assign(new EventEmitter(), {
-        session, debugger: debuggerApi, url: 'about:blank', destroyed: false,
+        session, debugger: debuggerApi, url: 'about:blank', destroyed: false, backgroundThrottling: true,
+        setBackgroundThrottling(value) { this.backgroundThrottling = value; },
         getTitle() { return this.url; }, getURL() { return this.url; }, isDestroyed() { return this.destroyed; },
         async loadURL(url) { this.url = url; }, close() { this.destroyed = true; this.emit('destroyed'); },
         isolatedCalls: [], async executeJavaScriptInIsolatedWorld(worldId,scripts) { this.isolatedCalls.push({worldId,scripts}); return true; },

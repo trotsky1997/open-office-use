@@ -25,6 +25,50 @@ Open Browser Use connects an MV3 Chrome extension, a local native messaging host
 
 ## Operating Rules
 
+When the source build provides `obu-repl-mcp`, a trusted local agent can use its
+persistent `js` tool. Connect to the selected socket with
+`const browser = await connectBrowser({socketPath, sessionId})`, list existing
+tabs via `browser.getUserTabs()`, and claim the matching tab with
+`await browser.claimTab(id)`. Call `await tab.observe()` after page changes;
+use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
+to replace a text field's contents. For semantic selection, use
+`tab.playwright.getByRole(role, {name, exact:true}).click()`, `.hover()` or `.fill(text)`;
+`tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
+binary controls without toggling an already-correct state. Actions require a
+unique match. For a native select use `.selectOption(value)` or
+`.selectOption({label})`; its DOM-dispatched events have `isTrusted === false`.
+`fill` handles native number and date/time inputs; date/time events are
+DOM-dispatched with `isTrusted === false`.
+Use `getByText(text, {exact:true})` for individual accessible text nodes and
+`getByRole("heading", ...)` for headings and `getByRole("img", ...)` for accessible images. Use `getByAltText(...)` to match an exposed native alt attribute. Use `getByPlaceholder(text,
+{exact:true})` when a field is identified by its placeholder.
+For visual
+input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clickAt()` and
+`tab.scrollAt()`; use `tab.drag([x1,y1], [x2,y2])` for dragging, and convert
+screenshot pixels to CSS viewport coordinates.
+Use `tab.pressKey("Enter")` or `tab.pressKey("ControlOrMeta+A")` for focused
+page keyboard actions; use `tab.typeText()` to insert text.
+For subsequent observations, `tab.observe({diff:true})` reports text changes;
+always use the newly returned `nodes` and `snapshotId` for actions.
+When current field values are needed, request `includeValues:true`; native
+password values are redacted and truncated values are flagged.
+Use `tab.observe({includeFrames:true})` to include iframe controls. Chrome and
+Electron support scoped cross-process frames.
+Check `frameCoverage` and `unavailableFrames`, and use a fresh screenshot for
+visual targets that are absent from the observed tree.
+Return text with `nodeRepl.write` and images with `nodeRepl.emitImage`.
+This MCP tool runs local JavaScript with the agent's process permissions; use
+it only with trusted clients. Electron hosts supply the scope and launch
+`obu-iab-repl-mcp` through `launchClient`; do not scan for an IAB socket.
+Use `getBrowserState()` for available browsers and tabs in connected sessions.
+The Electron inventory is limited to its host-authorized scope. A host may
+explicitly enable Chrome discovery; select the intended browser ID when both
+backends are available.
+For Chrome, `discoverBrowsers()` lists live sockets and their metadata. With
+multiple connections, select the socket corresponding to the chosen profile
+from `obu profiles --connected --json`; `connectBrowser()` without a socket
+only proceeds when exactly one browser is connected.
+
 - Treat the browser as the user's real Chrome profile. Do not inspect cookies, passwords, session stores, or unrelated browser data.
 - Ask the user before installing the extension, opening Chrome for them, enabling extension permissions, uploading local files, reading/writing clipboard data, submitting forms, purchasing, deleting, sending, or making other externally visible changes.
 - Do not assume Codex.app helpers, Node REPL globals, or a bundled plugin UI are available. Use the installed `open-browser-use` / `obu` CLI or the published SDKs.

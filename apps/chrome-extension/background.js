@@ -1574,6 +1574,9 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   backend.handleCdpEvent(source, method, params);
   safeSendNotification(peer, "onCDPEvent", { source, method, params });
 });
+chrome.debugger.onDetach.addListener((source) => {
+  if (typeof source.tabId === "number") safeSendNotification(peer, "onDebuggerDetach", { tabId: source.tabId });
+});
 backend.addDownloadChangeListener((change) => {
   safeSendNotification(peer, "onDownloadChange", change);
 });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { once } from "node:events";
 import { endianness, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -52,6 +53,37 @@ test("dispatches JSON-RPC notifications from the native socket", async () => {
   }
 });
 
+test("reconnects after failed connection and remote disconnect", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "obu-reconnect-"));
+  const socketPath = join(directory, "obu.sock");
+  const client = new OpenBrowserUseClient({ socketPath });
+  await assert.rejects(client.connect());
+  let connections = 0;
+  let firstClosed;
+  const server = createServer((socket) => {
+    const number = ++connections;
+    if (number === 1) firstClosed = once(socket, "close");
+    socket.once("data", (chunk) => {
+      const length = endianness() === "LE" ? chunk.readUInt32LE(0) : chunk.readUInt32BE(0);
+      const request = JSON.parse(chunk.subarray(4, 4 + length));
+      socket.write(encodeFrame({ jsonrpc: "2.0", id: request.id, result: { connection: number } }));
+      if (number === 1) socket.end();
+    });
+  });
+  server.listen(socketPath);
+  await once(server, "listening");
+  try {
+    assert.deepEqual(await client.getInfo(), { connection: 1 });
+    await firstClosed;
+    assert.deepEqual(await client.getInfo(), { connection: 2 });
+  } finally {
+    client.close();
+    server.close();
+    await once(server, "close");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("high-level browser tabs can goto, wait for load state, and read a DOM snapshot", async () => {
   const directory = await mkdtemp(join(tmpdir(), "obu-sdk-js-"));
   const socketPath = join(directory, "obu.sock");
@@ -89,6 +121,10 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
           result = expression.includes("readyState")
             ? { result: { value: { href: "https://example.test/issues", readyState: "interactive" } } }
             : { result: { value: "Open\nClosed\nIssues\nStarred" } };
+        } else if (request.params.method === "Accessibility.getFullAXTree") {
+          result = { nodes: [{ nodeId: "1", role: { value: "button" }, name: { value: "Submit" } }] };
+        } else if (request.params.method === "Page.captureScreenshot") {
+          result = { data: Buffer.from("png-data").toString("base64") };
         }
         socket.write(encodeFrame({ jsonrpc: "2.0", id: request.id, result }));
       }
@@ -105,14 +141,24 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
     await tab.goto("https://example.test/issues", { waitUntil: "domcontentloaded", timeoutMs: 1000 });
     await tab.playwright.waitForLoadState({ state: "domcontentloaded", timeoutMs: 1000 });
     assert.equal(await tab.playwright.domSnapshot(), "Open\nClosed\nIssues\nStarred");
+    assert.equal((await tab.getAXState()).nodes[0].name.value, "Submit");
+    assert.deepEqual(await tab.getScreenshot(), Buffer.from("png-data"));
     assert.deepEqual(calls, [
       ["createTab", null],
       ["attach", null],
       ["executeCdp", "Page.enable"],
+      ["attach", null],
       ["executeCdp", "Page.navigate"],
+      ["attach", null],
       ["executeCdp", "Page.enable"],
+      ["attach", null],
       ["executeCdp", "Runtime.evaluate"],
-      ["executeCdp", "Runtime.evaluate"]
+      ["attach", null],
+      ["executeCdp", "Runtime.evaluate"],
+      ["attach", null],
+      ["executeCdp", "Accessibility.getFullAXTree"],
+      ["attach", null],
+      ["executeCdp", "Page.captureScreenshot"]
     ]);
   } finally {
     browser.close();

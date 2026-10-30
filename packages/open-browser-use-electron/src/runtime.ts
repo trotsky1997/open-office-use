@@ -15,19 +15,20 @@ type Tab = {
   id: number; scopeId: string; view: WebContentsView; contents: WebContents; lifetime: 'temporary' | 'persistent';
   touched: Set<string>; marks: Map<string, 'handoff' | 'deliverable'>;
   attached: boolean; mouseReady: boolean; pending: number; queue: Promise<any>; removers: (() => void)[];
+  frameSessions: Map<string, string | undefined>;
   loading: boolean; pendingUrl?: string; loadError?: { code: number; description: string; url: string };
 };
 type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; closing?: boolean };
 type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds: { x: number; y: number; width: number; height: number }; remove: () => void };
 const pageCommands = new Set([
   'Page.enable', 'Page.disable', 'Page.navigate', 'Page.reload', 'Page.stopLoading',
-  'Page.getNavigationHistory', 'Page.navigateToHistoryEntry', 'Page.captureScreenshot',
+  'Page.getNavigationHistory', 'Page.navigateToHistoryEntry', 'Page.captureScreenshot', 'Page.getFrameTree',
   'Page.getLayoutMetrics', 'Page.close',
   'Runtime.enable', 'Runtime.disable', 'Runtime.evaluate', 'Runtime.callFunctionOn',
   'Runtime.getProperties', 'Runtime.releaseObject', 'Runtime.releaseObjectGroup',
   'DOM.enable', 'DOM.disable', 'DOM.getDocument', 'DOM.describeNode', 'DOM.querySelector',
   'DOM.querySelectorAll', 'DOM.getBoxModel', 'DOM.getContentQuads', 'DOM.getOuterHTML',
-  'DOM.resolveNode', 'DOM.focus', 'DOM.scrollIntoViewIfNeeded',
+  'DOM.resolveNode', 'DOM.focus', 'DOM.scrollIntoViewIfNeeded', 'DOM.getFrameOwner',
   'Accessibility.enable', 'Accessibility.disable', 'Accessibility.getFullAXTree',
   'Input.dispatchMouseEvent', 'Input.dispatchKeyEvent', 'Input.insertText', 'Input.synthesizeScrollGesture',
   'Network.enable', 'Network.disable', 'Network.getResponseBody',
@@ -121,7 +122,7 @@ export class IabRuntime implements Backend {
     if (contents && contents.session !== profile) throw new Error('Popup profile mismatch');
     const view = this.adapter.createView(profile, contents);
     view.setBounds({ x: 0, y: 0, width: 800, height: 600 }); view.setVisible(false);
-    const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false };
+    const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
     scope.tabs.set(tab.id, tab); this.tabsById.set(tab.id, tab);
     const wc = view.webContents;
     this.feedbackController.register(wc);
@@ -158,9 +159,18 @@ export class IabRuntime implements Backend {
     }
     listen(wc, 'render-process-gone', () => { void this.destroyTab(tab).catch(() => {}); });
     listen(wc.debugger, 'message', (_event, method, params, sessionId) => {
-      if (!sessionId && this.states.get(scopeId)?.tabs.has(tab.id)) this.emit(scopeId, 'onCDPEvent', { target: { tabId: tab.id }, method, params });
+      if (sessionId && !tab.frameSessions.has(sessionId)) return;
+      if (method === 'Target.attachedToTarget') {
+        if (params?.targetInfo?.type !== 'iframe' || typeof params?.sessionId !== 'string') return;
+        tab.frameSessions.set(params.sessionId, sessionId);
+      }
+      if (method === 'Target.detachedFromTarget' && typeof params?.sessionId === 'string') {
+        const remove = (id: string) => { tab.frameSessions.delete(id); for (const [child, parent] of tab.frameSessions) if (parent === id) remove(child); };
+        remove(params.sessionId);
+      }
+      if (this.states.get(scopeId)?.tabs.has(tab.id)) this.emit(scopeId, 'onCDPEvent', { source: { tabId: tab.id, ...(sessionId ? {sessionId} : {}) }, method, params });
     });
-    listen(wc.debugger, 'detach', () => { tab.attached = false; this.emit(scopeId, 'onCDPDetach', { tabId: tab.id }); });
+    listen(wc.debugger, 'detach', () => { tab.attached = false; tab.frameSessions.clear(); this.emit(scopeId, 'onDebuggerDetach', { tabId: tab.id }); });
     wc.setWindowOpenHandler(details => {
       try { assertUrl(details.url); } catch { return { action: 'deny' }; }
       if (!this.hasScope(scopeId) || scope.tabs.size >= 32 || this.tabsById.size >= 128) return { action: 'deny' };
@@ -204,27 +214,76 @@ export class IabRuntime implements Backend {
       await done;
     }
   }
-  private async cdp(tab: Tab, method: string, params: Record<string, any>, authorized: () => boolean): Promise<any> {
-    if (!pageCommands.has(method)) throw new Error('IAB CDP command is outside page permissions');
+  private async cdp(tab: Tab, method: string, params: Record<string, any>, authorized: () => boolean, sessionId?: string, visualPoint?: {x: number; y: number}): Promise<any> {
+    if (sessionId && !tab.frameSessions.has(sessionId)) throw new Error('Invalid CDP frame session');
+    if (method === 'Target.setAutoAttach') {
+      const filter = [{type:'iframe',exclude:false},{exclude:true}];
+      if (typeof params.autoAttach !== 'boolean' || params.waitForDebuggerOnStart !== false || params.flatten !== true ||
+          (params.autoAttach && JSON.stringify(params.filter) !== JSON.stringify(filter)) ||
+          Object.keys(params).some(key => !['autoAttach','waitForDebuggerOnStart','flatten','filter'].includes(key))) throw new Error('Invalid frame auto-attach');
+      if (!params.autoAttach && !sessionId) tab.frameSessions.clear();
+    } else if (!pageCommands.has(method)) throw new Error('IAB CDP command is outside page permissions');
     if (params.includeCommandLineAPI) throw new Error('DevTools command-line helpers are not exposed to page grants');
     if (method === 'Page.navigate') assertUrl(params.url);
     if (method === 'Page.close') { await this.closeTab(tab.scopeId, tab.id); return {}; }
-    if (!tab.contents.debugger.isAttached()) tab.contents.debugger.attach('1.3');
-    tab.attached = true;
-    // A never-presented native view can have DOM layout but no compositor hit
-    // test data. Render one frame before mouse input without presenting/focusing
-    // the tab. Real Electron smoke verifies the resulting event is trusted.
-    if ((method === 'Input.dispatchMouseEvent' || method === 'Input.synthesizeScrollGesture') && !tab.mouseReady) {
-      await tab.contents.debugger.sendCommand('Page.captureScreenshot', { format: 'png' });
-      tab.mouseReady = true;
+    const scroll = method === 'Input.synthesizeScrollGesture' || (method === 'Input.dispatchMouseEvent' && params.type === 'mouseWheel');
+    const mouse = method === 'Input.dispatchMouseEvent' || method === 'Input.synthesizeScrollGesture';
+    const preparingMouse = mouse && !tab.mouseReady;
+    const surface = scroll || preparingMouse ? [...this.surfaceStates.values()].find(item => item.tabId === tab.id) : undefined;
+    const backgroundInput = (scroll || preparingMouse) && !!surface && (!surface.window.isVisible() || surface.window.isMinimized());
+    if (scroll && !surface) throw new Error('IAB_SCROLL_REQUIRES_PRESENTED_SURFACE');
+    let command = method, commandParams = params;
+    if (backgroundInput && method === 'Input.synthesizeScrollGesture') {
+      if (params.gestureSourceType !== 'mouse' || params.preventFling !== true ||
+          Object.keys(params).some(key => !['x','y','xDistance','yDistance','gestureSourceType','preventFling'].includes(key)) ||
+          ![params.x,params.y,params.xDistance,params.yDistance].every(Number.isFinite)) throw new Error('IAB_BACKGROUND_SCROLL_UNSUPPORTED_GESTURE');
+      command = 'Input.dispatchMouseEvent';
+      commandParams = {type:'mouseWheel',x:params.x,y:params.y,deltaX:-params.xDistance,deltaY:-params.yDistance};
     }
-    if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
-    if (method.startsWith('Input.')) await this.feedbackController.input(tab.contents,method,params);
-    if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
-    const result = await tab.contents.debugger.sendCommand(method, params);
-    if (method === 'Page.captureScreenshot') tab.mouseReady = true;
-    if (['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry'].includes(method)) tab.mouseReady = false;
-    return result;
+    const previousThrottling = backgroundInput ? tab.contents.backgroundThrottling : undefined;
+    if (backgroundInput) tab.contents.setBackgroundThrottling(false);
+    const bounded = backgroundInput || preparingMouse || command === 'Page.captureScreenshot';
+    const timeoutError = backgroundInput && scroll ? 'IAB_BACKGROUND_SCROLL_TIMEOUT' : preparingMouse ? 'IAB_INPUT_PREPARATION_TIMEOUT' : 'IAB_SCREENSHOT_TIMEOUT';
+    let expired = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => { if (expired) throw new Error(timeoutError); if (!authorized()) throw new Error('IAB_AUTH_REVOKED'); };
+    const run = async () => {
+      if (!tab.contents.debugger.isAttached()) tab.contents.debugger.attach('1.3');
+      tab.attached = true;
+      if (preparingMouse) {
+        await tab.contents.debugger.sendCommand('Page.captureScreenshot', { format: 'png' });
+        check();
+        tab.mouseReady = true;
+      }
+      check();
+      if (command.startsWith('Input.') && (!sessionId || visualPoint || command !== 'Input.dispatchMouseEvent')) {
+        await this.feedbackController.input(tab.contents,command,visualPoint ? {...commandParams,...visualPoint} : sessionId ? {} : commandParams);
+      }
+      check();
+      const result = await tab.contents.debugger.sendCommand(command, commandParams, sessionId);
+      if (expired) throw new Error(timeoutError);
+      if (backgroundInput) {
+        check();
+        // Allow Chromium to apply input before restoring hidden-page throttling.
+        const painted = await tab.contents.executeJavaScriptInIsolatedWorld(999,[{code:'Promise.race([new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))), new Promise(resolve => setTimeout(() => resolve(false), 1000))])'}]);
+        check();
+        if (!painted) throw new Error(timeoutError);
+      }
+      if (method === 'Page.captureScreenshot') tab.mouseReady = true;
+      if (['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry'].includes(method)) tab.mouseReady = false;
+      return result;
+    };
+    try {
+      if (!bounded) return await run();
+      return await Promise.race([run(),new Promise<never>((_,reject) => { timer=setTimeout(() => {
+        expired = true;
+        try { if (!tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) tab.contents.debugger.detach(); } catch {}
+        reject(new Error(timeoutError));
+      },3000); })]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (backgroundInput && !tab.contents.isDestroyed()) tab.contents.setBackgroundThrottling(previousThrottling!);
+    }
   }
   async dispatch(scopeId: string, method: string, params: Record<string, any> = {}, operations: readonly Operation[] = ['tabs.read', 'tabs.create', 'page.control'], authorized: () => boolean = () => true): Promise<any> {
     this.ensureOpen();
@@ -277,11 +336,13 @@ export class IabRuntime implements Backend {
     }
     if (method === 'detach') { if (tab.attached) tab.contents.debugger.detach(); tab.attached = false; return {}; }
     if (method !== 'executeCdp') throw new Error('IAB method not supported');
-    if (typeof params.method !== 'string' || params.target?.sessionId || params.sessionId) throw new Error('Invalid CDP target');
+    if (typeof params.method !== 'string' || params.sessionId || (params.target?.sessionId !== undefined && (typeof params.target.sessionId !== 'string' || !params.target.sessionId))) throw new Error('Invalid CDP target');
+    if (params.visualPoint !== undefined && (!params.target?.sessionId || params.method !== 'Input.dispatchMouseEvent' ||
+        !params.visualPoint || !Number.isFinite(params.visualPoint.x) || !Number.isFinite(params.visualPoint.y) || params.visualPoint.x < 0 || params.visualPoint.y < 0)) throw new Error('Invalid visual point');
     tab.pending++;
     const run = tab.queue.then(() => {
       if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
-      return this.cdp(this.tab(scopeId, tab.id), params.method, params.commandParams ?? {}, authorized);
+      return this.cdp(this.tab(scopeId, tab.id), params.method, params.commandParams ?? {}, authorized, params.target?.sessionId, params.visualPoint);
     });
     tab.queue = run.catch(() => {});
     try { return await run; } finally { tab.pending--; }

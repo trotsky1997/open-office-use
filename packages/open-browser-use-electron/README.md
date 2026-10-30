@@ -162,6 +162,25 @@ cross-compiled for Linux/Windows; Windows IAB socket mode remains disabled.
 
 ## IAB MCP for agents
 
+For a persistent JavaScript session, start the package's `obu-iab-repl-mcp`
+executable through `iab.launchClient`, with `stdin: 'pipe'` and either private
+or socket transport. Give the returned stdin/stdout pipes to the MCP client, as
+in the example below. Its `js` tool exposes `connectBrowser()`, which returns a
+browser bound to the host's authorized scope; see the
+[JavaScript SDK REPL guide](../open-browser-use-js/README.md#persistent-javascript-mcp).
+This tool executes local Node code with the process user's permissions and is
+for trusted agents. Starting it without host bootstrap fails closed.
+
+To route both the authorized Electron scope and Chrome extension connections
+from the same REPL, the host can explicitly add
+`args: ['--allow-extension-discovery']` to `launchClient`. Set `OBU_SOCKET_DIR`
+in its `env` if the extension host uses a custom socket directory. Without the
+flag, the REPL only exposes its host-selected scope. With the flag,
+`getBrowserState()` lists both kinds; choose one with
+`connectBrowser({browserId: entry.id})`. If any Chrome socket is present,
+`connectBrowser()` requires an explicit browser ID. The Electron grant and the
+Chrome session have separate lifecycles and permissions.
+
 `obu iab mcp` exposes this IAB task as an MCP stdio server. It is separate from
 `obu mcp`, which controls the Chrome extension route. Start it from Electron
 main using the same managed authorization as other IAB clients:
@@ -259,6 +278,9 @@ current options. Edge color does not change the original cursor or click ripple.
 
 Accepted CDP `Input.*` calls also trigger a 1.2-second activity pulse. Mouse
 coordinates come from the real input, with presses snapping to the actual point.
+Indexed cross-process iframe input sends frame-local coordinates to Chromium and
+uses the translated viewport coordinates for the cursor and activity pulse.
+Raw child-session mouse commands can provide `visualPoint` in viewport coordinates.
 Activity belongs to the explicit target tab; selecting a surface does not move
 that activity to another page. The host must finish explicit activity in a
 `finally` block. Navigation resets pointer coordinates; deactivation, disable
@@ -293,18 +315,27 @@ enables/disables both effects during manual steps or automatic playback.
   session metadata methods are implemented. Temporary tabs are tracked by turn;
   handoff/deliverable marks preserve them. Preserving a tab does not revoke its
   scope's control; revoke the client grant explicitly when handing control back.
-- Only page-scoped CDP methods are accepted. Browser/Target/Storage global
-  operations, cookie-jar APIs, file uploads, downloads, clipboard, WebMCP and
-  child-target sessions are not exposed in this first version. Upload/download
-  and browser permission requests are denied by default.
+- CDP commands are limited to the owned page and its registered iframe
+  sessions. The allowed Target operation attaches iframe sessions only;
+  browser-global operations, cookie-jar APIs, file uploads, downloads,
+  clipboard and WebMCP are unavailable. Upload/download and browser permission
+  requests are denied by default.
 - Navigation accepts http, https and about:blank. The host UI's preload is
   never loaded in remote guest pages; guests enforce sandbox, context isolation,
   disabled Node integration and enabled web security.
 - Hidden mouse input prepares compositor hit-test data with an internal screenshot
   before the first event, and again after navigation, layout bounds or presentation
-  changes. The screenshot is discarded. Text and mouse events are verified as
+  changes. In a hidden presented window, preparation temporarily disables
+  background throttling. The screenshot is discarded. Text and mouse events are verified as
   trusted on the example fixture; IME, cross-origin frames and minimized windows
-  require further validation.
+  require further validation. A stalled preparation or screenshot returns a
+  three-second timeout and releases the tab queue. Timeout detaches the debugger
+  and invalidates iframe sessions; observe a timed-out input before retrying.
+- Scroll requires a presented surface. A hidden or minimized host temporarily
+  disables background throttling and sends a trusted wheel event, then restores
+  the previous setting. This can temporarily change page visibility and affects
+  frame scheduling in the host window. An `IAB_BACKGROUND_SCROLL_TIMEOUT`
+  leaves the input outcome unknown; the caller should observe before retrying.
 - A surface is a native view, not a DOM element. Position it with integer DIP
   bounds and handle resizing in the host. The sample validates IPC sender,
   main frame, local UI URL and allowed actions before using main-only APIs.

@@ -147,7 +147,8 @@ export class IabConnections {
         grant.channels.add(channel); clearTimeout(timeout); channel.maxFrame = 8 * 1024 * 1024;
         channel.send({ jsonrpc: '2.0', id: message.id, result: { authenticated: true, scopeId: grant.scope } });
         unsubscribe = this.backend.subscribe(event => {
-          if (grant && this.valid(grant) && event.scopeId === grant.scope && grant.operations.includes('tabs.read')) {
+          if (grant && this.valid(grant) && event.scopeId === grant.scope &&
+              grant.operations.includes(['onCDPEvent','onDebuggerDetach'].includes(event.method) ? 'page.control' : 'tabs.read')) {
             channel.send({ jsonrpc: '2.0', method: event.method, params: event.params });
           }
         });

@@ -80,9 +80,267 @@ await tab.goto(url, { waitUntil: "load", timeoutMs: 15000 });
 await tab.waitForLoadState({ state: "domcontentloaded", timeoutMs: 15000 });
 const text = await tab.domSnapshot();
 const value = await tab.evaluate("document.title");
+const axTree = await tab.getAXState(); // CDP accessibility tree
+const png = await tab.getScreenshot(); // PNG Buffer
 ```
 
+The accessibility tree is the raw CDP response. It does not provide stable
+interaction indices or state diffs; request a fresh tree after page changes.
+
+For indexed interaction, call `observe` immediately before choosing a target:
+
+```js
+const state = await tab.observe();
+nodeRepl.write(state.text);
+const button = state.nodes.find(node => node.role === "button" && node.name === "Save");
+if (button) await tab.click(button.index, state.snapshotId);
+
+const next = await tab.observe();
+const field = next.nodes.find(node => node.role === "textbox" && node.name === "Message");
+if (field) await tab.typeText(field.index, next.snapshotId, "Hello");
+```
+
+`state.text` contains named accessibility nodes in the order returned by CDP;
+interactive nodes include their index and available checked, selected, expanded,
+disabled, pressed, required and readonly states. It is capped at 30,000 characters and
+`state.truncated` indicates when content was cut. `state.nodes` lists the
+interactive targets independently. An observation is single-use. Clicking rechecks the document and accessible
+role, name and listed state, scrolls the target into view, and rejects disabled, hidden or covered
+targets. It sends a real CDP mouse click. Observe again after an action or a
+rejected click. This initial interface lists common interactive accessibility
+roles. Hit testing checks nested open and closed shadow roots and their hosts.
+Text input inserts at the clicked caret in a focused editable
+textbox; it does not replace existing content. Page changes can still race the
+final input event.
+
+To include current accessible field values, request
+`await tab.observe({includeValues:true, includeFrames:true})`. Values appear in
+the returned nodes and text when their element type can be verified. Native
+password inputs are marked `valueRedacted`; unknown or inaccessible element
+types are marked `valueUnavailable`. Each value is limited to 512 characters,
+with an 8,000-character total budget; `valueTruncated` and `valuesTruncated`
+report omissions. Switching `includeValues` resets the diff baseline. Ordinary
+text field contents are returned when requested, so use this on authorized
+pages. Page text itself can also contain sensitive information.
+
+Use `await tab.fill(index, snapshotId, text)` to replace the content of an
+observed text field. It focuses the target, selects its existing contents,
+sends trusted keyboard/text input, and checks the resulting value. An empty
+string clears the field. Selection verification for `contenteditable` uses
+rendered text; unusual rich-text selection or value normalization can cause the
+operation to report an error.
+
+`fill` also supports native number, date, time, month, week and
+`datetime-local` inputs. Number fields use keyboard/text input; an invalid
+replacement is rejected before editing. Date and time values must use the
+browser's native value format, such as `2026-12-31` or `09:45`. Those fields
+are set through the DOM and dispatch `input` and `change` events with
+`isTrusted === false`. The browser's min, max and step constraints remain the
+page's responsibility.
+
+For semantic selection, the REPL and SDK also accept:
+
+```js
+const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
+await save.hover(); // move the pointer over the matched control
+await save.click();
+await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
+await tab.playwright.getByPlaceholder("Email address", { exact: true }).fill("user@example.com");
+await tab.playwright.getByLabel("Email updates", { exact: true }).check();
+await tab.playwright.getByLabel("Colour", { exact: true }).selectOption({ label: "Blue" });
+await tab.playwright.getByText("Continue", { exact: true }).click();
+await tab.playwright.getByRole("img", { name: "Product photo", exact: true }).click();
+await tab.playwright.getByAltText("Product photo", { exact: true }).click();
+```
+
+This locator covers the interactive roles exposed by `observe`, including
+accessible frames, plus headings, accessible text and images. The `img` role
+uses the accessibility name, including an image alt attribute when it supplies
+that name. It reobserves on every `count`, `click`, `fill`, or `type`
+call and refuses incomplete frame results. Actions require exactly one match;
+use `first()` or `nth(n)` to choose among multiple matches. Name matching is a
+case-insensitive substring by default; `exact: true` matches the whole name
+case-sensitively. Actions wait up to 5 seconds when a match is missing,
+temporarily covered, moving or changed before input; pass
+`{timeoutMs: 0}` for one attempt or another timeout up to 120 seconds. Target
+geometry is sampled twice 75 ms apart before input, including the translated
+frame position; this catches movement visible between those samples.
+The limit controls when another observation starts; a slow browser request can
+finish after it. Multiple matches fail immediately. An issued input action is
+not retried after an error. This initial locator API does not include every
+Playwright locator method.
+
+`getByText` matches individual accessible static-text nodes after collapsing
+whitespace; text split across multiple elements is matched separately. Text
+clicks target the visible text rectangle, checking disabled ancestors and
+hit-testing shadow roots and frames. `getByRole("heading", ...)` supports
+accessible headings; `getByRole("img", ...)` supports accessible images. To include these nodes in an indexed observation directly,
+use `includeText: true`; switching it resets the diff baseline.
+
+`getByLabel` matches the accessible name of supported form controls and accepts
+the same `exact` option. `check()` and `uncheck()` check the current state,
+click only when a change is needed, and verify the resulting state. The
+observation's nodes include `checked` when available. Mixed states and clearing
+a selected radio directly are rejected; choose another radio to change a group.
+
+`getByAltText` matches the native `alt` attribute exposed by the accessibility
+tree, including when `aria-label` supplies a different accessible name. It
+covers accessible images and image inputs or links with an exposed `alt`
+source. Observations expose `altText` up to 512 characters and mark longer
+values with `altTextTruncated`; an alt locator rejects incomplete results.
+
+`getByPlaceholder` matches the native or ARIA placeholder exposed in the
+accessibility tree, including when a label supplies a different accessible name.
+Observations expose `placeholder` and flag `placeholderTruncated` above 512
+characters. A truncated placeholder makes placeholder locator results
+incomplete, so the locator rejects the query. Action support still depends on
+the control type.
+
+`selectOption` accepts a value or label, `{value, label}`, or an array for a
+multiple select, and returns selected values. It waits for available options
+and rejects ambiguous matches. This operation updates a native `<select>` via
+the DOM and dispatches bubbling `input` and `change` events; those events have
+`isTrusted === false`. Custom ARIA combobox widgets should be operated through
+their own controls.
+
+Use `await tab.observe({ includeFrames: true })` to include iframe controls.
+Their entries include `frameId`, and `click`/`typeText` translate coordinates
+through ancestor frames and reject stale, covered, rotated or otherwise
+unsupported geometry. Chrome and Electron attach scoped iframe debugger sessions
+for cross-process frames and report `frameCoverage: "cross-process"`.
+`unavailableFrames`
+lists known frames whose trees could not be read. Debugger attachment and frame
+navigation can change during an operation; observe again if validation fails.
+
+For later observations on the same tab object, `await tab.observe({ diff: true })`
+returns changed text lines prefixed with `-` or `+` and `textMode: "diff"`.
+Unchanged text yields an empty string. `nodes` and `snapshotId` always describe
+the latest full observation; use those indexes for subsequent actions. A first
+observation, navigation, or a truncated baseline returns `textMode: "full"`.
+The line diff preserves order and may include unchanged lines between edits.
+If a diff itself is truncated, the next observation returns a full baseline.
+
+For visual interaction, `await tab.getViewport()` returns the CSS viewport size;
+`await tab.clickAt(x, y)` clicks, `await tab.hoverAt(x, y)` moves the pointer,
+and `await tab.scrollAt(x, y, deltaX, deltaY)` sends a wheel event at CSS
+viewport coordinates. These reject coordinates outside
+the viewport and invalidate any prior observation. Screenshot pixels can differ
+from CSS coordinates on high-density displays: scale the coordinates using the
+image dimensions and `getViewport()` before sending input. Observe or capture a
+fresh screenshot after page changes. Electron requires the target tab to be
+presented in a host window for wheel gestures; detached tabs return
+`IAB_SCROLL_REQUIRES_PRESENTED_SURFACE`. Hidden or minimized windows temporarily
+disable background throttling while dispatching a trusted wheel event.
+
+`await tab.drag([startX, startY], [endX, endY])` sends a left-button drag
+through intermediate points. Both endpoints use CSS viewport coordinates;
+the SDK attempts to release the button if a move fails.
+
+`await tab.pressKey("Enter")` sends a key press to the currently focused
+element. Supported keys include Enter, Tab, Escape, Backspace, Delete, arrows,
+Home, End, PageUp, PageDown and letters. Prefix modifiers with `+`, for example
+`ControlOrMeta+A` selects all on the host platform. Letter keys send keyboard
+events; use `typeText` to insert text. Pressing a key invalidates the previous
+observation.
+
+## Persistent JavaScript MCP
+
+The SDK package also provides `obu-repl-mcp`, an MCP stdio server for trusted
+local agents. Install the SDK, then configure the executable as an MCP server:
+
+```toml
+[mcp_servers.open_browser_use_repl]
+command = "obu-repl-mcp"
+```
+
+Its `js` tool evaluates code in one persistent Node REPL, including top-level
+`await`. Bind a browser and tab once, then reuse them across tool calls:
+
+```js
+const browser = await connectBrowser();
+const tab = await browser.newTab();
+await tab.goto("https://example.com");
+nodeRepl.write(await tab.getAXState());
+nodeRepl.emitImage(await tab.getScreenshot());
+```
+
+`discoverBrowsers()` probes sockets in `/tmp/open-browser-use` and returns
+their paths and status, with browser metadata for responsive connections.
+`getBrowserState()` provides a common inventory in Chrome and the Electron
+host: `available` identifies selectable browsers, and `sessions` lists the
+tabs belonging to browser sessions already connected in the REPL. Electron
+always restricts its embedded browser to the host-authorized scope. A host can
+also explicitly enable Chrome discovery with `--allow-extension-discovery`; see
+the [Electron REPL guide](../open-browser-use-electron/README.md#iab-mcp-for-agents).
+A session that cannot list tabs returns an `error` in that entry.
+Select an inventory entry with `await connectBrowser({ browserId: entry.id })`.
+The Electron entry is `host` and reuses its authorized connection. When the
+host has enabled Chrome discovery and any Chrome socket is present, an explicit
+browser ID is required.
+`connectBrowser()` selects the sole responsive connection when no socket is
+unresponsive; when several are available or a probe fails, pass `{ socketPath, sessionId }`
+to select one explicitly. Use `obu profiles --connected --json` to map sockets
+to installed browser profiles. Set `OBU_SOCKET_DIR` when the host uses a
+different socket directory. `nodeRepl.write`
+emits text, and `nodeRepl.emitImage(bytes, mimeType)` emits PNG (the default),
+JPEG or WebP bytes. Tool calls run sequentially. Closing MCP stdin closes the
+SDK connections while preserving browser tabs; use the existing session
+finalization APIs when tabs should be cleaned up.
+
+For an isolated Chromium integration check (Node 22+ and a Chromium executable
+that supports unpacked extensions), run from the repository root:
+
+```sh
+go build -o build/obu-bridge-smoke ./cmd/open-browser-use
+OBU_CHROMIUM_PATH=/path/to/chromium node scripts/chromium-bridge-smoke.mjs
+```
+
+The smoke uses a temporary extension copy and a CDP test bridge between its
+background worker and the Go relay. It exercises the extension backend, relay,
+SDK and REPL, while native-messaging registration needs separate verification.
+
+On Linux or macOS, the native messaging path can be checked with an isolated temporary
+profile and host manifest:
+
+```sh
+go build -o build/obu-native-smoke ./cmd/open-browser-use
+OBU_CHROMIUM_PATH=/path/to/chromium node scripts/chromium-native-smoke.mjs
+```
+
+Set `OBU_MIXED_SMOKE=1` to additionally exercise mixed-backend routing using a
+host authorization fixture and the real Chrome extension and native host.
+On a machine with Electron installed, `OBU_MIXED_ELECTRON=1` also runs the full
+Electron example smoke while that isolated Chrome connection is active.
+
+For a disposable environment where Chromium's sandbox cannot run, set
+`OBU_CHROMIUM_NO_SANDBOX=1`. This is intended for isolated test environments.
+The test removes its temporary browser profile after exit.
+It copies the built host into the temporary directory before Chromium launches it.
+
+This tool executes arbitrary local Node.js code with the MCP server user's
+permissions. Connect it only to trusted local agents. It currently supports the
+Chrome extension socket. Electron hosts can launch the same REPL through the
+host-authorized `obu-iab-repl-mcp` entry point; see the
+[Electron integration guide](../open-browser-use-electron/README.md#iab-mcp-for-agents).
+
 ## Multi-Tab Workflows
+
+For Chrome, inspect existing tabs before claiming one for the current session:
+
+```js
+const tabs = await browser.getUserTabs();
+const match = tabs.find(tab => tab.url === "https://example.com/");
+if (match) {
+  const tab = await browser.claimTab(match.id);
+  nodeRepl.write(await tab.observe());
+}
+```
+
+Claiming changes the tab's task group. In Electron, `getUserTabs()` returns
+only the authorized scope's tabs; use `browser.tab(id)` for an existing scoped
+tab. Electron does not implement Chrome's `claimTab` operation. SDK connections
+reconnect on a subsequent request after a socket closes; retry the failed
+operation explicitly, since it may have reached the browser before disconnect.
 
 For multiple pages, create tabs first, then run navigation and extraction in
 parallel. This avoids backend session races while still parallelizing the slow

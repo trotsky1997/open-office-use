@@ -28,5 +28,10 @@ export function createExampleClients({ runtime, scopeId, cliPath, directory }) {
       scopeId, ttlMs:60_000, ...options, transport,
       command:cliPath, args:['iab','mcp'], stdin:'pipe',
     }),
+    launchRepl: (transport = 'private') => runtime.launchClient({
+      scopeId, ttlMs:60_000, transport, stdin:'pipe', command:process.execPath,
+      args:[join(directory,'../../packages/open-browser-use-electron/dist/repl-mcp.js'),...(process.env.OBU_IAB_MIXED_SMOKE === '1' ? ['--allow-extension-discovery'] : [])],
+      env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},
+    }),
   };
 }

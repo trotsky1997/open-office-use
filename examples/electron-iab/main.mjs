@@ -13,6 +13,7 @@ import { normalizeAddress } from './address.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const smoke = process.argv.includes('--smoke');
+if (smoke) app.commandLine.appendSwitch('site-per-process');
 const userData = smoke ? process.env.OBU_IAB_SMOKE_USER_DATA ?? mkdtempSync(join(tmpdir(), 'obu-iab-example-')) : undefined;
 if (userData) app.setPath('userData', userData);
 // Do not await app.whenReady() at ESM top level: Electron waits for its entry
@@ -184,7 +185,7 @@ async function main() {
     try {
       const output = resolve(here,'../../.cache/iab-smoke'); await mkdir(output,{recursive:true});
       const savePage = (png,name='page.png') => writeFile(join(output,name), png);
-      const report = await runSmoke({ runtime, scope, fixture, surface, window, launch, launchMcp:clients.launchMcp, present, savePage });
+      const report = await runSmoke({ runtime, scope, fixture, surface, window, launch, launchMcp:clients.launchMcp, launchRepl:clients.launchRepl, present, savePage });
       await writeFile(join(output,'ui.png'), (await window.webContents.capturePage()).toPNG());
       await writeFile(join(output,'report.json'), JSON.stringify(report,null,2));
       console.log(JSON.stringify(report)); await shutdown();

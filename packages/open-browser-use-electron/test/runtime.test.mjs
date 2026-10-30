@@ -71,6 +71,43 @@ test('surface selection and hiding do not redirect automation or close tabs', as
   assert.equal(a.tabs.list().length, 2);
   window.emit('closed'); assert.equal(a.tabs.list().length, 2);
 });
+test('background scroll uses wheel input and restores throttling', async t => {
+  const { runtime, adapter, a } = setup(t);
+  const tab = await a.tabs.create(), wc = adapter.views[0].webContents;
+  let visible = false, minimized = false;
+  const window = Object.assign(new EventEmitter(), {
+    isVisible: () => visible, isMinimized: () => minimized,
+    contentView: { addChildView() {}, removeChildView() {} }
+  });
+  const surface = runtime.surfaces.register({ id:'panel', window, owner:wc });
+  const params = {x:100,y:100,xDistance:0,yDistance:-250,gestureSourceType:'mouse',preventFling:true};
+  const send = (method, commandParams = {}) => a.call('executeCdp', { target:{tabId:tab.id}, method, commandParams });
+  await assert.rejects(send('Input.synthesizeScrollGesture', params), /IAB_SCROLL_REQUIRES_PRESENTED_SURFACE/);
+  await send('Runtime.evaluate');
+  surface.present(tab.id);
+  await send('Input.synthesizeScrollGesture', params);
+  assert.deepEqual(wc.debugger.commands.at(-1).params, {type:'mouseWheel',x:100,y:100,deltaX:-0,deltaY:250});
+  assert.equal(wc.backgroundThrottling, true);
+  assert.ok(wc.isolatedCalls.some(call => call.scripts[0].code.includes('requestAnimationFrame')));
+  await assert.rejects(send('Input.synthesizeScrollGesture', {...params, speed:100}), /IAB_BACKGROUND_SCROLL_UNSUPPORTED_GESTURE/);
+  visible = true; minimized = true;
+  await send('Input.synthesizeScrollGesture', params);
+  assert.equal(wc.debugger.commands.at(-1).method, 'Input.dispatchMouseEvent');
+  minimized = false;
+  await send('Input.synthesizeScrollGesture', params);
+  assert.equal(wc.debugger.commands.at(-1).method, 'Input.synthesizeScrollGesture');
+});
+test('a stalled background scroll releases the tab queue', async t => {
+  const { runtime, adapter, a } = setup(t), tab = await a.tabs.create();
+  const wc = adapter.views[0].webContents;
+  const window = Object.assign(new EventEmitter(), { isVisible:()=>false, isMinimized:()=>false, contentView:{addChildView(){}, removeChildView(){}} });
+  runtime.surfaces.register({id:'panel', window, owner:wc}).present(tab.id);
+  wc.executeJavaScriptInIsolatedWorld = () => new Promise(() => {});
+  const call = (method, commandParams = {}) => a.call('executeCdp', {target:{tabId:tab.id}, method, commandParams});
+  await assert.rejects(call('Input.synthesizeScrollGesture', {x:1,y:1,xDistance:0,yDistance:-10,gestureSourceType:'mouse',preventFling:true}), /IAB_BACKGROUND_SCROLL_TIMEOUT/);
+  assert.equal(wc.backgroundThrottling, true);
+  await call('Runtime.evaluate');
+});
 test('reject global CDP and unsafe navigation; enforce operation grants', async t => {
   const { runtime, a } = setup(t); const tab = await a.tabs.create();
   for (const method of ['Browser.close', 'Target.getTargets', 'Storage.clearDataForOrigin', 'Network.getAllCookies', 'DOM.setFileInputFiles']) {
@@ -140,6 +177,32 @@ test('revocation during hidden view rendering prevents the pending mouse input',
   allowed = false; release(); await denied;
   assert.deepEqual(commands, ['Page.captureScreenshot']);
 });
+test('stalled mouse preparation times out without issuing late input', async t => {
+  const { runtime, adapter, a } = setup(t), tab = await a.tabs.create();
+  const debuggerApi = adapter.views[0].webContents.debugger, commands = [];
+  let release;
+  debuggerApi.sendCommand = async method => {
+    commands.push(method);
+    if (method === 'Page.captureScreenshot') await new Promise(resolve => { release = resolve; });
+    return {};
+  };
+  const screenshotTab = await a.tabs.create();
+  const screenshotDebugger = adapter.views[1].webContents.debugger;
+  let releaseScreenshot;
+  screenshotDebugger.sendCommand = async method => {
+    if (method === 'Page.captureScreenshot') await new Promise(resolve => { releaseScreenshot = resolve; });
+    return {};
+  };
+  const params = {target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:10,y:10}};
+  await Promise.all([
+    assert.rejects(a.call('executeCdp',params),/IAB_INPUT_PREPARATION_TIMEOUT/),
+    assert.rejects(a.call('executeCdp',{target:{tabId:screenshotTab.id},method:'Page.captureScreenshot'}),/IAB_SCREENSHOT_TIMEOUT/),
+  ]);
+  releaseScreenshot();
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});
+  release(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(commands,['Page.captureScreenshot','Runtime.evaluate']);
+});
 test('visual feedback is opt-in and explicit activity remains scoped to owned tabs', async t => {
   const { runtime, adapter, a, b } = setup(t); const tab = await a.tabs.create();
   await a.call('executeCdp',{target:{tabId:tab.id},method:'Input.insertText',commandParams:{text:'plain'}});
@@ -158,4 +221,29 @@ test('revoking authorization while feedback renders prevents the actual input', 
   const denied=assert.rejects(input,/REVOKED/); await new Promise(resolve=>setImmediate(resolve));
   allowed=false; release(true); await denied;
   assert.ok(!adapter.views[0].webContents.debugger.commands.some(command=>command.method==='Input.dispatchMouseEvent'));
+});
+
+test('frame debugger sessions stay inside their owning tab and permit iframe auto-attach only', async t => {
+  const { runtime, adapter, a, b } = setup(t);
+  const tab = await a.tabs.create(), other = await a.tabs.create();
+  const debuggerApi = adapter.views[0].webContents.debugger, events = [];
+  runtime.subscribe(event => events.push(event));
+  const call = (target, method, commandParams = {}) => a.call('executeCdp', {target,method,commandParams});
+  const config = {autoAttach:true,waitForDebuggerOnStart:false,flatten:true,filter:[{type:'iframe',exclude:false},{exclude:true}]};
+  await assert.rejects(call({tabId:tab.id},'Target.setAutoAttach',{...config,filter:[{type:'page'}]}), /Invalid frame/);
+  await assert.rejects(call({tabId:tab.id},'Target.setAutoAttach',{...config,waitForDebuggerOnStart:true}), /Invalid frame/);
+  await assert.rejects(call({tabId:tab.id,sessionId:'unowned'},'Runtime.evaluate'), /Invalid CDP frame session/);
+  await call({tabId:tab.id},'Target.setAutoAttach',config);
+  debuggerApi.emit('message',{},'Target.attachedToTarget',{sessionId:'child',targetInfo:{type:'iframe',targetId:'frame',parentFrameId:'root'}},undefined);
+  assert.equal(events.at(-1).params.source.tabId,tab.id);
+  await call({tabId:tab.id,sessionId:'child'},'Runtime.evaluate',{expression:'1'});
+  assert.equal(debuggerApi.commands.at(-1).sessionId,'child');
+  await runtime.visualFeedback.configure({cursor:true});
+  await a.call('executeCdp',{target:{tabId:tab.id,sessionId:'child'},method:'Input.dispatchMouseEvent',commandParams:{type:'mousePressed',x:10,y:20},visualPoint:{x:110,y:120}});
+  assert.match(adapter.views[0].webContents.isolatedCalls.at(-1).scripts[0].code,/"x":110,"y":120/);
+  await assert.rejects(a.call('executeCdp',{target:{tabId:tab.id,sessionId:'child'},method:'Input.dispatchMouseEvent',commandParams:{type:'mousePressed',x:10,y:20},visualPoint:{x:-1,y:120}}),/Invalid visual point/);
+  await assert.rejects(call({tabId:other.id,sessionId:'child'},'Runtime.evaluate'), /Invalid CDP frame session/);
+  await assert.rejects(b.call('executeCdp',{target:{tabId:tab.id,sessionId:'child'},method:'Runtime.evaluate'}));
+  debuggerApi.emit('message',{},'Target.detachedFromTarget',{sessionId:'child'},undefined);
+  await assert.rejects(call({tabId:tab.id,sessionId:'child'},'Runtime.evaluate'), /Invalid CDP frame session/);
 });

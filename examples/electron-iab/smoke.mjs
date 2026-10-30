@@ -4,8 +4,9 @@ import { once } from 'node:events';
 import { frame } from '../../packages/open-browser-use-electron/dist/wire.js';
 import { cursorBitmap } from '../../packages/open-browser-use-electron/dist/cursor.generated.js';
 import { connectExampleMcp } from './mcp.mjs';
+import { OpenBrowserUseBrowser, OpenBrowserUseClient } from '../../packages/open-browser-use-js/dist/index.js';
 
-export async function runSmoke({ runtime, scope, fixture, surface, window, launch, launchMcp, present, savePage }) {
+export async function runSmoke({ runtime, scope, fixture, surface, window, launch, launchMcp, launchRepl, present, savePage }) {
   const checks = [];
   const check = message => { checks.push(message); console.log(`IAB smoke: ${message}`); };
   const a = await scope.tabs.create({ url: `${fixture.url}/login` });
@@ -31,6 +32,147 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   while (await evaluate(a.id,'document.querySelector("#count").textContent')==='0' && Date.now()<clickDeadline) await new Promise(r=>setTimeout(r,20));
   assert.equal(await evaluate(a.id,'document.querySelector("#count").textContent'),'1');
   assert.equal(await evaluate(a.id,'window.trustedClick'),true); check('CDP mouse: hidden tab, trusted click event');
+  const sdkClient = new OpenBrowserUseClient({ socketPath:'scope-adapter' });
+  sdkClient.request = (method, params = {}) => scope.call(method, params);
+  sdkClient.onNotification = handler => runtime.subscribe(event => { if (event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
+  const sdkTab = new OpenBrowserUseBrowser({ client:sdkClient }).tab(a.id);
+  assert.equal(await sdkTab.playwright.getByRole('heading',{name:'login',exact:true}).count(),1);
+  const observation = await sdkTab.observe();
+  const increment = observation.nodes.find(node => node.role === 'button' && node.name === '加 1');
+  assert.ok(increment);
+  await sdkTab.click(increment.index, observation.snapshotId);
+  assert.equal(await evaluate(a.id,'document.querySelector("#count").textContent'),'2');
+  assert.equal(await evaluate(a.id,'window.trustedClick'),true);
+  await assert.rejects(sdkTab.click(increment.index, observation.snapshotId), /stale/);
+  const changedState = await sdkTab.observe({diff:true});
+  assert.equal(changedState.textMode,'diff');
+  assert.match(changedState.text, /\+ .*"2"/);
+  check('SDK observation: indexed trusted click and stale snapshot rejection');
+  await evaluate(a.id,'document.querySelector("#message").value = ""');
+  const textState = await sdkTab.observe();
+  const message = textState.nodes.find(node => node.role === 'textbox' && node.name === '消息');
+  assert.ok(message);
+  await sdkTab.typeText(message.index, textState.snapshotId, 'SDK input');
+  assert.equal(await evaluate(a.id,'document.querySelector("#message").value'),'SDK input');
+  assert.equal(await evaluate(a.id,'window.trustedInput'),true);
+  check('SDK observation: indexed trusted text input');
+  await evaluate(a.id,'document.querySelector("#message").addEventListener("keydown", e => window.sdkKey = {key:e.key, trusted:e.isTrusted})');
+  await sdkTab.pressKey('Enter');
+  assert.deepEqual(await evaluate(a.id,'window.sdkKey'), {key:'Enter', trusted:true});
+  await sdkTab.pressKey('ControlOrMeta+A');
+  assert.deepEqual(await evaluate(a.id,'({start:document.querySelector("#message").selectionStart,end:document.querySelector("#message").selectionEnd})'), {start:0,end:9});
+  check('SDK keyboard: trusted Enter and select all');
+  await evaluate(a.id,'(async()=>{const f=document.createElement("iframe");f.id="frame-test";f.srcdoc="<button onclick=\\"window.frameTrusted=event.isTrusted\\">Frame action</button>";document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()');
+  const frameState = await sdkTab.observe({includeFrames:true});
+  const frameButton = frameState.nodes.find(node=>node.name==='Frame action');
+  assert.ok(frameButton?.frameId);
+  await sdkTab.click(frameButton.index,frameState.snapshotId);
+  assert.equal(await evaluate(a.id,'document.querySelector("#frame-test").contentWindow.frameTrusted'),true);
+  await evaluate(a.id,'document.querySelector("#frame-test").remove()');
+  check('SDK frame observation: indexed trusted click');
+  await evaluate(a.id,`setTimeout(()=>{const b=document.createElement('button');b.id='delayed-sdk';b.textContent='Delayed SDK';b.onclick=e=>window.delayedSdkTrusted=e.isTrusted;document.body.prepend(b)},250)`);
+  await sdkTab.playwright.getByRole('button',{name:'Delayed SDK',exact:true}).click({timeoutMs:3000});
+  assert.equal(await evaluate(a.id,'window.delayedSdkTrusted'),true);
+  await evaluate(a.id,`(()=>{window.delayedSdkTrusted=false;const r=document.querySelector('#delayed-sdk').getBoundingClientRect(),cover=document.createElement('div');Object.assign(cover.style,{position:'fixed',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px',zIndex:'9999'});document.body.append(cover);setTimeout(()=>cover.remove(),250)})()`);
+  await sdkTab.playwright.getByRole('button',{name:'Delayed SDK',exact:true}).click({timeoutMs:3000});
+  assert.equal(await evaluate(a.id,'window.delayedSdkTrusted'),true);
+  await evaluate(a.id,'document.querySelector("#delayed-sdk").remove()');
+  check('SDK locator: waits for delayed target and sends trusted click');
+  await evaluate(a.id,`(()=>{window.movingSdk=true;const b=document.createElement('button');b.id='moving-sdk';b.textContent='Moving SDK';Object.assign(b.style,{position:'fixed',top:'10px',left:'10px',zIndex:'1000'});b.onclick=e=>window.movingSdkClick={trusted:e.isTrusted,moving:window.movingSdk};document.body.append(b)})()`);
+  const movement=(async()=>{for(let n=1;n<=12;n++){await evaluate(a.id,`document.querySelector('#moving-sdk').style.left='${10+8*n}px'`);await new Promise(resolve=>setTimeout(resolve,30));}await evaluate(a.id,'window.movingSdk=false')})();
+  await sdkTab.playwright.getByRole('button',{name:'Moving SDK',exact:true}).click({timeoutMs:5000});await movement;
+  assert.deepEqual(await evaluate(a.id,'window.movingSdkClick'),{trusted:true,moving:false});await evaluate(a.id,'document.querySelector("#moving-sdk").remove()');
+  check('SDK locator: waits for moving target to settle');
+  const crossUrl = fixture.url.replace('127.0.0.1','localhost') + '/cross-frame';
+  await evaluate(a.id,`(async()=>{window.crossMessages=[];window.addEventListener('message',e=>window.crossMessages.push(e.data));const f=document.createElement('iframe');f.id='cross-frame';f.src=${JSON.stringify(crossUrl)};document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`);
+  const crossState = await sdkTab.observe({includeFrames:true});
+  assert.equal(crossState.frameCoverage,'cross-process');
+  const crossButton = crossState.nodes.find(node=>node.name==='Cross-frame action');assert.ok(crossButton?.frameId);
+  await sdkTab.click(crossButton.index,crossState.snapshotId);
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-click',trusted:true});
+  const crossTextCount=await evaluate(a.id,'window.crossMessages.length');
+  await sdkTab.playwright.getByText('Cross-frame action',{exact:true}).click();await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(await evaluate(a.id,'window.crossMessages.length'),crossTextCount+1);
+  const crossSession=(await sdkTab.browser.cdp.frameSessions(a.id)).find(item=>item.frameId===crossButton.frameId)?.sessionId;assert.ok(crossSession);
+  const localPoint=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{const r=document.querySelector('button').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`,returnByValue:true},{sessionId:crossSession});
+  const feedbackPoint=await evaluate(a.id,`(()=>{const f=document.querySelector('#cross-frame'),r=f.getBoundingClientRect(),p=document.querySelector('#obu-iab-visual-feedback');return {x:Number(p.dataset.x),y:Number(p.dataset.y),left:r.left+f.clientLeft,top:r.top+f.clientTop}})()`);
+  assert.ok(Math.abs(feedbackPoint.x-feedbackPoint.left-localPoint.result.value.x)<1 && Math.abs(feedbackPoint.y-feedbackPoint.top-localPoint.result.value.y)<1);
+  const crossTextState=await sdkTab.observe({includeFrames:true});const crossText=crossTextState.nodes.find(node=>node.name==='Cross-frame text');assert.ok(crossText);
+  await sdkTab.typeText(crossText.index,crossTextState.snapshotId,'hello');await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-text',value:'hello',trusted:true});
+  const valueState=await sdkTab.observe({includeFrames:true,includeValues:true});
+  assert.equal(valueState.nodes.find(node=>node.name==='Cross-frame text').value,'hello');
+  assert.equal(valueState.nodes.find(node=>node.name==='Cross secret').valueRedacted,true);
+  assert.doesNotMatch(JSON.stringify(valueState),/fixture-private-123/);
+
+  await sdkTab.playwright.getByPlaceholder('Type cross message',{exact:true}).fill('updated');await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-text',value:'updated',trusted:true});
+  const crossClearState=await sdkTab.observe({includeFrames:true});const crossClear=crossClearState.nodes.find(node=>node.name==='Cross-frame text');
+  await sdkTab.fill(crossClear.index,crossClearState.snapshotId,'');await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-text',value:'',trusted:true});
+  const updates=sdkTab.playwright.getByLabel('Cross updates',{exact:true});await updates.check();await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-check',value:true,trusted:true});
+  const checkCount=await evaluate(a.id,'window.crossMessages.length');await updates.check();await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(await evaluate(a.id,'window.crossMessages.length'),checkCount);
+  await updates.uncheck();await new Promise(resolve=>setTimeout(resolve,100));assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-check',value:false,trusted:true});
+  await sdkTab.playwright.getByPlaceholder('Amount',{exact:true}).fill('137.5');await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-number',value:'137.5',trusted:true});
+  const priorNumber=await evaluate(a.id,'window.crossMessages.length');await assert.rejects(sdkTab.playwright.getByLabel('Cross amount',{exact:true}).fill('invalid'),/Invalid number value/);assert.equal(await evaluate(a.id,'window.crossMessages.length'),priorNumber);
+  await sdkTab.playwright.getByLabel('Cross date',{exact:true}).fill('2026-12-31');await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'date-change',value:'2026-12-31',trusted:false});
+  await sdkTab.playwright.getByLabel('Cross time',{exact:true}).fill('09:45');await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'time-change',value:'09:45',trusted:false});
+  const colour=sdkTab.playwright.getByLabel('Cross colour',{exact:true});assert.deepEqual(await colour.selectOption({label:'Blue'}),['blue']);await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-select',values:['blue'],trusted:false});
+  await assert.rejects(colour.selectOption('blocked',{timeoutMs:0}),/unavailable/);
+  const choices=sdkTab.playwright.getByLabel('Cross choices',{exact:true});assert.deepEqual(await choices.selectOption(['red','green']),['red','green']);await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-multi',values:['red','green'],trusted:false});
+  const staleCross=await sdkTab.observe({includeFrames:true});const staleCrossButton=staleCross.nodes.find(node=>node.name==='Cross-frame action');
+  await evaluate(a.id,`(async()=>{const f=document.querySelector('#cross-frame');f.src=${JSON.stringify(crossUrl+'?changed')};await new Promise(resolve=>f.onload=resolve)})()`);
+  await assert.rejects(sdkTab.click(staleCrossButton.index,staleCross.snapshotId),/Frame changed|Frame session|Frame sessions/);
+  await evaluate(a.id,`(()=>{const r=document.querySelector('#cross-frame').getBoundingClientRect(),cover=document.createElement('div');cover.id='cross-cover';Object.assign(cover.style,{position:'fixed',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px',zIndex:'9999'});document.body.append(cover)})()`);
+  const coveredCross=await sdkTab.observe({includeFrames:true});const coveredCrossButton=coveredCross.nodes.find(node=>node.name==='Cross-frame action');assert.ok(coveredCrossButton);
+  await assert.rejects(sdkTab.click(coveredCrossButton.index,coveredCross.snapshotId),/Frame is hidden/);
+  await evaluate(a.id,'document.querySelector("#cross-cover").remove()');
+  await evaluate(a.id,'document.querySelector("#cross-frame").remove()');
+  check('SDK cross-process frame: trusted click and text');
+  await evaluate(a.id,'document.body.insertAdjacentHTML("beforeend", "<input id=drag-test type=range value=10 style=\\"position:fixed;top:10px;left:10px;width:200px\\">"); document.querySelector("#drag-test").addEventListener("input",e=>window.sdkDragTrusted=e.isTrusted)');
+  const drag = await evaluate(a.id,'(()=>{const r=document.querySelector("#drag-test").getBoundingClientRect();return {from:[r.left+r.width*.15,r.top+r.height/2],to:[r.left+r.width*.85,r.top+r.height/2]}})()');
+  await sdkTab.drag(drag.from,drag.to);
+  assert.ok(await evaluate(a.id,'Number(document.querySelector("#drag-test").value)')>50);
+  assert.equal(await evaluate(a.id,'window.sdkDragTrusted'),true);
+  await evaluate(a.id,'document.querySelector("#drag-test").remove()');
+  check('SDK visual input: trusted drag');
+  present(a.id);
+  const visualPoint = await evaluate(a.id,'(()=>{const r=document.querySelector("#increment").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()');
+  await sdkTab.clickAt(visualPoint.x,visualPoint.y);
+  const visualDeadline = Date.now()+2000;
+  while (await evaluate(a.id,'document.querySelector("#count").textContent')==='2' && Date.now()<visualDeadline) await new Promise(r=>setTimeout(r,20));
+  assert.equal(await evaluate(a.id,'document.querySelector("#count").textContent'),'3');
+  check('SDK visual input: coordinate click');
+  await evaluate(a.id, `document.body.style.height="3000px"; window.hiddenWheels=[]; window.addEventListener('wheel', e => window.hiddenWheels.push({trusted:e.isTrusted, delta:e.deltaY}))`);
+  await sdkTab.scrollAt(visualPoint.x,visualPoint.y,0,250);
+  assert.ok(await evaluate(a.id,'window.scrollY') > 0);
+  assert.deepEqual(await evaluate(a.id,'window.hiddenWheels.at(-1)'), {trusted:true,delta:250});
+  await evaluate(a.id,'window.scrollTo(0,0); document.body.style.height=""');
+  check('SDK scroll: hidden window dispatches trusted wheel and remains usable');
+  if (process.env.OBU_IAB_VISIBLE_SCROLL_SMOKE === '1') {
+    window.showInactive();
+    try {
+      await evaluate(a.id,'document.body.style.height="3000px"');
+      await sdkTab.getScreenshot();
+      let timer;
+      try {
+        await Promise.race([sdkTab.scrollAt(visualPoint.x,visualPoint.y,0,250), new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('visible scroll timed out')),5000);})]);
+      } finally { clearTimeout(timer); }
+      const deadline = Date.now()+2000;
+      while (await evaluate(a.id,'window.scrollY')===0 && Date.now()<deadline) await new Promise(r=>setTimeout(r,20));
+      assert.ok(await evaluate(a.id,'window.scrollY')>0);
+      await evaluate(a.id,'window.scrollTo(0,0); document.body.style.height=""');
+      check('SDK scroll: visible host window');
+    } finally { window.hide(); }
+  }
   const other = runtime.scopes.open({ id:'other-task', profileId:'work' });
   await assert.rejects(other.call('executeCdp',{target:{tabId:a.id},method:'Runtime.evaluate'}));
   await assert.rejects(scope.call('executeCdp',{target:{tabId:a.id},method:'Browser.close'})); check('scope ownership and global CDP rejection');
@@ -86,6 +228,34 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
     assert.equal((await restricted.callTool('tabs')).isError,true);
   } finally { await restricted.close(); }
   check('mcp: operation grants and revocation remain enforced by the IAB host');
+  await evaluate(a.id,`(async()=>{const f=document.createElement('iframe');f.id='cross-repl';f.src=${JSON.stringify(crossUrl)};document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`);
+  for (const transport of ['private','socket']) {
+    const repl = await connectExampleMcp(await launchRepl(transport));
+    try {
+      const run = code => repl.callTool('js', {code});
+      assert.equal((await run(`const inventory = await getBrowserState(); const browser = await connectBrowser({browserId:inventory.available[0].id}); const tab = browser.tab(${a.id})`)).isError, undefined);
+      assert.equal((await run('nodeRepl.write((await getBrowserState()).sessions[0].tabs.some(item => item.id === tab.id))')).content[0].text,'true');
+      if (process.env.OBU_IAB_MIXED_SMOKE === '1') {
+        assert.equal((await run('await connectBrowser()')).isError,true);
+        const mixed=await run('const chrome = await connectBrowser({browserId:inventory.available.find(item=>item.kind==="extension").id}); const chromeTab = await chrome.newTab(); nodeRepl.write((await getBrowserState()).sessions.some(item=>item.browserId!=="host" && item.tabs.some(t=>t.id===chromeTab.id)))');
+        assert.equal(mixed.content[0].text,'true',JSON.stringify(mixed));
+        assert.equal((await run('await chrome.client.finalizeTabs([])')).isError,undefined);
+      }
+      assert.equal((await run('nodeRepl.write((await tab.observe()).nodes.some(node => node.name === "加 1"))')).content[0].text, 'true');
+      const messageCount = await evaluate(a.id,'window.crossMessages.length');
+      const cross = await run('const frameState = await tab.observe({includeFrames:true}); const frameButton = frameState.nodes.find(node => node.name === "Cross-frame action"); await tab.click(frameButton.index,frameState.snapshotId)');
+      assert.equal(cross.isError,undefined,JSON.stringify(cross));
+      await new Promise(resolve=>setTimeout(resolve,100));
+      assert.equal(await evaluate(a.id,'window.crossMessages.length'),messageCount+1);
+      assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-click',trusted:true});
+      assert.equal((await run('nodeRepl.emitImage(await tab.getScreenshot())')).content[0].type, 'image');
+      repl.revoke();
+      assert.equal((await run('await browser.getTabs()')).isError, true);
+    } catch (error) { await repl.close().catch(() => {}); throw error; }
+    await repl.close();
+    check(`repl-${transport}: scoped session, observation, image and revocation`);
+  }
+  await evaluate(a.id,'document.querySelector("#cross-repl").remove()');
   // CLI and worker processes have exited and their grants were revoked. This
   // unregistered process receives no browser response from the known endpoint.
   const endpoint = await runtime.connections.openSocket();

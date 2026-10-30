@@ -146,10 +146,18 @@ panel below its toolbar. Browser guests have no host preload or IPC access.
 
 ## Local smoke
 
+For the focused hidden-window wheel and throttling check, run
+`pnpm --filter @open-browser-use/electron-iab-example exec electron scroll-smoke.mjs` after building the
+Electron package. The check uses a disposable profile and a local fixture.
+
 ```sh
 pnpm smoke:iab
 pnpm --filter @open-browser-use/electron-iab-example test
 ```
+
+To also check coordinate scrolling in a visible host window, run
+`OBU_IAB_VISIBLE_SCROLL_SMOKE=1 pnpm smoke:iab`. This temporarily shows the
+disposable window without focusing it, then hides it again.
 
 The real Electron smoke exercises all four reference transports, private/socket
 MCP lifecycle and image results, trusted MCP mouse/text input, scope/grant

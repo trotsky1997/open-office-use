@@ -77,3 +77,20 @@ test('server rejects scope override on the wire, independently of client guards'
   await new Promise(resolve => client.channel.once('closed',resolve));
   assert.equal(calls.length,0);
 });
+
+test('read-only leases do not receive page debugger events', { skip: !supported }, async t => {
+  const { grant, emit } = await setup(t);
+  const client = await connectSocketIab(grant('a',{operations:['tabs.read']})); t.after(()=>client.close());
+  const events=[];client.onNotification(event=>events.push(event));
+  emit({scopeId:'a',method:'onCDPEvent',params:{source:{tabId:1},method:'Target.attachedToTarget'}});
+  emit({scopeId:'a',method:'onDebuggerDetach',params:{tabId:1}});
+  emit({scopeId:'a',method:'onTabUpdated',params:{tab:{id:1}}});
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.deepEqual(events.map(event=>event.method),['onTabUpdated']);
+  const control = await connectSocketIab(grant('a',{operations:['page.control']})); t.after(()=>control.close());
+  const controlEvents=[];control.onNotification(event=>controlEvents.push(event));
+  emit({scopeId:'a',method:'onCDPEvent',params:{source:{tabId:1},method:'Target.attachedToTarget'}});
+  emit({scopeId:'a',method:'onTabUpdated',params:{tab:{id:1}}});
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.deepEqual(controlEvents.map(event=>event.method),['onCDPEvent']);
+});
