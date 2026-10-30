@@ -7,12 +7,15 @@ from docx import Document
 
 import word
 import session
+import officecli_backend
 
 W = word.W
 W14 = '{http://schemas.microsoft.com/office/word/2010/wordml}'
 W15 = '{http://schemas.microsoft.com/office/word/2012/wordml}'
 REL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
 CT = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+CID = '{http://schemas.microsoft.com/office/word/2016/wordml/cid}'
+CEX = '{http://schemas.microsoft.com/office/word/2018/wordml/cex}'
 
 
 def fixture(root, variant='normal'):
@@ -26,7 +29,7 @@ def fixture(root, variant='normal'):
         for index, comment in enumerate(comments.findall(W + 'comment')):
             p = comment.findall(W + 'p')[-1]; p.set(W14 + 'paraId', f'{index+1:08X}')
         first = comments.findall(W + 'comment')[0]
-        earlier = etree.Element(W + 'p'); earlier.set(W14 + 'paraId', 'AAAABBBB'); first.insert(0, earlier)
+        earlier = etree.Element(W + 'p'); earlier.set(W14 + 'paraId', '0A0ABBBB'); first.insert(0, earlier)
         if variant == 'duplicate_comment_para': comments.findall(W + 'comment')[1].findall(W + 'p')[-1].set(W14 + 'paraId', '00000001')
         rels = etree.fromstring(src.read('word/_rels/document.xml.rels'))
         etree.SubElement(rels, REL + 'Relationship', Id='rIdOfficeThread', Type='http://schemas.microsoft.com/office/2011/relationships/commentsExtended', Target='commentsExtended.xml')
@@ -41,6 +44,30 @@ def fixture(root, variant='normal'):
                    'word/_rels/document.xml.rels': etree.tostring(rels, encoding='UTF-8', xml_declaration=True),
                    '[Content_Types].xml': etree.tostring(types, encoding='UTF-8', xml_declaration=True),
                    'word/commentsExtended.xml': b'<invalid' if variant == 'malformed' else etree.tostring(ext, encoding='UTF-8', xml_declaration=True)}
+        if variant.startswith('modern'):
+            ids = etree.Element(CID + 'commentsIds', nsmap={'w16cid': CID[1:-1]})
+            cex = etree.Element(CEX + 'commentsExtensible', nsmap={'w16cex': CEX[1:-1]})
+            for index in range(3):
+                if variant == 'modern_missing_parent' and index == 0: continue
+                durable = f'{index+101:08X}'
+                etree.SubElement(ids, CID + 'commentId', {CID + 'paraId': f'{index+1:08X}', CID + 'durableId': durable})
+                etree.SubElement(cex, CEX + 'commentExtensible', {CEX + 'durableId': durable, CEX + 'dateUtc': '2024-01-01T00:00:00Z'})
+            if variant == 'modern_duplicate': etree.SubElement(ids, CID + 'commentId', {CID + 'paraId': '00000009', CID + 'durableId': '00000065'})
+            if variant == 'modern_placeholder': cex.find(CEX + 'commentExtensible').set(CEX + 'intelligentPlaceholder', '1')
+            if variant == 'modern_cex_duplicate': etree.SubElement(cex, CEX + 'commentExtensible', {CEX + 'durableId': '00000065'})
+            if variant == 'modern_invalid_durable': ids.find(CID + 'commentId').set(CID + 'durableId', '7FFFFFFF')
+            etree.SubElement(cex, CEX + 'extLst')
+            if variant != 'modern_ext_only':
+                etree.SubElement(rels, REL + 'Relationship', Id='rIdModernIDs', Type='http://schemas.microsoft.com/office/2016/09/relationships/commentsIds', Target='commentsIds.xml')
+                etree.SubElement(types, CT + 'Override', PartName='/word/commentsIds.xml', ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml')
+                changes['word/commentsIds.xml'] = etree.tostring(ids, encoding='UTF-8', xml_declaration=True)
+            if variant != 'modern_ids_only':
+                if variant != 'modern_unlinked':
+                    etree.SubElement(rels, REL + 'Relationship', Id='rIdModernExtensible', Type='http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible', Target='commentsExtensible.xml')
+                etree.SubElement(types, CT + 'Override', PartName='/word/commentsExtensible.xml', ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml')
+                changes['word/commentsExtensible.xml'] = b'<broken' if variant == 'modern_malformed' else etree.tostring(cex, encoding='UTF-8', xml_declaration=True)
+            changes['word/_rels/document.xml.rels'] = etree.tostring(rels, encoding='UTF-8', xml_declaration=True)
+            changes['[Content_Types].xml'] = etree.tostring(types, encoding='UTF-8', xml_declaration=True)
         with zipfile.ZipFile(result, 'w') as dst:
             for item in src.infolist(): dst.writestr(item, changes.pop(item.filename, src.read(item.filename)))
             for name, data in changes.items(): dst.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
@@ -68,6 +95,34 @@ if __name__ == '__main__':
             assert set(before.namelist()) == set(after.namelist())
             changed = {'word/document.xml', 'word/comments.xml', 'word/commentsExtended.xml'}
             assert all(before.read(name) == after.read(name) for name in before.namelist() if name not in changed)
+        for variant in ('modern_both', 'modern_ids_only'):
+            modern_source = fixture(tmp, variant); modern_draft = Path(tmp) / (variant + '-draft'); session.start(modern_draft, source=modern_source)
+            session.resolve_comment(modern_draft, 0, '0', False)
+            with zipfile.ZipFile(modern_draft / 'revision-000001.docx') as before:
+                old_parts = {name: before.read(name) for name in before.namelist()}
+            result = session.reply_comment(modern_draft, 1, '0', 'Durable reply', 'Editor')
+            assert session.list_comments(modern_draft, 2)['comments'][-1]['reply_to_comment_id'] == '0'
+            if variant == 'modern_both':
+                validation = officecli_backend.audit(result['file'])['validation']; assert validation['exit_code'] == 0, validation
+            with zipfile.ZipFile(result['file']) as after:
+                ids = etree.fromstring(after.read('word/commentsIds.xml')); records = ids.findall(CID + 'commentId')
+                assert len(records) == 4
+                latest = records[-1]; pid = latest.get(CID + 'paraId'); durable = latest.get(CID + 'durableId')
+                assert 0 < int(durable, 16) < 0x7fffffff and len({node.get(CID + 'durableId') for node in records}) == 4
+                comments = etree.fromstring(after.read('word/comments.xml')); new_comment = comments.findall(W + 'comment')[-1]
+                assert new_comment.findall(W + 'p')[-1].get(W14 + 'paraId') == pid
+                changed = {'word/document.xml', 'word/comments.xml', 'word/commentsExtended.xml', 'word/commentsIds.xml'}
+                if variant == 'modern_both':
+                    changed.add('word/commentsExtensible.xml'); cex = etree.fromstring(after.read('word/commentsExtensible.xml'))
+                    assert cex[-1].tag == CEX + 'extLst' and cex[-2].get(CEX + 'durableId') == durable and cex[-2].get(CEX + 'dateUtc')
+                assert all(after.read(name) == data for name, data in old_parts.items() if name not in changed)
+        for variant in ('modern_duplicate', 'modern_missing_parent', 'modern_ext_only', 'modern_malformed', 'modern_placeholder', 'modern_cex_duplicate', 'modern_invalid_durable', 'modern_unlinked'):
+            bad_file = fixture(tmp, variant); bad_draft = Path(tmp) / (variant + '-draft'); session.start(bad_draft, source=bad_file)
+            session.resolve_comment(bad_draft, 0, '0', False)
+            try: session.reply_comment(bad_draft, 1, '0', 'Rejected', 'Editor')
+            except ValueError: pass
+            else: raise AssertionError(f'{variant} metadata was accepted')
+            assert session.info(bad_draft)['latest_revision'] == 1
         for bad_id in (b['id'], c['id'], '999'):
             try: session.resolve_comment(draft, 1, bad_id, True)
             except ValueError: pass
