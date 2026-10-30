@@ -383,6 +383,8 @@ async def main():
                 dynamic_edited = await session.call_tool('session_edit_grid', {'directory': str(dynamic_edit_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'C1', 'changes': [{'cell':'C1','value':'=SEQUENCE(4)'}]})
                 assert not dynamic_edited.isError and dynamic_edited.structuredContent['dynamic_formula_cells'] == ['C1'], dynamic_edited
                 assert load_workbook(dynamic_edit_draft / 'revision-000001.xlsx').active['C1'].value.text == '=_xlfn.SEQUENCE(4)'
+                scoped_edit = await session.call_tool('session_edit', {'directory': str(dynamic_edit_draft), 'base_revision': 1, 'path': '/Sheet/C1', 'mode': 'formula', 'value': '=LET(x,1,y,x+2,y*2)'})
+                assert not scoped_edit.isError and scoped_edit.structuredContent['dynamic_formula_cells'] == ['C1'], scoped_edit
                 dynamic_pdf = await session.call_tool('render_pdf', {'file': str(dynamic_draft / 'revision-000001.xlsx'), 'output_dir': str(root / 'dynamic-pdf')})
                 assert not dynamic_pdf.isError and dynamic_pdf.structuredContent['render_advisory']['dynamic_array_metadata'] is True, dynamic_pdf
                 dynamic_view = await session.call_tool('session_view_page', {'directory': str(dynamic_draft), 'revision': 1, 'page': 1})

@@ -100,3 +100,7 @@ Rendered XLSX previews disclose XLDAPR metadata or incomplete inspection for the
 ## Snapshot-bound rendering
 
 Structured renders, visual results and selection extraction use a copied source and report its SHA-256. Selection candidate text extraction and OfficeCLI queries share one copy. Viewer candidate requests are tied to the displayed preview hash and reject mismatches. External changes during the initial copy can still produce an inconsistent file.
+
+## Scoped dynamic formulas
+
+Dynamic candidate validation resolves LET bindings and LAMBDA parameters lexically, including nested expressions and local function calls. Unbound or shadowed-name changes are rejected; verified common formulas through OfficeCLI and versioned grid editing. Complex metadata and native Excel interoperability remain open.

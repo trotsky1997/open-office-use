@@ -35,28 +35,66 @@ def dynamic_formula_matches(requested, candidate):
         before = Tokenizer('=' + requested).items; after = Tokenizer('=' + candidate).items
     except Exception as exc: raise ValueError('Unable to verify dynamic formula') from exc
     if len(before) != len(after): return False
-    local = None; result_start = len(before)
-    if before and before[0].type == 'FUNC' and before[0].value.upper() == 'LET(':
-        depth = 0; separators = []; nested = False
-        for index, token in enumerate(before):
-            if token.subtype == 'OPEN':
-                if index and token.type == 'FUNC' and token.value.upper() in ('LET(', 'LAMBDA('): nested = True
-                depth += 1
-            elif token.subtype == 'CLOSE': depth -= 1
-            elif token.type == 'SEP' and token.subtype == 'ARG' and depth == 1: separators.append(index)
-        if not nested and len(separators) == 2 and separators[0] == 2 and before[1].type == 'OPERAND' and before[1].subtype == 'RANGE':
-            name = before[1].value
-            if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', name) and not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', name):
-                local = name; result_start = separators[1] + 1
-    future = {'SEQUENCE', 'XLOOKUP', 'FILTER', 'SORT', 'SORTBY', 'UNIQUE', 'RANDARRAY', 'LET'}
+    stack, pairs, separators = [], {}, {}
+    for index, token in enumerate(before):
+        if token.subtype == 'OPEN': stack.append(index)
+        elif token.subtype == 'CLOSE':
+            if not stack or before[stack[-1]].type != token.type: return False
+            pairs[stack.pop()] = index
+        elif token.type == 'SEP' and token.subtype == 'ARG' and stack:
+            separators.setdefault(stack[-1], []).append(index)
+    if stack: return False
+    local_indices = set()
+    def visit(start, end, scope, depth=0):
+        if depth > 64: raise ValueError('Formula nesting exceeds verification limit')
+        index = start
+        while index < end:
+            token = before[index]
+            if index in pairs:
+                close = pairs[index]
+                if close >= end: raise ValueError('Invalid formula nesting')
+                function = token.value[:-1].upper() if token.type == 'FUNC' else ''
+                if token.type == 'FUNC' and token.value[:-1].casefold() in scope: local_indices.add(index)
+                if function in ('LET', 'LAMBDA') and index not in local_indices:
+                    boundaries = [index, *separators.get(index, []), close]
+                    args = [(boundaries[i] + 1, boundaries[i + 1]) for i in range(len(boundaries) - 1)]
+                    if (function == 'LET' and (len(args) < 3 or len(args) % 2 != 1)) or (function == 'LAMBDA' and not args): raise ValueError('Unsupported local binding')
+                    declarations = list(range(0, len(args) - 1, 2)) if function == 'LET' else list(range(len(args) - 1))
+                    names = set(); active = set(scope)
+                    for arg_index in declarations:
+                        start_arg, end_arg = args[arg_index]
+                        content = [i for i in range(start_arg, end_arg) if before[i].type != 'WHITE-SPACE']
+                        if len(content) != 1: raise ValueError('Unsupported local name')
+                        name_token = before[content[0]]; name = name_token.value
+                        if name_token.type != 'OPERAND' or name_token.subtype != 'RANGE' or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', name) or re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', name): raise ValueError('Unsupported local name')
+                        key = name.casefold()
+                        if key in names: raise ValueError('Duplicate local name')
+                        names.add(key); local_indices.add(content[0])
+                        if function == 'LET':
+                            value_start, value_end = args[arg_index + 1]
+                            visit(value_start, value_end, active, depth + 1)
+                            active.add(key)
+                    if function == 'LAMBDA': active.update(names)
+                    visit(*args[-1], active, depth + 1)
+                else:
+                    visit(index + 1, close, scope, depth + 1)
+                index = close + 1
+            else:
+                if token.type == 'OPERAND' and token.subtype == 'RANGE' and token.value.casefold() in scope: local_indices.add(index)
+                index += 1
+    try: visit(0, len(before), set())
+    except ValueError: return False
+    future = {'SEQUENCE', 'XLOOKUP', 'FILTER', 'SORT', 'SORTBY', 'UNIQUE', 'RANDARRAY', 'LET', 'LAMBDA', 'MAP', 'BYROW', 'BYCOL', 'REDUCE', 'SCAN', 'MAKEARRAY'}
     for index, (original, produced) in enumerate(zip(before, after)):
         if (original.type, original.subtype) != (produced.type, produced.subtype): return False
         value = produced.value
         if produced.type == 'FUNC' and produced.subtype == 'OPEN':
-            match = re.fullmatch(r'_xlfn\.(?:_xlws\.)?([A-Za-z][A-Za-z0-9.]*)\(', value, re.IGNORECASE)
-            if match and match.group(1).upper() in future: value = match.group(1) + '('
-        elif produced.type == 'OPERAND' and produced.subtype == 'RANGE' and local and (index == 1 or index >= result_start):
-            if value.lower() == ('_xlpm.' + local).lower(): value = value[6:]
+            match = re.fullmatch(r'_xlfn\.(_xlws\.)?([A-Za-z][A-Za-z0-9.]*)\(', value, re.IGNORECASE)
+            if index in local_indices:
+                if value.lower() == ('_xlpm.' + original.value).lower(): value = value[6:]
+            elif match and match.group(2).upper() in future and (not match.group(1) or match.group(2).upper() in ('FILTER', 'SORT')): value = match.group(2) + '('
+        elif index in local_indices and produced.type == 'OPERAND' and produced.subtype == 'RANGE':
+            if value.lower() == ('_xlpm.' + original.value).lower(): value = value[6:]
         if value != original.value: return False
     return True
 

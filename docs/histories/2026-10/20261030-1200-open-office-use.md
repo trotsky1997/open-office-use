@@ -119,3 +119,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 渲染、预览提示及选区查询绑定同一文件快照并返回 SHA-256；预览与候选快照不一致时拒绝定位并刷新缓存。
 
 - 已验证元数据且保存范围仅含锚点的动态数组可继续编辑或清除；多单元格溢出范围仍受保护。
+
+- 动态公式校验支持多变量和嵌套 LET、LAMBDA 及局部函数调用，并按作用域拒绝潜在语义变化。
