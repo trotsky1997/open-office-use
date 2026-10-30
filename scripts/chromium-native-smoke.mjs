@@ -412,6 +412,10 @@ try {
  assert.equal(await tab.evaluate('window.frameMessages.length'),beforeInvalidNumber);
  await tab.playwright.getByLabel('Cross amount',{exact:true}).fill('');await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-number',value:'',trusted:true});
+ for (const [type,value,kind] of [['date','2026-11-02','date-change'],['time','08:32','time-change'],['month','2026-12','month-change'],['week','2026-W48','week-change'],['datetime-local','2026-11-12T08:30','datetime-change']]) {
+   await crossFrame.locator(`input[type="${type}"]`).fill(value);await new Promise(r=>setTimeout(r,30));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind,value,trusted:false});
+ }
+ const beforeCssInvalid=await tab.evaluate('window.frameMessages.length');await assert.rejects(crossFrame.locator('input[type="date"]').fill('2026-02-30',{timeoutMs:0}),/Invalid date or time/);assert.equal(await tab.evaluate('window.frameMessages.length'),beforeCssInvalid);
  const date=tab.playwright.getByLabel('Cross date',{exact:true});await date.fill('2026-12-31');await new Promise(r=>setTimeout(r,100));
  assert.deepEqual((await tab.evaluate('window.frameMessages.slice(-2)')),[{kind:'date-input',value:'2026-12-31',trusted:false},{kind:'date-change',value:'2026-12-31',trusted:false}]);
  const priorDate=await tab.evaluate('window.frameMessages.length');await assert.rejects(date.fill('2026-02-30',{timeoutMs:0}),/Invalid date or time/);assert.equal(await tab.evaluate('window.frameMessages.length'),priorDate);

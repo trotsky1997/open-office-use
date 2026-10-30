@@ -935,8 +935,26 @@ export class OpenBrowserUseTab {
             if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
                 throw new RetryablePreflightError("Selector target changed; observe again");
             if (text !== undefined) {
-                const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() { return this.isConnected && !this.disabled && !this.readOnly && this.getAttribute('aria-readonly') !== 'true' && (this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))); }` }, { sessionId });
-                if (!isObject(editable) || !isObject(editable.result) || editable.result.value !== true)
+                const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) {
+          if (!this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly') === 'true') return 'unsupported';
+          if (this instanceof HTMLInputElement && ['date','time','month','week','datetime-local'].includes(this.type)) { const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;return probe.value===value ? 'temporal' : 'invalid'; }
+          return this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type)) ? 'text' : 'unsupported';
+        }` }, { sessionId });
+                const status = isObject(editable) && isObject(editable.result) ? editable.result.value : undefined;
+                if (status === 'invalid')
+                    throw new Error("Invalid date or time value");
+                if (status === 'temporal') {
+                    const latest = await this.queryCss(snapshot.selector, snapshot.framePath);
+                    if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids))
+                        throw new RetryablePreflightError("Selector target changed; observe again");
+                    this.#observation = undefined;
+                    inputIssued = true;
+                    const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly')==='true') return false; for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return false; const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;if(probe.value!==value)return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)return false;setter.call(this,value);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return this.isConnected && this.value===value; }` }, { sessionId });
+                    if (!isObject(applied) || !isObject(applied.result) || applied.result.value !== true)
+                        throw new Error("Date or time input did not retain the requested value");
+                    return;
+                }
+                if (status !== 'text')
                     throw new Error("Target is not an editable text field");
             }
             this.#observation = undefined;

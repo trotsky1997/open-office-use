@@ -272,9 +272,11 @@ reads require a unique match. Selector evaluation uses an isolated world, and
 reads recheck document, frame and match identity. Click and hover also check
 visibility, hit testing and stable geometry before issuing trusted mouse input.
 `press` checks the selected frame, target identity and focus again after focusing.
-`fill` supports text-like inputs, number inputs, textareas and contenteditable
-elements, and rechecks focus and selection before inserting text. CSS locator
-chaining is not yet implemented.
+`fill` supports text-like and number inputs, textareas, contenteditable elements,
+and native date, time, month, week and datetime-local inputs. Text input rechecks
+focus and selection before inserting. Date and time values are validated using
+the native input parser; their `input` and `change` events are synthetic
+(`isTrusted` is false). CSS locator chaining is not yet implemented.
 
 `filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
 locator by its accessible static-text descendants. Matching is a case-insensitive
