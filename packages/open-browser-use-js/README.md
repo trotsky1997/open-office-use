@@ -343,6 +343,20 @@ load state is `load` and the default timeout is 10 seconds; `timeoutMs: 0`
 checks once. URLs are sampled roughly every 100 ms, so transient intermediate
 URLs can be missed. A slow browser request can finish after the timeout.
 
+To observe navigation triggered by an action, register the wait before the
+action runs:
+
+```js
+await tab.playwright.expectNavigation(
+  () => tab.playwright.getByRole("link", {name: "Continue", exact: true}).click(),
+  {url: "https://example.com/done", timeoutMs: 15000}
+);
+```
+
+This watches main-frame document and same-document navigation, then waits for
+the requested URL and load state. A timeout or action error can occur after
+the action has taken effect; inspect the page before retrying.
+
 ## JavaScript dialogs
 
 Call `watchDialogs()` before triggering a JavaScript dialog. Start the action

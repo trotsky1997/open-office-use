@@ -124,6 +124,25 @@ test('history navigation stays within the tab and does not repeat a failed actio
   currentIndex=3;await assert.rejects(tab.back(),/history is unavailable/);
 });
 
+test('expectNavigation arms before the action and ignores child-frame navigation',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  let href='https://example.test/next';
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root'}}};
+    if(params.method==='Runtime.evaluate')return {result:{value:{href,readyState:'complete'}}};
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const emit=(method,params)=>{for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method,params}});};
+  const result=await tab.playwright.expectNavigation(async()=>{emit('Page.navigatedWithinDocument',{frameId:'root'});return 'done';},{url:href,timeoutMs:500});
+  assert.equal(result,'done');assert.equal(handlers.size,1);
+  await assert.rejects(tab.expectNavigation(async()=>{emit('Page.frameNavigated',{frame:{id:'child',parentId:'root'}});},{timeoutMs:10}),/Timed out waiting for navigation/);
+  await assert.rejects(tab.expectNavigation(async()=>{throw new Error('action failed');},{timeoutMs:500}),/action failed/);
+  assert.equal(handlers.size,1);
+});
+
 test('goto does not treat a loaded previous document as a completed navigation', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let sameDocument=false, detached=false;const handlers=new Set();

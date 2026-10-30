@@ -175,3 +175,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 语义定位器新增 isVisible()：检查匹配节点的 CSS visibility、非零尺寸和各级 frame 宿主，缺少可访问匹配时返回 false，重复匹配报错。SDK 54 项通过；macOS 隔离 Chromium 原生链路验证主页面、跨进程 frame 与零尺寸 frame，Electron 44 页面验证主页面和跨进程 frame。遮挡和视口外位置不影响该状态；可访问树未收录的节点不可由语义定位器查询。
 
 语义定位器新增 last() 与 all()；last 在过滤和位置操作的既定顺序中选择最后一项，all 按当前数量返回位置定位器，各定位器使用时重新观察。SDK 54 项通过，覆盖过滤顺序与列表重排；macOS 隔离 Chromium 原生链路和 Electron 44 实测跨进程 frame 列表读取。
+
+新增 expectNavigation(action, options)，在动作执行前监听主 frame 导航，支持文档导航与同文档路由，随后检查指定 URL 和 load/domcontentloaded 状态；动作错误或超时会清理监听，子 frame 事件不会满足等待。SDK 55 项通过；macOS 隔离 Chromium 原生消息链路与 Electron 44 页面实测真实链接跳转和 History API 路由。

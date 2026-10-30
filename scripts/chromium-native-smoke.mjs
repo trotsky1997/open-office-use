@@ -40,6 +40,11 @@ try {
  await tab.goto(`http://127.0.0.1:${http.address().port}/#same-document`,{timeoutMs:1500});
  assert.match(await tab.evaluate('location.href'),/#same-document$/);
  await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:1500});
+ const navUrl=`http://127.0.0.1:${http.address().port}/?navigation=1`;
+ await tab.evaluate(`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(navUrl)};a.textContent='Navigate fixture';document.body.append(a)})()`);
+ await tab.playwright.expectNavigation(()=>tab.playwright.getByRole('link',{name:'Navigate fixture',exact:true}).click(),{url:navUrl,timeoutMs:5000});
+ await tab.playwright.expectNavigation(()=>tab.evaluate(`history.pushState({},'', '#navigation')`),{url:navUrl+'#navigation',timeoutMs:5000});
+ await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:5000});
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isEnabled(),true);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isVisible(),true);

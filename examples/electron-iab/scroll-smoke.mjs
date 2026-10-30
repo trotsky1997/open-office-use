@@ -28,6 +28,11 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    await sdkTab.playwright.expectNavigation(()=>evaluate(`history.pushState({},'', '#fixture-nav')`),{url:fixture.url+'/#fixture-nav',timeoutMs:5000});
+    await sdkTab.goto(fixture.url,{timeoutMs:5000});
+    await evaluate(`(()=>{const a=document.createElement('a');a.href='/?navigation=1';a.textContent='Navigate fixture';document.body.append(a)})()`);
+    await sdkTab.playwright.expectNavigation(()=>sdkTab.playwright.getByRole('link',{name:'Navigate fixture',exact:true}).click(),{url:fixture.url+'/?navigation=1',timeoutMs:5000});
+    await sdkTab.goto(fixture.url,{timeoutMs:5000});
     const uploadFile=join(userData,'upload-fixture.txt'), secondUpload=join(userData,'upload-second.txt');writeFileSync(uploadFile,'isolated fixture');writeFileSync(secondUpload,'second fixture');
     await scope.files.authorize([uploadFile,secondUpload]);
     await evaluate(`(()=>{const input=document.createElement('input');input.type='file';input.id='iab-upload';Object.assign(input.style,{position:'fixed',left:'20px',top:'150px',width:'250px',height:'40px',zIndex:'999999'});document.body.append(input)})()`);

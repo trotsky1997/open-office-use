@@ -181,6 +181,11 @@ export declare class OpenBrowserUseTab {
     private moveHistory;
     reload(): Promise<void>;
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
+    expectNavigation<T>(action: () => Promise<T>, options?: {
+        timeoutMs?: number;
+        url?: string | RegExp;
+        waitUntil?: OpenBrowserUseLoadState;
+    }): Promise<T>;
     waitForURL(url: string | RegExp, options?: {
         waitUntil?: OpenBrowserUseLoadState;
         timeoutMs?: number;
@@ -252,6 +257,11 @@ export declare class OpenBrowserUseTabPlaywright {
     readonly tab: OpenBrowserUseTab;
     constructor(tab: OpenBrowserUseTab);
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
+    expectNavigation<T>(action: () => Promise<T>, options?: {
+        timeoutMs?: number;
+        url?: string | RegExp;
+        waitUntil?: OpenBrowserUseLoadState;
+    }): Promise<T>;
     waitForURL(url: string | RegExp, options?: {
         waitUntil?: OpenBrowserUseLoadState;
         timeoutMs?: number;

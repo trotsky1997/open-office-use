@@ -62,6 +62,9 @@ dispatch, inspect before retrying.
 After navigation or a history API route change, use
 `tab.waitForURL("https://example.com/target")` or a regular expression to wait
 for the main document URL and load state. Sampling can miss transient URLs.
+For an action that should navigate, use `tab.playwright.expectNavigation(() =>
+locator.click(), {url: "https://example.com/target"})` to arm the main-frame
+navigation listener before the action.
 For subsequent observations, `tab.observe({diff:true})` reports text changes;
 always use the newly returned `nodes` and `snapshotId` for actions.
 When current field values are needed, request `includeValues:true`; native

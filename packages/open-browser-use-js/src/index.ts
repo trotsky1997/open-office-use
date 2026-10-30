@@ -518,6 +518,32 @@ export class OpenBrowserUseTab {
     return this.browser.cdp.waitForLoadState(this.id, options);
   }
 
+  async expectNavigation<T>(action: () => Promise<T>, options: {timeoutMs?: number; url?: string | RegExp; waitUntil?: OpenBrowserUseLoadState} = {}): Promise<T> {
+    if (typeof action !== "function") throw new Error("Navigation action must be a function");
+    if (options.url !== undefined && typeof options.url !== "string" && !types.isRegExp(options.url)) throw new Error("URL matcher must be a string or RegExp");
+    const waitUntil = options.waitUntil ?? "load", timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
+    assertSupportedLoadState(waitUntil);
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid navigation timeout");
+    await this.browser.cdp.call(this.id,"Page.enable");
+    const tree = await this.browser.cdp.call(this.id,"Page.getFrameTree");
+    const root = isObject(tree) && isObject(tree.frameTree) && isObject(tree.frameTree.frame) ? tree.frameTree.frame.id : undefined;
+    if (typeof root !== "string") throw new Error("Main frame is unavailable");
+    const controller = new AbortController(), deadline = performance.now() + timeoutMs;
+    const navigation = this.browser.cdp.waitForEvent(this.id,notification => {
+      const event = cdpEventForTab(notification,this.id);
+      if (!event || !isObject(event.params)) return false;
+      if (event.method === "Page.navigatedWithinDocument") return event.params.frameId === root;
+      return event.method === "Page.frameNavigated" && isObject(event.params.frame) && event.params.frame.id === root && !event.params.frame.parentId;
+    },{timeoutMs,signal:controller.signal,timeoutMessage:`Timed out waiting for navigation after ${timeoutMs} ms`});
+    try {
+      const [result] = await Promise.all([Promise.resolve().then(action),navigation]);
+      const remaining = Math.max(0, deadline - performance.now());
+      if (options.url !== undefined) await this.waitForURL(options.url,{waitUntil,timeoutMs:remaining});
+      else await this.waitForLoadState({state:waitUntil,timeoutMs:remaining});
+      return result;
+    } finally { controller.abort(); }
+  }
+
   async waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {
     if (typeof url !== "string" && !types.isRegExp(url)) throw new Error("URL matcher must be a string or RegExp");
     const matcher = typeof url === "string" ? url : new RegExp(url.source, url.flags);
@@ -1427,6 +1453,10 @@ export class OpenBrowserUseTabPlaywright {
     return this.tab.waitForLoadState(options);
   }
 
+  expectNavigation<T>(action: () => Promise<T>, options: {timeoutMs?: number; url?: string | RegExp; waitUntil?: OpenBrowserUseLoadState} = {}): Promise<T> {
+    return this.tab.expectNavigation(action, options);
+  }
+
   waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {
     return this.tab.waitForURL(url, options);
   }
@@ -2041,7 +2071,7 @@ function documentStateMatches(documentState: { readyState?: string } | undefined
 function cdpEventForTab(
   notification: OpenBrowserUseNotification,
   tabId: number
-): { method?: string } | null {
+): { method?: string; params?: JsonValue } | null {
   if (notification.method !== "onCDPEvent" || !isObject(notification.params)) {
     return null;
   }
@@ -2050,7 +2080,7 @@ function cdpEventForTab(
     return null;
   }
   return {
-    method: stringValue(notification.params.method)
+    method: stringValue(notification.params.method), params: notification.params.params
   };
 }
 
