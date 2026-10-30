@@ -73,6 +73,28 @@ render loading immediately from these snapshots without awaiting a page command.
 The example separately normalizes user-entered addresses; the runtime still
 requires an explicit permitted URL.
 
+## Opt-in WebMCP page tools
+
+The host can opt a scope into page-provided WebMCP tools when creating it:
+
+```ts
+const task = iab.scopes.open({ id: 'web-task', profileId: 'work', webmcp: true });
+const tab = await task.tabs.create({ url: 'https://example.com' });
+// Grant tabs.read and page.control to a trusted agent connection.
+```
+
+The runtime installs the page bridge before navigation for tabs created through
+`scope.tabs.create` or the SDK. A `page.control` grant can discover and invoke
+page-provided tools through `tab.capabilities.get('webmcp')`; tool results are
+untrusted page data. The scope option defaults to false and cannot be changed
+after the scope is created. A tool invocation may have taken effect if its
+result times out or the grant is revoked, so inspect the page before retrying.
+
+Popup contents are attached after the popup is created. Their bridge is installed
+lazily on first use, so tools registered only during initial popup load may be
+unavailable. The bridge runs in the main document; child-frame tools are not
+included. Tool errors are reduced to scoped error codes across the socket.
+
 ## Explicit file upload authorization
 
 Uploads are disabled by default. The host can authorize specific existing

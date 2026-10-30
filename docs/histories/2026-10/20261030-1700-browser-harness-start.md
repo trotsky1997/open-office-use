@@ -307,3 +307,5 @@ DOM CUA 节点摘要加入关联 label、aria-labelledby、控件类型、禁用
 持久 JS REPL 新增 agent.browsers.list/get，按公开 ID 或唯一 extension/iab 类型发现和选择浏览器，复用默认会话连接并保留宿主授权范围；无法响应或歧义时报错，宿主失效时仍可选择独立扩展。SDK 69 项通过，覆盖多连接歧义和复用；Linux ARM64 Chromium 原生消息与混合 REPL 验证真实扩展、嵌入式授权通道、独立撤销，Electron 44/Xvfb 实页回归通过。能力元数据沿用后端格式，macOS/Windows 本轮未测。
 
 JS SDK 增加 browser/tab capabilities.list/get 和 WebMCP 高层工具列表/调用，复用 Chrome 的功能开关、标签归属和 registration_id 快照校验，工具调用不重放。SDK 70 项通过；Linux ARM64 Chromium 原生消息验证页面注册、调用和重新列举后旧 ID 失效；Electron 44/Xvfb 验证 WebMCP 未提供时明确拒绝。Electron WebMCP 尚未实现，macOS/Windows 本轮未测。
+
+Electron scope 新增默认关闭的 webmcp 选项，复用 Chrome 页面桥接源码，在新建标签导航前安装；page.control 授权的 scope 可发现并调用当前页面工具，注册快照变化或导航后旧 ID 失效，排队调用在授权撤销后不执行。SDK 70 项和 Electron 50 项检查通过；Linux ARM64 Electron 44/Xvfb 实页验证启动脚本注册、调用、重新列举和导航失效。Popup 在初次使用时安装桥，初始加载注册的工具可能不可用；子 frame 工具、macOS/Windows 本轮未测。

@@ -8,6 +8,7 @@ import type { WebContentsView, WebContents, Session, BaseWindow, DownloadItem } 
 import { IabConnections, type Backend, type IabEvent, type Operation, type GrantOptions } from './transport.js';
 import { frame } from './wire.js';
 import { FeedbackController, type VisualFeedbackOptions } from './feedback.js';
+import { webMcpSource } from './webmcp-source.js';
 
 export type ElectronAdapter = {
   createView(session: Session, contents?: WebContents): WebContentsView;
@@ -22,11 +23,11 @@ export type ElectronAdapter = {
 type Tab = {
   id: number; scopeId: string; view: WebContentsView; contents: WebContents; lifetime: 'temporary' | 'persistent';
   touched: Set<string>; marks: Map<string, 'handoff' | 'deliverable'>;
-  attached: boolean; mouseReady: boolean; pending: number; queue: Promise<any>; removers: (() => void)[];
+  attached: boolean; webMcpReady:boolean; mouseReady: boolean; pending: number; queue: Promise<any>; removers: (() => void)[];
   frameSessions: Map<string, string | undefined>;
   loading: boolean; pendingUrl?: string; loadError?: { code: number; description: string; url: string };
 };
-type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; uploadFiles: Set<string>; uploadEpoch: number; download?: { directory: string; maxBytes: number }; downloadEpoch: number; closing?: boolean };
+type ScopeState = { id: string; profileId: string; webmcp:boolean; tabs: Map<number, Tab>; name: string; uploadFiles: Set<string>; uploadEpoch: number; download?: { directory: string; maxBytes: number }; downloadEpoch: number; closing?: boolean };
 type DownloadWait = { scopeId: string; tabId: number; epoch: number; authorized: () => boolean; signal?: AbortSignal; resolve: (value: {downloadId: string; url: string | null}) => void; reject: (error: Error) => void };
 type DownloadRecord = { scopeId: string; epoch: number; path: string; done: Promise<string | null>; cancel: () => void; cleanup: () => void };
 type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds: { x: number; y: number; width: number; height: number }; remove: () => void };
@@ -104,13 +105,14 @@ export class IabRuntime implements Backend {
   };
   readonly profiles = this.profilesApi;
   readonly scopes = {
-    open: (options: { id: string; profileId: string }): IabScope => {
+    open: (options: { id: string; profileId: string; webmcp?:boolean }): IabScope => {
       this.ensureOpen();
-      if (!options.id || options.id.length > 200 || !this.profileSessions.has(options.profileId)) throw new Error('Scope requires a registered profile');
+      if (!options.id || options.id.length > 200 || !this.profileSessions.has(options.profileId) || (options.webmcp!==undefined && typeof options.webmcp!=='boolean')) throw new Error('Scope requires a registered profile and valid options');
       const previous = this.states.get(options.id);
       if (previous?.closing) throw new Error('IAB_SCOPE_CLOSED');
       if (previous && previous.profileId !== options.profileId) throw new Error('Cannot change scope profile');
-      if (!previous) this.states.set(options.id, { ...options, tabs: new Map(), name: options.id, uploadFiles: new Set(), uploadEpoch: 0, downloadEpoch: 0 });
+      if (previous && options.webmcp!==undefined && previous.webmcp!==options.webmcp) throw new Error('Cannot change scope WebMCP configuration');
+      if (!previous) this.states.set(options.id, { ...options, webmcp:options.webmcp===true, tabs: new Map(), name: options.id, uploadFiles: new Set(), uploadEpoch: 0, downloadEpoch: 0 });
       return new IabScope(this, options.id);
     },
   };
@@ -137,7 +139,7 @@ export class IabRuntime implements Backend {
     if (contents && contents.session !== profile) throw new Error('Popup profile mismatch');
     const view = this.adapter.createView(profile, contents);
     view.setBounds({ x: 0, y: 0, width: 800, height: 600 }); view.setVisible(false);
-    const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
+    const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, webMcpReady:false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
     scope.tabs.set(tab.id, tab); this.tabsById.set(tab.id, tab);
     const wc = view.webContents;
     this.feedbackController.register(wc);
@@ -186,7 +188,7 @@ export class IabRuntime implements Backend {
       }
       if (this.states.get(scopeId)?.tabs.has(tab.id)) this.emit(scopeId, 'onCDPEvent', { source: { tabId: tab.id, ...(sessionId ? {sessionId} : {}) }, method, params });
     });
-    listen(wc.debugger, 'detach', () => { this.invalidateChoosers(tab.id); tab.attached = false; tab.frameSessions.clear(); this.emit(scopeId, 'onDebuggerDetach', { tabId: tab.id }); });
+    listen(wc.debugger, 'detach', () => { this.invalidateChoosers(tab.id); tab.attached = false; tab.webMcpReady=false; tab.frameSessions.clear(); this.emit(scopeId, 'onDebuggerDetach', { tabId: tab.id }); });
     wc.setWindowOpenHandler(details => {
       try { assertUrl(details.url); } catch { return { action: 'deny' }; }
       if (!this.hasScope(scopeId) || scope.tabs.size >= 32 || this.tabsById.size >= 128) return { action: 'deny' };
@@ -200,11 +202,11 @@ export class IabRuntime implements Backend {
     });
     this.emit(scopeId, 'onTabCreated', { tab: this.snapshot(tab) }); return tab;
   }
-  async createTab(scopeId: string, options: { url?: string; turnId?: string } = {}): Promise<Record<string, any>> {
+  async createTab(scopeId: string, options: { url?: string; turnId?: string } = {}, authorized:()=>boolean = ()=>true): Promise<Record<string, any>> {
     const url = assertUrl(options.url ?? 'about:blank');
     const tab = this.allocate(scopeId);
     if (options.turnId) tab.touched.add(options.turnId);
-    try { await tab.contents.loadURL(url); return this.snapshot(tab); }
+    try { if(this.scope(scopeId).webmcp) {await tab.contents.loadURL('about:blank');if(!authorized())throw new Error('IAB_AUTH_REVOKED');await this.setupWebMcp(tab,()=>this.hasScope(scopeId) && authorized());}if(!authorized())throw new Error('IAB_AUTH_REVOKED');if(url!=='about:blank' || !this.scope(scopeId).webmcp)await tab.contents.loadURL(url);if(!authorized())throw new Error('IAB_AUTH_REVOKED');return this.snapshot(tab); }
     catch (error) { await this.closeTab(scopeId, tab.id); throw error; }
   }
   listTabs(scopeId: string): Record<string, any>[] { return [...this.scope(scopeId).tabs.values()].map(t => this.snapshot(t)); }
@@ -232,6 +234,43 @@ export class IabRuntime implements Backend {
       await done;
     }
   }
+  private async webMcpDeadline<T>(promise:Promise<T>,timeoutMs:number):Promise<T> {
+    let timer:ReturnType<typeof setTimeout> | undefined;
+    try {return await Promise.race([promise,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('IAB_WEBMCP_OUTCOME_UNKNOWN')),timeoutMs);})]);}
+    finally {if(timer)clearTimeout(timer);}
+  }
+  private async setupWebMcp(tab:Tab,authorized:()=>boolean):Promise<void> {
+    if(tab.webMcpReady)return;
+    if(!authorized() || tab.contents.isDestroyed())throw new Error('IAB_AUTH_REVOKED');
+    if(!tab.contents.debugger.isAttached())tab.contents.debugger.attach('1.3');
+    tab.attached=true;
+    await this.webMcpDeadline(tab.contents.debugger.sendCommand('Page.enable'),5000);
+    if(!authorized())throw new Error('IAB_AUTH_REVOKED');
+    await this.webMcpDeadline(tab.contents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument',{source:webMcpSource}),5000);
+    if(!authorized())throw new Error('IAB_AUTH_REVOKED');
+    const result=await this.webMcpDeadline(tab.contents.debugger.sendCommand('Runtime.evaluate',{expression:webMcpSource}),5000);
+    if(result?.exceptionDetails)throw new Error('IAB_WEBMCP_SETUP_FAILED');
+    if(!authorized())throw new Error('IAB_AUTH_REVOKED');
+    tab.webMcpReady=true;
+  }
+  private async webMcp(tab:Tab,method:string,params:Record<string,any>,authorized:()=>boolean):Promise<any> {
+    if(!authorized())throw new Error('IAB_AUTH_REVOKED');
+    if(!this.scope(tab.scopeId).webmcp)throw new Error('IAB_WEBMCP_DISABLED');
+    const timeout=method==='webmcp_list_tools' ? 5000 : (params.timeout_ms ?? 10000);
+    if(!Number.isSafeInteger(timeout) || timeout<1 || timeout>120000)throw new Error('Invalid WebMCP timeout');
+    if(method==='webmcp_invoke_tool' && (typeof params.tool_name!=='string' || !params.tool_name.trim() || typeof params.registration_id!=='string' || !params.registration_id.trim() || !Object.hasOwn(params,'input')))throw new Error('Invalid WebMCP invocation');
+    await this.setupWebMcp(tab,authorized);
+    if(!authorized())throw new Error('IAB_AUTH_REVOKED');
+    const request={source:'open-browser-use-webmcp-bridge',requestId:randomUUID(),action:method==='webmcp_list_tools' ? 'list' : 'invoke',...(method==='webmcp_invoke_tool' ? {tool_name:params.tool_name.trim(),registration_id:params.registration_id.trim(),input:params.input,timeout_ms:timeout} : {})};
+    const expression=`new Promise((resolve,reject)=>{const request=${JSON.stringify(request)};const timer=setTimeout(()=>{window.removeEventListener('message',receive);reject(new Error('WebMCP bridge timed out'))},${timeout+1500});function receive(event){const data=event.data;if(event.source!==window || data?.source!=='open-browser-use-webmcp-page' || data.requestId!==request.requestId)return;clearTimeout(timer);window.removeEventListener('message',receive);if(data.ok)resolve(data.result);else reject(new Error(String(data.error || 'WebMCP request failed')))}window.addEventListener('message',receive);window.postMessage(request,'*')})`;
+    const result=await this.webMcpDeadline(tab.contents.debugger.sendCommand('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true}),timeout+2000);
+    if(!authorized())throw new Error('IAB_AUTH_REVOKED');
+    if(result?.exceptionDetails) {const message=result.exceptionDetails.exception?.description;throw new Error(typeof message==='string' && message.includes('WebMCP tool registration is stale') ? 'IAB_WEBMCP_STALE' : 'IAB_WEBMCP_FAILED');}
+    const value=result?.result?.value;
+    if(!value || typeof value!=='object' || (method==='webmcp_list_tools' ? !Array.isArray(value.tools) : !Object.hasOwn(value,'result')))throw new Error('IAB_WEBMCP_INVALID_RESULT');
+    return value;
+  }
+
   private async cdp(tab: Tab, method: string, params: Record<string, any>, authorized: () => boolean, sessionId?: string, visualPoint?: {x: number; y: number}, internalFileCommand = false): Promise<any> {
     if (sessionId && !tab.frameSessions.has(sessionId)) throw new Error('Invalid CDP frame session');
     if (method === 'Target.setAutoAttach') {
@@ -573,12 +612,12 @@ export class IabRuntime implements Backend {
     const need = (operation: Operation) => { if (!operations.includes(operation)) throw new Error('IAB_OPERATION_DENIED'); };
     switch (method) {
       case 'getInfo': return { name: 'Open Browser Use IAB', type: 'iab', version: '1.1.0', metadata: { instanceId: this.instanceId, scopeId },
-        capabilities: { multiTab: true, fileUploads: operations.includes('files.upload') && operations.includes('page.control') && scope.uploadFiles.size > 0, downloads: operations.includes('files.download') && operations.includes('page.control') && !!scope.download, clipboard: !!this.adapter.clipboard && operations.includes('page.control') && (operations.includes('clipboard.read') || operations.includes('clipboard.write')), clipboardRead: !!this.adapter.clipboard && operations.includes('page.control') && operations.includes('clipboard.read'), clipboardWrite: !!this.adapter.clipboard && operations.includes('page.control') && operations.includes('clipboard.write'), history: false, childTargets: false } };
+        capabilities: { ...(scope.webmcp && operations.includes('page.control') ? {tab:[{id:'webmcp',description:'Fetch and invoke page-defined WebMCP tools.'}]} : {}), multiTab: true, fileUploads: operations.includes('files.upload') && operations.includes('page.control') && scope.uploadFiles.size > 0, downloads: operations.includes('files.download') && operations.includes('page.control') && !!scope.download, clipboard: !!this.adapter.clipboard && operations.includes('page.control') && (operations.includes('clipboard.read') || operations.includes('clipboard.write')), clipboardRead: !!this.adapter.clipboard && operations.includes('page.control') && operations.includes('clipboard.read'), clipboardWrite: !!this.adapter.clipboard && operations.includes('page.control') && operations.includes('clipboard.write'), history: false, childTargets: false } };
       case 'ping': return 'pong';
       case 'setFileChooserFiles': need('page.control'); need('files.upload'); await this.setFileChooserFiles(scopeId,params,authorized); return {};
       case 'downloadPath': need('page.control'); need('files.download'); return this.downloadPath(scopeId,params,authorized,signal);
       case 'getTabs': case 'getUserTabs': need('tabs.read'); return this.listTabs(scopeId);
-      case 'createTab': need('tabs.create'); return this.createTab(scopeId, { url: params.url, turnId: params.turn_id });
+      case 'createTab': need('tabs.create'); return this.createTab(scopeId, { url: params.url, turnId: params.turn_id },authorized);
       case 'nameSession': need('page.control'); scope.name = String(params.name).slice(0, 200); return { name: scope.name };
       case 'finalizeTabs': {
         need('page.control');
@@ -621,6 +660,11 @@ export class IabRuntime implements Backend {
       try { return await this.clipboardCall(scope,tab,method,params,authorized,signal); } finally { tab.pending--; }
     }
     if (method === 'waitForFileChooser') { need('files.upload'); return this.waitForFileChooser(scopeId,tab,params,authorized); }
+    if (method==='webmcp_list_tools' || method==='webmcp_invoke_tool') {
+      need('page.control');tab.pending++;
+      const run=tab.queue.then(()=>this.webMcp(this.tab(scopeId,tab.id),method,params,authorized));tab.queue=run.catch(()=>{});
+      try {return await run;} finally {tab.pending--;}
+    }
     if (method === 'waitForDownload') { need('files.download'); return this.waitForDownload(scopeId,tab,params,authorized,signal); }
     if (method === 'markTab') {
       if (!['handoff', 'deliverable'].includes(params.status) || typeof params.turn_id !== 'string') throw new Error('Invalid mark');

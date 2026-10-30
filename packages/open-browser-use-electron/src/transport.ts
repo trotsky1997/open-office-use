@@ -11,6 +11,7 @@ import { processIdentity, peerIdentity, sameIdentity, type ProcessIdentity } fro
 const publicErrors = new Set([
   'IAB_INPUT_PREPARATION_TIMEOUT', 'IAB_INPUT_OUTCOME_UNKNOWN', 'IAB_BACKGROUND_SCROLL_TIMEOUT', 'IAB_SCREENSHOT_TIMEOUT', 'IAB_SELECTOR_CONTEXT_TIMEOUT',
   'IAB_SCROLL_REQUIRES_PRESENTED_SURFACE', 'IAB_BACKGROUND_SCROLL_UNSUPPORTED_GESTURE',
+  'IAB_WEBMCP_DISABLED', 'IAB_WEBMCP_STALE', 'IAB_WEBMCP_FAILED', 'IAB_WEBMCP_OUTCOME_UNKNOWN', 'IAB_WEBMCP_SETUP_FAILED', 'IAB_WEBMCP_INVALID_RESULT',
   'IAB_SCREENSHOT_TOO_LARGE', 'IAB_OPERATION_DENIED', 'IAB_AUTH_REVOKED', 'IAB_SCOPE_CLOSED',
   'Frame tree changed while waiting for file chooser', 'File chooser debugger detached',
   'File chooser tab closed', 'Timed out waiting for file chooser',

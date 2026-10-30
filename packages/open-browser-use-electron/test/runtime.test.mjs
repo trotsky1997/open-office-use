@@ -16,6 +16,22 @@ function setup(t) {
   const b = runtime.scopes.open({ id: 'b', profileId: 'work' });
   t.after(() => runtime.dispose()); return { runtime, adapter, a, b };
 }
+test('WebMCP is scope opt-in, installed before navigation and respects revocation',async t=>{
+  const {runtime,adapter,a,b}=setup(t),plain=await a.tabs.create();
+  await assert.rejects(runtime.dispatch('a','webmcp_list_tools',{tabId:plain.id},['page.control']),/IAB_WEBMCP_DISABLED/);
+  const originalCreate=adapter.createView.bind(adapter);let installedBeforeNavigation=false;
+  adapter.createView=(session,contents)=>{const view=originalCreate(session,contents),wc=view.webContents,load=wc.loadURL.bind(wc);wc.loadURL=async url=>{if(url!=='about:blank')installedBeforeNavigation=wc.debugger.commands.some(command=>command.method==='Page.addScriptToEvaluateOnNewDocument');return load(url);};return view;};
+  const scope=runtime.scopes.open({id:'web',profileId:'work',webmcp:true}),tab=await scope.tabs.create({url:'https://fixture.test/'});assert.equal(installedBeforeNavigation,true);
+  assert.ok((await runtime.dispatch('web','getInfo',{},['page.control'])).capabilities.tab.some(item=>item.id==='webmcp'));
+  assert.equal((await runtime.dispatch('web','getInfo',{},['tabs.read'])).capabilities.tab,undefined);
+  await assert.rejects(runtime.dispatch('web','webmcp_list_tools',{tabId:tab.id},['tabs.read']),/DENIED/);
+  await assert.rejects(runtime.dispatch('b','webmcp_list_tools',{tabId:tab.id},['page.control']),/NOT_OWNED/);
+  const dbg=adapter.views.at(-1).webContents.debugger,send=dbg.sendCommand.bind(dbg);let release,allowed=true,bridgeCalls=0;
+  dbg.sendCommand=async(method,params,session)=>{if(method==='Runtime.evaluate' && params.expression==='block')return await new Promise(resolve=>{release=resolve;});if(method==='Runtime.evaluate' && params.expression.includes('open-browser-use-webmcp-bridge')){bridgeCalls++;return {result:{value:{tools:[]}}};}return send(method,params,session);};
+  const blocked=runtime.dispatch('web','executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate',commandParams:{expression:'block'}},['page.control'],()=>allowed);await new Promise(resolve=>setImmediate(resolve));
+  const waiting=runtime.dispatch('web','webmcp_list_tools',{tabId:tab.id},['page.control'],()=>allowed);const rejected=assert.rejects(waiting,/AUTH_REVOKED/);allowed=false;release({result:{value:true}});await blocked;await rejected;assert.equal(bridgeCalls,0);
+});
+
 test('file chooser requires a scoped grant and explicit file authorization', async t => {
   const {runtime,adapter,a,b}=setup(t), tab=await a.tabs.create();
   const dir=await mkdtemp(join(tmpdir(),'obu-upload-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));

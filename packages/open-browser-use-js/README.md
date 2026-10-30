@@ -872,7 +872,8 @@ listing is limited to its authorized scope, and its history is unavailable.
 
 `browser.capabilities.list()` and `tab.capabilities.list()` return advertised
 capability IDs and descriptions. Chrome advertises `webmcp` for session-owned
-tabs when its WebMCP gate is enabled:
+tabs when its WebMCP gate is enabled. Electron advertises it for scopes that
+the host explicitly opens with `webmcp: true` and grants `page.control`:
 
 ```js
 if ((await tab.capabilities.list()).some(cap => cap.id === 'webmcp')) {
@@ -886,8 +887,8 @@ if ((await tab.capabilities.list()).some(cap => cap.id === 'webmcp')) {
 Tools and results come from the page. Listing creates registration IDs tied to
 that page's current tool snapshot; listing again, tool changes or navigation
 can invalidate them. Invocation is sent once, so inspect the page before
-retrying an uncertain result. Electron currently advertises no WebMCP tab
-capability. Capability metadata without an SDK implementation is listed but
+retrying an uncertain result. Electron uses a page bridge for opted-in scopes; see the Electron guide for
+popup and permission details. Capability metadata without an SDK implementation is listed but
 `get()` reports it as unimplemented.
 
 ## DOM CUA
