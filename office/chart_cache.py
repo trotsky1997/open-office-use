@@ -67,6 +67,40 @@ def worksheet_numeric_values(archive, sheet):
     return values
 
 
+def pie_point_appearance(plots, references):
+    """Describe explicit point fills and likely default-fill compatibility candidates."""
+    pie_plots = [plot for plot in plots if plot.tag in (C+'pieChart', C+'doughnutChart')]
+    if not pie_plots: return {'status': 'not_applicable'}
+    if len(plots) != 1 or len(pie_plots[0].findall(C+'ser')) != 1: return {'status': 'unsupported', 'reason': 'multiple_plots_or_series'}
+    refs = [item for item in references if item['role'] == 'val' and item['kind'] in ('numLit','numRef')]
+    if len(refs) != 1 or refs[0]['status'] not in ('literal','match','mismatch') or refs[0].get('unverified_points', 0) or not 1 <= refs[0].get('points',0) <= 200: return {'status': 'unsupported', 'reason': 'unavailable_values'}
+    count = refs[0]['points']; series = pie_plots[0].find(C+'ser'); A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+    fill_tags = {A+name for name in ('noFill','solidFill','gradFill','blipFill','pattFill','grpFill')}
+    dpts = {}
+    for point in series.findall(C+'dPt'):
+        ids = point.findall(C+'idx'); raw = ids[0].get('val') if len(ids) == 1 else None
+        if raw is None or not raw.isdecimal() or len(raw) > 8 or int(raw) >= count or int(raw) in dpts: return {'status': 'unsupported', 'reason': 'ambiguous_point_formatting'}
+        dpts[int(raw)] = point
+    series_shapes = series.findall(C+'spPr')
+    if len(series_shapes) > 1: return {'status': 'unsupported', 'reason': 'ambiguous_series_formatting'}
+    series_has_fill = bool(series_shapes and any(node.tag in fill_tags for node in series_shapes[0]))
+    points = []
+    for index in range(count):
+        point = dpts.get(index); shapes = point.findall(C+'spPr') if point is not None else []
+        if len(shapes) > 1: return {'status': 'unsupported', 'reason': 'ambiguous_point_formatting'}
+        fills = [node for node in shapes[0] if node.tag in fill_tags] if shapes else []
+        if len(fills) > 1: return {'status': 'unsupported', 'reason': 'ambiguous_point_fill'}
+        entry = {'point': index+1, 'fill': 'inherited', 'rgb': None}
+        if fills:
+            colors = fills[0].findall(A+'srgbClr') if fills[0].tag == A+'solidFill' else []
+            raw = colors[0].get('val') if len(colors) == 1 and len(fills[0]) == 1 and len(colors[0]) == 0 else None
+            if raw is not None and re.fullmatch(r'[0-9a-fA-F]{6}',raw): entry.update(fill='rgb',rgb=raw.upper())
+            else: entry['fill'] = 'other'
+        points.append(entry)
+    inherited = sum(item['fill']=='inherited' for item in points)
+    return {'status': 'inspected', 'point_count': count, 'points': points, 'series_has_fill': series_has_fill, 'inherited_points': inherited, 'default_fill_candidate': inherited > 0 and not series_has_fill}
+
+
 def scan(file):
     source = Path(file).resolve(strict=True)
     if source.suffix.lower() != '.xlsx': raise ValueError('Chart cache inspection requires an XLSX file')
@@ -225,7 +259,7 @@ def scan(file):
                                     elif len(refs) == 1 and len(names[0]) == 1: entry['name_status'] = 'reference'
                                     else: entry['name_status'] = 'unsupported'; series_complete = False
                                 series_items.append(entry)
-                        results.append({'part': part, 'status': 'scanned' if references else 'no_references_found', 'external_data': external_data, 'extensions_present': extensions, 'references': references, 'series': series_items, 'series_complete': series_complete, 'plot_count': len(plots)})
+                        results.append({'part': part, 'status': 'scanned' if references else 'no_references_found', 'external_data': external_data, 'extensions_present': extensions, 'references': references, 'series': series_items, 'series_complete': series_complete, 'plot_count': len(plots), 'pie_point_appearance': pie_point_appearance(plots, references)})
                         if limit_hit: break
                     if len(chart_parts) > 50: complete = False
                     refs = [ref for chart in results for ref in chart['references']]

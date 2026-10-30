@@ -62,3 +62,5 @@ The viewer’s Chart cache checks panel can select inspected fixed-data samples 
 Use `session_set_chart_literal_values` to update up to 100 fixed numeric points in one atomic chart revision. Inspect static category text separately, especially labels that contain percentages.
 
 For a simple workbook pie or doughnut chart, `session_set_chart_pie_point_colors` sets one explicit RGB fill per inspected point in a snapshot-bound revision. The change affects shared placements and replaces theme fills; render and review.
+
+Chart cache inspection and the review bundle identify simple pie charts with inherited default fills as visual review candidates. The workbook viewer can select a chart and save explicit point colors as a new revision; review the rendered result.

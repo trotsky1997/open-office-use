@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory() as tmp:
     pie_source=root/'pie-colors.xlsx'; pie_book=xlsxwriter.Workbook(str(pie_source)); pie_sheet=pie_book.add_worksheet('Data')
     pie_sheet.write_column('A1',['A','B','C']);pie_sheet.write_column('B1',[45,30,25]);pie=pie_book.add_chart({'type':'pie'});pie.add_series({'categories':'=Data!$A$1:$A$3','values':'=Data!$B$1:$B$3','points':[{'border':{'color':'black'}},{},{}]});pie_sheet.insert_chart('D2',pie);pie_book.close()
     pie_report=chart_cache.scan(pie_source);pie_part=pie_report['charts'][0]['part'];pie_draft=root/'pie-colors-draft';session.start(pie_draft,source=pie_source)
+    assert pie_report['charts'][0]['pie_point_appearance']['default_fill_candidate']
     for colors in ([],['FFFFFF'],['GGGGGG','FFFFFF','FFFFFF']):
         try: session.set_chart_pie_point_colors(pie_draft,0,pie_part,colors)
         except ValueError: pass
@@ -35,6 +36,7 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Stale pie color snapshot accepted')
     pie_colors=session.set_chart_pie_point_colors(pie_draft,0,pie_part,['FF0000','00FF00','0000FF'],pie_report['snapshot_sha256'])
+    appearance=chart_cache.scan(pie_colors['output'])['charts'][0]['pie_point_appearance']; assert not appearance['default_fill_candidate'] and [point['rgb'] for point in appearance['points']]==['FF0000','00FF00','0000FF']
     with zipfile.ZipFile(pie_source) as before,zipfile.ZipFile(pie_colors['output']) as after:
         assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=pie_part)
         tree=etree.fromstring(after.read(pie_part)); colors=tree.findall('.//'+C+'dPt/'+C+'spPr/{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill/{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr'); assert [node.get('val') for node in colors]==['FF0000','00FF00','0000FF']
@@ -94,6 +96,7 @@ with tempfile.TemporaryDirectory() as tmp:
     else: raise AssertionError('Signed workbook sync accepted')
     assert not (root/'signed-output.xlsx').exists()
     def no_render(*_): raise RuntimeError('preview unavailable')
+    pie_bundle=review_bundle.create(pie_source,root/'pie-review',no_render,1); assert 'chart_pie_default_fill_candidates' in pie_bundle['flags']
     bundle=review_bundle.create(changed['file'],root/'review',no_render,1)
     assert 'chart_cache_mismatch' in bundle['flags'] and 'render_pdf' in bundle['check_errors'],bundle
     report=json.loads(Path(bundle['report']).read_text()); assert report['checks']['chart_cache_scan']['result']['mismatch_references']==1

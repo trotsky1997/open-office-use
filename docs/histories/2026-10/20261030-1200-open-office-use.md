@@ -467,3 +467,5 @@ Fixed silent integer rounding in chart literal CLI/MCP inputs by preserving inte
 Added atomic batch editing for fixed workbook chart numeric points, with final pie-value checks and per-change old values.
 
 Added workbook pie/doughnut point-color edits after a reference chart rendered without visible slices in LibreOffice.
+
+Added pie fill inspection, review-bundle candidates and snapshot-bound viewer controls for slice colors.
