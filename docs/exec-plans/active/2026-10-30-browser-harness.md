@@ -113,3 +113,4 @@
 - [x] 观察索引支持方向与页数滚动，发送前检查目标及 frame，复用可信滚轮和连接代际校验；macOS Electron 与 Linux ARM64 Chromium 主文档及跨进程 frame 验证。
 - [x] 索引或当前焦点支持纯文本、Markdown 源码和 HTML 粘贴，可选纯文本回退；Linux ARM64 Chromium 原生消息及 Electron 虚拟显示实测可信 paste 与跨进程 frame。Electron 私有通道连接状态与剪贴板拒绝路径通过测试。
 - [x] Chromium 清空富文本保留单个 BR 占位时按空内容校验；macOS Electron 与 Linux Chromium 实页验证。
+- [x] Electron 客户端取消和超时通知宿主，阻止排队中的迟到输入；已派发操作报告结果可能未知。

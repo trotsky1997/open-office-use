@@ -138,9 +138,11 @@ export class IabConnections {
     const privateGrant = source.privateGrantId ? this.grants.get(source.privateGrantId) : undefined;
     privateGrant?.channels.add(channel);
     let grant: Grant | undefined, inFlight = 0;
+    const requests = new Map<string | number, AbortController>();
     let unsubscribe: (() => void) | undefined;
     const timeout = setTimeout(() => channel.close(), 5000); timeout.unref();
     channel.on('closed', () => {
+      for (const request of requests.values()) request.abort();
       clearTimeout(timeout); unsubscribe?.(); grant?.channels.delete(channel); privateGrant?.channels.delete(channel); this.channels.delete(channel);
       if (source.privateGrantId) this.revoke(source.privateGrantId);
     });
@@ -168,18 +170,24 @@ export class IabConnections {
         });
         return;
       }
+      if (this.valid(grant) && message.method === 'iab.cancel' && message.id === undefined &&
+          (typeof message.params?.id === 'string' || typeof message.params?.id === 'number')) {
+        requests.get(message.params.id)?.abort(); return;
+      }
       if (!this.valid(grant) || typeof message.method !== 'string' ||
-          (typeof message.id !== 'string' && typeof message.id !== 'number') || inFlight >= 64) { channel.close(); return; }
+          (typeof message.id !== 'string' && typeof message.id !== 'number') || requests.has(message.id) || inFlight >= 64) { channel.close(); return; }
       const params = message.params ?? {};
       if (typeof params !== 'object' || Array.isArray(params) || params.session_id !== grant.scope) { channel.close(); return; }
       const current = grant;
       inFlight++;
-      void this.backend.dispatch(current.scope, message.method, params, current.operations, () => this.valid(current), current.abort.signal).then(result => {
+      const request = new AbortController(); requests.set(message.id, request);
+      const signal = AbortSignal.any([current.abort.signal, request.signal]);
+      void this.backend.dispatch(current.scope, message.method, params, current.operations, () => this.valid(current) && !signal.aborted, signal).then(result => {
         if (this.valid(current)) channel.send({ jsonrpc: '2.0', id: message.id, result });
       }, error => {
         const messageText = error instanceof Error && publicErrors.has(error.message) ? error.message : 'IAB request rejected';
         if (this.valid(current)) channel.send({ jsonrpc: '2.0', id: message.id, error: { code: -32001, message: messageText } });
-      }).finally(() => { inFlight--; });
+      }).finally(() => { inFlight--; requests.delete(message.id!); });
     });
     return channel;
   }

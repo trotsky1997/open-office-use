@@ -553,3 +553,23 @@ test('socket distinguishes input already issued from preparation timeout', {skip
   release();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(commands,['Page.captureScreenshot','Input.dispatchMouseEvent']);
 });
+
+test('socket cancellation and timeout stop queued input before dispatch', {skip:!['darwin','linux'].includes(process.platform)}, async t => {
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create(),debug=adapter.views[0].webContents.debugger;
+  let release; const commands=[];
+  debug.sendCommand=async method=>{commands.push(method);if(method==='Runtime.evaluate')await new Promise(resolve=>{release=resolve;});return {};};
+  await runtime.connections.openSocket();
+  const grant=runtime.connections.grant('a','socket',{ttlMs:10000,operations:['page.control']},process.pid);
+  const client=await connectSocketIab(grant);t.after(()=>client.close());
+  const params={target:{tabId:tab.id},method:'Input.insertText',commandParams:{text:'late'}};
+  const first=client.request('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});
+  while (!release) await new Promise(resolve=>setImmediate(resolve));
+  const controller=new AbortController();
+  const aborted=client.request('executeCdp',params,undefined,1000,controller.signal);
+  const timed=client.request('executeCdp',params,undefined,25);
+  controller.abort();
+  await assert.rejects(aborted,/cancelled/);await assert.rejects(timed,/timed out/);
+  await new Promise(resolve=>setTimeout(resolve,30)); release(); await first;
+  await client.request('executeCdp',{target:{tabId:tab.id},method:'Runtime.enable'});
+  assert.deepEqual(commands,['Runtime.evaluate','Runtime.enable']);
+});

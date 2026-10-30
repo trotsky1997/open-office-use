@@ -7,7 +7,7 @@ import type { Bootstrap } from './transport.js';
 
 export class IabClient extends OpenBrowserUseClient {
   private channel: FramedChannel;
-  private pending = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
+  private pending = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; cleanup: () => void }>();
   private handlers = new Set<NotificationHandler>();
   private sequence = 0;
   constructor(channel: FramedChannel, readonly bootstrap: Bootstrap, timeoutMs = 10_000) {
@@ -21,11 +21,11 @@ export class IabClient extends OpenBrowserUseClient {
       }
       const p = this.pending.get(String(m.id));
       if (!p) return;
-      clearTimeout(p.timer); this.pending.delete(String(m.id));
+      clearTimeout(p.timer); p.cleanup(); this.pending.delete(String(m.id));
       if (m.error) p.reject(new Error(m.error.message)); else p.resolve(m.result);
     });
     channel.on('closed', () => {
-      for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('IAB connection closed')); }
+      for (const p of this.pending.values()) { clearTimeout(p.timer); p.cleanup(); p.reject(new Error('IAB connection closed')); }
       this.pending.clear(); this.emitDisconnect(new Error('IAB connection closed')); this.handlers.clear();
     });
   }
@@ -34,12 +34,22 @@ export class IabClient extends OpenBrowserUseClient {
   override async connect(): Promise<this> { if (this.channel.stream.destroyed) throw new Error('IAB connection closed'); return this; }
   override close(): void { this.channel.close(); }
   override onNotification(handler: NotificationHandler): () => void { this.handlers.add(handler); return () => { this.handlers.delete(handler); }; }
-  private send(method: string, params: Record<string, any>, timeoutMs = this.timeoutMs): Promise<any> {
+  private send(method: string, params: Record<string, any>, timeoutMs = this.timeoutMs, signal?: AbortSignal): Promise<any> {
     if (this.channel.stream.destroyed) return Promise.reject(new Error('IAB connection closed'));
+    if (signal?.aborted) return Promise.reject(new Error('Command cancelled before dispatch'));
     const id = String(++this.sequence);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('IAB request timed out')); }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      const cleanup = () => signal?.removeEventListener('abort', abort);
+      const cancel = (message: string) => {
+        if (!this.pending.delete(id)) return;
+        clearTimeout(timer); cleanup();
+        if (method !== 'auth.connect' && !this.channel.stream.destroyed) this.channel.send({ jsonrpc: '2.0', method: 'iab.cancel', params: { id } });
+        reject(new Error(message));
+      };
+      const abort = () => cancel('IAB request cancelled; outcome may be unknown');
+      const timer = setTimeout(() => cancel('IAB request timed out; outcome may be unknown'), timeoutMs);
+      this.pending.set(id, { resolve, reject, timer, cleanup });
+      signal?.addEventListener('abort', abort, { once: true });
       this.channel.send({ jsonrpc: '2.0', id, method, params });
     });
   }
@@ -51,10 +61,10 @@ export class IabClient extends OpenBrowserUseClient {
     // Do not keep the lease secret in long-lived client metadata.
     b.secret = ''; return this;
   }
-  override request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number, requestTimeoutMs = this.timeoutMs): Promise<JsonValue> {
+  override request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number, requestTimeoutMs = this.timeoutMs, signal?: AbortSignal): Promise<JsonValue> {
     if (expectedGeneration !== undefined && expectedGeneration !== this.connectionGeneration) return Promise.reject(new Error("Connection changed; observe again"));
     if (params.session_id !== undefined && params.session_id !== this.sessionId) return Promise.reject(new Error('IAB scope mismatch'));
-    return this.send(method, { ...params, session_id: this.sessionId, turn_id: params.turn_id ?? this.turnId }, requestTimeoutMs);
+    return this.send(method, { ...params, session_id: this.sessionId, turn_id: params.turn_id ?? this.turnId }, requestTimeoutMs, signal);
   }
   browser(): OpenBrowserUseBrowser { return new OpenBrowserUseBrowser({ client: this }); }
 }
