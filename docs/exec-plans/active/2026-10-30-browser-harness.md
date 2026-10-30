@@ -155,3 +155,4 @@
 - [x] URL glob 改用有限状态匹配并限制模式与匹配规模，防止复杂星号组合阻塞等待；Linux ARM64 Chromium 原生消息实测路由匹配。
 - [x] Chrome 后台滚轮超时错误明确提示重新呈现后可能迟到执行，要求呈现后再检查。Linux ARM64 Chromium 153 原生消息实测隐藏时滚轮超时，呈现后触发可信事件及滚动；背景截图成功，screencast 未解决滚轮。
 - [x] JavaScript 对话框等待的正数超时覆盖监听准备及事件等待，超时取消尚未派发的准备；Linux ARM64 Chromium 原生消息验证超时后继续处理 confirm。
+- [x] JavaScript 对话框监听准备绑定标签生命周期及连接代际；移组、关闭、调试器断开或 Page.disable 后，迟到准备无法恢复旧状态。Linux ARM64 Chromium 原生消息双会话验证移组后新会话可处理 confirm。

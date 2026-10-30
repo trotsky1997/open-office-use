@@ -653,6 +653,26 @@ test('dialog wait includes listener preparation in its timeout',async()=>{
   assert.equal(signal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));
 });
 
+test('dialog setup cannot restore stale state after ownership loss or reconnect',async()=>{
+  for(const change of ['ownership','reconnect']) {
+    const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let generation=0,release,enables=0;
+    Object.defineProperty(client,'connectionGeneration',{get:()=>generation});client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+    client.request=async(method,params)=>{if(method==='attach')return {};if(params.method==='Page.enable' && ++enables===1)await new Promise(resolve=>{release=resolve;});return {};};
+    const tab=new OpenBrowserUseBrowser({client}).tab(1), pending=tab.watchDialogs();
+    while(!release)await new Promise(resolve=>setImmediate(resolve));
+    if(change==='ownership')for(const handler of handlers)handler({method:'onTabOwnershipLost',params:{tabId:1}});else generation++;
+    release();await assert.rejects(pending,/changed/);await tab.watchDialogs();assert.equal(enables,2);
+  }
+});
+
+test('dialog setup stops if ownership changes during attachment',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let release,commands=0;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.attach=async()=>await new Promise(resolve=>{release=resolve;});client.request=async()=>{commands++;return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1),pending=tab.watchDialogs();while(!release)await new Promise(resolve=>setImmediate(resolve));
+  for(const handler of handlers)handler({method:'onTabOwnershipLost',params:{tabId:1}});release();await assert.rejects(pending,/changed/);assert.equal(commands,0);
+});
+
 test('dialog decisions cannot cross a reconnect during attachment', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set(), calls=[];
   let generation=0, reconnect=false;

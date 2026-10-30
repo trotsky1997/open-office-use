@@ -4842,11 +4842,13 @@ export class OpenBrowserUseCdp {
     #generations = new Map();
     #dialogs = new Map();
     #dialogEnabled = new Map();
+    #dialogRevisions = new Map();
+    #dialogDisconnectRevision = 0;
     #logs = new Map();
     #eventPreparations = new Map();
     constructor(client) {
         this.client = client;
-        client.onDisconnect(() => this.#logs.clear());
+        client.onDisconnect(() => { this.#logs.clear(); this.#dialogs.clear(); this.#dialogEnabled.clear(); this.#dialogDisconnectRevision++; });
         client.onNotification(notification => {
             if (["onDebuggerDetach", "onTabClosed", "onTabOwnershipLost"].includes(notification.method) && isObject(notification.params) && typeof notification.params.tabId === "number") {
                 const tabId = notification.params.tabId;
@@ -4856,6 +4858,7 @@ export class OpenBrowserUseCdp {
                 this.#failure.delete(tabId);
                 this.#dialogs.delete(tabId);
                 this.#dialogEnabled.delete(tabId);
+                this.#dialogRevisions.set(tabId, (this.#dialogRevisions.get(tabId) ?? 0) + 1);
                 this.#logs.delete(tabId);
                 return;
             }
@@ -4961,8 +4964,18 @@ export class OpenBrowserUseCdp {
     async enableDialogs(tabId, signal) {
         if (this.#dialogEnabled.get(tabId) === this.client.connectionGeneration)
             return;
-        await this.call(tabId, "Page.enable", {}, { signal });
-        this.#dialogEnabled.set(tabId, this.client.connectionGeneration);
+        const revision = this.#dialogRevisions.get(tabId) ?? 0, disconnect = this.#dialogDisconnectRevision;
+        const initialGeneration = this.client.isConnected ? this.client.connectionGeneration : undefined;
+        await waitUntilAbortable(this.ensureAttached(tabId, undefined, signal), signal);
+        const generation = this.client.connectionGeneration;
+        if ((initialGeneration !== undefined && initialGeneration !== generation) || revision !== (this.#dialogRevisions.get(tabId) ?? 0) || disconnect !== this.#dialogDisconnectRevision)
+            throw new Error("Tab or connection changed while preparing dialog listener");
+        await this.call(tabId, "Page.enable", {}, { signal, expectedGeneration: generation });
+        if (signal?.aborted)
+            throw new Error("Dialog listener preparation cancelled");
+        if (generation !== this.client.connectionGeneration || revision !== (this.#dialogRevisions.get(tabId) ?? 0) || disconnect !== this.#dialogDisconnectRevision)
+            throw new Error("Tab or connection changed while preparing dialog listener");
+        this.#dialogEnabled.set(tabId, generation);
     }
     /** @internal */
     currentDialog(tabId) {
@@ -5059,8 +5072,10 @@ export class OpenBrowserUseCdp {
             ...(options.visualPoint ? { visualPoint: options.visualPoint } : {}),
             ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
         }, options.expectedGeneration, requestTimeoutMs, options.signal);
-        if (method === "Page.disable" && !options.sessionId)
+        if (method === "Page.disable" && !options.sessionId) {
             this.#dialogEnabled.delete(tabId);
+            this.#dialogRevisions.set(tabId, (this.#dialogRevisions.get(tabId) ?? 0) + 1);
+        }
         if (method === "Runtime.disable" || method === "Log.disable") {
             const capture = this.#logs.get(tabId);
             capture?.sessions.delete(options.sessionId ?? "");

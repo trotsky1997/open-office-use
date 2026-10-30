@@ -572,3 +572,5 @@ URL glob 从正则转换改为有限状态匹配，限制模式长度和匹配�
 Linux ARM64 Chromium 153 原生消息实验：隐藏标签的 surface 截图返回图像，滚轮及合成滚动超时，启用 screencast 后滚轮仍超时。隐藏期间容器位移为零；重新呈现后观察到可信滚轮事件和 300px 滚动，说明超时后的浏览器输入可能迟到执行。SDK 错误与文档提醒呈现后检查，112 项检查通过；后台滚动的根本解决仍待研究，Windows 未测。
 
 JavaScript 对话框等待使用统一期限覆盖 Page.enable 准备和事件等待，准备超时传播取消信号。SDK 113 项检查通过；Linux ARM64 Chromium 原生消息注入准备延迟，确认超时后信号取消、恢复后可监听并处理真实 confirm。已提交浏览器的准备命令可能完成；Windows 未测。
+
+JavaScript 对话框监听在附着前记录标签生命周期，Page.enable 前后核对生命周期和连接代际；断线清理缓存，Page.disable 使旧准备失效。SDK 115 项检查通过，覆盖移组及重连期间的准备竞态；Linux ARM64 Chromium 原生消息双会话注入延迟后移组，旧准备拒绝，新会话成功处理真实 confirm。Windows 未测。
