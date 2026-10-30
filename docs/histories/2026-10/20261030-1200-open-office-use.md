@@ -125,3 +125,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Extend image-only XLSX metadata with a verified dynamic-array record, preserving existing rich-value records and rejecting pre-existing cell metadata references. Validated embedded images, subsequent anchor edits, metadata indices, and OfficeCLI package validation.
 
 - Include the snapshot module in the installed distribution and verify an isolated installation through document creation, inspection, and an MCP handshake.
+
+- Detect file replacement and ordinary concurrent writes during shared render and selection snapshot copying, remove incomplete copies, and verify both failure paths.

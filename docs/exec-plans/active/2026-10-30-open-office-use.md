@@ -99,7 +99,7 @@ Rendered XLSX previews disclose XLDAPR metadata or incomplete inspection for the
 
 ## Snapshot-bound rendering
 
-Structured renders, visual results and selection extraction use a copied source and report its SHA-256. Selection candidate text extraction and OfficeCLI queries share one copy. Viewer candidate requests are tied to the displayed preview hash and reject mismatches. External changes during the initial copy can still produce an inconsistent file.
+Structured renders, visual results and selection extraction use a copied source and report its SHA-256. Selection candidate text extraction and OfficeCLI queries share one copy. Viewer candidate requests are tied to the displayed preview hash and reject mismatches. These shared render and selection snapshots check file identity, size and modification metadata during copying and reject detected changes; filesystem metadata checks do not lock writers. Other inspection snapshot paths still need equivalent protection.
 
 ## Scoped dynamic formulas
 
