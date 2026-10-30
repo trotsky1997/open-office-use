@@ -32,6 +32,8 @@ app.whenReady().then(async () => {
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.ok((await sdkTab.dev.logs({filter:'root-log-fixture'})).some(entry=>entry.level==='log' && entry.message.includes('42')));
     assert.ok((await sdkTab.dev.logs({levels:['error'],filter:'root-error-fixture'})).length);
+    await evaluate(`(()=>{const img=document.createElement('img');img.src='/missing-log';document.body.append(img)})()`);await new Promise(resolve=>setTimeout(resolve,150));
+    assert.ok((await sdkTab.dev.logs({levels:['error'],filter:'404'})).some(entry=>entry.url?.endsWith('/missing-log')));
     await evaluate(`(()=>{const h=document.createElement('h2');h.id='level-fixture';h.textContent='Level fixture';document.body.append(h)})()`);
     assert.equal(await sdkTab.playwright.getByRole('heading',{name:'Level fixture',level:2}).count(),1);
     await evaluate(`document.querySelector('#level-fixture').remove()`);
@@ -183,6 +185,8 @@ app.whenReady().then(async () => {
     assert.ok(frameSession);
     await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`console.warn('cross-log-fixture')`},{sessionId:frameSession});await new Promise(resolve=>setTimeout(resolve,100));
     assert.ok((await sdkTab.dev.logs({levels:['warning'],filter:'cross-log-fixture'})).length);
+    await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const img=document.createElement('img');img.src='/missing-log';document.body.append(img)})()`},{sessionId:frameSession});await new Promise(resolve=>setTimeout(resolve,150));
+    assert.ok((await sdkTab.dev.logs({levels:['error'],filter:'404'})).some(entry=>entry.url?.startsWith('http://localhost:') && entry.url.endsWith('/missing-log')));
     await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('button').ondblclick=e=>window.crossDouble={trusted:e.isTrusted,detail:e.detail}`},{sessionId:frameSession});
     await sdkTab.playwright.getByRole('button',{name:'Cross-frame action',exact:true}).dblclick();
     assert.deepEqual((await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.crossDouble',returnByValue:true},{sessionId:frameSession})).result.value,{trusted:true,detail:2});

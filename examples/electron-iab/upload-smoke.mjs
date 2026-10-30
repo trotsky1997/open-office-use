@@ -22,6 +22,8 @@ app.whenReady().then(async()=>{
     const sdk=client.browser().tab(tab.id);
     await sdk.dev.watch();await sdk.evaluate(`console.error('socket-log-fixture')`);await new Promise(resolve=>setTimeout(resolve,50));
     assert.ok((await sdk.dev.logs({levels:['error'],filter:'socket-log-fixture'})).length);
+    await sdk.evaluate(`(()=>{const img=document.createElement('img');img.src='/missing-log';document.body.append(img)})()`);await new Promise(resolve=>setTimeout(resolve,150));
+    assert.ok((await sdk.dev.logs({levels:['error'],filter:'404'})).some(entry=>entry.url?.endsWith('/missing-log')));
     assert.equal(await sdk.playwright.getByRole('heading',{name:/welcome/i,level:1}).count(),1);
     await sdk.evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.id='double-fixture';b.textContent='Socket double';b.setAttribute('data-fixture','yes');b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'double',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
     const double=sdk.playwright.getByRole('button',{name:/^socket double$/i});

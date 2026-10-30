@@ -191,3 +191,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 Linux ARM64 更新验证：隔离 Chromium 150 使用真实原生消息清单、临时 profile、Go host 和 no-sandbox 完整运行当前 chromium-native-smoke，包含近期导航、下载 URL、正则定位、标题层级、动态等待、双击及跨进程 frame。Electron 44.7 在临时 Xvfb、原生 socket、no-sandbox 和禁用 GPU 下验证主页面语义读取、等待、同文档导航及文件传输，并在已显示后隐藏的宿主中验证跨进程 frame 标题、可信双击与文件传输。从未显示的 Linux 宿主窗口输入问题仍待解决；实验不覆盖常规 Linux 桌面和 Windows。
 
 新增 tab.dev.watch()/logs()：按标签捕获控制台调用及未捕获异常，支持级别、文本和条数筛选；动态跨进程 frame 启用 Runtime 域，断连、调试器分离或标签关闭清理记录。每标签最多保留 500 条，消息和来源 URL 各限 4096 字符；较早历史取决于浏览器 Runtime.enable 的缓存。SDK 58 项通过；macOS 隔离 Chromium 原生链路与 Electron 44 验证主页面和动态跨进程 frame 日志，Linux ARM64 Electron/Xvfb 经授权 socket 验证主页面和 frame 日志，使用 no-sandbox、禁用 GPU。
+
+页面开发日志增加 CDP Log 域，记录资源加载失败等浏览器日志；Electron 授权页面 CDP 白名单增加 Log.enable/disable。重新启用时恢复采集，动态 frame 延续作用域。SDK 58 项、Electron 45 项通过；macOS 隔离 Chromium 原生链路及 Electron 44 实测主页面和跨进程 frame 的 404 日志及来源 URL，Linux ARM64 Electron/Xvfb 原生 socket 实测主页面 404，使用 no-sandbox、禁用 GPU。

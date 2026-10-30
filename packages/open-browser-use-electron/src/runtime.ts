@@ -30,6 +30,7 @@ const pageCommands = new Set([
   'Page.getLayoutMetrics', 'Page.close',
   'Runtime.enable', 'Runtime.disable', 'Runtime.evaluate', 'Runtime.callFunctionOn',
   'Runtime.getProperties', 'Runtime.releaseObject', 'Runtime.releaseObjectGroup',
+  'Log.enable', 'Log.disable',
   'DOM.enable', 'DOM.disable', 'DOM.getDocument', 'DOM.describeNode', 'DOM.querySelector',
   'DOM.querySelectorAll', 'DOM.getBoxModel', 'DOM.getContentQuads', 'DOM.getOuterHTML',
   'DOM.resolveNode', 'DOM.focus', 'DOM.scrollIntoViewIfNeeded', 'DOM.getFrameOwner',

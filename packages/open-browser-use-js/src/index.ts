@@ -93,15 +93,17 @@ function matchesTextFilters(text: string, filters: TextFilter[]): boolean {
 function copyMatcher(value: TextMatcher): TextMatcher { return typeof value === "string" ? value : new RegExp(value.source,value.flags); }
 
 function browserLogEntry(method: string, params: {[key:string]:JsonValue}): OpenBrowserUseLogEntry | null {
+  const browserEntry = method === "Log.entryAdded" && isObject(params.entry) ? params.entry : undefined;
+  if (method === "Log.entryAdded" && !browserEntry) return null;
   const details = isObject(params.exceptionDetails) ? params.exceptionDetails : undefined;
   const exception = details && isObject(details.exception) ? details.exception : undefined;
-  const kind = method === "Runtime.exceptionThrown" ? "error" : params.type;
-  const level: OpenBrowserUseLogEntry["level"] = kind === "warning" || kind === "warn" ? "warn" : kind === "error" || kind === "assert" ? "error" : kind === "debug" || kind === "info" ? kind : "log";
-  const message = method === "Runtime.exceptionThrown"
+  const kind = method === "Runtime.exceptionThrown" ? "error" : browserEntry?.level ?? params.type;
+  const level: OpenBrowserUseLogEntry["level"] = kind === "warning" || kind === "warn" ? "warn" : kind === "error" || kind === "assert" ? "error" : kind === "verbose" ? "debug" : kind === "debug" || kind === "info" ? kind : "log";
+  const message = browserEntry ? String(browserEntry.text ?? "") : method === "Runtime.exceptionThrown"
     ? String(exception?.description ?? exception?.value ?? details?.text ?? "Uncaught exception")
     : Array.isArray(params.args) ? params.args.slice(0,50).map(arg => isObject(arg) ? String(arg.value ?? arg.unserializableValue ?? arg.description ?? "[object]").slice(0,4096) : "[object]").join(" ") : "";
   const trace = isObject(params.stackTrace) && Array.isArray(params.stackTrace.callFrames) ? params.stackTrace.callFrames[0] : undefined;
-  const url = typeof details?.url === "string" ? details.url : isObject(trace) && typeof trace.url === "string" ? trace.url : undefined;
+  const url = typeof browserEntry?.url === "string" ? browserEntry.url : typeof details?.url === "string" ? details.url : isObject(trace) && typeof trace.url === "string" ? trace.url : undefined;
   return {level,message:message.slice(0,4096),timestamp:new Date().toISOString(),...(url ? {url:url.slice(0,4096)} : {})};
 }
 
@@ -1728,7 +1730,7 @@ export class OpenBrowserUseCdp {
       const { source, method, params } = notification.params;
       if (!isObject(source) || typeof source.tabId !== "number" || !isObject(params)) return;
       const capture = this.#logs.get(source.tabId);
-      if (capture && capture.generation === this.client.connectionGeneration && (method === "Runtime.consoleAPICalled" || method === "Runtime.exceptionThrown")) {
+      if (capture && capture.generation === this.client.connectionGeneration && (method === "Runtime.consoleAPICalled" || method === "Runtime.exceptionThrown" || method === "Log.entryAdded")) {
         const entry = browserLogEntry(method,params);
         if (entry) { capture.entries.push(entry); if (capture.entries.length > 500) capture.entries.shift(); }
       }
@@ -1771,7 +1773,8 @@ export class OpenBrowserUseCdp {
     const key = sessionId ?? "";
     const existing = capture.sessions.get(key);
     if (existing) return existing;
-    const pending = this.call(tabId,"Runtime.enable",{}, {sessionId,expectedGeneration:capture.generation}).then(() => {});
+    const pending = this.call(tabId,"Runtime.enable",{}, {sessionId,expectedGeneration:capture.generation})
+      .then(() => this.call(tabId,"Log.enable",{}, {sessionId,expectedGeneration:capture.generation})).then(() => {});
     capture.sessions.set(key,pending);
     void pending.catch(() => { if (capture.sessions.get(key) === pending) capture.sessions.delete(key); });
     return pending;
@@ -1876,7 +1879,7 @@ export class OpenBrowserUseCdp {
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
     },options.expectedGeneration);
     if (method === "Page.disable" && !options.sessionId) this.#dialogEnabled.delete(tabId);
-    if (method === "Runtime.disable") {
+    if (method === "Runtime.disable" || method === "Log.disable") {
       const capture = this.#logs.get(tabId);
       capture?.sessions.delete(options.sessionId ?? "");
       if (capture) capture.ready = undefined;

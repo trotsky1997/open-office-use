@@ -173,13 +173,15 @@ test('developer logs are tab-scoped, bounded and cleared on disconnect',async()=
   emit(2,'Runtime.consoleAPICalled',{type:'error',args:[{value:'other tab'}]});
   emit(1,'Runtime.consoleAPICalled',{type:'warning',args:[{value:'careful'},{value:42}]});
   emit(1,'Runtime.exceptionThrown',{exceptionDetails:{text:'Uncaught',exception:{description:'Error: broken'},url:'https://example.test/'}});
-  const logs=await tab.dev.logs();assert.deepEqual(logs.map(({level,message})=>({level,message})),[{level:'warn',message:'careful 42'},{level:'error',message:'Error: broken'}]);
+  emit(1,'Log.entryAdded',{entry:{level:'error',text:'resource failed',url:'https://example.test/missing'}});
+  const logs=await tab.dev.logs();assert.deepEqual(logs.map(({level,message})=>({level,message})),[{level:'warn',message:'careful 42'},{level:'error',message:'Error: broken'},{level:'error',message:'resource failed'}]);
   assert.equal(logs[1].url,'https://example.test/');assert.equal((await tab.dev.logs({levels:['warning'],filter:'careful'})).length,1);
   assert.equal((await tab.dev.logs({limit:1}))[0].level,'error');assert.deepEqual(await tab.dev.logs({limit:0}),[]);
   await assert.rejects(tab.dev.logs({limit:-1}),/Invalid log options/);
   for(let i=0;i<501;i++)emit(1,'Runtime.consoleAPICalled',{type:'log',args:[{value:`line ${i}`}]});
   assert.equal((await tab.dev.logs()).length,500);assert.equal((await tab.dev.logs())[0].message,'line 1');
   await browser.cdp.call(1,'Runtime.disable');await tab.dev.watch();assert.equal(commands.filter(command=>command==='Runtime.enable').length,2);
+  await browser.cdp.call(1,'Log.disable');await tab.dev.watch();assert.equal(commands.filter(command=>command==='Log.enable').length,3);
   client.close();assert.deepEqual(browser.cdp.logs(1),[]);
 });
 

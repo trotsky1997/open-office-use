@@ -375,8 +375,9 @@ bounds a pending action callback; it cannot cancel a command already issued.
 
 ## Page developer logs
 
-Call `await tab.dev.watch()` before the action to capture console calls and
-uncaught JavaScript exceptions, including supported cross-process frames.
+Call `await tab.dev.watch()` before the action to capture console calls,
+uncaught JavaScript exceptions and browser log entries such as resource-load
+errors, including supported cross-process frames.
 Read them with `await tab.dev.logs({levels: ["error", "warning"], filter: "save", limit: 20})`.
 Calling `logs()` starts capture if necessary. Capture retains up to 500 entries
 per tab, with messages and source URLs capped at 4,096 characters; arguments
