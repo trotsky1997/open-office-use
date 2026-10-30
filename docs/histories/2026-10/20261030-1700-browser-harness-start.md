@@ -265,3 +265,5 @@ CSS locator 增加 and 交集，接受同一 browser/tab/frame 的 CSS 定位器
 CSS locator 增加 or 并集，对同一 browser/tab/frame 的结果按文档及开放 shadow root 遍历顺序去重，支持后续位置选择、筛选和嵌套 has；输入前重新计算。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证顺序、去重、严格匹配、位置、嵌套、跨 frame 拒绝和目标改变时停止点击；Electron 44/Xvfb socket 验证跨进程 frame。语义定位器组合和语义作用域到 CSS 仍待实现；macOS/Windows 本轮未测。
 
 修复 CSS fill 对数字输入缺少预校验的问题：使用浏览器原生 number 解析器在聚焦前验证，并在聚焦及全选后重新核对类型和值，避免对非法数字执行文本替换。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证跨进程无效值保持原值且无 input 事件、有效数值可信输入、聚焦和全选回调改变类型；Electron 44/Xvfb socket 验证跨进程无效与有效数字。macOS/Windows 本轮未测。
+
+语义定位器匹配改为使用显式观察对象，并在读取/输入前独立重算匹配集合及位置，保留当前操作快照；可检测新增歧义或 first/nth 目标改变，且输入已发出后不重试。SDK 66 项通过，覆盖独立复核不替换快照及新增匹配；Linux ARM64 Chromium 原生消息验证滚动准备期间新增同名按钮、改变 first 目标时不发送点击，Electron 44/Xvfb socket 验证原有跨进程上传/下载与定位流程。语义到 CSS 的反向混合链仍待实现；macOS/Windows 本轮未测。

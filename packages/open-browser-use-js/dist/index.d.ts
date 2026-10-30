@@ -248,10 +248,6 @@ export declare class OpenBrowserUseTab {
     }): Promise<InteractiveState>;
     private readAXValues;
     private cssFrameVisible;
-    private scopeText;
-    private freshFilterObservation;
-    private scopeContains;
-    private cssScopeContains;
     private verifyLocatorScope;
     private prepareBrowserEvent;
     prepareDownload(options?: {
@@ -570,6 +566,8 @@ export declare class OpenBrowserUseRoleLocator {
     }): OpenBrowserUseRoleLocator;
     private needsText;
     private matches;
+    private identities;
+    private guard;
     private find;
     count(): Promise<number>;
     all(): Promise<OpenBrowserUseRoleLocator[]>;

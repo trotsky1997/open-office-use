@@ -80,6 +80,7 @@ type CssTextFilter = {hasText?:CssMatcher; hasNotText?:CssMatcher; has?:readonly
 type CssStep = {selector:string; position?:number; before?:readonly CssTextFilter[]; after?:readonly CssTextFilter[]; union?:readonly [readonly CssStep[],readonly CssStep[]]};
 type CssSnapshot = { step:CssStep; scopes:readonly CssStep[]; scopeIds:number[][]; framePath?:readonly string[]; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
 type CssGuard = {snapshot:CssSnapshot; scopeId:number};
+type RoleGuard = {locator:OpenBrowserUseRoleLocator; expected:Array<{backendNodeId:number; frameId:string}>};
 type LocatorMatch = {node:InteractiveNode; path:number[]; filters:FilterGuard[]; css?:CssGuard};
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
@@ -87,7 +88,7 @@ type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher };
 type LogCapture = {generation: number; entries: OpenBrowserUseLogEntry[]; sessions: Map<string,Promise<void>>; ready?: Promise<void>};
 type FilterGuard = { index: number; filters: TextFilter[] };
 type UnindexedText = { backendNodeId?: number; frameId?: string; frameChain?: FrameInfo[] };
-type Observation = { id: string; documentId: number; nodes: ObservedNode[]; unindexedText: UnindexedText[]; frames?:FrameInfo[]; guards: Map<number,{scopes:number[]; filters:FilterGuard[]; framePath?:string[]; css?:CssGuard}> };
+type Observation = { id: string; documentId: number; nodes: ObservedNode[]; unindexedText: UnindexedText[]; frames?:FrameInfo[]; guards: Map<number,{scopes:number[]; filters:FilterGuard[]; framePath?:string[]; css?:CssGuard; role?:RoleGuard}> };
 class RetryablePreflightError extends Error {}
 function unindexedTextAncestors(tree: JsonValue): Array<number | undefined> {
   if (!isObject(tree) || !Array.isArray(tree.nodes)) return [];
@@ -731,23 +732,23 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async locatorContains(snapshotId: string, scopeIndex: number, targetIndex: number): Promise<boolean> {
-    const observation = this.#observation;
-    if (!observation || observation.id !== snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
-    return this.scopeContains(observation, scopeIndex, targetIndex);
+  currentObservation(snapshotId: string): Observation {
+    const observation=this.#observation;
+    if (!observation || observation.id!==snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
+    return observation;
   }
 
   /** @internal */
-  bindLocatorScope(snapshotId: string, targetIndex: number, scopeIndices: number[], filters: FilterGuard[], framePath?: string[], css?: CssGuard): void {
+  bindLocatorScope(snapshotId: string, targetIndex: number, scopeIndices: number[], filters: FilterGuard[], framePath?: string[], css?: CssGuard, role?: RoleGuard): void {
     const observation = this.#observation;
     if (!observation || observation.id !== snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
-    observation.guards.set(targetIndex, {scopes:[...scopeIndices],filters:filters.map(item => ({index:item.index,filters:item.filters.map(filter=>({...filter}))})),...(framePath ? {framePath:[...framePath]} : {}),...(css ? {css} : {})});
+    observation.guards.set(targetIndex, {scopes:[...scopeIndices],filters:filters.map(item => ({index:item.index,filters:item.filters.map(filter=>({...filter}))})),...(framePath ? {framePath:[...framePath]} : {}),...(css ? {css} : {}),...(role ? {role} : {})});
   }
 
   /** @internal */
-  async resolveFramePath(path: readonly string[], snapshotId?: string): Promise<string | null> {
+  async resolveFramePath(path: readonly string[], snapshotId?: string, expectedFrames?: readonly FrameInfo[]): Promise<string | null> {
     const frames = await this.frameTree();
-    const checkSnapshot = () => { if (snapshotId && (!this.#observation || this.#observation.id !== snapshotId || JSON.stringify(this.#observation.frames) !== JSON.stringify(frames))) throw new RetryablePreflightError("Frame tree changed; observe again"); };
+    const checkSnapshot = () => { if ((snapshotId && (!this.#observation || this.#observation.id !== snapshotId || JSON.stringify(this.#observation.frames) !== JSON.stringify(frames))) || (expectedFrames && JSON.stringify(expectedFrames)!==JSON.stringify(frames))) throw new RetryablePreflightError("Frame tree changed; observe again"); };
     checkSnapshot();
     let parent = frames[0];
     for (const selector of path) {
@@ -1095,13 +1096,6 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async locatorText(snapshotId: string, index: number): Promise<string> {
-    const observation = this.#observation;
-    if (!observation || observation.id !== snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
-    return this.scopeText(observation,index);
-  }
-
-  /** @internal */
   async locatorRead(snapshotId: string, index: number, mode: "innerText" | "textContent" | "attribute" | "enabled" | "visible", attribute = ""): Promise<string | boolean | null> {
     const observation = this.#observation;
     if (!observation || observation.id !== snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
@@ -1152,7 +1146,8 @@ export class OpenBrowserUseTab {
     } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(() => {}); }
   }
 
-  private async scopeText(observation: Observation, index: number): Promise<string> {
+  /** @internal */
+  async scopeText(observation: Observation, index: number): Promise<string> {
     const scope = observation.nodes.find(node => node.index === index);
     if (!scope) throw new RetryablePreflightError("Scope changed; observe again");
     const seen = new Set<string>();
@@ -1224,7 +1219,8 @@ export class OpenBrowserUseTab {
     return parts.join(" ").replace(/\s+/g," ").trim();
   }
 
-  private async freshFilterObservation(): Promise<Observation> {
+  /** @internal */
+  async freshFilterObservation(): Promise<Observation> {
     const documentId = await this.documentId();
     await this.browser.cdp.enableFrameSessions(this.id);
     const frames = await this.frameTree();
@@ -1237,10 +1233,11 @@ export class OpenBrowserUseTab {
       nodes.push(...interactiveNodes(tree,nodes.length,true).map(node => ({...node,frameId:frame.id,frameChain:frameAncestry(frame,frames)})));
     }
     if (documentId !== await this.documentId() || JSON.stringify(frames) !== JSON.stringify(await this.frameTree())) throw new RetryablePreflightError("Page changed; observe again");
-    return {id:"",documentId,nodes,unindexedText,guards:new Map()};
+    return {id:"",documentId,nodes,unindexedText,frames,guards:new Map()};
   }
 
-  private async scopeContains(observation: Observation, scopeIndex: number, targetIndex: number): Promise<boolean> {
+  /** @internal */
+  async scopeContains(observation: Observation, scopeIndex: number, targetIndex: number): Promise<boolean> {
     const scope = observation.nodes.find(node => node.index === scopeIndex);
     const target = observation.nodes.find(node => node.index === targetIndex);
     if (!scope || !target) throw new RetryablePreflightError("Scope changed; observe again");
@@ -1281,13 +1278,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async cssContains(snapshotId: string, snapshot: CssSnapshot, scopeId: number, targetIndex: number): Promise<boolean> {
-    const observation=this.#observation;
-    if (!observation || observation.id!==snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
-    return this.cssScopeContains(observation,snapshot,scopeId,targetIndex);
-  }
-
-  private async cssScopeContains(observation: Observation, snapshot: CssSnapshot, scopeId: number, targetIndex: number): Promise<boolean> {
+  async cssScopeContains(observation: Observation, snapshot: CssSnapshot, scopeId: number, targetIndex: number): Promise<boolean> {
     const frame=snapshot.frame,target=observation.nodes.find(node=>node.index===targetIndex);
     if (!frame || !target || !snapshot.ids.includes(scopeId) || observation.documentId!==snapshot.documentId || JSON.stringify(observation.frames)!==JSON.stringify(snapshot.frames)) throw new RetryablePreflightError("CSS scope changed; observe again");
     if ((target.frameId ?? snapshot.frames[0].id)!==frame.id) return false;
@@ -1337,6 +1328,7 @@ export class OpenBrowserUseTab {
         if (!matchesTextFilters(await this.scopeText(fresh,current.index),item.filters)) throw new RetryablePreflightError("Locator text changed; observe again");
       }
     }
+    if (guard?.role) await guard.role.locator.verifyMatches(observation,guard.role.expected);
   }
 
   private async prepareBrowserEvent(method: string, readyMethod: string, timeoutMs: number): Promise<{result: Promise<JsonValue>}> {
@@ -2367,14 +2359,14 @@ export class OpenBrowserUseRoleLocator {
     return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText();
   }
 
-  private async matches(state: InteractiveState): Promise<LocatorMatch[]> {
-    const frameId = this.framePath ? await this.tab.resolveFramePath(this.framePath,state.snapshotId) : undefined;
+  private async matches(observation: Observation): Promise<LocatorMatch[]> {
+    const frameId = this.framePath ? await this.tab.resolveFramePath(this.framePath,undefined,observation.frames) : undefined;
     if (this.framePath && !frameId) return [];
     const inFrame = (node:InteractiveNode) => !this.framePath || node.frameId === frameId;
-    if (this.field === "placeholder" && state.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.placeholderTruncated)) throw new Error("Some placeholders were truncated; locator results are incomplete");
-    if (this.field === "altText" && state.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.altTextTruncated)) throw new Error("Some alt text was truncated; locator results are incomplete");
+    if (this.field === "placeholder" && observation.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.placeholderTruncated)) throw new Error("Some placeholders were truncated; locator results are incomplete");
+    if (this.field === "altText" && observation.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.altTextTruncated)) throw new Error("Some alt text was truncated; locator results are incomplete");
     const normalize = (value: string) => this.textMatch ? value.replace(/\s+/g," ").trim() : value;
-    const candidates = state.nodes.filter(node => {
+    const candidates = observation.nodes.filter(node => {
       const value = node[this.field];
       return inFrame(node) && this.roles.includes(node.role) && typeof value === "string" &&
         (this.options.level === undefined || node.level === this.options.level) &&
@@ -2389,13 +2381,13 @@ export class OpenBrowserUseRoleLocator {
     if (!this.scope && this.cssScope) {
       const snapshot=await this.cssScope.snapshot();
       for (const node of candidates) for (const scopeId of snapshot.ids) {
-        if (await this.tab.cssContains(state.snapshotId,snapshot,scopeId,node.index)) {matches.push({node,path:[],filters:[],css:{snapshot,scopeId}});break;}
+        if (await this.tab.cssScopeContains(observation,snapshot,scopeId,node.index)) {matches.push({node,path:[],filters:[],css:{snapshot,scopeId}});break;}
       }
     } else if (!this.scope) for (const node of candidates) matches.push({node,path:[],filters:[]});
     else {
-      const scopes = await this.scope.matches(state);
+      const scopes = await this.scope.matches(observation);
       for (const node of candidates) for (const scope of scopes) {
-        if (await this.tab.locatorContains(state.snapshotId,scope.node.index,node.index)) {
+        if (await this.tab.scopeContains(observation,scope.node.index,node.index)) {
           matches.push({node,path:[...scope.path,scope.node.index],filters:[...scope.filters],...(scope.css ? {css:scope.css} : {})}); break;
         }
       }
@@ -2404,7 +2396,7 @@ export class OpenBrowserUseRoleLocator {
       if (!filters.length) return items;
       const accepted: typeof matches = [];
       for (const item of items) {
-        if (matchesTextFilters(await this.tab.locatorText(state.snapshotId,item.node.index),filters)) accepted.push({...item,filters:[...item.filters,{index:item.node.index,filters}]});
+        if (matchesTextFilters(await this.tab.scopeText(observation,item.node.index),filters)) accepted.push({...item,filters:[...item.filters,{index:item.node.index,filters}]});
       }
       return accepted;
     };
@@ -2412,10 +2404,33 @@ export class OpenBrowserUseRoleLocator {
     return apply(this.position === undefined ? before : this.position === -1 ? before.slice(-1) : before.slice(this.position,this.position + 1),this.filtersAfter);
   }
 
+  private identities(observation: Observation, matches: LocatorMatch[]): Array<{backendNodeId:number; frameId:string}> {
+    return matches.map(match=>{
+      const node=observation.nodes.find(item=>item.index===match.node.index);
+      if(!node) throw new RetryablePreflightError("Locator target changed; observe again");
+      return {backendNodeId:node.backendNodeId,frameId:node.frameId ?? ""};
+    });
+  }
+
+  private guard(snapshotId:string, matches:LocatorMatch[]): RoleGuard {
+    return {locator:this,expected:this.identities(this.tab.currentObservation(snapshotId),matches)};
+  }
+
+  /** @internal */
+  async verifyMatches(original:Observation, expected:RoleGuard["expected"]): Promise<void> {
+    const fresh=await this.tab.freshFilterObservation();
+    if(fresh.documentId!==original.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(original.frames)) throw new RetryablePreflightError("Page changed; observe again");
+    const actual=this.identities(fresh,await this.matches(fresh));
+    if(JSON.stringify(actual)!==JSON.stringify(expected)) throw new RetryablePreflightError("Locator matches changed; observe again");
+  }
+
   private async find(): Promise<{state: InteractiveState; matches: LocatorMatch[]}> {
     const state = await this.tab.observe({includeFrames:true, ...(this.needsText() ? {includeText:true} : {})});
     if (state.unavailableFrames?.length) throw new Error("Some frames could not be observed; locator results are incomplete");
-    return {state,matches:await this.matches(state)};
+    const observation=this.tab.currentObservation(state.snapshotId);
+    const matches=await this.matches(observation);
+    this.tab.currentObservation(state.snapshotId);
+    return {state,matches};
   }
 
   async count(): Promise<number> { return (await this.find()).matches.length; }
@@ -2431,7 +2446,7 @@ export class OpenBrowserUseRoleLocator {
         const values: string[] = [];
         let total = 0;
         for (const match of matches) {
-          if (match.path.length || match.filters.length || this.framePath || match.css) this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css);
+          this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css,this.guard(state.snapshotId,matches));
           const value = await this.tab.locatorRead(state.snapshotId,match.node.index,"textContent");
           if (typeof value !== "string") throw new RetryablePreflightError("Target text is unavailable; observe again");
           total += value.length;
@@ -2454,7 +2469,7 @@ export class OpenBrowserUseRoleLocator {
     if (!matches.length) return false;
     if (matches.length > 1) throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
     const match = matches[0];
-    if (match.path.length || match.filters.length || this.framePath || match.css) this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css);
+    this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css,this.guard(state.snapshotId,matches));
     return await this.tab.locatorRead(state.snapshotId,match.node.index,"visible") as boolean;
   }
   async waitFor(options: {state: "visible" | "hidden"; timeoutMs?: number}): Promise<void> {
@@ -2484,7 +2499,7 @@ export class OpenBrowserUseRoleLocator {
         const {state, matches} = await this.find();
         if (matches.length > 1) throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
         if (matches.length === 1) {
-          if (matches[0].path.length || matches[0].filters.length || this.framePath || matches[0].css) this.tab.bindLocatorScope(state.snapshotId,matches[0].node.index,matches[0].path,matches[0].filters,this.framePath ? [...this.framePath] : undefined,matches[0].css);
+          this.tab.bindLocatorScope(state.snapshotId,matches[0].node.index,matches[0].path,matches[0].filters,this.framePath ? [...this.framePath] : undefined,matches[0].css,this.guard(state.snapshotId,matches));
           return await action(matches[0].node, state.snapshotId);
         }
         lastError = new Error(`Locator matched 0 elements before timeout (${timeoutMs} ms)`);

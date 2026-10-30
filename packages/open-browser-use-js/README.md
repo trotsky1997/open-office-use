@@ -223,7 +223,10 @@ case-sensitively. Actions wait up to 5 seconds when a match is missing,
 temporarily covered, moving or changed before input; pass
 `{timeoutMs: 0}` for one attempt or another timeout up to 120 seconds. Target
 geometry is sampled twice 75 ms apart before input, including the translated
-frame position; this catches movement visible between those samples.
+frame position; this catches movement visible between those samples. Before
+input and scoped reads, a separate accessibility observation re-evaluates the
+locator and its position; changed matches trigger a fresh attempt before input.
+The recheck leaves the active operation's observation intact.
 The limit controls when another observation starts; a slow browser request can
 finish after it. Multiple matches fail immediately. An issued input action is
 not retried after an error. This initial locator API does not include every

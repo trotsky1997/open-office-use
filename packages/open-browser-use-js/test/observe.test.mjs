@@ -318,6 +318,20 @@ test('full-page screenshots use content dimensions and enforce size limits', asy
   assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
 });
 
+test('semantic match rechecks preserve the active observation and detect new matches',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let duplicate=false;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(params.method==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:7,role:{value:'button'},name:{value:'Save'}},...(duplicate?[{backendDOMNodeId:8,role:{value:'button'},name:{value:'Save'}}]:[])]};
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1),state=await tab.observe({includeFrames:true}),original=tab.currentObservation(state.snapshotId),locator=tab.playwright.getByRole('button',{name:'Save',exact:true});
+  await locator.verifyMatches(original,[{backendNodeId:7,frameId:''}]);assert.equal(tab.currentObservation(state.snapshotId),original);
+  duplicate=true;await assert.rejects(locator.verifyMatches(original,[{backendNodeId:7,frameId:''}]),/Locator matches changed/);assert.equal(tab.currentObservation(state.snapshotId),original);
+});
+
 test('prepared download waits for registration and retains the eventual result',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused',timeoutMs:100}),handlers=new Set();let complete, waitId, requestTimeout;
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
@@ -819,6 +833,7 @@ test("role locators reobserve, reject ambiguous matches and honor explicit posit
   const tab = new OpenBrowserUseBrowser({client}).tab(1), calls=[];
   let generation=0, unavailableFrames=[], nodes=[{index:1,role:'button',name:'Save draft'},{index:2,role:'button',name:'Save final'}];
   tab.observe=async options=>{assert.equal(options.includeFrames,true);return {snapshotId:String(++generation),nodes,unavailableFrames,text:'',textMode:'full',truncated:false};};
+  tab.currentObservation=id=>({id,nodes,unindexedText:[],guards:new Map()});tab.bindLocatorScope=()=>{};
   tab.click=async(index,snapshotId)=>calls.push({index,snapshotId});
   const locator=tab.playwright.getByRole('button',{name:'save'});
   assert.equal(await locator.count(),2);
@@ -849,6 +864,7 @@ test("role locator waits for a missing target but never retries an issued action
   const tab = new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
   let nodes=[], observations=0, clicks=0;
   tab.observe=async()=>({snapshotId:String(++observations),nodes,unavailableFrames:[],text:'',textMode:'full',truncated:false});
+  tab.currentObservation=id=>({id,nodes,unindexedText:[],guards:new Map()});tab.bindLocatorScope=()=>{};
   tab.click=async()=>{clicks++;};
   const locator=tab.playwright.getByRole('button',{name:'Later'});
   setTimeout(()=>{nodes=[{index:1,role:'button',name:'Later'}];},20);
@@ -863,6 +879,7 @@ test('locator waits for visible and hidden states without accepting ambiguous ma
   const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
   let nodes=[],visible=true;
   tab.observe=async()=>({snapshotId:'1',nodes,unavailableFrames:[],text:'',textMode:'full',truncated:false});
+  tab.currentObservation=id=>({id,nodes,unindexedText:[],guards:new Map()});tab.bindLocatorScope=()=>{};
   tab.locatorRead=async()=>visible;
   const locator=tab.playwright.getByRole('button',{name:'Later'});
   setTimeout(()=>{nodes=[{index:1,role:'button',name:'Later'}];},20);
