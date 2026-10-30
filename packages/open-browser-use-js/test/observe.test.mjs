@@ -542,6 +542,45 @@ test('text and heading locators observe semantic nodes and match normalized text
   const changed=await tab.observe({diff:true});assert.equal(changed.textMode,'full');
 });
 
+test('scoped locators disambiguate descendants and recheck the scope before input', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'});
+  let moved=false, moveOnMeasure=false, moveOnFocus=false, renameOnMeasure=false, scopeName='Alpha', mouse=0, keys=0;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    const command=params.method, args=params.commandParams;
+    if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(command==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(command==='Accessibility.getFullAXTree')return {nodes:[
+      {backendDOMNodeId:10,role:{value:'dialog'},name:{value:scopeName}},
+      {backendDOMNodeId:11,role:{value:'dialog'},name:{value:'Beta'}},
+      {backendDOMNodeId:20,role:{value:'button'},name:{value:'Save'}},
+      {backendDOMNodeId:21,role:{value:'button'},name:{value:'Save'}}
+    ]};
+    if(command==='DOM.resolveNode')return {object:{objectId:String(args.backendNodeId)}};
+    if(command==='DOM.focus') { if(moveOnFocus)moved=true; return {}; }
+    if(command==='Input.dispatchKeyEvent')keys++;
+    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('activeElement')) return {result:{value:true}};
+    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('target===this')) return {result:{value:args.objectId==='10' && args.arguments[0].objectId==='20' && !moved || args.objectId==='11' && args.arguments[0].objectId==='21'}};
+    if(command==='Runtime.callFunctionOn') { if(moveOnMeasure)moved=true; if(renameOnMeasure)scopeName='Renamed'; return {result:{value:{x:10,y:10,width:10,height:10}}}; }
+    if(command==='Input.dispatchMouseEvent')mouse++;
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const save=tab.playwright.getByRole('dialog',{name:'Alpha',exact:true}).getByRole('button',{name:'Save',exact:true});
+  assert.equal(await tab.playwright.getByRole('button',{name:'Save'}).count(),2);
+  assert.equal(await save.count(),1);
+  await save.click(); assert.equal(mouse,2);
+  moveOnMeasure=true;
+  await assert.rejects(save.click({timeoutMs:0}),/outside scope/);
+  assert.equal(mouse,2);
+  moved=false; moveOnMeasure=false; renameOnMeasure=true;
+  await assert.rejects(save.click({timeoutMs:0}),/Scope changed/);
+  assert.equal(mouse,2);
+  moved=false; renameOnMeasure=false; scopeName='Alpha'; moveOnFocus=true;
+  await assert.rejects(save.press('Enter',{timeoutMs:1000}),/outside scope/);
+  assert.equal(keys,0);
+});
+
 test('truncated alt text rejects locator matching and invalidates stale observations', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let alt='x'.repeat(512)+'first', mouse=0;

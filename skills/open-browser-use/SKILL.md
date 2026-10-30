@@ -35,7 +35,7 @@ to replace a text field's contents. For semantic selection, use
 `tab.playwright.getByRole(role, {name, exact:true}).click()`, `.hover()` or `.fill(text)`;
 `tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
 binary controls without toggling an already-correct state. Actions require a
-unique match. For a native select use `.selectOption(value)` or
+unique match. Chain locators, such as `dialog.getByRole("button", {name:"Save"})`, to select descendants within a container, including nested frames. For a native select use `.selectOption(value)` or
 `.selectOption({label})`; its DOM-dispatched events have `isTrusted === false`.
 `fill` handles native number and date/time inputs; date/time events are
 DOM-dispatched with `isTrusted === false`.

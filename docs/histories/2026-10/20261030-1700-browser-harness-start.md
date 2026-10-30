@@ -109,3 +109,7 @@ Linux ARM64 Chromium 150 在隔离临时 profile 中复跑真实扩展、原生 
 修复普通字母和 Space 按键无法输入文本：可打印按键使用包含 text 的 keyDown，组合键保留 rawKeyDown。macOS Chromium 与 Electron 的跨进程输入框验证小写、大写、空格及可信 input；Electron 复选框继续验证 Space。
 
 按键支持 US 键盘数字、常见 ASCII 标点及 Shift 映射；可直接输入 @、+，修饰键与字符键按对应物理码派发。macOS Chromium 与 Electron 跨进程输入框验证可信输入。
+
+新增可链式组合的语义定位器，按容器后代范围消除重复匹配；使用 DOM 包含关系穿过 Shadow DOM 和 iframe，输入前重核容器角色、名称及包含关系，聚焦后再次检查。macOS Chromium 验证 closed Shadow DOM 与跨进程 iframe，Electron 验证重复按钮及多层容器。
+
+Linux ARM64 Chromium 150 隔离原生消息链路验证作用域跨 closed Shadow DOM、多层容器及嵌套跨进程 iframe；复用的临时浏览器使用 --no-sandbox。

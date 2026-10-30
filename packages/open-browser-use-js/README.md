@@ -154,6 +154,7 @@ await tab.playwright.getByRole("img", { name: "Product photo", exact: true }).cl
 await tab.playwright.getByAltText("Product photo", { exact: true }).click();
 const dialog = tab.playwright.getByRole("dialog", { name: "Sign in", exact: true });
 await dialog.hover();
+await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
 ```
 
 This locator covers the interactive roles exposed by `observe`, including
@@ -172,6 +173,14 @@ The limit controls when another observation starts; a slow browser request can
 finish after it. Multiple matches fail immediately. An issued input action is
 not retried after an error. This initial locator API does not include every
 Playwright locator method.
+
+Locators can be chained to search descendants of matching accessible containers.
+For example, `getByRole("dialog", {name: "Settings"}).getByRole("button",
+{name: "Save"})` narrows a repeated button name to that dialog. Descendant
+checks cross shadow roots and iframe boundaries. Scope roles and containment are
+checked again before input; a focus handler can also change the scope, so
+`press()` checks it after focusing. This API follows the accessible tree and
+requires all observed frames to be readable.
 
 `getByText` matches individual accessible static-text nodes after collapsing
 whitespace; text split across multiple elements is matched separately. Text

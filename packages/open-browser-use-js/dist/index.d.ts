@@ -123,6 +123,8 @@ export declare class OpenBrowserUseTab {
         includeText?: boolean;
     }): Promise<InteractiveState>;
     private readAXValues;
+    private scopeContains;
+    private verifyLocatorScope;
     click(index: number, snapshotId: string): Promise<void>;
     hover(index: number, snapshotId: string): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;
@@ -182,12 +184,32 @@ export declare class OpenBrowserUseRoleLocator {
     private position?;
     private textMatch;
     private field;
+    private scope?;
     constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: {
         name?: string;
         exact?: boolean;
-    }, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText");
+    }, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
+    private child;
+    getByRole(role: string, options?: {
+        name?: string;
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByLabel(name: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByText(text: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByAltText(text: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByPlaceholder(text: string, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    private needsText;
+    private matches;
     private find;
     count(): Promise<number>;
     private perform;
