@@ -245,6 +245,9 @@ observation, returning an empty array when there are none. Each value is limited
 to 30000 characters and the total to 1000000. The page can change between reads;
 stale targets are retried within the optional `timeoutMs`. A positive deadline
 also bounds each browser read; timed-out reads may finish later.
+`focus()` focuses the matched element without dispatching mouse or keyboard
+input. It rechecks the match and focus chain; focus handlers can change the page,
+and a changed target causes an error without repeating the focus.
 `clear()` fills the matched editable control with an empty string, using the
 same focus, validation and timeout behavior as `fill()`.
 Editable text inputs exposed as `combobox` support `fill()` and `type()`;
@@ -361,7 +364,7 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
 `textContent`, `allTextContents`, `allInnerTexts`, `getAttribute`, `isVisible`, `isHidden`, `isEnabled`, `isDisabled`,
-`isChecked`, `isEditable`, `inputValue`, `boundingBox`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `clear`, `type`, `check`,
+`isChecked`, `isEditable`, `inputValue`, `boundingBox`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `focus`, `fill`, `clear`, `type`, `check`,
 `uncheck`, `setChecked` and `selectOption`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a
 `frameLocator` is selected. Matches are limited to 1,000 elements and single

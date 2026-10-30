@@ -112,6 +112,19 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.equal(await evaluate(a.id,'window.trustedInput'),true);
   check('SDK observation: indexed trusted text input');
   const messageCss=sdkTab.playwright.locator('#message'),messageRole=sdkTab.playwright.getByRole('textbox',{name:'消息',exact:true});
+  await evaluate(a.id,`(()=>{window.focusProbe={clicks:0,keys:0};const el=document.querySelector('#message');el.addEventListener('click',()=>window.focusProbe.clicks++);el.addEventListener('keydown',()=>window.focusProbe.keys++)})()`);
+  for (const locator of [messageCss,messageRole]) { await evaluate(a.id,"document.querySelector('#increment').focus()");await locator.focus({timeoutMs:3000});assert.equal(await evaluate(a.id,"document.activeElement.id"),'message'); }
+  assert.deepEqual(await evaluate(a.id,'window.focusProbe'),{clicks:0,keys:0});
+  check('SDK locators: focus without mouse or key events');
+  await evaluate(a.id,`(()=>{window.focusChanges=0;const el=document.createElement('input');el.id='focus-changing';el.addEventListener('focus',()=>{window.focusChanges++;el.id='focus-changed'});document.body.append(el)})()`);
+  await assert.rejects(sdkTab.playwright.locator('#focus-changing').focus({timeoutMs:1000}),/changed|focus/i);
+  assert.equal(await evaluate(a.id,'window.focusChanges'),1);await evaluate(a.id,"document.querySelector('#focus-changed').remove()");
+  await evaluate(a.id,`(()=>{window.roleFocusChanges=0;const el=document.createElement('input');el.id='role-focus-changing';el.setAttribute('aria-label','Focus original');el.addEventListener('focus',()=>{window.roleFocusChanges++;el.setAttribute('aria-label','Focus changed')});document.body.append(el)})()`);
+  await assert.rejects(sdkTab.playwright.getByRole('textbox',{name:'Focus original',exact:true}).focus({timeoutMs:1000}),/changed|focus/i);
+  assert.equal(await evaluate(a.id,'window.roleFocusChanges'),1);await evaluate(a.id,"document.querySelector('#role-focus-changing').remove()");
+
+
+
   for (const locator of [messageCss,messageRole]) { await evaluate(a.id,'window.trustedInput=false');await locator.clear({timeoutMs:3000});assert.equal(await evaluate(a.id,'document.querySelector("#message").value'),'');assert.equal(await evaluate(a.id,'window.trustedInput'),true);await locator.fill('SDK input'); }
   assert.equal(await evaluate(a.id,'window.trustedInput'),true);
   check('SDK locators: CSS and semantic clear preserve trusted input');
@@ -152,6 +165,7 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   check('SDK locator: waits for moving target to settle');
   const crossUrl = fixture.url.replace('127.0.0.1','localhost') + '/cross-frame';
   await evaluate(a.id,`(async()=>{window.crossMessages=[];window.addEventListener('message',e=>window.crossMessages.push(e.data));const f=document.createElement('iframe');f.id='cross-frame';f.src=${JSON.stringify(crossUrl)};document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`);
+  await sdkTab.playwright.locator('#cross-frame').focus();assert.equal(await evaluate(a.id,"document.activeElement.id"),'cross-frame');
   const crossState = await sdkTab.observe({includeFrames:true});
   assert.equal(crossState.frameCoverage,'cross-process');
   const crossButton = crossState.nodes.find(node=>node.name==='Cross-frame action');assert.ok(crossButton?.frameId);
@@ -167,6 +181,8 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.ok(Math.abs(feedbackPoint.x-feedbackPoint.left-localPoint.result.value.x)<1 && Math.abs(feedbackPoint.y-feedbackPoint.top-localPoint.result.value.y)<1);
   const frameInput=sdkTab.playwright.frameLocator('#cross-frame').getByRole('textbox',{name:'Cross-frame text'}),frameCss=sdkTab.playwright.frameLocator('#cross-frame').locator('input[aria-label="Cross-frame text"]');
   assert.equal(await frameInput.isEditable(),true);assert.equal(await frameCss.isEditable(),true);
+  await frameCss.focus();await frameInput.focus();
+
   await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:"document.querySelector('[aria-label=\"Cross-frame text\"]').readOnly=true",returnByValue:true},{sessionId:crossSession});
   assert.equal(await frameInput.isEditable(),false);assert.equal(await frameCss.isEditable(),false);
   await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:"document.querySelector('[aria-label=\"Cross-frame text\"]').readOnly=false",returnByValue:true},{sessionId:crossSession});

@@ -1493,7 +1493,7 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
-    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked, selection, append = false, mouse = { button: "left", buttons: 1, modifiers: 0 }, domIdentity, domConnectionGeneration) {
+    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked, selection, append = false, mouse = { button: "left", buttons: 1, modifiers: 0 }, domIdentity, domConnectionGeneration, focusOnly = false) {
         if (key !== undefined)
             this.parseKey(key);
         const frame = snapshot.frame;
@@ -1510,6 +1510,19 @@ export class OpenBrowserUseTab {
             throw new RetryablePreflightError("Selector target is unavailable; observe again");
         let inputIssued = false;
         try {
+            if (focusOnly) {
+                const verify = async () => { const fresh = await this.queryCss(snapshot.step, snapshot.framePath, snapshot.scopes, snapshot.semantic?.scope, undefined, snapshot.frameId); if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots) !== JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
+                    throw new RetryablePreflightError("Selector target changed; observe again"); };
+                await verify();
+                this.#observation = undefined;
+                inputIssued = true;
+                await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId });
+                const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return false;let element=this;while(true){const root=element.getRootNode();if(root.activeElement!==element)return false;if(!(root instanceof ShadowRoot))return true;element=root.host}}` }, { sessionId });
+                if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true || !await this.targetFrameFocused(frame.id, id, snapshot.frames))
+                    throw new Error("Target lost focus; observe again");
+                await verify();
+                return;
+            }
             const chain = frameAncestry(frame, snapshot.frames);
             const measure = async () => {
                 const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: hover }, { value: !!mouse.force }], functionDeclaration: `function(allowDisabled,force) {
@@ -2211,6 +2224,8 @@ export class OpenBrowserUseTab {
     async hover(index, snapshotId) {
         await this.act(index, snapshotId, undefined, false, undefined, undefined, true);
     }
+    /** @internal */
+    async focus(index, snapshotId) { await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, false, undefined, true); }
     async press(index, snapshotId, key) {
         this.parseKey(key);
         await this.act(index, snapshotId, undefined, false, undefined, undefined, false, key);
@@ -2428,6 +2443,16 @@ export class OpenBrowserUseTab {
             throw new RetryablePreflightError("Frame focus changed; observe again");
         return target;
     }
+    async targetFrameFocused(frameId, backendNodeId, frames) {
+        const active = await this.focusedInputFrame();
+        if (active.id === frameId)
+            return true;
+        const chain = frameAncestry(active, frames), child = chain.find(item => item.parentId === frameId), parent = frames.find(item => item.id === frameId);
+        if (!child || !parent)
+            return false;
+        const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: child.id }, { sessionId: parent.sessionId });
+        return isObject(owner) && owner.backendNodeId === backendNodeId;
+    }
     async sendKey(key, sessionId) {
         const { name, modifiers, modifierBits, definition, printablePair } = this.parseKey(key);
         const modifierCodes = { Alt: ["AltLeft", 18], Control: ["ControlLeft", 17], Meta: ["MetaLeft", 91], Shift: ["ShiftLeft", 16] };
@@ -2496,7 +2521,7 @@ export class OpenBrowserUseTab {
             throw new Error("Invalid selected options result");
         return result;
     }
-    async act(index, snapshotId, text, replace = false, checked, selection, hover = false, key, doubleClick = false, mouse = { button: "left", buttons: 1, modifiers: 0 }) {
+    async act(index, snapshotId, text, replace = false, checked, selection, hover = false, key, doubleClick = false, mouse = { button: "left", buttons: 1, modifiers: 0 }, focusOnly = false) {
         const observation = this.#observation;
         this.#observation = undefined;
         const node = observation?.nodes.find((item) => item.index === index);
@@ -2561,6 +2586,17 @@ export class OpenBrowserUseTab {
             throw new RetryablePreflightError("Target is unavailable; observe again");
         let inputIssued = false;
         try {
+            if (focusOnly) {
+                inputIssued = true;
+                await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId: targetSession });
+                const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return false;let element=this;while(true){const root=element.getRootNode();if(root.activeElement!==element)return false;if(!(root instanceof ShadowRoot))return true;element=root.host}}` }, { sessionId: targetSession });
+                if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true || await this.documentId() !== observation.documentId || (node.frameId && observation.frames && !await this.targetFrameFocused(node.frameId, node.backendNodeId, observation.frames)))
+                    throw new Error("Target lost focus; observe again");
+                if (node.frameChain)
+                    await this.validateFrames(node.frameChain);
+                await this.verifyLocatorScope(observation, node);
+                return;
+            }
             const measure = async () => {
                 const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                     objectId, returnByValue: true, arguments: [{ value: hover }, { value: !!mouse.force }],
@@ -3702,6 +3738,7 @@ export class OpenBrowserUseCssLocator {
             throw new Error("Checked state must be a boolean");
         return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, checked, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(options.force ? { force: true } : {}) }); }, options.timeoutMs);
     }
+    focus(options = {}) { return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, undefined, undefined, false, undefined, undefined, undefined, true); }, options.timeoutMs); }
     press(key, options = {}) {
         if (typeof key !== "string")
             throw new Error("Invalid key");
@@ -4128,6 +4165,7 @@ export class OpenBrowserUseRoleLocator {
     async click(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id) => this.tab.click(node.index, id, mouse), options.timeoutMs); }
     async dblclick(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id) => this.tab.dblclick(node.index, id, mouse), options.timeoutMs); }
     async hover(options = {}) { await this.perform((node, id) => this.tab.hover(node.index, id), options.timeoutMs); }
+    async focus(options = {}) { await this.perform((node, id) => this.tab.focus(node.index, id), options.timeoutMs); }
     async press(key, options = {}) { await this.perform((node, id) => this.tab.press(node.index, id, key), options.timeoutMs); }
     clear(options = {}) { return this.fill("", options); }
     async fill(text, options = {}) { await this.perform((node, id) => this.tab.fill(node.index, id, text), options.timeoutMs); }

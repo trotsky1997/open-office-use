@@ -467,3 +467,5 @@ Linux ARM64 Chromium 150 原生扩展实测 getByUrl 返回的句柄导航后保
 隔离 Linux ARM64 Electron 44.7 / Xvfb 的补充探索：WebContents.capturePage 在未呈现标签与隐藏窗口均返回 UnknownVizError；为 WebContentsView 启用 offscreen 后，页面报告 visible，截图预备仍超时；跳过截图的实验没有产生点击，调用 startPainting/invalidate 也未解除截图超时。上述选项仅在隔离副本中实验，正式视图配置未改动。Electron 的 [capturePage 与 offscreen API](https://www.electronjs.org/docs/latest/api/web-contents) 说明了截图和渲染选项。
 
 CSS 定位器的 isEditable 接入浏览器可访问性角色，支持浏览器报告的隐式角色，并在读取前后复核角色。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展实测通过，包含隐式 gridcell 的只读状态变化。无可访问性节点时仍依赖显式 role 与原生控件判断；Windows 未测。
+
+CSS 与语义定位器新增 focus：聚焦前后复核目标、frame 和焦点链，输入已发出后目标变化不会重试；直接聚焦不派发鼠标或按键。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展通过，覆盖跨进程 frame、iframe 宿主和聚焦回调改变目标。动作后续阶段仍可能超过 timeoutMs；Windows 未测。

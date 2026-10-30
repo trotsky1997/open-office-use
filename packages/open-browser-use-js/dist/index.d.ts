@@ -418,6 +418,7 @@ export declare class OpenBrowserUseTab {
     pressKey(key: string): Promise<void>;
     typeAtFocus(text: string): Promise<void>;
     private focusedInputFrame;
+    private targetFrameFocused;
     private sendKey;
     private checkPoint;
     getViewport(): Promise<{
@@ -723,6 +724,9 @@ export declare class OpenBrowserUseCssLocator {
     check(options?: LocatorCheckOptions): Promise<void>;
     uncheck(options?: LocatorCheckOptions): Promise<void>;
     setChecked(checked: boolean, options?: LocatorCheckOptions): Promise<void>;
+    focus(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
     press(key: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
@@ -861,6 +865,9 @@ export declare class OpenBrowserUseRoleLocator {
     click(options?: LocatorClickOptions): Promise<void>;
     dblclick(options?: LocatorClickOptions): Promise<void>;
     hover(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    focus(options?: {
         timeoutMs?: number;
     }): Promise<void>;
     press(key: string, options?: {
