@@ -4,7 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -113,6 +114,13 @@ async def main():
                 calculated = root / 'calculated.xlsx'
                 calc = await session.call_tool('recalculate_workbook', {'file': str(original), 'output': str(calculated)})
                 assert not calc.isError, calc
+                text_source = root / 'text.xlsx'; text_book = Workbook(); text_book.active['A1'] = 'value alpha'; text_book.active['A1'].font = Font(bold=True); text_book.save(text_source)
+                text_draft = root / 'text-draft'; text_started = await session.call_tool('start_session', {'directory': str(text_draft), 'source': str(text_source)})
+                assert not text_started.isError, text_started
+                text_edit = await session.call_tool('session_replace_text', {'directory': str(text_draft), 'base_revision': 0, 'path': '/Sheet/A1', 'find': 'alpha', 'replacement': 'beta'})
+                assert not text_edit.isError, text_edit
+                changed_cell = load_workbook(text_draft / 'revision-000001.xlsx').active['A1']
+                assert changed_cell.value == 'value beta' and changed_cell.font.bold
                 grid_draft = root / 'grid-draft'
                 grid_started = await session.call_tool('start_session', {'directory': str(grid_draft), 'source': str(original)})
                 assert not grid_started.isError, grid_started

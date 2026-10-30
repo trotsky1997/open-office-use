@@ -38,9 +38,30 @@ def replace_nodes(nodes, find, replacement, preserve_space=False):
         offset = next_offset
 
 
+def parse_xml(document):
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
+    tree = etree.parse(io.BytesIO(document), parser)
+    if tree.docinfo.doctype:
+        raise ValueError('Document XML contains an unsupported document type')
+    return tree
+
+
+def serialize_xml(tree, original):
+    prefix = original[:4096].decode(tree.docinfo.encoding or 'UTF-8', errors='ignore').lstrip('\ufeff \t\r\n')
+    declaration = prefix.startswith('<?xml')
+    header, separator, _ = prefix.partition('?>')
+    if declaration and not separator:
+        raise ValueError('Document XML declaration exceeds the supported limit')
+    standalone = re.search(r"\bstandalone\s*=\s*(['\"])(yes|no)\1", header) if declaration else None
+    options = {'encoding': 'UTF-8', 'xml_declaration': declaration}
+    if standalone:
+        options['standalone'] = standalone.group(2) == 'yes'
+    return etree.tostring(tree, **options)
+
+
 def edit_xml(source, output, select_part, edit):
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
-    if source.suffix.lower() not in ('.docx', '.pptx') or source.suffix.lower() != output.suffix.lower():
+    if source.suffix.lower() not in ('.docx', '.pptx', '.xlsx') or source.suffix.lower() != output.suffix.lower():
         raise ValueError('Input and output must use the same supported Office format')
     if source.stat().st_size > 128 * 1024 * 1024:
         raise ValueError('Document exceeds the 128 MiB size limit')
@@ -54,28 +75,17 @@ def edit_xml(source, output, select_part, edit):
             if any(name.startswith('_xmlsignatures/') for name in names):
                 raise ValueError('Digitally signed documents are not supported by text replacement')
             part = select_part(source)
-            document = archive.read(part)
-            parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
-            tree = etree.parse(io.BytesIO(document), parser)
-            if tree.docinfo.doctype:
-                raise ValueError('Document XML contains an unsupported document type')
-            edit(tree)
-            prefix = document[:4096].decode(tree.docinfo.encoding or 'UTF-8', errors='ignore').lstrip('\ufeff \t\r\n')
-            declaration = prefix.startswith('<?xml')
-            header, separator, _ = prefix.partition('?>')
-            if declaration and not separator:
-                raise ValueError('Document XML declaration exceeds the supported limit')
-            standalone = re.search(r"\bstandalone\s*=\s*(['\"])(yes|no)\1", header) if declaration else None
-            options = {'encoding': 'UTF-8', 'xml_declaration': declaration}
-            if standalone:
-                options['standalone'] = standalone.group(2) == 'yes'
-            changed = etree.tostring(tree, **options)
+            document = archive.read(part); tree = parse_xml(document)
+            additional = edit(tree, archive) or {}
+            if not isinstance(additional, dict) or any(name not in names or name == part or not isinstance(data, bytes) for name, data in additional.items()):
+                raise ValueError('Invalid additional package changes')
+            changed = {**additional, part: serialize_xml(tree, document)}
             with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-ooxml-') as tmp:
                 candidate = Path(tmp) / ('document' + output.suffix.lower())
                 with zipfile.ZipFile(candidate, 'w') as result:
                     result.comment = archive.comment
                     for entry in entries:
-                        result.writestr(entry, changed if entry.filename == part else archive.read(entry))
+                        result.writestr(entry, changed[entry.filename] if entry.filename in changed else archive.read(entry))
                 os.link(candidate, output)
     except (zipfile.BadZipFile, etree.XMLSyntaxError, KeyError) as exc:
         raise ValueError(f'Invalid Office document: {exc}') from exc

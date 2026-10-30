@@ -47,7 +47,7 @@ def replace_text(source, output, path, find, replacement):
     slide_index = int(match.group(1)) - 1
     paragraph_index = int(match.group(2)) - 1 if match.group(2) else None
 
-    def edit(tree):
+    def edit(tree, archive):
         if tree.getroot().tag != P + 'sld':
             raise ValueError('Slide XML has an invalid root')
         parent = tree.getroot().find(P + 'cSld/' + P + 'spTree')

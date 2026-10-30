@@ -63,3 +63,5 @@ Added run-preserving PowerPoint replacement with relationship-based slide resolu
 Extended Word run-preserving replacement to ordinary hyperlinks, bookmark and comment regions, while rejecting matches crossing their boundaries.
 
 Extended PowerPoint run-preserving replacement to table cells, merged origins, explicit paragraphs and grouped tables; table cell whole-text editing stays disabled.
+
+Added versioned, run-preserving XLSX text-cell replacement with shared-string isolation, merged and formula-range safeguards, and atomic multi-part writes.

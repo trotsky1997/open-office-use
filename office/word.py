@@ -21,7 +21,7 @@ def replace_text(source, output, path, find, replacement):
     if Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
         raise ValueError('Text replacement requires DOCX input and output')
 
-    def edit(tree):
+    def edit(tree, archive):
         if tree.getroot().tag != W + 'document':
             raise ValueError('Document XML has an invalid root')
         paragraph = tree.getroot().find(W + 'body')
