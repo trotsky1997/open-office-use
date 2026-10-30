@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, nativeImage } from 'electron';
 import { createIabRuntime } from '../../packages/open-browser-use-electron/dist/index.js';
 import { OpenBrowserUseBrowser, OpenBrowserUseClient } from '../../packages/open-browser-use-js/dist/index.js';
 import { startFixture } from './fixture.mjs';
@@ -28,6 +28,15 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    await evaluate(`(()=>{const box=document.createElement('div');box.id='screenshot-fixture';Object.assign(box.style,{position:'fixed',left:'20px',top:'30px',width:'100px',height:'80px',background:'rgb(255, 0, 0)',zIndex:'999999'});document.body.append(box);window.scrollTo(0,500)})()`);
+    await new Promise(resolve=>setTimeout(resolve,200));
+    const cropped=nativeImage.createFromBuffer(await sdkTab.getScreenshot({clip:{x:40,y:45,width:30,height:20}}));
+    const size=cropped.getSize(), pixels=cropped.toBitmap(), offset=(Math.floor(size.height/2)*size.width+Math.floor(size.width/2))*4;
+    assert.ok(size.width>=30 && size.height>=20);assert.deepEqual([...pixels.subarray(offset,offset+4)],[0,0,255,255]);
+    await assert.rejects(sdkTab.getScreenshot({clip:{x:-1,y:0,width:1,height:1}}),/Invalid screenshot clip/);
+    await assert.rejects(sdkTab.getScreenshot({clip:{x:799,y:0,width:5,height:1}}),/outside the viewport/);
+    await evaluate("document.querySelector('#screenshot-fixture').remove();window.scrollTo(0,0)");
+
     await evaluate(`document.querySelector('#increment').addEventListener('mouseenter',e=>window.hoverTrusted=e.isTrusted)`);
     await sdkTab.playwright.getByRole('button',{name:'加 1',exact:true}).hover();
     assert.equal(await evaluate('window.hoverTrusted'),true);

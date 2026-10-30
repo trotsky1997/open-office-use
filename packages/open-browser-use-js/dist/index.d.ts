@@ -188,7 +188,14 @@ export declare class OpenBrowserUseTab {
     private frameTree;
     private validateFrames;
     private framePoint;
-    getScreenshot(): Promise<Buffer>;
+    getScreenshot(options?: {
+        clip?: {
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+        };
+    }): Promise<Buffer>;
     evaluate(expression: string, options?: {
         awaitPromise?: boolean;
     }): Promise<JsonValue>;

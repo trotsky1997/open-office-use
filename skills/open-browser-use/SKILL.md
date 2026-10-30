@@ -45,7 +45,10 @@ Use `getByText(text, {exact:true})` for individual accessible text nodes and
 For visual
 input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clickAt()` and
 `tab.scrollAt()`; use `tab.drag([x1,y1], [x2,y2])` for dragging, and convert
-screenshot pixels to CSS viewport coordinates.
+screenshot pixels to CSS viewport coordinates. For a closer view use
+`tab.getScreenshot({clip:{x,y,width,height}})` with a rectangle inside the CSS
+viewport; convert cropped image pixels using the clip dimensions and add its
+x/y origin before clicking.
 Use `locator.press("Enter")` to focus a matched target and send a key, or `tab.pressKey("Enter")` and `tab.pressKey("ControlOrMeta+A")` for already focused
 page keyboard actions. Printable ASCII keys use US keyboard mappings; use `tab.typeText()` for arbitrary text.
 For subsequent observations, `tab.observe({diff:true})` reports text changes;

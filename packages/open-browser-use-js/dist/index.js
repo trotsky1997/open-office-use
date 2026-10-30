@@ -1252,8 +1252,22 @@ export class OpenBrowserUseTab {
             await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
         }
     }
-    async getScreenshot() {
-        const result = await this.browser.cdp.call(this.id, "Page.captureScreenshot", { format: "png" });
+    async getScreenshot(options = {}) {
+        let clip;
+        if (options.clip !== undefined) {
+            const rect = { ...options.clip };
+            if (![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.x < 0 || rect.y < 0 || rect.width <= 0 || rect.height <= 0)
+                throw new Error("Invalid screenshot clip");
+            const metrics = await this.browser.cdp.call(this.id, "Page.getLayoutMetrics");
+            const viewport = isObject(metrics) ? metrics.cssVisualViewport : null;
+            if (!isObject(viewport) || ![viewport.pageX, viewport.pageY, viewport.clientWidth, viewport.clientHeight].every(value => typeof value === "number" && Number.isFinite(value)))
+                throw new Error("Browser viewport is unavailable");
+            const { pageX, pageY, clientWidth, clientHeight } = viewport;
+            if (rect.x + rect.width > clientWidth || rect.y + rect.height > clientHeight)
+                throw new Error("Screenshot clip is outside the viewport");
+            clip = { x: pageX + rect.x, y: pageY + rect.y, width: rect.width, height: rect.height, scale: 1 };
+        }
+        const result = await this.browser.cdp.call(this.id, "Page.captureScreenshot", { format: "png", ...(clip ? { clip, captureBeyondViewport: false } : {}) });
         if (!isObject(result) || typeof result.data !== "string" || !result.data) {
             throw new Error("Browser returned an invalid screenshot");
         }

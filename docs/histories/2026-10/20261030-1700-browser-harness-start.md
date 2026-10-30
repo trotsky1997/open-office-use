@@ -125,3 +125,5 @@ getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察�
 禁用控件保留在观察中并支持 disabled 状态筛选；可悬停以查看提示，点击、按键与状态修改会检查禁用状态和 DOM 祖先。幂等 check 也验证 DOM 祖先和最新状态。macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证原生 disabled、fieldset、aria-disabled 继承和可信悬停；Linux 使用隔离浏览器与 --no-sandbox。
 
 加入 JavaScript 原生对话框监听与显式处理；Electron 对话框处理绕过阻塞的页面命令队列，仍检查作用域权限。断线重连会使旧句柄失效。Linux ARM64 Chromium 原生消息链路验证 prompt、confirm、跨进程 frame 与持久 REPL；macOS Electron 验证 alert、confirm 与跨进程 frame。Electron 的 prompt 不受支持，原生对话框可能显示隐藏宿主窗口。Linux 使用隔离浏览器与 --no-sandbox。
+
+截图支持以 CSS 视口坐标指定裁剪矩形；按当前可视视口偏移转换到页面坐标并拒绝越界区域。macOS Electron 与 macOS/Linux Chromium 实页验证页面滚动后裁剪像素；Linux 使用隔离浏览器与 --no-sandbox。截图期间页面滚动或窗口尺寸变化时需重新截图。

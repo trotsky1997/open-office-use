@@ -76,6 +76,24 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test('screenshot clips use viewport coordinates and reject invalid regions', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), calls=[];
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    calls.push(params);
+    if(params.method==='Page.getLayoutMetrics')return {cssVisualViewport:{pageX:10,pageY:500,clientWidth:800,clientHeight:600}};
+    return {data:Buffer.from('png').toString('base64')};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const options={clip:{x:20,y:30,width:40,height:50}};
+  const screenshot=tab.getScreenshot(options);options.clip.x=-1;
+  assert.equal((await screenshot).toString(),'png');
+  assert.deepEqual(calls.at(-1).commandParams,{format:'png',clip:{x:30,y:530,width:40,height:50,scale:1},captureBeyondViewport:false});
+  await assert.rejects(tab.getScreenshot({clip:{x:0,y:0,width:NaN,height:1}}),/Invalid screenshot clip/);
+  await assert.rejects(tab.getScreenshot({clip:{x:799,y:0,width:2,height:1}}),/outside the viewport/);
+  assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
+});
+
 test('JavaScript dialogs are observed, scoped and decided only once', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set(), calls=[];
   let release;

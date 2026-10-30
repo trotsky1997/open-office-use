@@ -265,7 +265,13 @@ viewport coordinates. These reject coordinates outside
 the viewport and invalidate any prior observation. Screenshot pixels can differ
 from CSS coordinates on high-density displays: scale the coordinates using the
 image dimensions and `getViewport()` before sending input. Observe or capture a
-fresh screenshot after page changes. Electron requires the target tab to be
+fresh screenshot after page changes. To capture a region, call
+`await tab.getScreenshot({clip: {x, y, width, height}})` with a rectangle in
+CSS viewport coordinates. The region must fit inside the viewport. Its PNG
+pixel dimensions depend on the display scale. To click a point in the cropped
+image, scale it by the clip dimensions and add the clip's x/y origin. If the
+page scrolls or resizes
+while the screenshot is being captured, capture it again. Electron requires the target tab to be
 presented in a host window for wheel gestures; detached tabs return
 `IAB_SCROLL_REQUIRES_PRESENTED_SURFACE`. Hidden or minimized windows temporarily
 disable background throttling while dispatching a trusted wheel event.
