@@ -249,6 +249,7 @@ export declare class OpenBrowserUseTab {
     private scopeText;
     private freshFilterObservation;
     private scopeContains;
+    private cssScopeContains;
     private verifyLocatorScope;
     private prepareBrowserEvent;
     prepareDownload(options?: {
@@ -455,6 +456,19 @@ export declare class OpenBrowserUseCssLocator {
     last(): OpenBrowserUseCssLocator;
     locator(selector: string): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
+    getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
+    getByLabel(name: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByText(text: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByAltText(text: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByPlaceholder(text: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
     private step;
     filter(options: {
         hasText?: TextMatcher;
@@ -525,7 +539,8 @@ export declare class OpenBrowserUseRoleLocator {
     private filtersBefore;
     private filtersAfter;
     private framePath?;
-    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[], framePath?: readonly string[] | undefined);
+    private cssScope?;
+    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[], framePath?: readonly string[] | undefined, cssScope?: OpenBrowserUseCssLocator | undefined);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
     last(): OpenBrowserUseRoleLocator;

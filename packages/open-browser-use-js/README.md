@@ -299,7 +299,10 @@ text is limited to 30,000 characters. Filters are re-evaluated before input. CSS
 and `filter({hasNot: inner})` accept CSS locators from the same browser tab and
 frame, evaluated relative to each candidate, including open shadow roots.
 Nested locator filters are limited to eight levels and 100,000 element visits.
-Semantic locators are not yet supported as inner filters. `filter({visible: true})` and
+Semantic locators are not yet supported as inner filters. CSS locators can scope
+`getByRole`, `getByLabel`, `getByText`, `getByAltText` and `getByPlaceholder`;
+the first semantic target is resolved in the CSS locator's selected frame.
+The CSS scope, its filters and containment are rechecked before reads and input. `filter({visible: true})` and
 `filter({visible: false})` check CSS visibility and nonzero element and frame
 bounds. They can be combined with text and descendant filters; occlusion is
 checked by pointer actions. `waitFor`
