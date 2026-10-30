@@ -24,8 +24,9 @@ def paragraph_path(path):
     return isinstance(path, str) and len(path) <= 512 and PATH.fullmatch(path) is not None
 
 
-def search_text(source, query, slide=None, offset=0, snapshot_sha256=None):
-    """Search slide shape and table paragraphs using editable path candidates."""
+def search_text(source, query, slide=None, offset=0, snapshot_sha256=None, scope='slides'):
+    """Search slide or speaker-note paragraphs using bounded candidates."""
+    if scope not in ('slides', 'notes'): raise ValueError('Search scope must be slides or notes')
     if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
         raise ValueError('Search text must contain 1 to 200 characters without control characters')
     if isinstance(slide, bool) or slide is not None and (not isinstance(slide, int) or slide < 1): raise ValueError('Slide must be a positive integer')
@@ -79,7 +80,17 @@ def search_text(source, query, slide=None, offset=0, snapshot_sha256=None):
                     if slide is not None and slide != number: continue
                     visibility = item._element.get('show')
                     hidden = visibility in ('0', 'false') if visibility in (None, '0', 'false', '1', 'true') else None
-                    yield from events(item.shapes, f'/slide[{number}]', number, hidden, 0)
+                    if scope == 'slides':
+                        yield from events(item.shapes, f'/slide[{number}]', number, hidden, 0)
+                    else:
+                        yield None
+                        if item.has_notes_slide:
+                            frame = item.notes_slide.notes_text_frame
+                            if frame is None: unsupported.add('missing_notes_placeholder')
+                            else:
+                                for index, paragraph in enumerate(frame.paragraphs, 1):
+                                    yield (f'/slide[{number}]/notes/paragraph[{index}]', paragraph._p, number, hidden)
+
             matches, scanned, skipped, uncertain = [], 0, 0, 0
             scan_complete = True; stop_reason = None
             for event in all_events():
@@ -96,15 +107,15 @@ def search_text(source, query, slide=None, offset=0, snapshot_sha256=None):
                     index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
                     matches.append({'slide': number, 'hidden': hidden, 'path': path, 'excerpt': text[start:end], 'excerpt_start': start,
                                     'text_length': len(text), 'occurrences': sum(1 for _ in re.finditer('(?=' + re.escape(query) + ')', text)),
-                                    'text_complete': text_complete, 'replace_text_path_supported': paragraph_path(path)})
+                                    'text_complete': text_complete, 'replace_text_path_supported': paragraph_path(path), **({'notes_paragraph': int(path.rsplit('[', 1)[1][:-1])} if scope == 'notes' else {})})
             if skipped < offset: raise ValueError('Search offset exceeds the selected slide content')
-            return {'query': query, 'slide': slide, 'total_slides': len(presentation.slides), 'snapshot_sha256': digest,
+            return {'query': query, 'slide': slide, 'scope': scope, 'total_slides': len(presentation.slides), 'snapshot_sha256': digest,
                     'offset': offset, 'next_offset': offset + scanned if not scan_complete else None, 'stop_reason': stop_reason,
                     'items_scanned': scanned, 'matches': matches, 'unverified_paragraphs': uncertain,
                     'unsupported_structure': sorted(unsupported), 'scan_complete': scan_complete,
                     'complete': offset == 0 and scan_complete and not uncertain and not unsupported,
                     'limits': {'items': 10000, 'matches': 100},
-                    'notes': ['Search covers slide shape and table paragraphs, including hidden slides; masters, notes, charts and SmartArt are excluded.',
+                    'notes': ["Search covers speaker-note paragraphs, including hidden slides; other notes shapes and masters are excluded." if scope == 'notes' else 'Search covers slide shape and table paragraphs, including hidden slides; masters, notes, charts and SmartArt are excluded.',
                               'Paths are candidates; inspect structure and validate targeted edits before applying them.']}
         except zipfile.BadZipFile as exc:
             raise ValueError(f'Invalid presentation package: {exc}') from exc

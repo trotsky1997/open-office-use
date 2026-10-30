@@ -24,6 +24,11 @@ with tempfile.TemporaryDirectory() as tmp:
         assert not post('notes-read', {'revision': 0, 'slide': 1})['has_notes_slide']
         assert post('notes-replace', {'base_revision': 0, 'slide': 1, 'text': 'Notes'})['revision'] == 1
         assert post('notes-read', {'revision': 1, 'slide': 1})['text'] == 'Notes'
+        search = {'revision': 1, 'query': 'Notes', 'scope': 'notes', 'offset': 0, 'snapshot_sha256': None}
+        found = post('text-search', search)
+        assert found['scope'] == 'notes' and found['matches'][0]['notes_paragraph'] == 1
+        try: post('text-search', search, 'http://evil.test'); raise AssertionError('Cross-origin search accepted')
+        except urllib.error.HTTPError as exc: assert exc.code == 403
         assert post('notes-replace-text', {'base_revision': 1, 'slide': 1, 'paragraph': 1, 'find': 'Notes', 'replacement': 'Edited'})['revision'] == 2
         assert post('notes-read', {'revision': 2, 'slide': 1})['text'] == 'Edited'
         diff = post('notes-comparison', {'before': 1, 'after': 2, 'before_slide': 1, 'after_slide': 1})

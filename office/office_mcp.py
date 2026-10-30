@@ -446,15 +446,15 @@ def inspect_slide_layout(file: str) -> dict[str, Any]:
 
 
 @server.tool()
-def search_slide_text(file: str, query: str, slide: int | None = None, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
-    """Search shape and table paragraphs; continue with next_offset and snapshot_sha256 using the same query and slide."""
-    return slides.search_text(file, query, slide, offset, snapshot_sha256)
+def search_slide_text(file: str, query: str, slide: int | None = None, offset: int = 0, snapshot_sha256: str | None = None, scope: Literal['slides', 'notes'] = 'slides') -> dict[str, Any]:
+    """Search slide text or speaker notes; continue with next_offset and snapshot_sha256 using the same query, slide and scope."""
+    return slides.search_text(file, query, slide, offset, snapshot_sha256, scope)
 
 
 @server.tool()
-def session_search_slide_text(directory: str, revision: int, query: str, slide: int | None = None, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
-    """Search slide text in an exact revision; inspect candidate paths before editing."""
-    return session.search_slides(directory, revision, query, slide, offset, snapshot_sha256)
+def session_search_slide_text(directory: str, revision: int, query: str, slide: int | None = None, offset: int = 0, snapshot_sha256: str | None = None, scope: Literal['slides', 'notes'] = 'slides') -> dict[str, Any]:
+    """Search slide text or speaker-note paragraphs in an exact revision; inspect candidates before editing."""
+    return session.search_slides(directory, revision, query, slide, offset, snapshot_sha256, scope)
 
 
 @server.tool()

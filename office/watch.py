@@ -48,7 +48,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul><div id="picture-panel" hidden><p id="picture-target"></p><label>Replacement image <input id="picture-file" type="file" accept="image/png,image/jpeg"></label> <button type="button" id="picture-replace">Replace picture</button><p>PNG or JPEG, up to 10 MiB. Existing crop and shape size remain; review the new revision.</p><p id="picture-status" role="status"></p></div></details>
 <details id="search-panel"><summary>Search document text</summary>
 <p>Search the displayed saved revision. Results are candidates; inspect their context before editing. Coverage can be incomplete for complex content.</p>
-<form id="text-search-form"><label id="text-search-scope-label" hidden>Scope <select id="text-search-scope"><option value="body">Body</option><option value="stories">Headers and footers</option></select></label> <label>Find <input id="text-search-query" maxlength="200" required></label> <button type="submit" id="text-search-start">Search</button> <button type="button" id="text-search-next" disabled>Next results</button></form>
+<form id="text-search-form"><label id="text-search-scope-label" hidden>Scope <select id="text-search-scope"><option value="body">Body</option><option value="stories">Headers and footers</option><option value="slides">Slide text</option><option value="notes">Speaker notes</option></select></label> <label>Find <input id="text-search-query" maxlength="200" required></label> <button type="submit" id="text-search-start">Search</button> <button type="button" id="text-search-next" disabled>Next results</button></form>
 <p id="text-search-status" role="status"></p><ul id="text-search-results"></ul></details>
 <details id="edit-panel"><summary>Edit an element</summary><form id="edit-form">
 <label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
@@ -204,9 +204,22 @@ async function textSearch(next) {
   if (!next) results.replaceChildren();
   for (const item of result.matches) {
    const row=document.createElement('li'), label=document.createElement('span');
-   const location=result.format==='xlsx' ? `${item.sheet} · ${item.cell || 'address unavailable'}` : item.path;
+   const location=result.format==='xlsx' ? `${item.sheet} · ${item.cell || 'address unavailable'}` : result.format==='pptx' && result.scope==='notes' ? `Slide ${item.slide} · notes paragraph ${item.notes_paragraph}` : item.path;
    label.textContent=`${location}${item.hidden ? ' · hidden slide' : ''}: ${item.excerpt}${item.text_complete ? '' : ' (text may be incomplete)'}`; row.appendChild(label);
-   if (result.format!=='xlsx' && item.replace_text_path_supported) {
+   if (result.format==='pptx' && result.scope==='notes' && Number.isSafeInteger(item.notes_paragraph)) {
+    const use=document.createElement('button'); use.type='button'; use.textContent='Open speaker notes'; use.disabled=pinned!==null || current!==revision;
+    use.addEventListener('click', async () => {
+     if (displayed!==revision || current!==revision || pinned!==null || !textSearchState || textSearchState.revision!==revision || textSearchState.query!==query) return;
+     const find=document.getElementById('notes-find'), replacement=document.getElementById('notes-replacement');
+     if ((find.value || replacement.value) && !window.confirm('Replace the pending notes search and replacement fields?')) return;
+     document.getElementById('notes-panel').open=true; const opened=await loadNotes(item.slide);
+     if (opened && notesLoaded && notesLoaded.revision===revision && notesLoaded.slide===item.slide && !notesLoaded.truncated && current===revision && pinned===null) {
+      document.getElementById('notes-paragraph').value=String(item.notes_paragraph);
+      find.value=item.occurrences===1 ? query : ''; replacement.value='';
+     }
+    });
+    row.append(document.createTextNode(' '),use);
+   } else if (result.format!=='xlsx' && item.replace_text_path_supported) {
     const use=document.createElement('button'); use.type='button'; use.textContent='Load target'; use.disabled=pinned!==null || current!==revision;
     use.addEventListener('click', async () => {
      if (displayed!==revision || current!==revision || pinned!==null || !textSearchState || textSearchState.revision!==revision || textSearchState.query!==query) return;
@@ -1009,9 +1022,10 @@ function clearNotesFor(revision, live) {
  }
 }
 document.getElementById('notes-slide').addEventListener('input', () => invalidateNotes('Slide changed; load notes before saving.'));
-document.getElementById('notes-load').addEventListener('click', async () => {
+async function loadNotes(requestedSlide=null) {
  if (notesBusy || displayed<0) return;
  if (notesDirty() && !window.confirm('Discard unsaved speaker notes and load another revision or slide?')) return;
+ if (requestedSlide!==null) { document.getElementById('notes-slide').value=String(requestedSlide); invalidateNotes('Slide changed; loading notes.'); }
  const revision=displayed, slide=Number(document.getElementById('notes-slide').value), epoch=++notesEpoch;
  const button=document.getElementById('notes-load'), text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
  if (!Number.isSafeInteger(slide) || slide<1) { status.textContent='Choose a positive slide number.'; return; }
@@ -1024,6 +1038,7 @@ document.getElementById('notes-load').addEventListener('click', async () => {
   const editable=revision===current && pinned===null && !result.truncated;
   text.readOnly=!editable; document.getElementById('notes-save').disabled=!editable; document.getElementById('notes-replace-text').disabled=!editable;
   status.textContent=`Revision ${revision}, slide ${slide}. ${result.truncated ? 'Notes were truncated; editing is unavailable.' : editable ? 'Ready to edit.' : 'Read-only preview.'}`;
+  return true;
  } catch(error) {
   if (epoch===notesEpoch) {
    status.textContent=`Notes error: ${error.message}`;
@@ -1031,7 +1046,8 @@ document.getElementById('notes-load').addEventListener('click', async () => {
   }
  }
  finally { notesBusy=false; button.disabled=false; }
-});
+}
+document.getElementById('notes-load').addEventListener('click',()=>loadNotes());
 document.getElementById('notes-form').addEventListener('submit', async event => {
  event.preventDefault(); const target=notesLoaded, text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
  if (notesBusy || !target || target.truncated || pinned!==null || target.revision!==current || target.revision!==displayed || target.slide!==Number(document.getElementById('notes-slide').value)) { invalidateNotes('Version or slide changed; load notes again.'); return; }
@@ -1235,7 +1251,10 @@ async function refresh() {
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   document.getElementById('comments-panel').hidden=state.format !== 'docx';
-  document.getElementById('text-search-scope-label').hidden=state.format !== 'docx';
+  const scopeControl=document.getElementById('text-search-scope'), available=state.format==='docx' ? ['body','stories'] : state.format==='pptx' ? ['slides','notes'] : ['body'];
+  for (const option of scopeControl.options) option.hidden=!available.includes(option.value);
+  if (!available.includes(scopeControl.value)) { scopeControl.value=available[0]; clearTextSearch(); }
+  document.getElementById('text-search-scope-label').hidden=state.format === 'xlsx';
   document.getElementById('tracked-panel').hidden=state.format !== 'docx';
   document.getElementById('stories-panel').hidden=state.format !== 'docx';
   document.getElementById('notes-panel').hidden=state.format !== 'pptx';
@@ -1327,10 +1346,12 @@ def serve(directory, preview, port=0, render=None):
                             raise ValueError('Search requires revision, query, offset and snapshot SHA-256')
                         state = session.info(directory)
                         scope = payload.get('scope', 'body')
-                        if scope not in ('body', 'stories') or (scope == 'stories' and state['format'] != 'docx'): raise ValueError('Invalid search scope')
+                        allowed = {'docx': ('body', 'stories'), 'xlsx': ('body',), 'pptx': ('body', 'slides', 'notes')}
+                        if scope not in allowed[state['format']]: raise ValueError('Invalid search scope')
                         args = (directory, payload['revision'], payload['query'])
                         options = {'offset': payload['offset'], 'snapshot_sha256': payload['snapshot_sha256']}
                         search = {'docx': session.search_stories if scope == 'stories' else session.search_body, 'xlsx': session.search_cells, 'pptx': session.search_slides}[state['format']]
+                        if state['format'] == 'pptx': options['scope'] = 'notes' if scope == 'notes' else 'slides'
                         saved = {'format': state['format'], **search(*args, **options)}
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/chart-cache-scan'):

@@ -145,3 +145,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Resolve worksheet table relationships and legacy comment anchors before merging: allow disjoint structures and anchor comments, and reject overlaps, ambiguous references and threaded comments.
 
 - Check threaded-comment anchors alongside legacy notes before merges and preserve all related parts byte-for-byte. Validated three public reference workbooks with replies and mentions, plus malformed and overlapping cases.
+
+- Add snapshot-bound speaker notes search to CLI, MCP and the viewer, with hidden-slide and paragraph candidates routed to the targeted notes editor.

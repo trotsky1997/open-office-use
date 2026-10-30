@@ -104,3 +104,7 @@ Structured renders, visual results and selection extraction use a copied source 
 ## Scoped dynamic formulas
 
 Dynamic candidate validation resolves LET bindings and LAMBDA parameters lexically, including nested expressions and local function calls. Unbound or shadowed-name changes are rejected; verified common formulas through OfficeCLI and versioned grid editing. Complex metadata and native Excel interoperability remain open.
+
+## Speaker notes search
+
+Slide search supports a notes scope with bounded, snapshot-bound pagination, hidden-slide metadata and paragraph-level candidates. Viewer results open the notes editor for targeted replacement; unsupported paragraph content remains marked for review.

@@ -180,9 +180,9 @@ def inspect_slide_text(directory, revision, render):
     if state['format'] != 'pptx': raise ValueError('Slide text inspection requires a PPTX session')
     return {'revision': revision, **slide_text_check.scan(source, render)}
 
-def search_slides(directory, revision, query, slide=None, offset=0, snapshot_sha256=None):
+def search_slides(directory, revision, query, slide=None, offset=0, snapshot_sha256=None, scope='slides'):
     state = info(directory); source = revision_file(state, revision)
-    return {'revision': revision, **slides.search_text(source, query, slide, offset, snapshot_sha256)}
+    return {'revision': revision, **slides.search_text(source, query, slide, offset, snapshot_sha256, scope)}
 
 
 def recalculate(directory, base_revision, allow_dynamic_arrays=False):
