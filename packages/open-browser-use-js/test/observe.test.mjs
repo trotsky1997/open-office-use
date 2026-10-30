@@ -393,6 +393,10 @@ test('URL wait checks the matching document state and propagates transport error
   await tab.playwright.waitForURL(pattern,{timeoutMs:1000});
   assert.equal(calls,3);assert.equal(pattern.lastIndex,0);
   await tab.waitForURL(runInNewContext('/done$/'),{timeoutMs:0});
+  await tab.waitForURL(url=>url.hostname==='example.test' && url.pathname==='/done',{timeoutMs:0});
+  await assert.rejects(tab.waitForURL(()=>false,{timeoutMs:0}),/Timed out/);
+  await assert.rejects(tab.waitForURL(()=>{throw new Error('predicate failed');},{timeoutMs:0}),/predicate failed/);
+  await assert.rejects(tab.waitForURL(()=>Promise.reject(Error('async failed')),{timeoutMs:0}),/must return a boolean/);
   await tab.waitForURL('**/done',{timeoutMs:0});
   await tab.waitForURL('https://example.test/{done,other}*',{timeoutMs:0});
   await assert.rejects(tab.waitForURL('https://example.test/*/done',{timeoutMs:0}),/Timed out/);

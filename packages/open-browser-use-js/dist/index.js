@@ -961,8 +961,8 @@ export class OpenBrowserUseTab {
     async expectNavigation(action, options = {}) {
         if (typeof action !== "function")
             throw new Error("Navigation action must be a function");
-        if (options.url !== undefined && typeof options.url !== "string" && !types.isRegExp(options.url))
-            throw new Error("URL matcher must be a string or RegExp");
+        if (options.url !== undefined && typeof options.url !== "string" && typeof options.url !== "function" && !types.isRegExp(options.url))
+            throw new Error("URL matcher must be a string, RegExp, or predicate");
         if (typeof options.url === "string" && options.url.includes("*"))
             urlGlob(options.url);
         const waitUntil = options.waitUntil ?? "load", timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
@@ -1027,9 +1027,9 @@ export class OpenBrowserUseTab {
         }
     }
     async waitForURL(url, options = {}) {
-        if (typeof url !== "string" && !types.isRegExp(url))
-            throw new Error("URL matcher must be a string or RegExp");
-        const matcher = typeof url === "string" ? (url.includes("*") ? urlGlob(url) : url) : new RegExp(url.source, url.flags);
+        if (typeof url !== "string" && typeof url !== "function" && !types.isRegExp(url))
+            throw new Error("URL matcher must be a string, RegExp, or predicate");
+        const matcher = typeof url === "string" ? (url.includes("*") ? urlGlob(url) : url) : typeof url === "function" ? url : new RegExp(url.source, url.flags);
         const waitUntil = options.waitUntil ?? "load";
         if (waitUntil !== "commit")
             assertSupportedLoadState(waitUntil);
@@ -1059,7 +1059,12 @@ export class OpenBrowserUseTab {
             if (isObject(state) && typeof state.href === "string") {
                 if (matcher instanceof RegExp)
                     matcher.lastIndex = 0;
-                const matches = typeof matcher === "string" ? state.href === matcher : matcher.test(state.href);
+                const matches = typeof matcher === "string" ? state.href === matcher : typeof matcher === "function" ? matcher(new URL(state.href)) : matcher.test(state.href);
+                if (typeof matches !== "boolean") {
+                    if (types.isPromise(matches))
+                        void Promise.resolve(matches).catch(() => { });
+                    throw new Error("URL predicate must return a boolean");
+                }
                 if (matches && (waitUntil === "commit" || documentStateMatches({ readyState: stringValue(state.readyState) }, waitUntil)))
                     return;
             }

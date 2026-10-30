@@ -17,6 +17,7 @@ export type OpenBrowserUseNotification = {
 export type NotificationHandler = (notification: OpenBrowserUseNotification) => void;
 export type OpenBrowserUseLoadState = "domcontentloaded" | "load";
 export type OpenBrowserUseWaitUntil = OpenBrowserUseLoadState | "commit";
+export type OpenBrowserUseUrlMatcher = string | RegExp | ((url: URL) => boolean);
 export type OpenBrowserUseGotoOptions = {
     waitUntil?: OpenBrowserUseLoadState;
     timeoutMs?: number;
@@ -372,10 +373,10 @@ export declare class OpenBrowserUseTab {
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
     expectNavigation<T>(action: () => Promise<T>, options?: {
         timeoutMs?: number;
-        url?: string | RegExp;
+        url?: OpenBrowserUseUrlMatcher;
         waitUntil?: OpenBrowserUseLoadState;
     }): Promise<T>;
-    waitForURL(url: string | RegExp, options?: {
+    waitForURL(url: OpenBrowserUseUrlMatcher, options?: {
         waitUntil?: OpenBrowserUseWaitUntil;
         timeoutMs?: number;
     }): Promise<void>;
@@ -592,10 +593,10 @@ export declare class OpenBrowserUseTabPlaywright {
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
     expectNavigation<T>(action: () => Promise<T>, options?: {
         timeoutMs?: number;
-        url?: string | RegExp;
+        url?: OpenBrowserUseUrlMatcher;
         waitUntil?: OpenBrowserUseLoadState;
     }): Promise<T>;
-    waitForURL(url: string | RegExp, options?: {
+    waitForURL(url: OpenBrowserUseUrlMatcher, options?: {
         waitUntil?: OpenBrowserUseWaitUntil;
         timeoutMs?: number;
     }): Promise<void>;

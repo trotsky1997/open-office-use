@@ -698,7 +698,9 @@ after dispatch, inspect the page before deciding whether to try again.
 `await tab.waitForURL("**/done")` accepts a full-URL glob: `*` excludes `/`,
 `**` includes it, `{a,b}` selects alternatives, `?` is literal, and `\` escapes special characters.
 `await tab.playwright.waitForURL(/\/done(?:\?|$)/, {waitUntil: "domcontentloaded", timeoutMs: 15000})`
-accepts a regular expression. Both forms inspect the current main document and
+accepts a regular expression. A synchronous predicate such as
+`await tab.waitForURL(url => url.searchParams.get("status") === "done")` receives a
+`URL` and returns a boolean; predicate errors propagate. These forms inspect the current main document and
 work with history API route changes as well as document navigation. Use
 `{waitUntil: "commit"}` to return once the current document URL matches, even
 while the document is loading. The default load state is `load` and the default

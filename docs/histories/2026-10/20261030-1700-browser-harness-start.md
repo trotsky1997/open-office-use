@@ -564,3 +564,5 @@ Chrome 标签离开原会话时清理旧活动标签、鼠标坐标并更新页�
 CSS 和语义定位器的 waitFor() 默认等待可见，保留严格匹配及已有超时规则。SDK 111 项检查通过；Linux ARM64 Chromium 原生消息实页分别验证两个定位器等待隐藏元素显示。语义定位仍依赖可访问性树；Windows 未测。
 
 URL 等待与导航预期新增星号 glob，覆盖单星、双星、分组、转义及字面问号；不含星号的字符串继续精确匹配。非法分组在触发导航动作前拒绝。SDK 111 项检查通过；Linux ARM64 Chromium 原生消息实测 history.pushState 路由匹配、分组和查询参数。Windows 未测。
+
+URL 等待和导航预期支持接收 URL 对象的同步布尔条件函数，异常向调用方传播，异步或其他非布尔返回值被拒绝。SDK 111 项检查通过；Linux ARM64 Chromium 原生消息实测 history.pushState、路径与查询参数判断。条件函数在宿主进程运行；Windows 未测。
