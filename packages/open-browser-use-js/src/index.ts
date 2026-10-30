@@ -441,14 +441,36 @@ export async function connectOpenBrowserUse(options: OpenBrowserUseBrowserOption
   return browser;
 }
 
+type BrowserTabInfo = {id:string;title?:string;url?:string;active?:boolean};
+type BrowserUserTabInfo = {id:string;title?:string;url?:string;lastOpened?:string;tabGroup?:string};
+function browserTabId(value:unknown):number {
+  const raw=value instanceof OpenBrowserUseTab ? value.id : value && typeof value==='object' && 'id' in value ? value.id : value;
+  if(typeof raw==='number' && Number.isSafeInteger(raw) && raw>0)return raw;
+  if(typeof raw==='string' && /^[1-9][0-9]*$/.test(raw) && Number.isSafeInteger(Number(raw)))return Number(raw);
+  throw new Error('Invalid tab ID');
+}
+function browserTabs(value:JsonValue):BrowserTabInfo[] {
+  if(!Array.isArray(value))throw new Error('Browser returned an invalid tab list');
+  const ids=new Set<number>();return value.map(item=>{
+    if(!isObject(item))throw new Error('Browser returned an invalid tab');
+    const id=browserTabId(item.id);if(ids.has(id))throw new Error('Browser returned duplicate tab IDs');ids.add(id);
+    if((item.title!==undefined && item.title!==null && typeof item.title!=='string') || (item.url!==undefined && item.url!==null && typeof item.url!=='string') || (item.active!==undefined && typeof item.active!=='boolean'))throw new Error('Browser returned an invalid tab');
+    return {id:String(id),...(typeof item.title==='string' ? {title:item.title} : {}),...(typeof item.url==='string' ? {url:item.url} : {}),...(typeof item.active==='boolean' ? {active:item.active} : {})};
+  });
+}
+
 export class OpenBrowserUseBrowser {
   readonly client: OpenBrowserUseClient;
   readonly cdp: OpenBrowserUseCdp;
+  readonly tabs: OpenBrowserUseTabs;
+  readonly user: OpenBrowserUseBrowserUser;
   #domCua = new Map<number,WeakRef<OpenBrowserUseTabDomCUA>>();
 
   constructor(options: OpenBrowserUseBrowserOptions) {
     this.client = "client" in options ? options.client : new OpenBrowserUseClient(options);
     this.cdp = new OpenBrowserUseCdp(this.client);
+    this.tabs = new OpenBrowserUseTabs(this);
+    this.user = new OpenBrowserUseBrowserUser(this);
   }
 
   async connect(): Promise<this> {
@@ -458,6 +480,11 @@ export class OpenBrowserUseBrowser {
 
   close(): void {
     this.client.close();
+  }
+
+  async nameSession(name:string):Promise<void> {
+    if(typeof name!=='string' || !name.trim() || name.length>200)throw new Error('Invalid session name');
+    await this.client.nameSession(name);
   }
 
   async newTab(options: OpenBrowserUseGotoOptions & { url?: string } = {}): Promise<OpenBrowserUseTab> {
@@ -494,6 +521,59 @@ export class OpenBrowserUseBrowser {
     const claimed = await this.client.claimUserTab(tabId);
     if (tabIdFromValue(claimed, "claimUserTab response") !== tabId) throw new Error("Browser claimed a different tab");
     return this.tab(tabId);
+  }
+}
+
+export class OpenBrowserUseTabs {
+  constructor(private browser:OpenBrowserUseBrowser) {}
+  async list():Promise<BrowserTabInfo[]> { return browserTabs(await this.browser.getTabs()); }
+  async get(id:string | number):Promise<OpenBrowserUseTab> {
+    const tabId=browserTabId(id),tabs=await this.list();
+    if(!tabs.some(tab=>tab.id===String(tabId)))throw new Error('Tab is outside this browser session');
+    return this.browser.tab(tabId);
+  }
+  new():Promise<OpenBrowserUseTab> { return this.browser.newTab(); }
+  async selected():Promise<OpenBrowserUseTab | undefined> {
+    const selected=(await this.list()).filter(tab=>tab.active===true);
+    if(selected.length>1)throw new Error('Multiple session tabs are selected');
+    return selected.length ? this.browser.tab(browserTabId(selected[0].id)) : undefined;
+  }
+  async finalize(options:{keep?:Array<{status:'handoff' | 'deliverable';tab:string | number | OpenBrowserUseTab | BrowserTabInfo}>} = {}):Promise<void> {
+    if(!options || typeof options!=='object' || Array.isArray(options) || Object.keys(options).some(key=>key!=='keep') || (options.keep!==undefined && !Array.isArray(options.keep)))throw new Error('Invalid tab finalization options');
+    const seen=new Set<number>(),keep=(options.keep ?? []).map(item=>{
+      if(!item || !['handoff','deliverable'].includes(item.status) || (item.tab instanceof OpenBrowserUseTab && item.tab.browser!==this.browser))throw new Error('Invalid kept tab');
+      const tabId=browserTabId(item.tab);if(seen.has(tabId))throw new Error('Duplicate kept tab');seen.add(tabId);return {tabId,status:item.status};
+    });
+    await this.browser.client.finalizeTabs(keep);
+  }
+}
+
+export class OpenBrowserUseBrowserUser {
+  constructor(private browser:OpenBrowserUseBrowser) {}
+  async openTabs():Promise<BrowserUserTabInfo[]> {
+    const result=await this.browser.getUserTabs();if(!Array.isArray(result))throw new Error('Browser returned an invalid user tab list');
+    return result.map(item=>{
+      if(!isObject(item))throw new Error('Browser returned an invalid user tab');
+      const id=String(browserTabId(item.id));
+      for(const key of ['title','url','lastOpened','tabGroup'])if(item[key]!==undefined && item[key]!==null && typeof item[key]!=='string')throw new Error('Browser returned an invalid user tab');
+      return {id,...(typeof item.title==='string' ? {title:item.title} : {}),...(typeof item.url==='string' ? {url:item.url} : {}),...(typeof item.lastOpened==='string' ? {lastOpened:item.lastOpened} : {}),...(typeof item.tabGroup==='string' ? {tabGroup:item.tabGroup} : {})};
+    });
+  }
+  async claimTab(tab:string | number | BrowserUserTabInfo):Promise<OpenBrowserUseTab> {
+    const id=browserTabId(tab);
+    if((await this.browser.tabs.list()).some(item=>item.id===String(id)))return this.browser.tab(id);
+    return this.browser.claimTab(id);
+  }
+  async history(options:{from?:string | Date;to?:string | Date;limit?:number;query?:string} = {}):Promise<JsonValue> {
+    if(!options || typeof options!=='object' || Array.isArray(options) || Object.keys(options).some(key=>!['from','to','limit','query'].includes(key)))throw new Error('Invalid history options');
+    const date=(value:string | Date | undefined):string | undefined=>{
+      if(value===undefined)return undefined;
+      const parsed=types.isDate(value) ? value : typeof value==='string' ? new Date(value) : new Date(NaN);
+      if(!Number.isFinite(parsed.getTime()))throw new Error('Invalid history date');return parsed.toISOString();
+    };
+    const from=date(options.from),to=date(options.to);
+    if((from && to && from>to) || (options.limit!==undefined && (!Number.isSafeInteger(options.limit) || options.limit<1)) || (options.query!==undefined && typeof options.query!=='string'))throw new Error('Invalid history options');
+    return this.browser.client.getUserHistory({...(from ? {from} : {}),...(to ? {to} : {}),...(options.limit!==undefined ? {limit:options.limit} : {}),...(options.query!==undefined ? {query:options.query} : {})});
   }
 }
 
@@ -572,6 +652,9 @@ export class OpenBrowserUseTab {
     this.#observation = undefined;
     return this.browser.cdp.navigate(this.id, url, options);
   }
+
+  async title():Promise<string | undefined> { return (await this.browser.tabs.list()).find(tab=>tab.id===String(this.id))?.title; }
+  async url():Promise<string | undefined> { return (await this.browser.tabs.list()).find(tab=>tab.id===String(this.id))?.url; }
 
   async back(): Promise<void> { await this.moveHistory(-1); }
   async forward(): Promise<void> { await this.moveHistory(1); }

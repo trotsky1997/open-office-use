@@ -301,3 +301,5 @@ DOM CUA 快照沿 frame 链逐层换算主视口与 frame 内容区域的交集�
 DOM CUA 在每个 frame 批量使用浏览器 IntersectionObserver 排除被 overflow 祖先完全裁掉的节点，并重查观察结果；后台标签三秒内无法完成观察时回退几何筛选并标记 visibility_incomplete。SDK 68 项通过；Linux ARM64 Chromium 原生消息与 Electron 44/Xvfb 均验证普通 overflow、跨进程内嵌套 frame 的部分裁剪；Chromium 验证后台回退。IO 不检测遮挡，输入仍检查命中；macOS/Windows 本轮未测。
 
 DOM CUA 节点摘要加入关联 label、aria-labelledby、控件类型、禁用与勾选状态；输入前重核这些字段，避免状态变化后对旧节点操作，摘要不输出表单值。SDK 68 项通过；Linux ARM64 Chromium 原生消息和 Electron 44/Xvfb 验证多段标签、禁用、密码值排除与勾选状态变化拒绝。名称依据 DOM 属性近似计算，完整可访问名称规则仍待覆盖；macOS/Windows 本轮未测。
+
+新增 Codex 风格 browser.tabs、browser.user 和 nameSession；支持会话内列表、查询、创建、选择、保留/清理，用户标签列表与显式接管，以及历史查询；tab 增加 title/url。SDK 69 项通过，覆盖权限范围、重复保留项和跨 realm 日期；Linux ARM64 Chromium 原生消息验证 session 标签入口和 REPL 清理，Electron 44/Xvfb 验证 scope 内选择、创建与保留。Chrome selected 使用 session 逻辑活动标签，Electron 使用呈现状态；Electron 历史不可用，macOS/Windows 本轮未测。

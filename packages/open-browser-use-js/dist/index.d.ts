@@ -189,13 +189,29 @@ export declare class OpenBrowserUseClient {
     turnEnded(): Promise<JsonValue>;
 }
 export declare function connectOpenBrowserUse(options: OpenBrowserUseBrowserOptions): Promise<OpenBrowserUseBrowser>;
+type BrowserTabInfo = {
+    id: string;
+    title?: string;
+    url?: string;
+    active?: boolean;
+};
+type BrowserUserTabInfo = {
+    id: string;
+    title?: string;
+    url?: string;
+    lastOpened?: string;
+    tabGroup?: string;
+};
 export declare class OpenBrowserUseBrowser {
     #private;
     readonly client: OpenBrowserUseClient;
     readonly cdp: OpenBrowserUseCdp;
+    readonly tabs: OpenBrowserUseTabs;
+    readonly user: OpenBrowserUseBrowserUser;
     constructor(options: OpenBrowserUseBrowserOptions);
     connect(): Promise<this>;
     close(): void;
+    nameSession(name: string): Promise<void>;
     newTab(options?: OpenBrowserUseGotoOptions & {
         url?: string;
     }): Promise<OpenBrowserUseTab>;
@@ -203,6 +219,32 @@ export declare class OpenBrowserUseBrowser {
     getTabs(): Promise<JsonValue>;
     getUserTabs(): Promise<JsonValue>;
     claimTab(tabId: number): Promise<OpenBrowserUseTab>;
+}
+export declare class OpenBrowserUseTabs {
+    private browser;
+    constructor(browser: OpenBrowserUseBrowser);
+    list(): Promise<BrowserTabInfo[]>;
+    get(id: string | number): Promise<OpenBrowserUseTab>;
+    new(): Promise<OpenBrowserUseTab>;
+    selected(): Promise<OpenBrowserUseTab | undefined>;
+    finalize(options?: {
+        keep?: Array<{
+            status: 'handoff' | 'deliverable';
+            tab: string | number | OpenBrowserUseTab | BrowserTabInfo;
+        }>;
+    }): Promise<void>;
+}
+export declare class OpenBrowserUseBrowserUser {
+    private browser;
+    constructor(browser: OpenBrowserUseBrowser);
+    openTabs(): Promise<BrowserUserTabInfo[]>;
+    claimTab(tab: string | number | BrowserUserTabInfo): Promise<OpenBrowserUseTab>;
+    history(options?: {
+        from?: string | Date;
+        to?: string | Date;
+        limit?: number;
+        query?: string;
+    }): Promise<JsonValue>;
 }
 export declare class OpenBrowserUseDialog {
     private cdp;
@@ -252,6 +294,8 @@ export declare class OpenBrowserUseTab {
     readonly clipboard: OpenBrowserUseTabClipboard;
     constructor(browser: OpenBrowserUseBrowser, id: number);
     goto(url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
+    title(): Promise<string | undefined>;
+    url(): Promise<string | undefined>;
     back(): Promise<void>;
     forward(): Promise<void>;
     bringToFront(): Promise<void>;

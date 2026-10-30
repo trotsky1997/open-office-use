@@ -840,6 +840,28 @@ while waiting, the wait fails; prepare a new one after observing the page.
 Electron hosts must authorize the exact files and grant `files.upload` and
 `page.control` first; see the Electron integration guide.
 
+## Browser tabs and user context
+
+The high-level browser also exposes the Codex-style tab facade:
+
+```js
+await browser.nameSession('🔎 research');
+const tabs = await browser.tabs.list();
+const tab = await browser.tabs.get(tabs[0].id); // session-owned tabs only
+const newTab = await browser.tabs.new();
+const selected = await browser.tabs.selected();
+const userTabs = await browser.user.openTabs();
+// await browser.user.claimTab(userTabs[0]); // explicitly moves a Chrome user tab into this session
+// await browser.tabs.finalize({keep: [{tab: newTab, status: 'handoff'}]});
+```
+
+`tabs.finalize()` closes or releases other session tabs according to the backend;
+call it only when those effects are intended. `selected()` uses the backend's
+reported active flag: Chrome reports session-logical selection and Electron
+reports presented tabs. Multiple active tabs cause an explicit error. Tab-list
+IDs are strings; tab handles retain their numeric `id`. Electron user tab
+listing is limited to its authorized scope, and its history is unavailable.
+
 ## DOM CUA
 
 `tab.dom_cua.get_visible_dom()` returns `{nodes}` with opaque `node_id`,

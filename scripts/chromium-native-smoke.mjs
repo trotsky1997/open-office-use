@@ -36,7 +36,7 @@ try {
  if(!socketPath) throw Error(`Native messaging host did not connect: ${errors}`);
  const client=new OpenBrowserUseClient({socketPath,sessionId:'native-e2e',timeoutMs:15000});browser=new OpenBrowserUseBrowser({client});await browser.connect();
  const info=await client.getInfo();assert.equal(info.metadata.extensionId,id);
- const tab=await browser.newTab();await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
+ await browser.nameSession('🔎 isolated smoke');const tab=await browser.tabs.new();assert.equal((await browser.tabs.selected()).id,tab.id);assert.equal((await browser.tabs.get(String(tab.id))).id,tab.id);assert.ok((await browser.user.openTabs()).some(item=>item.id===String(tab.id)));await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
  assert.equal(await tab.evaluate('document.visibilityState'),'hidden');const beforePresentation=await tab.getPresentation();assert.equal(beforePresentation.backend,'chrome');assert.equal(beforePresentation.selected,false);assert.equal(beforePresentation.visible,false);
  await client.executeCdp(tab.id,'Emulation.setFocusEmulationEnabled',{enabled:true});assert.equal(await tab.evaluate('document.visibilityState'),'visible');assert.equal((await tab.getPresentation()).selected,false);await client.executeCdp(tab.id,'Emulation.setFocusEmulationEnabled',{enabled:false});assert.equal(await tab.evaluate('document.visibilityState'),'hidden');
  const backgroundDom=await tab.dom_cua.get_visible_dom();assert.ok(backgroundDom.nodes.some(node=>node.name==='Save'));assert.equal(backgroundDom.visibility_incomplete,true);
@@ -598,7 +598,7 @@ try {
    assert.equal((await call('nodeRepl.emitImage(await tab.getScreenshot())')).content[0].type,'image');
    await call('await tab.watchDialogs(); const dialogWait = tab.waitForDialog({timeoutMs:5000}); const dialogAction = tab.evaluate(\"prompt(\\\"REPL?\\\",\\\"default\\\")\"); void dialogAction.catch(()=>{});');
    assert.equal((await call('const dialog = await dialogWait; await dialog.accept(\"response\"); nodeRepl.write(await dialogAction)')).content[0].text,'response');
-   await call('await browser.client.finalizeTabs([])');
+   await call('await browser.tabs.finalize()');
  } finally {const exited=once(repl,'exit');repl.stdin.end();await exited;}
  if (process.env.OBU_MIXED_SMOKE === '1') {
    const {IabConnections}=await import('../packages/open-browser-use-electron/dist/transport.js');

@@ -17,9 +17,9 @@ app.whenReady().then(async()=>{
     const tab=await scope.tabs.create({url:fixture.url});const surface=runtime.surfaces.register({id:'panel',window,owner:window.webContents});surface.setBounds({x:0,y:0,width:800,height:600});surface.present(tab.id);
     const file=join(root,'fixture.txt');writeFileSync(file,'fixture');await scope.files.authorize([file]);await scope.downloads.configure({directory:root,maxBytes:1024});
     await runtime.connections.openSocket();
-    const grant=runtime.connections.grant(scope.id,'socket',{ttlMs:120000,operations:['page.control','files.upload','files.download',...(process.env.OBU_IAB_TEST_CLIPBOARD==='1'?['clipboard.read','clipboard.write']:[])]},process.pid);
+    const grant=runtime.connections.grant(scope.id,'socket',{ttlMs:120000,operations:['tabs.read','tabs.create','page.control','files.upload','files.download',...(process.env.OBU_IAB_TEST_CLIPBOARD==='1'?['clipboard.read','clipboard.write']:[])]},process.pid);
     const client=await connectSocketIab(grant);
-    const sdk=client.browser().tab(tab.id);
+    const sdk=client.browser().tab(tab.id);const sdkBrowser=sdk.browser;await sdkBrowser.nameSession('🔎 isolated smoke');assert.equal((await sdkBrowser.tabs.get(String(tab.id))).id,tab.id);assert.equal((await sdkBrowser.tabs.selected()).id,tab.id);assert.equal((await sdkBrowser.user.claimTab(String(tab.id))).id,tab.id);
     assert.deepEqual((({backend,selected,visible})=>({backend,selected,visible}))(await sdk.getPresentation()),{backend:'electron',selected:true,visible:true});
     await sdk.evaluate(`(()=>{window.cuaEvents=[];const b=document.createElement('div');b.id='cua-box';Object.assign(b.style,{position:'fixed',left:'200px',top:'40px',width:'100px',height:'80px',zIndex:'9999',background:'red'});for(const type of ['mousemove','mousedown','dblclick','wheel','contextmenu'])b.addEventListener(type,e=>{cuaEvents.push({type,button:e.button,shift:e.shiftKey,alt:e.altKey,x:e.clientX,y:e.clientY,trusted:e.isTrusted});if(type==='contextmenu'||type==='wheel')e.preventDefault()});document.body.append(b)})()`);
     await sdk.cua.move({x:210,y:50,keys:['Shift']});
@@ -143,6 +143,7 @@ app.whenReady().then(async()=>{
     const childDownloadReady=await sdk.prepareDownload({timeoutMs:20000});const childDownloading=childDownloadReady.wait();void childDownloading.catch(()=>{});
     await sdk.playwright.getByRole('link',{name:'Child download',exact:true}).click({timeoutMs:20000});
     const childDownload=await childDownloading,childPath=await childDownload.path(20000);assert.ok(childPath);assert.equal(readFileSync(childPath,'utf8'),'isolated download fixture');
+    const extraTab=await sdkBrowser.tabs.new();await sdkBrowser.tabs.finalize({keep:[{tab:sdk,status:'handoff'}]});assert.ok(!(await sdkBrowser.tabs.list()).some(item=>item.id===String(extraTab.id)));
     console.log(JSON.stringify({passed:true,platform:process.platform,electron:process.versions.electron,scope:'socket-upload-download-and-hidden-cross-frame',clipboard:process.env.OBU_IAB_TEST_CLIPBOARD==='1'}));
   }finally{await runtime.dispose();window.destroy();await fixture.close();rmSync(root,{recursive:true,force:true});}
 }).then(()=>app.exit(0),error=>{console.error(error);app.exit(1);});

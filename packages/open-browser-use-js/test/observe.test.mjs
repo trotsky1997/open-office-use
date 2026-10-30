@@ -16,6 +16,12 @@ test('DOM CUA is shared by tab handles in one browser',()=>{
   assert.notEqual(browser.tab(1).dom_cua,browser.tab(2).dom_cua);
 });
 
+test('browser tab facade respects session membership and finalization',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];
+  client.request=async(method,params)=>{calls.push({method,params});if(method==='getTabs')return [{id:7,title:'A',url:'https://example.test/',active:true}];if(method==='getUserTabs')return [{id:7,title:'A'},{id:9,url:'https://other.test/'}];if(method==='claimUserTab')return {id:params.tabId};if(method==='createTab')return {id:8};return {};};
+  const browser=new OpenBrowserUseBrowser({client});assert.deepEqual(await browser.tabs.list(),[{id:'7',title:'A',url:'https://example.test/',active:true}]);assert.equal((await browser.tabs.selected()).id,7);assert.equal((await browser.tabs.get('7')).id,7);await assert.rejects(browser.tabs.get('9'),/outside/);assert.equal((await browser.tabs.new()).id,8);assert.equal((await browser.user.openTabs())[1].id,'9');assert.equal((await browser.user.claimTab('7')).id,7);assert.equal((await browser.user.claimTab('9')).id,9);assert.equal(await browser.tab(7).title(),'A');await browser.user.history({from:runInNewContext("new Date('2026-01-01T00:00:00Z')"),query:'fixture',limit:3});assert.deepEqual(calls.find(call=>call.method==='getUserHistory').params,{from:'2026-01-01T00:00:00.000Z',query:'fixture',limit:3});await browser.nameSession('🔎 fixture');await browser.tabs.finalize({keep:[{tab:'7',status:'handoff'}]});assert.deepEqual(calls.find(call=>call.method==='finalizeTabs').params.keep,[{tabId:7,status:'handoff'}]);await assert.rejects(browser.tabs.finalize({keep:[{tab:'7',status:'handoff'},{tab:'7',status:'deliverable'}]}),/Duplicate/);
+});
+
 test("browser discovers and claims a user tab before returning its handle", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
   client.request = async (method, params) => {
