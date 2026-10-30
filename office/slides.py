@@ -19,6 +19,7 @@ INDEX = r'[1-9][0-9]{0,5}'
 SELECTOR = r'(?:' + INDEX + r'|@id=' + INDEX + r')'
 PATH = re.compile(r'/slide\[(' + INDEX + r')\](?:/group\[' + SELECTOR + r'\]){0,8}(?:/shape\[' + SELECTOR + r'\]|/table\[' + SELECTOR + r'\]/tr\[' + INDEX + r'\]/tc\[' + INDEX + r'\])(?:/paragraph\[(' + INDEX + r')\])?\Z')
 SEGMENT = re.compile(r'/(group|shape|table|tr|tc)\[([^]]+)\]')
+NOTES_PATH = re.compile(r'/slide\[(' + INDEX + r')\]/notes/paragraph\[(' + INDEX + r')\]\Z')
 
 
 def paragraph_path(path):
@@ -108,7 +109,7 @@ def search_text(source, query, slide=None, offset=0, snapshot_sha256=None, scope
                     index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
                     matches.append({'slide': number, 'hidden': hidden, 'path': path, 'excerpt': text[start:end], 'excerpt_start': start,
                                     'text_length': len(text), 'occurrences': sum(1 for _ in re.finditer('(?=' + re.escape(query) + ')', text)),
-                                    'text_complete': text_complete, 'replace_text_path_supported': paragraph_path(path), **({'notes_paragraph': int(path.rsplit('[', 1)[1][:-1])} if scope == 'notes' else {})})
+                                    'text_complete': text_complete, 'replace_text_path_supported': paragraph_path(path) or bool(NOTES_PATH.fullmatch(path)), **({'notes_paragraph': int(path.rsplit('[', 1)[1][:-1])} if scope == 'notes' else {})})
             if skipped < offset: raise ValueError('Search offset exceeds the selected slide content')
             return {'query': query, 'slide': slide, 'scope': scope, 'total_slides': len(presentation.slides), 'snapshot_sha256': digest,
                     'offset': offset, 'next_offset': offset + scanned if not scan_complete else None, 'stop_reason': stop_reason,

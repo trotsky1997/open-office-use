@@ -341,3 +341,5 @@ Rendered slide-text candidates now identify potentially missing paragraphs and c
 Enabled PowerPoint paragraph replacement inside a single hyperlink region, retaining relationship data and run formatting. Matches spanning different hyperlink regions are rejected.
 
 Speaker-note targeted replacement now shares the slide hyperlink boundary checks, retaining linked text formatting and package relationships.
+
+Connected speaker-note search paths to paragraph inspection and single or atomic batch replacements, including mixed slide/notes batches and rollback.

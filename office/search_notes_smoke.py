@@ -23,6 +23,22 @@ with tempfile.TemporaryDirectory() as tmp:
     result = session.replace_notes_text(draft, 0, match['slide'], match['notes_paragraph'], 'needle', 'target')
     assert session.read_notes(draft, 1, 1)['text'].startswith('First target')
     assert len(session.search_slides(draft, 1, 'needle', scope='notes')['matches']) == 2
+    assert all(item['replace_text_path_supported'] for item in found['matches'])
+    single_draft=root/'note-path-draft';session.start(single_draft,source=source)
+    note_target=session.edit_target(single_draft,0,found['matches'][0]['path']);assert note_target['value']=='First needle' and note_target['replace_only'] and note_target['replace_text_path_supported']
+    session.replace_text(single_draft,0,found['matches'][0]['path'],'needle','subject')
+    assert session.read_notes(single_draft,1,1)['text'].startswith('First subject')
+    batch_draft=root/'mixed-batch-draft';session.start(batch_draft,source=source)
+    title_path=f'/slide[1]/shape[@id={first.shapes.title.shape_id}]/paragraph[1]'
+    changes=[{'path':title_path,'find':'needle','replacement':'subject'}, {'path':'/slide[1]/notes/paragraph[1]','find':'needle','replacement':'subject'}, {'path':'/slide[1]/notes/paragraph[2]','find':'needle','replacement':'topic'}]
+    try: session.replace_text_batch(batch_draft,0,changes+[{'path':'/slide[1]/notes/paragraph[2]','find':'missing','replacement':'x'}])
+    except ValueError as exc: assert 'Replacement 4' in str(exc)
+    else: raise AssertionError('Failed mixed batch was published')
+    assert session.info(batch_draft)['latest_revision']==0
+    batch=session.replace_text_batch(batch_draft,0,changes);assert batch['revision']==1 and batch['count']==3
+    edited=Presentation(batch['file']);assert edited.slides[0].shapes.title.text=='subject in title'
+    assert edited.slides[0].notes_slide.notes_text_frame.text=='First subject\nSecond topic' and edited.slides[1].notes_slide.notes_text_frame.text=='Hidden needle'
+    assert Presentation(source).slides[0].notes_slide.notes_text_frame.text=='First needle\nSecond needle'
     cli = Path(__file__).with_name('open_office_use.py')
     output = subprocess.run([sys.executable, str(cli), 'search-slides', str(source), '--scope', 'notes', '--query', 'needle'], text=True, capture_output=True, check=True)
     assert json.loads(output.stdout)['scope'] == 'notes' and len(json.loads(output.stdout)['matches']) == 3

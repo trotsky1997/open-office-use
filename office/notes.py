@@ -60,35 +60,56 @@ def read(source, number):
     return {'slide': number, 'has_notes_slide': True, 'text': text[:100000], 'truncated': len(text) > 100000}
 
 
+def paragraph_part(file, number):
+    presentation, slide = _slide(file, number)
+    if not slide.has_notes_slide: raise ValueError('Slide has no speaker notes')
+    note = slide.notes_slide; frame = note.notes_text_frame
+    if frame is None: raise ValueError('Notes slide has no speaker notes placeholder')
+    name = str(note.part.partname).lstrip('/')
+    if sum(other.has_notes_slide and str(other.notes_slide.part.partname).lstrip('/') == name for other in presentation.slides) != 1:
+        raise ValueError('Notes slide is referenced by multiple slides')
+    shape = frame._element.getparent(); c_nv = shape.find(slides.P + 'nvSpPr/' + slides.P + 'cNvPr')
+    if c_nv is None or not c_nv.get('id'): raise ValueError('Notes placeholder has no shape ID')
+    return name, c_nv.get('id')
+
+
+def find_paragraph(tree, shape_id, paragraph):
+    root = tree.getroot()
+    if root.tag != slides.P + 'notes': raise ValueError('Invalid notes slide XML')
+    parent = root.find(slides.P + 'cSld/' + slides.P + 'spTree')
+    if parent is None or parent.find(slides.MC + 'AlternateContent') is not None:
+        raise ValueError('Notes shape tree is missing or contains alternate content')
+    shapes = [shape for shape in parent.findall(slides.P + 'sp') if (item := shape.find(slides.P + 'nvSpPr/' + slides.P + 'cNvPr')) is not None and item.get('id') == shape_id]
+    if len(shapes) != 1: raise ValueError('Notes placeholder shape ID is ambiguous')
+    body = shapes[0].find(slides.P + 'txBody')
+    if body is None: raise ValueError('Notes placeholder has no text body')
+    paragraphs = body.findall(slides.A + 'p')
+    if paragraph > len(paragraphs): raise ValueError('Notes paragraph does not exist')
+    selected = paragraphs[paragraph - 1]
+    return selected
+
+
+def read_paragraph(source, number, paragraph):
+    if isinstance(paragraph, bool) or not isinstance(paragraph, int) or paragraph < 1: raise ValueError('Paragraph number must be a positive integer')
+    name, shape_id = paragraph_part(source, number)
+    with zipfile.ZipFile(source) as archive:
+        if archive.getinfo(name).file_size > 8 * 1024 * 1024: raise ValueError('Notes XML exceeds inspection limit')
+        selected = find_paragraph(ooxml.parse_xml(archive.read(name)), shape_id, paragraph)
+        text = ''.join(node.text or '' for node in selected.iter(slides.A + 't'))
+        try: slides.paragraph_nodes(selected); reason = None
+        except ValueError as exc: reason = str(exc)
+    return {'text': text, 'read_only_reason': reason}
+
+
 def replace_text(source, output, number, paragraph, find, replacement):
     if isinstance(paragraph, bool) or not isinstance(paragraph, int) or paragraph < 1:
         raise ValueError('Paragraph number must be a positive integer')
     target = {}
     def part(file):
-        presentation, slide = _slide(file, number)
-        if not slide.has_notes_slide: raise ValueError('Slide has no speaker notes')
-        note = slide.notes_slide; frame = note.notes_text_frame
-        if frame is None: raise ValueError('Notes slide has no speaker notes placeholder')
-        name = str(note.part.partname).lstrip('/')
-        if sum(other.has_notes_slide and str(other.notes_slide.part.partname).lstrip('/') == name for other in presentation.slides) != 1:
-            raise ValueError('Notes slide is referenced by multiple slides')
-        shape = frame._element.getparent(); c_nv = shape.find(slides.P + 'nvSpPr/' + slides.P + 'cNvPr')
-        if c_nv is None or not c_nv.get('id'): raise ValueError('Notes placeholder has no shape ID')
-        target['id'] = c_nv.get('id')
+        name, target['id'] = paragraph_part(file, number)
         return name
     def edit(tree, archive):
-        root = tree.getroot()
-        if root.tag != slides.P + 'notes': raise ValueError('Invalid notes slide XML')
-        parent = root.find(slides.P + 'cSld/' + slides.P + 'spTree')
-        if parent is None or parent.find(slides.MC + 'AlternateContent') is not None:
-            raise ValueError('Notes shape tree is missing or contains alternate content')
-        shapes = [shape for shape in parent.findall(slides.P + 'sp') if (item := shape.find(slides.P + 'nvSpPr/' + slides.P + 'cNvPr')) is not None and item.get('id') == target['id']]
-        if len(shapes) != 1: raise ValueError('Notes placeholder shape ID is ambiguous')
-        body = shapes[0].find(slides.P + 'txBody')
-        if body is None: raise ValueError('Notes placeholder has no text body')
-        paragraphs = body.findall(slides.A + 'p')
-        if paragraph > len(paragraphs): raise ValueError('Notes paragraph does not exist')
-        selected = paragraphs[paragraph - 1]
+        selected = find_paragraph(tree, target['id'], paragraph)
         slides.replace_paragraph(selected, find, replacement, preserve_space=True)
     return ooxml.edit_xml(source, output, part, edit)
 

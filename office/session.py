@@ -456,6 +456,12 @@ def edit_target(directory, base_revision, path):
         links = [{'relationship_id': item['id'], **link} for item in inventory['stories'] if item['part'] == story['part'] for link in item['linked_sections']]
         return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': paragraph['text'], 'replace_text_path_supported': True, 'replace_only': True,
                 'story_impact': {'part': story['part'], 'linked_sections': links, 'same_part_ids': story['same_part_ids'], 'complete': inventory['reference_resolution_complete']}}
+    note_match = slides.NOTES_PATH.fullmatch(path) if state['format'] == 'pptx' else None
+    if note_match:
+        result = notes.read_paragraph(source, int(note_match.group(1)), int(note_match.group(2)))
+        if len(result['text']) > 4000: raise ValueError('Notes paragraph exceeds the editor text limit')
+        if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
+        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'pptx', 'mode': 'text', 'value': result['text'], 'read_only_reason': result['read_only_reason'], 'replace_text_path_supported': result['read_only_reason'] is None, 'replace_only': True}
     slide_match = slides.PATH.fullmatch(path) if state['format'] == 'pptx' and slides.paragraph_path(path) else None
     if slide_match and slide_match.group(2) and '/table[' in path:
         part = slides.slide_part(source, int(slide_match.group(1)) - 1)
@@ -530,6 +536,13 @@ def edit(directory, base_revision, path, mode, value):
     return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])
 
 
+def replace_document_text(format, source, output, path, find, replacement):
+    note = slides.NOTES_PATH.fullmatch(path) if format == 'pptx' and isinstance(path, str) and len(path) <= 512 else None
+    if note:
+        return notes.replace_text(source, output, int(note.group(1)), int(note.group(2)), find, replacement)
+    return {'docx': word, 'pptx': slides, 'xlsx': cell_text}[format].replace_text(source, output, path, find, replacement)
+
+
 def replace_text(directory, base_revision, path, find, replacement):
     state = info(directory)
     source = revision_file(state, base_revision)
@@ -539,7 +552,7 @@ def replace_text(directory, base_revision, path, find, replacement):
         raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.{state['format']}"
     try:
-        {'docx': word, 'pptx': slides, 'xlsx': cell_text}[state['format']].replace_text(source, output, path, find, replacement)
+        replace_document_text(state['format'], source, output, path, find, replacement)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'path': path, **({'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True} if state['format'] == 'xlsx' else {})}
@@ -555,12 +568,11 @@ def replace_text_batch(directory, base_revision, changes):
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.{state['format']}"
-    replace = {'docx': word, 'pptx': slides, 'xlsx': cell_text}[state['format']].replace_text
     with tempfile.TemporaryDirectory(dir=state['directory'], prefix='.office-replace-batch-') as tmp:
         previous = source
         for index, change in enumerate(changes):
             candidate = Path(tmp) / f"step-{index:02d}.{state['format']}"
-            try: replace(previous, candidate, change['path'], change['find'], change['replacement'])
+            try: replace_document_text(state['format'], previous, candidate, change['path'], change['find'], change['replacement'])
             except ValueError as exc: raise ValueError(f'Replacement {index + 1}: {exc}') from exc
             if previous != source: previous.unlink()
             previous = candidate

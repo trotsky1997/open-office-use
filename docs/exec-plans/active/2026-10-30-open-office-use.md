@@ -238,3 +238,5 @@ Rendered-text checks offer bounded paragraph-level candidates and table paragrap
 PowerPoint targeted paragraph replacement supports linked text within a single hyperlink region and rejects boundary-crossing replacements.
 
 Speaker-note paragraph edits can update text within one hyperlink region while preserving link metadata; cross-boundary edits are rejected.
+
+PowerPoint speaker-note search paths support target inspection and atomic batches combining note and slide paragraph replacements.
