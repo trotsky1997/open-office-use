@@ -1807,3 +1807,16 @@ test('download attribution is explicit and validates backend metadata',async()=>
   assert.equal((await new OpenBrowserUseDownloadWait(client,Promise.resolve({downloadId:'id'})).wait()).attribution,'unknown');
   await assert.rejects(new OpenBrowserUseDownloadWait(client,Promise.resolve({downloadId:'id',attribution:['tab']})).wait(),/invalid download attribution/);
 });
+
+test('download start observation is tab-scoped and bounds preparation',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1),handlers=new Set(),calls=[];
+  client.onNotification=handler=>{handlers.add(handler);return()=>handlers.delete(handler);};client.onDisconnect=()=>()=>{};
+  browser.cdp.enableFrameSessions=async()=>true;browser.cdp.frameSessions=async()=>[{sessionId:'child',frameId:'f',parentFrameId:'root'}];
+  browser.cdp.call=async(_id,method,_params,options)=>{calls.push([method,options.sessionId]);return {};};
+  const waiting=await tab.prepareDownloadStart({timeoutMs:1000});assert.deepEqual(calls,[['Page.enable',undefined],['Page.enable','child']]);
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:2},method:'Page.downloadWillBegin',params:{guid:'wrong',frameId:'f',url:'x',suggestedFilename:'x'}}});
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1,sessionId:'child'},method:'Page.downloadWillBegin',params:{guid:'guid',frameId:'f',url:'https://example.test/file',suggestedFilename:'file'}}});
+  assert.deepEqual(await waiting.wait(),{guid:'guid',frameId:'f',url:'https://example.test/file',suggestedFilename:'file',sessionId:'child'});
+  let release;browser.cdp.enableFrameSessions=async()=>await new Promise(resolve=>{release=resolve;});calls.length=0;
+  await assert.rejects(tab.prepareDownloadStart({timeoutMs:20}),/timed out/i);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,0);
+});

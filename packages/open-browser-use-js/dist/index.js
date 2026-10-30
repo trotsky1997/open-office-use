@@ -743,6 +743,13 @@ export class OpenBrowserUseDownload {
         return result.path;
     }
 }
+export class OpenBrowserUseDownloadStartWait {
+    result;
+    constructor(result) {
+        this.result = result;
+    }
+    wait() { return this.result; }
+}
 export class OpenBrowserUseDownloadWait {
     client;
     result;
@@ -2365,6 +2372,45 @@ export class OpenBrowserUseTab {
         }
         finally {
             remove();
+        }
+    }
+    async prepareDownloadStart(options = {}) {
+        const timeoutMs = options.timeoutMs ?? 10_000;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000)
+            throw new Error("Invalid download timeout");
+        const cdp = this.browser.cdp, controller = new AbortController(), deadline = performance.now() + timeoutMs;
+        const waiting = cdp.waitForEvent(this.id, event => {
+            if (event.method !== "onCDPEvent" || !isObject(event.params))
+                return false;
+            const { source, method, params } = event.params;
+            return isObject(source) && source.tabId === this.id && method === "Page.downloadWillBegin" && isObject(params);
+        }, { timeoutMs, signal: controller.signal, timeoutMessage: "Timed out waiting for download start" }).then(event => {
+            const envelope = event.params, source = envelope.source, value = envelope.params;
+            if (typeof value.guid !== "string" || !value.guid || typeof value.frameId !== "string" || !value.frameId || typeof value.url !== "string" || typeof value.suggestedFilename !== "string")
+                throw new Error("Invalid download start event");
+            return { guid: value.guid, frameId: value.frameId, url: value.url, suggestedFilename: value.suggestedFilename, ...(typeof source.sessionId === "string" ? { sessionId: source.sessionId } : {}) };
+        });
+        void waiting.catch(() => { });
+        const prepare = (async () => {
+            await cdp.enableFrameSessions(this.id);
+            if (controller.signal.aborted || performance.now() >= deadline)
+                throw new Error("Download start preparation timed out");
+            const frames = await cdp.frameSessions(this.id);
+            for (const sessionId of [undefined, ...frames.map(frame => frame.sessionId)]) {
+                if (controller.signal.aborted || performance.now() >= deadline)
+                    throw new Error("Download start preparation timed out");
+                await cdp.call(this.id, "Page.enable", {}, { sessionId, signal: controller.signal });
+            }
+            if (controller.signal.aborted || performance.now() >= deadline)
+                throw new Error("Download start preparation timed out");
+        })();
+        try {
+            await Promise.race([prepare, waiting.then(() => { throw new Error("Download started before preparation completed"); })]);
+            return new OpenBrowserUseDownloadStartWait(waiting);
+        }
+        catch (error) {
+            controller.abort();
+            throw error;
         }
     }
     async prepareDownload(options = {}) {

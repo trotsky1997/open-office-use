@@ -540,3 +540,5 @@ Chrome 下载等待返回的句柄绑定发起会话；其他会话和未知 ID 
 下载结果新增 attribution：Electron 返回 tab，Chrome 返回 browser，未声明的后端返回 unknown。SDK 106 项、Electron 58 项、Chrome 扩展 39 项检查通过；macOS 和 Linux ARM64 Electron 实际下载返回 tab，Linux ARM64 Chromium 原生消息下载返回 browser。Chromium 150 实测 Page.downloadWillBegin 提供来源标签、frame 和 GUID；扩展下载记录使用独立 ID，仍需可靠关联。Windows 未测。
 
 Chrome 对外下载句柄改为随机 UUID，扩展内保存句柄与原生数字 ID、发起会话的映射；路径查询复核句柄及所属会话。扩展 39 项检查通过；Linux ARM64 Chromium 原生消息双会话实测句柄格式、跨会话拒绝及实际文件内容。Chromium 扩展下载 API 的公开类型没有 GUID，Page 调试事件的 GUID 与原生数字 ID 仍待可靠关联；Windows 未测。
+
+新增 tab.prepareDownloadStart：预先启用主 frame 与已附着跨进程 frame 的 Page 事件，按标签等待下载开始并返回 GUID、frame、URL 和建议文件名；准备超时阻止后续 Page.enable。SDK 107 项检查通过，Linux ARM64 Chromium 原生消息实测主文档及跨进程 frame，macOS Electron 实页验证主文档。GUID 与文件路径句柄独立，新建 frame 存在事件遗漏窗口，CDP 事件为实验性且已弃用；Windows 未测。

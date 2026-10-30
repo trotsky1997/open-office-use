@@ -1191,6 +1191,20 @@ registration failure rejects those pending commands. Direct low-level client
 requests and actions outside this SDK do not use that barrier. Attach a rejection
 handler to the waiting promise if the triggering action may fail.
 
+For a tab-scoped download-start observation, arm the CDP event before the action:
+
+```js
+const started = await tab.prepareDownloadStart({timeoutMs: 30000});
+await tab.playwright.getByRole("link", {name: "Download", exact: true}).click();
+const {guid, frameId, url, suggestedFilename} = await started.wait();
+```
+
+This reports the browser's download-start event and covers the main frame and
+cross-process frames attached during preparation. Frames created later can miss
+the event. The GUID identifies the CDP download event; it is separate from the
+opaque handle returned by `prepareDownload()` and does not provide a file path.
+`Page.downloadWillBegin` is an experimental, deprecated CDP event.
+
 `prepareDownload` returns after the extension confirms registration. The
 result is the next Chrome download started after registration; the extension's
 download event currently has no reliable tab association, so another tab's

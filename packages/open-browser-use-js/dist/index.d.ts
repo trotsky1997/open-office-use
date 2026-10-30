@@ -313,6 +313,18 @@ export declare class OpenBrowserUseDownload {
     constructor(client: OpenBrowserUseClient, id: string, url?: string | null, attribution?: "tab" | "browser" | "unknown");
     path(timeoutMs?: number): Promise<string | null>;
 }
+export type OpenBrowserUseDownloadStart = {
+    guid: string;
+    url: string;
+    frameId: string;
+    suggestedFilename: string;
+    sessionId?: string;
+};
+export declare class OpenBrowserUseDownloadStartWait {
+    private result;
+    constructor(result: Promise<OpenBrowserUseDownloadStart>);
+    wait(): Promise<OpenBrowserUseDownloadStart>;
+}
 export declare class OpenBrowserUseDownloadWait {
     private client;
     private result;
@@ -391,6 +403,9 @@ export declare class OpenBrowserUseTab {
     private scopeContext;
     private verifyLocatorScope;
     private prepareBrowserEvent;
+    prepareDownloadStart(options?: {
+        timeoutMs?: number;
+    }): Promise<OpenBrowserUseDownloadStartWait>;
     prepareDownload(options?: {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseDownloadWait>;
