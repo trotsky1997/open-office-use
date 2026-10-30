@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { app, BrowserWindow, nativeImage } from 'electron';
@@ -37,6 +37,13 @@ app.whenReady().then(async () => {
     await chooserUpload.setFiles(uploadFile);await uploadClick;
     assert.deepEqual(await evaluate(`Array.from(document.querySelector('#iab-upload').files,f=>f.name)`),['upload-fixture.txt']);
     await evaluate("document.querySelector('#iab-upload').remove()");
+    await scope.downloads.configure({directory:userData,maxBytes:1024});
+    await evaluate(`(()=>{const a=document.createElement('a');a.href='/download-fixture';a.textContent='Download fixture';a.id='iab-download';Object.assign(a.style,{position:'fixed',left:'20px',top:'100px',zIndex:'999999'});document.body.append(a)})()`);
+    const downloadReady=await sdkTab.prepareDownload({timeoutMs:20000});const downloading=downloadReady.wait();void downloading.catch(()=>{});
+    await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});
+    const download=await downloading,downloadPath=await download.path(20000);assert.ok(downloadPath);assert.equal(readFileSync(downloadPath,'utf8'),'isolated download fixture');
+    await evaluate("document.querySelector('#iab-download').remove()");
+
 
     await sdkTab.goto(`${fixture.url}/#same-document`,{timeoutMs:1500});
     assert.match(await evaluate('location.href'),/#same-document$/);

@@ -233,7 +233,7 @@ each individual browser operation.
 ## File Choosers, Downloads, And Clipboard
 
 - Use `await tab.prepareFileChooser()` to confirm interception before opening the chooser. Start `ready.wait()` and the page click concurrently, then set absolute local paths on the chooser and await the click. Inspect the page if the decision outcome is uncertain. Electron hosts must explicitly authorize the files and grant `files.upload` and `page.control`.
-- On Chrome, `const ready = await tab.prepareDownload()` confirms registration before triggering a download; use `(await ready.wait()).path()` for its path. The wait observes the next Chrome download across tabs; verify its identity before using the path, especially when downloads may be concurrent. Electron does not expose downloads.
+- `const ready = await tab.prepareDownload()` confirms registration before triggering a download; use `(await ready.wait()).path()` for its path. Chrome observes the next download across tabs, so verify its identity. Electron matches the originating tab and requires the host to authorize a directory and grant `files.download` with `page.control`.
 - Clipboard helpers operate through the current controlled tab and should be treated as sensitive user actions.
 
 ## References

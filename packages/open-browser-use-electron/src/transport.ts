@@ -15,14 +15,17 @@ const publicErrors = new Set([
   'Frame tree changed while waiting for file chooser', 'File chooser debugger detached',
   'File chooser tab closed', 'Timed out waiting for file chooser',
   'File chooser is unavailable', 'Upload file is not authorized',
+  'IAB_DOWNLOAD_NOT_CONFIGURED', 'IAB_DOWNLOAD_WAIT_PENDING', 'IAB_DOWNLOAD_UNAVAILABLE',
+  'IAB_DOWNLOAD_SIZE_LIMIT', 'IAB_DOWNLOAD_LIMIT', 'IAB_DOWNLOAD_FAILED',
+  'IAB_DOWNLOAD_TIMEOUT', 'IAB_DOWNLOAD_TAB_CLOSED',
 ]);
 
-export type Operation = 'tabs.read' | 'tabs.create' | 'page.control' | 'files.upload';
+export type Operation = 'tabs.read' | 'tabs.create' | 'page.control' | 'files.upload' | 'files.download';
 export type IabEvent = { scopeId: string; method: string; params: Record<string, any> };
 export interface Backend {
   readonly instanceId: string;
   hasScope(id: string): boolean;
-  dispatch(scope: string, method: string, params: Record<string, any>, operations: readonly Operation[], authorized?: () => boolean): Promise<any>;
+  dispatch(scope: string, method: string, params: Record<string, any>, operations: readonly Operation[], authorized?: () => boolean, signal?: AbortSignal): Promise<any>;
   subscribe(handler: (event: IabEvent) => void): () => void;
 }
 export type Bootstrap = {
@@ -32,7 +35,7 @@ export type Bootstrap = {
 type Grant = {
   id: string; scope: string; transport: Bootstrap['transport']; peer?: ProcessIdentity;
   operations: Operation[]; hash: Buffer; deadline: number; timer: NodeJS.Timeout;
-  channels: Set<FramedChannel>; maxConnections: number;
+  channels: Set<FramedChannel>; maxConnections: number; abort: AbortController;
 };
 export type GrantOptions = { ttlMs: number; operations?: Operation[]; maxConnections?: number };
 const hash = (secret: string): Buffer => createHash('sha256').update(secret).digest();
@@ -93,7 +96,7 @@ export class IabConnections {
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0 || options.ttlMs > 86_400_000) throw new Error('ttlMs must be between 1 and 86400000');
     if (this.grants.size >= 256) throw new Error('IAB_GRANT_LIMIT');
     const operations = options.operations ?? ['tabs.read', 'tabs.create', 'page.control'];
-    if (operations.some(op => !['tabs.read', 'tabs.create', 'page.control', 'files.upload'].includes(op))) throw new Error('Unsupported operation');
+    if (operations.some(op => !['tabs.read', 'tabs.create', 'page.control', 'files.upload', 'files.download'].includes(op))) throw new Error('Unsupported operation');
     const maxConnections = options.maxConnections ?? 1;
     if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 16) throw new Error('Invalid maxConnections');
     const peer = transport === 'socket' ? processIdentity(pid) : undefined;
@@ -101,7 +104,7 @@ export class IabConnections {
     const id = randomUUID(), secret = randomBytes(32).toString('base64url');
     const grant: Grant = {
       id, scope: scopeId, transport, peer, operations: [...operations], hash: hash(secret),
-      deadline: performance.now() + options.ttlMs, channels: new Set(), maxConnections,
+      deadline: performance.now() + options.ttlMs, channels: new Set(), maxConnections, abort: new AbortController(),
       timer: setTimeout(() => this.revoke(id), options.ttlMs),
     };
     grant.timer.unref(); this.grants.set(id, grant);
@@ -119,7 +122,7 @@ export class IabConnections {
   revoke(id: string): void {
     const grant = this.grants.get(id);
     if (!grant) return;
-    this.grants.delete(id); clearTimeout(grant.timer);
+    this.grants.delete(id); clearTimeout(grant.timer); grant.abort.abort();
     for (const channel of grant.channels) channel.close();
     grant.channels.clear();
   }
@@ -157,7 +160,7 @@ export class IabConnections {
         channel.send({ jsonrpc: '2.0', id: message.id, result: { authenticated: true, scopeId: grant.scope } });
         unsubscribe = this.backend.subscribe(event => {
           if (grant && this.valid(grant) && event.scopeId === grant.scope &&
-              (event.method === 'onFileChooserWaitReady' ? grant.operations.includes('files.upload') && grant.operations.includes('page.control') : grant.operations.includes(['onCDPEvent','onDebuggerDetach'].includes(event.method) ? 'page.control' : 'tabs.read'))) {
+              (['onFileChooserWaitReady','onDownloadWaitReady'].includes(event.method) ? grant.operations.includes(event.method === 'onFileChooserWaitReady' ? 'files.upload' : 'files.download') && grant.operations.includes('page.control') : grant.operations.includes(['onCDPEvent','onDebuggerDetach'].includes(event.method) ? 'page.control' : 'tabs.read'))) {
             channel.send({ jsonrpc: '2.0', method: event.method, params: event.params });
           }
         });
@@ -169,7 +172,7 @@ export class IabConnections {
       if (typeof params !== 'object' || Array.isArray(params) || params.session_id !== grant.scope) { channel.close(); return; }
       const current = grant;
       inFlight++;
-      void this.backend.dispatch(current.scope, message.method, params, current.operations, () => this.valid(current)).then(result => {
+      void this.backend.dispatch(current.scope, message.method, params, current.operations, () => this.valid(current), current.abort.signal).then(result => {
         if (this.valid(current)) channel.send({ jsonrpc: '2.0', id: message.id, result });
       }, error => {
         const messageText = error instanceof Error && publicErrors.has(error.message) ? error.message : 'IAB request rejected';

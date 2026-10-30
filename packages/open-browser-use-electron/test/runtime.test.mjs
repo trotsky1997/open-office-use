@@ -69,6 +69,73 @@ test('authorized socket client can complete the file chooser handshake', {skip:!
   assert.equal(adapter.views[0].webContents.debugger.commands.at(-1).method,'DOM.setFileInputFiles');
 });
 
+function fakeDownload(filename='fixture.txt',total=10) {
+  const item=Object.assign(new EventEmitter(),{filename,total,received:0,cancelled:false,path:'',
+    getFilename(){return this.filename;},getTotalBytes(){return this.total;},getReceivedBytes(){return this.received;},
+    setSavePath(path){this.path=path;},cancel(){this.cancelled=true;this.emit('done',{},'cancelled');}});
+  return item;
+}
+
+test('downloads require scoped authorization and match the originating page',async t=>{
+  const {runtime,adapter,a,b}=setup(t),tab=await a.tabs.create(),otherTab=await b.tabs.create(),sameScopeTab=await a.tabs.create();
+  const dir=await mkdtemp(join(tmpdir(),'obu-download-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const wc=adapter.views[0].webContents,other=adapter.views[1].webContents,session=wc.session;
+  const denied={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',denied,fakeDownload(),wc);assert.equal(denied.blocked,true);
+  await a.downloads.configure({directory:dir,maxBytes:100});
+  assert.equal((await runtime.dispatch('a','getInfo',{},['page.control'])).capabilities.downloads,false);
+  assert.equal((await runtime.dispatch('a','getInfo',{},['page.control','files.download'])).capabilities.downloads,true);
+  await assert.rejects(runtime.dispatch('a','waitForDownload',{tabId:tab.id},['page.control']),/DENIED/);
+  let ready=false;const unsubscribe=runtime.subscribe(event=>{if(event.method==='onDownloadWaitReady')ready=true;});
+  const pending=runtime.dispatch('a','waitForDownload',{tabId:tab.id,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'},['page.control','files.download']);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(ready,true);
+  const unrelated={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',unrelated,fakeDownload(),other);assert.equal(unrelated.blocked,true);
+  const sameScope={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',sameScope,fakeDownload(),adapter.views[2].webContents);assert.equal(sameScope.blocked,true);
+  const item=fakeDownload('../../private.txt'),event={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',event,item,wc);
+  const duplicate={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',duplicate,fakeDownload(),wc);assert.equal(duplicate.blocked,true);
+  const result=await pending;unsubscribe();const resolvedDir=await import('node:fs/promises').then(fs=>fs.realpath(dir));assert.equal(event.blocked,false);assert.ok(item.path.startsWith(resolvedDir+'/'));assert.ok(item.path.endsWith('.txt'));assert.notEqual(item.path,join(resolvedDir,'private.txt'));
+  await assert.rejects(runtime.dispatch('b','downloadPath',{downloadId:result.downloadId},['page.control','files.download']),/UNAVAILABLE/);
+  const path=runtime.dispatch('a','downloadPath',{downloadId:result.downloadId,timeoutMs:1000},['page.control','files.download']);
+  item.received=10;item.emit('done',{},'completed');assert.equal((await path).path,item.path);
+});
+
+test('download revocation and size limits cancel the item',async t=>{
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create();
+  const dir=await mkdtemp(join(tmpdir(),'obu-download-limit-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  await a.downloads.configure({directory:dir,maxBytes:100});const wc=adapter.views[0].webContents,session=wc.session;
+  const controller=new AbortController();
+  const pending=runtime.dispatch('a','waitForDownload',{tabId:tab.id,timeoutMs:1000},['page.control','files.download'],()=>!controller.signal.aborted,controller.signal);
+  const item=fakeDownload('fixture.txt',10);session.emit('will-download',{preventDefault(){}},item,wc);
+  const result=await pending;const path=runtime.dispatch('a','downloadPath',{downloadId:result.downloadId},['page.control','files.download']);
+  controller.abort();assert.equal((await path).path,null);await new Promise(resolve=>setImmediate(resolve));assert.equal(item.cancelled,true);
+  const oversized=runtime.dispatch('a','waitForDownload',{tabId:tab.id,timeoutMs:1000},['page.control','files.download']);
+  const denied={blocked:false,preventDefault(){this.blocked=true;}};session.emit('will-download',denied,fakeDownload('big.bin',101),wc);
+  await assert.rejects(oversized,/SIZE_LIMIT/);assert.equal(denied.blocked,true);
+  const streaming=runtime.dispatch('a','waitForDownload',{tabId:tab.id,timeoutMs:1000},['page.control','files.download']);
+  const large=fakeDownload('unknown.bin',0);session.emit('will-download',{preventDefault(){}},large,wc);const started=await streaming;
+  large.received=101;large.emit('updated',{},'progressing');assert.equal((await a.call('downloadPath',{downloadId:started.downloadId})).path,null);await new Promise(resolve=>setImmediate(resolve));assert.equal(large.cancelled,true);
+  const active=runtime.dispatch('a','waitForDownload',{tabId:tab.id,timeoutMs:1000},['page.control','files.download']);
+  const activeItem=fakeDownload('active.bin',10);session.emit('will-download',{preventDefault(){}},activeItem,wc);const activeResult=await active;
+  const activePath=runtime.dispatch('a','downloadPath',{downloadId:activeResult.downloadId},['page.control','files.download']);
+  const pathRejected=assert.rejects(activePath,/REVOKED/);
+  await a.downloads.configure(null);await pathRejected;await new Promise(resolve=>setImmediate(resolve));assert.equal(activeItem.cancelled,true);
+  await a.downloads.configure({directory:dir,maxBytes:100});
+  const waiting=runtime.dispatch('a','waitForDownload',{tabId:tab.id,timeoutMs:1000},['page.control','files.download']);
+  const revoked=assert.rejects(waiting,/REVOKED/);await a.downloads.configure(null);await revoked;
+});
+
+test('authorized socket client receives the correct page download and grant revocation cancels it', {skip:!['darwin','linux'].includes(process.platform)}, async t => {
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create();
+  const dir=await mkdtemp(join(tmpdir(),'obu-download-socket-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  await a.downloads.configure({directory:dir,maxBytes:100});await runtime.connections.openSocket();
+  const grant=runtime.connections.grant('a','socket',{ttlMs:5000,operations:['page.control','files.download']},process.pid);
+  const client=await connectSocketIab(grant);t.after(()=>client.close());
+  const ready=await client.browser().tab(tab.id).prepareDownload({timeoutMs:1000});
+  const item=fakeDownload('fixture.txt'),wc=adapter.views[0].webContents;
+  wc.session.emit('will-download',{preventDefault(){throw new Error('unexpected rejection');}},item,wc);
+  const download=await ready.wait();assert.ok(download.id);
+  runtime.connections.revoke(grant.grantId);await new Promise(resolve=>setImmediate(resolve));assert.equal(item.cancelled,true);
+});
+
 test('managed clients opt into piped stdin without exposing the private bootstrap', async t => {
   const { runtime, a } = setup(t);
   const { child } = await runtime.launchClient({scopeId:a.id,command:process.execPath,

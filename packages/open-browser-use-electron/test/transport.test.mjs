@@ -124,3 +124,15 @@ test('socket returns approved failure reasons and hides other backend errors', {
   await assert.rejects(client.request('test',{reason:'private file /sensitive/example.txt'}),error=>error.message==='IAB request rejected');
   await assert.rejects(client.request('test',{reason:'IAB_INPUT_PREPARATION_TIMEOUT /sensitive/example.txt'}),error=>error.message==='IAB request rejected');
 });
+
+test('download readiness is limited to download grants in the owning scope', {skip:!supported}, async t => {
+  const {grant,emit}=await setup(t);
+  const upload=await connectSocketIab(grant('a',{operations:['page.control','files.upload']}));t.after(()=>upload.close());
+  const download=await connectSocketIab(grant('a',{operations:['page.control','files.download']}));t.after(()=>download.close());
+  const other=await connectSocketIab(grant('b',{operations:['page.control','files.download']}));t.after(()=>other.close());
+  const seenUpload=[],seenDownload=[],seenOther=[];
+  upload.onNotification(event=>seenUpload.push(event));download.onNotification(event=>seenDownload.push(event));other.onNotification(event=>seenOther.push(event));
+  emit({scopeId:'a',method:'onDownloadWaitReady',params:{waitId:'test'}});
+  await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal(seenUpload.length,0);assert.deepEqual(seenDownload.map(event=>event.params.waitId),['test']);assert.equal(seenOther.length,0);
+});

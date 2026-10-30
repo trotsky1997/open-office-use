@@ -153,3 +153,5 @@ Electron 新增显式授权的文件选择：宿主通过 scope.files.authorize 
 Linux ARM64 的 Electron 44.7 在临时 Xvfb、独立 profile 和 no-sandbox 进程中通过原生 socket 授权的文件选择实测：主页面可见时及宿主窗口显示后隐藏时的跨进程 iframe 均选中本地 fixture。新增 upload-smoke.mjs 便于复现。完整 scroll-smoke 在从未显示的隐藏宿主窗口遇到输入预备截图超时并断开调试器；该平台限制待修复，Xvfb 实验不覆盖普通桌面环境。
 
 Linux ARM64 Xvfb 中，从未显示的宿主窗口验证了输入准备截图超时；禁用宿主节流、改变窗口大小和截取宿主页面均未恢复输入，绕过准备截图则点击事件未到达页面。保留保护并新增 hidden-input-probe：Linux 真正授权 socket 返回 IAB_INPUT_PREPARATION_TIMEOUT 且未发生点击，macOS 隐藏窗口产生可信点击。传输层仅公开固定的安全错误，其他异常继续隐藏细节；截图准备超时与输入发送后的 IAB_INPUT_OUTCOME_UNKNOWN 分开，后者需先观察。已显示后隐藏的窗口仍可用，从未显示窗口的根本修复未完成；Linux 实验使用隔离虚拟显示、--no-sandbox 和禁用 GPU。
+
+Electron 新增作用域下载：宿主显式配置现有私有目录与大小上限，客户端需同时持有 page.control 与 files.download；仅接受已准备等待且来源 WebContents 匹配的下载，随机文件名写入授权目录。授权撤销或 scope 关闭会取消进行中的下载；总大小已知时预检，流式超限时在事件返回后取消以避免 Electron 回调重入，部分文件可能暂留。macOS Electron 隐藏窗口实测主页面下载；Linux ARM64 Xvfb 通过原生 socket 实测主页面与跨进程 iframe 下载及超限取消，使用 --no-sandbox、禁用 GPU。完成句柄保留五分钟，文件由宿主管理；Windows Electron 尚未实测。

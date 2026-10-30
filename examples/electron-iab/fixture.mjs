@@ -33,6 +33,7 @@ export async function startFixture() {
   };
   const server = createServer((request,response)=>{
     const url=new URL(request.url,'http://localhost');
+    if (url.pathname==='/download-fixture') { response.writeHead(200,{'Content-Type':'text/plain','Content-Disposition':'attachment; filename=fixture-download.txt'}); response.end('isolated download fixture'); return; }
     if (url.pathname==='/fixture.css') { response.setHeader('Content-Type','text/css; charset=utf-8'); response.end(stylesheet); return; }
     if (url.pathname==='/slow') {
       slowResponses.set(response,url); response.once('close',()=>slowResponses.delete(response)); return;

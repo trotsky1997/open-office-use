@@ -561,8 +561,8 @@ Electron hosts must authorize the exact files and grant `files.upload` and
 
 ## Waiting for a download
 
-On the Chrome extension backend, register the listener before triggering the
-page action:
+On Chrome or an explicitly authorized Electron scope, register the listener
+before triggering the page action:
 
 ```js
 const ready = await tab.prepareDownload({timeoutMs: 30000});
@@ -575,7 +575,8 @@ const path = await download.path(30000); // null if the download failed or was c
 result is the next Chrome download started after registration; the extension's
 download event currently has no reliable tab association, so another tab's
 concurrent download may satisfy the wait. Verify the download identity before
-using its path. The Electron backend does not expose downloads.
+using its path. Electron matches the originating tab and requires the host to
+configure a directory and grant `files.download` with `page.control`.
 
 ## Notifications
 

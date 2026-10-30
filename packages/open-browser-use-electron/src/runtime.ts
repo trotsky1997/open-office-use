@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once, EventEmitter } from 'node:events';
 import { realpath, stat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join, extname } from 'node:path';
 import type { Duplex } from 'node:stream';
-import type { WebContentsView, WebContents, Session, BaseWindow } from 'electron';
+import type { WebContentsView, WebContents, Session, BaseWindow, DownloadItem } from 'electron';
 import { IabConnections, type Backend, type IabEvent, type Operation, type GrantOptions } from './transport.js';
 import { frame } from './wire.js';
 import { FeedbackController, type VisualFeedbackOptions } from './feedback.js';
@@ -20,7 +20,9 @@ type Tab = {
   frameSessions: Map<string, string | undefined>;
   loading: boolean; pendingUrl?: string; loadError?: { code: number; description: string; url: string };
 };
-type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; uploadFiles: Set<string>; uploadEpoch: number; closing?: boolean };
+type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; uploadFiles: Set<string>; uploadEpoch: number; download?: { directory: string; maxBytes: number }; downloadEpoch: number; closing?: boolean };
+type DownloadWait = { scopeId: string; tabId: number; epoch: number; authorized: () => boolean; signal?: AbortSignal; resolve: (value: {downloadId: string}) => void; reject: (error: Error) => void };
+type DownloadRecord = { scopeId: string; epoch: number; path: string; done: Promise<string | null>; cancel: () => void; cleanup: () => void };
 type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds: { x: number; y: number; width: number; height: number }; remove: () => void };
 const pageCommands = new Set([
   'Page.enable', 'Page.disable', 'Page.navigate', 'Page.reload', 'Page.stopLoading', 'Page.handleJavaScriptDialog',
@@ -53,6 +55,8 @@ export class IabRuntime implements Backend {
   private scopeDisposals = new Map<string, Promise<void>>();
   private tabsById = new Map<number, Tab>();
   private chooserWaits = new Set<number>();
+  private downloadWaits = new Map<number, DownloadWait>();
+  private downloads = new Map<string, DownloadRecord>();
   private choosers = new Map<string, {scopeId: string; tabId: number; backendNodeId: number; sessionId?: string; multiple: boolean}>();
   private surfaceStates = new Map<string, Surface>();
   private workers = new Set<ChildProcess>();
@@ -81,9 +85,9 @@ export class IabRuntime implements Backend {
         const session = this.adapter.createSession(key);
         session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
         session.setPermissionCheckHandler(() => false);
-        const denyDownload = (event: { preventDefault(): void }) => event.preventDefault();
-        session.on('will-download', denyDownload);
-        this.sessionRemovers.push(() => session.off('will-download', denyDownload));
+        const download = (event: { preventDefault(): void }, item: DownloadItem, contents: WebContents) => this.handleDownload(event,item,contents);
+        session.on('will-download', download);
+        this.sessionRemovers.push(() => session.off('will-download', download));
         this.profileSessions.set(options.id, session);
       } else if ((this.profileSessions.get(options.id)!.isPersistent?.() ?? options.persistent !== false) !== (options.persistent !== false)) {
         throw new Error('Cannot change profile persistence');
@@ -99,7 +103,7 @@ export class IabRuntime implements Backend {
       const previous = this.states.get(options.id);
       if (previous?.closing) throw new Error('IAB_SCOPE_CLOSED');
       if (previous && previous.profileId !== options.profileId) throw new Error('Cannot change scope profile');
-      if (!previous) this.states.set(options.id, { ...options, tabs: new Map(), name: options.id, uploadFiles: new Set(), uploadEpoch: 0 });
+      if (!previous) this.states.set(options.id, { ...options, tabs: new Map(), name: options.id, uploadFiles: new Set(), uploadEpoch: 0, downloadEpoch: 0 });
       return new IabScope(this, options.id);
     },
   };
@@ -199,6 +203,7 @@ export class IabRuntime implements Backend {
   listTabs(scopeId: string): Record<string, any>[] { return [...this.scope(scopeId).tabs.values()].map(t => this.snapshot(t)); }
   private forget(tab: Tab): void {
     this.invalidateChoosers(tab.id);
+    this.downloadWaits.get(tab.id)?.reject(new Error('IAB_DOWNLOAD_TAB_CLOSED'));
     if (!this.tabsById.delete(tab.id)) return;
     this.feedbackController.release(tab.contents);
     this.states.get(tab.scopeId)?.tabs.delete(tab.id);
@@ -296,6 +301,102 @@ export class IabRuntime implements Backend {
       if (backgroundInput && !tab.contents.isDestroyed()) tab.contents.setBackgroundThrottling(previousThrottling!);
     }
   }
+  async configureDownloads(scopeId: string, options: {directory: string; maxBytes: number} | null): Promise<void> {
+    const scope=this.scope(scopeId), epoch=++scope.downloadEpoch;
+    if (options === null) { scope.download=undefined; this.cancelScopeDownloads(scopeId); return; }
+    if (!options || typeof options.directory !== 'string' || !isAbsolute(options.directory) || !Number.isSafeInteger(options.maxBytes) || options.maxBytes < 1 || options.maxBytes > 1_000_000_000) throw new Error('Invalid download configuration');
+    const directory=await realpath(options.directory);
+    if (!(await stat(directory)).isDirectory()) throw new Error('Download directory is unavailable');
+    if (this.scope(scopeId) !== scope || scope.downloadEpoch !== epoch) throw new Error('Download authorization changed');
+    this.cancelScopeDownloads(scopeId);
+    scope.download={directory,maxBytes:options.maxBytes};
+  }
+
+  private cancelScopeDownloads(scopeId: string): void {
+    for (const waiter of this.downloadWaits.values()) if (waiter.scopeId === scopeId) waiter.reject(new Error('IAB_AUTH_REVOKED'));
+    for (const [id, download] of this.downloads) if (download.scopeId === scopeId) { download.cancel(); download.cleanup(); this.downloads.delete(id); }
+  }
+
+  private handleDownload(event: {preventDefault(): void}, item: DownloadItem, contents: WebContents): void {
+    const tab=[...this.tabsById.values()].find(candidate => candidate.contents === contents);
+    const waiter=tab && this.downloadWaits.get(tab.id), scope=waiter && this.states.get(waiter.scopeId);
+    if (!tab || !waiter || !scope || scope.closing || !scope.download || scope.downloadEpoch !== waiter.epoch || !waiter.authorized() || waiter.signal?.aborted) {
+      event.preventDefault(); waiter?.reject(new Error('IAB_AUTH_REVOKED')); return;
+    }
+    if (this.downloads.size >= 128) { event.preventDefault(); waiter.reject(new Error('IAB_DOWNLOAD_LIMIT')); return; }
+    this.downloadWaits.delete(tab.id);
+    const maxBytes=scope.download.maxBytes;
+    let totalBytes: number, filename: string;
+    try { totalBytes=item.getTotalBytes(); filename=item.getFilename(); }
+    catch { event.preventDefault(); waiter.reject(new Error('IAB_DOWNLOAD_FAILED')); return; }
+    if (totalBytes > maxBytes) { event.preventDefault(); waiter.reject(new Error('IAB_DOWNLOAD_SIZE_LIMIT')); return; }
+    const id=randomUUID(), extension=extname(filename).toLowerCase();
+    const suffix=/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : '';
+    const path=join(scope.download.directory, id + suffix);
+    let resolveDone!: (path: string | null) => void, finished=false, expiry: ReturnType<typeof setTimeout> | undefined;
+    const done=new Promise<string | null>(resolve => { resolveDone=resolve; });
+    const onAbort=() => cancel();
+    const onUpdated=() => { try { if (!waiter.authorized() || this.states.get(waiter.scopeId)?.downloadEpoch !== waiter.epoch || item.getReceivedBytes() > maxBytes) cancel(); } catch { cancel(); } };
+    const onDone=(_event: unknown, state: string) => { try { finish(state === 'completed' && waiter.authorized() && this.states.get(waiter.scopeId)?.downloadEpoch === waiter.epoch && item.getReceivedBytes() <= maxBytes ? path : null); } catch { finish(null); } };
+    const cleanup = () => { if (expiry) clearTimeout(expiry); waiter.signal?.removeEventListener('abort',onAbort); item.removeListener('updated',onUpdated); item.removeListener('done',onDone); };
+    const finish = (value: string | null) => {
+      if (finished) return;
+      finished=true; cleanup(); resolveDone(value);
+      expiry=setTimeout(() => { this.downloads.delete(id); }, 300_000); expiry.unref();
+    };
+    const cancel = () => {
+      if (finished) return;
+      finish(null);
+      setImmediate(() => { try { item.cancel(); } catch {} });
+    };
+    item.on('updated',onUpdated); item.once('done',onDone); waiter.signal?.addEventListener('abort',onAbort,{once:true});
+    this.downloads.set(id,{scopeId:waiter.scopeId,epoch:waiter.epoch,path,done,cancel,cleanup});
+    try { item.setSavePath(path); }
+    catch { event.preventDefault(); cancel(); this.downloads.delete(id); cleanup(); waiter.reject(new Error('IAB_DOWNLOAD_FAILED')); return; }
+    waiter.resolve({downloadId:id});
+  }
+
+  private async waitForDownload(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<{downloadId: string}> {
+    const timeoutMs=params.timeoutMs ?? 10_000, scope=this.scope(scopeId);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000 || (params.waitId !== undefined && (typeof params.waitId !== 'string' || !/^[0-9a-f-]{36}$/.test(params.waitId)))) throw new Error('Invalid download wait');
+    if (!scope.download) throw new Error('IAB_DOWNLOAD_NOT_CONFIGURED');
+    if (this.downloadWaits.has(tab.id)) throw new Error('IAB_DOWNLOAD_WAIT_PENDING');
+    if (signal?.aborted || !authorized()) throw new Error('IAB_AUTH_REVOKED');
+    tab.pending++;
+    let resolveEvent!: (value: {downloadId: string}) => void, rejectEvent!: (error: Error) => void;
+    const result=new Promise<{downloadId: string}>((resolve,reject)=>{resolveEvent=resolve;rejectEvent=reject;});
+    const waiter: DownloadWait={scopeId,tabId:tab.id,epoch:scope.downloadEpoch,authorized,signal,resolve:resolveEvent,reject:rejectEvent};
+    this.downloadWaits.set(tab.id,waiter);
+    const abort=()=>waiter.reject(new Error('IAB_AUTH_REVOKED'));
+    signal?.addEventListener('abort',abort,{once:true});
+    const timer=setTimeout(()=>waiter.reject(new Error('IAB_DOWNLOAD_TIMEOUT')),timeoutMs);
+    try {
+      if (params.waitId) this.emit(scopeId,'onDownloadWaitReady',{waitId:params.waitId});
+      return await result;
+    } finally {
+      clearTimeout(timer); signal?.removeEventListener('abort',abort);
+      if (this.downloadWaits.get(tab.id) === waiter) this.downloadWaits.delete(tab.id);
+      tab.pending--;
+    }
+  }
+
+  private async downloadPath(scopeId: string, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<{path: string | null}> {
+    const download=typeof params.downloadId === 'string' ? this.downloads.get(params.downloadId) : undefined;
+    if (!download || download.scopeId !== scopeId) throw new Error('IAB_DOWNLOAD_UNAVAILABLE');
+    const timeoutMs=params.timeoutMs ?? 10_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) throw new Error('Invalid download timeout');
+    if (!authorized() || signal?.aborted) throw new Error('IAB_AUTH_REVOKED');
+    let timer: ReturnType<typeof setTimeout> | undefined, abort: (()=>void) | undefined;
+    try {
+      const path=await Promise.race([
+        download.done,
+        new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('IAB_DOWNLOAD_TIMEOUT')),timeoutMs);abort=()=>reject(new Error('IAB_AUTH_REVOKED'));signal?.addEventListener('abort',abort,{once:true});}),
+      ]);
+      if (!authorized() || signal?.aborted || this.states.get(scopeId)?.downloadEpoch !== download.epoch || this.downloads.get(params.downloadId) !== download) throw new Error('IAB_AUTH_REVOKED');
+      return {path};
+    } finally { if (timer) clearTimeout(timer); if (abort) signal?.removeEventListener('abort',abort); }
+  }
+
   private invalidateChoosers(tabId: number): void {
     for (const [id, chooser] of this.choosers) if (chooser.tabId === tabId) this.choosers.delete(id);
   }
@@ -390,7 +491,7 @@ export class IabRuntime implements Backend {
     finally { tab.pending--; }
   }
 
-  async dispatch(scopeId: string, method: string, params: Record<string, any> = {}, operations: readonly Operation[] = ['tabs.read', 'tabs.create', 'page.control'], authorized: () => boolean = () => true): Promise<any> {
+  async dispatch(scopeId: string, method: string, params: Record<string, any> = {}, operations: readonly Operation[] = ['tabs.read', 'tabs.create', 'page.control'], authorized: () => boolean = () => true, signal?: AbortSignal): Promise<any> {
     this.ensureOpen();
     if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
     const scope = this.scope(scopeId);
@@ -398,9 +499,10 @@ export class IabRuntime implements Backend {
     const need = (operation: Operation) => { if (!operations.includes(operation)) throw new Error('IAB_OPERATION_DENIED'); };
     switch (method) {
       case 'getInfo': return { name: 'Open Browser Use IAB', type: 'iab', version: '1.1.0', metadata: { instanceId: this.instanceId, scopeId },
-        capabilities: { multiTab: true, fileUploads: operations.includes('files.upload') && operations.includes('page.control') && scope.uploadFiles.size > 0, downloads: false, clipboard: false, history: false, childTargets: false } };
+        capabilities: { multiTab: true, fileUploads: operations.includes('files.upload') && operations.includes('page.control') && scope.uploadFiles.size > 0, downloads: operations.includes('files.download') && operations.includes('page.control') && !!scope.download, clipboard: false, history: false, childTargets: false } };
       case 'ping': return 'pong';
       case 'setFileChooserFiles': need('page.control'); need('files.upload'); await this.setFileChooserFiles(scopeId,params,authorized); return {};
+      case 'downloadPath': need('page.control'); need('files.download'); return this.downloadPath(scopeId,params,authorized,signal);
       case 'getTabs': case 'getUserTabs': need('tabs.read'); return this.listTabs(scopeId);
       case 'createTab': need('tabs.create'); return this.createTab(scopeId, { url: params.url, turnId: params.turn_id });
       case 'nameSession': need('page.control'); scope.name = String(params.name).slice(0, 200); return { name: scope.name };
@@ -434,6 +536,7 @@ export class IabRuntime implements Backend {
     const tab = this.tab(scopeId, params.tabId ?? params.target?.tabId);
     if (typeof params.turn_id === 'string') tab.touched.add(params.turn_id);
     if (method === 'waitForFileChooser') { need('files.upload'); return this.waitForFileChooser(scopeId,tab,params,authorized); }
+    if (method === 'waitForDownload') { need('files.download'); return this.waitForDownload(scopeId,tab,params,authorized,signal); }
     if (method === 'markTab') {
       if (!['handoff', 'deliverable'].includes(params.status) || typeof params.turn_id !== 'string') throw new Error('Invalid mark');
       tab.marks.set(params.turn_id, params.status); return {};
@@ -520,7 +623,7 @@ export class IabRuntime implements Backend {
     if (previous) return previous;
     const scope = this.states.get(id);
     if (!scope) return Promise.resolve();
-    scope.closing = true; this.connections.revokeScope(id);
+    scope.closing = true; this.connections.revokeScope(id); this.cancelScopeDownloads(id);
     const done = (async () => {
       // Closing an opener may synchronously destroy its popup as well.
       for (const tab of [...scope.tabs.values()]) await this.destroyTab(tab);
@@ -554,6 +657,7 @@ export class IabScope {
     setActive: (tabId: number,active: boolean) => this.runtime.setFeedbackActive(this.id,tabId,active),
   };
   readonly files = { authorize: (paths: string[]) => this.runtime.authorizeUploadFiles(this.id, paths) };
-  call(method: string, params: Record<string, any> = {}): Promise<any> { return this.runtime.dispatch(this.id, method, params, ['tabs.read','tabs.create','page.control','files.upload']); }
+  readonly downloads = { configure: (options: {directory: string; maxBytes: number} | null) => this.runtime.configureDownloads(this.id, options) };
+  call(method: string, params: Record<string, any> = {}): Promise<any> { return this.runtime.dispatch(this.id, method, params, ['tabs.read','tabs.create','page.control','files.upload','files.download']); }
   dispose(): Promise<void> { return this.runtime.disposeScope(this.id); }
 }
