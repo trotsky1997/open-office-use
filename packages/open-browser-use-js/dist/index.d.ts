@@ -90,6 +90,8 @@ export declare class OpenBrowserUseClient {
     constructor(options: OpenBrowserUseClientOptions);
     connect(): Promise<this>;
     close(): void;
+    onDisconnect(handler: (error: Error) => void): () => void;
+    protected emitDisconnect(error: Error): void;
     onNotification(handler: NotificationHandler): () => void;
     request(method: string, params?: BrowserUseRequestParams, expectedGeneration?: number): Promise<JsonValue>;
     getInfo(): Promise<JsonValue>;

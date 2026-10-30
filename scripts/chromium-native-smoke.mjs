@@ -276,6 +276,10 @@ try {
  browser.close();await browser.connect();
  const reconnected=await tab.observe({includeFrames:true});assert.ok(reconnected.nodes.some(node=>node.name==='Cross-process action'));
  assert.equal((await tab.getScreenshot()).subarray(1,4).toString(),'PNG');
+ const closingTab=await browser.newTab();await closingTab.watchDialogs();
+ const closingWait=closingTab.waitForDialog({timeoutMs:5000});void closingWait.catch(()=>{});
+ await new Promise(resolve=>setImmediate(resolve));await closingTab.close();
+ await assert.rejects(closingWait,/Tab .* debugger detached/);
  await client.finalizeTabs([]);
  const repl=spawn(process.execPath,[join(root,'packages/open-browser-use-js/dist/repl-cli.js')],{stdio:['pipe','pipe','pipe'],env:{...process.env,OBU_SOCKET_DIR:sockets}}); repl.stderr.resume();
  const lines=createInterface({input:repl.stdout})[Symbol.asyncIterator](); let requestSequence=0;

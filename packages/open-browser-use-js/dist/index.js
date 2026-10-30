@@ -44,6 +44,7 @@ export class OpenBrowserUseClient {
     #nextId = 1;
     #pending = new Map();
     #notificationHandlers = new Set();
+    #disconnectHandlers = new Set();
     #generation = 0;
     get connectionGeneration() { return this.#generation; }
     constructor(options) {
@@ -67,7 +68,9 @@ export class OpenBrowserUseClient {
             this.#socket = null;
             this.#generation++;
             this.#pendingData = Buffer.alloc(0);
-            this.#rejectAll(new Error("Open Browser Use socket closed"));
+            const error = new Error("Open Browser Use socket closed");
+            this.#rejectAll(error);
+            this.emitDisconnect(error);
         });
         socket.on("error", (error) => { if (this.#socket === socket)
             this.#rejectAll(error); });
@@ -106,7 +109,17 @@ export class OpenBrowserUseClient {
         this.#socket = null;
         this.#connection = null;
         this.#pendingData = Buffer.alloc(0);
-        this.#rejectAll(new Error("Open Browser Use socket closed"));
+        const error = new Error("Open Browser Use socket closed");
+        this.#rejectAll(error);
+        this.emitDisconnect(error);
+    }
+    onDisconnect(handler) {
+        this.#disconnectHandlers.add(handler);
+        return () => { this.#disconnectHandlers.delete(handler); };
+    }
+    emitDisconnect(error) {
+        for (const handler of this.#disconnectHandlers)
+            handler(error);
     }
     onNotification(handler) {
         this.#notificationHandlers.add(handler);
@@ -1662,11 +1675,14 @@ export class OpenBrowserUseCdp {
         const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
         await this.call(tabId, "Page.enable");
         const wait = this.waitForLoadEvent(tabId, waitUntil, timeoutMs);
+        void wait.catch(() => { });
         const result = await this.call(tabId, "Page.navigate", { url }, { timeoutMs });
         if (isObject(result) && typeof result.errorText === "string" && result.errorText) {
             throw new Error(`Browser failed to navigate tab ${tabId}: ${result.errorText}`);
         }
         await wait.catch(async (error) => {
+            if (!(error instanceof Error) || !error.message.startsWith("Timed out waiting for "))
+                throw error;
             const state = await this.readDocumentState(tabId);
             if (documentStateMatches(state, waitUntil)) {
                 return;
@@ -1699,6 +1715,7 @@ export class OpenBrowserUseCdp {
         return new Promise((resolve, reject) => {
             let settled = false;
             let removeHandler = null;
+            let removeDisconnect = null;
             let timer;
             const finish = () => {
                 if (settled) {
@@ -1707,6 +1724,7 @@ export class OpenBrowserUseCdp {
                 settled = true;
                 clearTimeout(timer);
                 removeHandler?.();
+                removeDisconnect?.();
                 return true;
             };
             timer = setTimeout(() => {
@@ -1714,8 +1732,13 @@ export class OpenBrowserUseCdp {
                     reject(new Error(options.timeoutMessage ?? `Timed out waiting for tab ${tabId} event`));
                 }
             }, timeoutMs);
+            removeDisconnect = this.client.onDisconnect(error => { if (finish())
+                reject(error); });
             removeHandler = this.client.onNotification((notification) => {
                 try {
+                    if (["onTabClosed", "onDebuggerDetach"].includes(notification.method) && isObject(notification.params) && notification.params.tabId === tabId) {
+                        throw new Error(`Tab ${tabId} ${notification.method === "onTabClosed" ? "closed" : "debugger detached"}`);
+                    }
                     if (predicate(notification)) {
                         if (finish()) {
                             resolve(notification);

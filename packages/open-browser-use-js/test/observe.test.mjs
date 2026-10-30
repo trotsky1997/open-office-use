@@ -114,6 +114,24 @@ test('screenshot clips use viewport coordinates and reject invalid regions', asy
   assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
 });
 
+test('dialog waits fail promptly on tab detach or client close, without crossing tabs', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async()=>({});
+  const browser=new OpenBrowserUseBrowser({client}), tab=browser.tab(1);
+  await tab.watchDialogs();
+  const detached=tab.waitForDialog({timeoutMs:5000});
+  await new Promise(resolve=>setImmediate(resolve));
+  for(const handler of handlers)handler({method:'onDebuggerDetach',params:{tabId:2}});
+  for(const handler of handlers)handler({method:'onDebuggerDetach',params:{tabId:1}});
+  await assert.rejects(detached,/Tab 1 debugger detached/);
+  const closed=tab.waitForDialog({timeoutMs:5000});
+  await new Promise(resolve=>setImmediate(resolve));
+  client.close();
+  await assert.rejects(closed,/socket closed/);
+  assert.equal(handlers.size,1);
+});
+
 test('JavaScript dialogs are observed, scoped and decided only once', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set(), calls=[];
   let release;

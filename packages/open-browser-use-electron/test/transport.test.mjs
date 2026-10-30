@@ -31,6 +31,13 @@ test('private directory and socket permissions, native peer plus scoped handshak
   connections.revoke(bootstrap.grantId);
   await assert.rejects(client.getInfo());
 });
+test('revoked socket interrupts an event wait', { skip: !supported }, async t => {
+  const { connections, grant } = await setup(t);
+  const bootstrap=grant();const client=await connectSocketIab(bootstrap);
+  const waiting=client.browser().cdp.waitForEvent(1,()=>false,{timeoutMs:5000});
+  connections.revoke(bootstrap.grantId);
+  await assert.rejects(waiting,/IAB connection closed/);
+});
 test('unregistered peer and unauthenticated getInfo never reach backend', { skip: !supported }, async t => {
   const { endpoint, grant, calls } = await setup(t);
   const plain = createConnection(endpoint); const closed = once(plain, 'close'); plain.on('error', () => {});

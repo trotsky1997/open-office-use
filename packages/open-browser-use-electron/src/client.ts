@@ -26,7 +26,7 @@ export class IabClient extends OpenBrowserUseClient {
     });
     channel.on('closed', () => {
       for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('IAB connection closed')); }
-      this.pending.clear(); this.handlers.clear();
+      this.pending.clear(); this.emitDisconnect(new Error('IAB connection closed')); this.handlers.clear();
     });
   }
   override get connectionGeneration(): number { return this.channel.stream.destroyed ? 1 : 0; }

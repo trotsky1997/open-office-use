@@ -164,6 +164,10 @@ app.whenReady().then(async () => {
     surface.hide();
     await assert.rejects(call('Input.synthesizeScrollGesture',{x:100,y:100,xDistance:0,yDistance:-250,gestureSourceType:'mouse',preventFling:true}),/IAB_SCROLL_REQUIRES_PRESENTED_SURFACE/);
     assert.equal(await evaluate('scrollY'),beforeHide);
+    const closingDialog=sdkTab.waitForDialog({timeoutMs:5000});void closingDialog.catch(()=>{});
+    await new Promise(resolve=>setImmediate(resolve));
+    await scope.tabs.close(tab.id);
+    await assert.rejects(closingDialog,/Tab .* (closed|debugger detached)/);
     console.log(JSON.stringify({passed:true,electron:process.versions.electron,platform:process.platform,backgroundThrottlingRestored:true,unpresentedQueueUsable:true}));
   } finally {
     await runtime.dispose(); window.destroy(); await fixture.close();

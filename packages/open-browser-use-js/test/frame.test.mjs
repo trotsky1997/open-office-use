@@ -6,7 +6,7 @@ import { endianness, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { OpenBrowserUseClient, connectOpenBrowserUse, encodeFrame } from "../dist/index.js";
+import { OpenBrowserUseClient, OpenBrowserUseCdp, connectOpenBrowserUse, encodeFrame } from "../dist/index.js";
 
 test("encodes native-endian length-prefixed JSON frames", () => {
   const frame = encodeFrame({ id: 1, method: "getInfo" });
@@ -93,7 +93,9 @@ test("connection-bound requests reject after a socket reconnect", async () => {
   try {
     await client.connect();
     const generation=client.connectionGeneration;
-    const closed=once(sockets[0],'close');sockets[0].destroy();await closed;
+    const waiting=new OpenBrowserUseCdp(client).waitForEvent(1,()=>false,{timeoutMs:5000});
+    const rejection=assert.rejects(waiting,/socket closed/);
+    const closed=once(sockets[0],'close');sockets[0].destroy();await closed;await rejection;
     for(let i=0;i<50 && client.connectionGeneration===generation;i++)await new Promise(resolve=>setTimeout(resolve,5));
     assert.notEqual(client.connectionGeneration,generation);
     await assert.rejects(client.request('executeCdp',{},generation),/Connection changed/);
