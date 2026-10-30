@@ -43,8 +43,8 @@ test('download wait observes the next start while paths retain completed results
 
 test('download readiness is emitted only after the waiter is installed',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});
-  let observed=false;backend.downloadReadyListeners.add(id=>{observed=true;assert.equal(id,'00000000-0000-0000-0000-000000000000');assert.equal(backend.downloadWaiters.size,1);});
-  const pending=backend.waitForDownload({tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
+  let observed=false;backend.downloadReadyListeners.add((id,session)=>{observed=true;assert.equal(session,'owner');assert.equal(id,'00000000-0000-0000-0000-000000000000');assert.equal(backend.downloadWaiters.size,1);});
+  const pending=backend.waitForDownload({session_id:'owner',tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(observed,true);
   backend.emitDownloadChange({id:'ready',status:'started'});assert.equal((await pending).downloadId,'ready');
 });
@@ -98,8 +98,8 @@ test('file chooser readiness follows interception and preserves the frame sessio
   const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.requireSession=async()=>({});backend.attachedTabs.add(1);
   commands.length=0;let ready=false;
   backend.handleCdpEvent({tabId:1},'Target.attachedToTarget',{sessionId:'frame-session',targetInfo:{type:'iframe'}});
-  backend.fileChooserReadyListeners.add(()=>{ready=true;assert.equal(commands.at(-1).method,'Page.setInterceptFileChooserDialog');assert.equal(commands.at(-1).params.enabled,true);});
-  const pending=backend.waitForFileChooser({tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
+  backend.fileChooserReadyListeners.add((_id,session)=>{assert.equal(session,'owner');ready=true;assert.equal(commands.at(-1).method,'Page.setInterceptFileChooserDialog');assert.equal(commands.at(-1).params.enabled,true);});
+  const pending=backend.waitForFileChooser({session_id:'owner',tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(ready,true);
   assert.ok(commands.some(call=>call.target.sessionId==='frame-session' && call.method==='Page.setInterceptFileChooserDialog' && call.params.enabled));
   backend.handleCdpEvent({tabId:1,sessionId:'frame-session'},'Page.fileChooserOpened',{backendNodeId:42,mode:'selectMultiple'});

@@ -763,7 +763,7 @@ class BrowserBackend {
       }
       const waiter = this.fileChooserWaitersByTabId.get(tabId);
       if (waiter?.error) throw waiter.error;
-      if (params.waitId) for (const listener of this.fileChooserReadyListeners) listener(params.waitId);
+      if (params.waitId) for (const listener of this.fileChooserReadyListeners) listener(params.waitId, params.session_id);
       const chooser = await withTimeout(timeoutMs, () => waitForEvent);
       check(); return chooser;
     } finally {
@@ -827,7 +827,7 @@ class BrowserBackend {
         "Timed out waiting for download.",
         { includeExisting: false, signal: wait.controller.signal }
       );
-      if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId);
+      if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId, params.session_id);
       const download = await waiting;
       return { downloadId: download.id, url: download.url || null };
     } finally {
@@ -1724,11 +1724,11 @@ chrome.debugger.onDetach.addListener((source) => {
 backend.addDownloadChangeListener((change) => {
   safeSendNotification(peer, "onDownloadChange", change);
 });
-backend.downloadReadyListeners.add((waitId) => {
-  safeSendNotification(peer, "onDownloadWaitReady", { waitId });
+backend.downloadReadyListeners.add((waitId, sessionId) => {
+  if (sessionId) safeSendNotification(peer, "onDownloadWaitReady", { waitId }, sessionId);
 });
-backend.fileChooserReadyListeners.add((waitId) => {
-  safeSendNotification(peer, "onFileChooserWaitReady", { waitId });
+backend.fileChooserReadyListeners.add((waitId, sessionId) => {
+  if (sessionId) safeSendNotification(peer, "onFileChooserWaitReady", { waitId }, sessionId);
 });
 chrome.downloads.onCreated.addListener((item) => {
   backend.handleDownloadCreated(item);

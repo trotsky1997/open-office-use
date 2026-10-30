@@ -296,7 +296,7 @@ func (r *Relay) dispatchExtensionPayload(payload []byte) error {
 	}
 	if sessionID, ok := message["session_id"].(string); ok && sessionID != "" {
 		r.broadcastSession(payload, sessionID)
-	} else if message["method"] != "onCDPEvent" && message["method"] != "onDebuggerDetach" {
+	} else if message["method"] != "onCDPEvent" && message["method"] != "onDebuggerDetach" && message["method"] != "onDownloadWaitReady" && message["method"] != "onFileChooserWaitReady" {
 		r.broadcast(payload)
 	}
 	return nil
