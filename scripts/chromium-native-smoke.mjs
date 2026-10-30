@@ -38,6 +38,12 @@ try {
  const state=await tab.observe();const button=state.nodes.find(n=>n.role==='button'&&n.name==='Save');assert.ok(button);await tab.click(button.index,state.snapshotId);
  assert.deepEqual(await tab.evaluate('({text:document.querySelector("button").textContent,trusted:window.trusted})'),{text:'Done',trusted:true});
  assert.match((await tab.observe({diff:true})).text,/\+ .*button.*Done/);
+ await tab.evaluate(`(()=>{const d=document.createElement('dialog');d.setAttribute('aria-label','Sign in');d.textContent='Welcome';d.addEventListener('mouseenter',e=>window.dialogHoverTrusted=e.isTrusted);document.body.append(d);d.showModal()})()`);
+ assert.equal(await tab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).count(),1);
+ await tab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).hover();
+ assert.equal(await tab.evaluate('window.dialogHoverTrusted'),true);
+ await tab.evaluate(`document.querySelector('dialog').close();document.querySelector('dialog').remove()`);
+
  await tab.evaluate(`(()=>{const h=document.createElement('h1');h.textContent='Welcome aboard';document.body.prepend(h);const b=document.createElement('button');b.id='text-target';b.innerHTML='<span>Exact text target</span>';b.onclick=e=>window.textTrusted=e.isTrusted;document.body.prepend(b)})()`);
  assert.equal(await tab.playwright.getByRole('heading',{name:'Welcome aboard',exact:true}).count(),1);
  await tab.playwright.getByText('  Exact   text target ',{exact:true}).click();assert.equal(await tab.evaluate('window.textTrusted'),true);
@@ -102,6 +108,12 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const d=document.createElement('dialog');d.setAttribute('role','alertdialog');d.setAttribute('aria-label','Confirm');d.textContent='Confirm';d.addEventListener('mouseenter',e=>parent.postMessage({kind:'alert-hover',trusted:e.isTrusted},'*'));document.body.append(d);d.showModal()})()`},{sessionId:crossSession});
+ assert.equal(await tab.playwright.getByRole('alertdialog',{name:'Confirm',exact:true}).count(),1);
+ await tab.playwright.getByRole('alertdialog',{name:'Confirm',exact:true}).hover();await new Promise(r=>setTimeout(r,100));
+ assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'alert-hover',trusted:true});
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('dialog').close();document.querySelector('dialog').remove()`},{sessionId:crossSession});
+
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`setTimeout(()=>{const b=document.createElement('button');b.textContent='Delayed cross action';b.onclick=e=>parent.postMessage({kind:'delayed-cross',trusted:e.isTrusted},'*');document.body.append(b)},250)`},{sessionId:crossSession});
  await tab.playwright.getByRole('button',{name:'Delayed cross action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'delayed-cross',trusted:true});

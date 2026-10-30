@@ -48,6 +48,11 @@ app.whenReady().then(async () => {
     await sdkTab.playwright.getByAltText('Updated photo',{exact:true}).click();
     assert.equal(await evaluate('window.imageClickTrusted'),true);
     await evaluate("document.querySelector('#sample-image').remove()");
+    await evaluate(`(()=>{const dialog=document.createElement('dialog');dialog.setAttribute('aria-label','Sign in');dialog.textContent='Welcome';dialog.addEventListener('mouseenter',e=>window.dialogHoverTrusted=e.isTrusted);document.body.append(dialog);dialog.showModal()})()`);
+    assert.equal(await sdkTab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).count(),1);
+    await sdkTab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).hover();
+    assert.equal(await evaluate('window.dialogHoverTrusted'),true);
+    await evaluate("document.querySelector('dialog').close();document.querySelector('dialog').remove()");
     const view = window.contentView.children.find(item => item.webContents && item.webContents !== window.webContents);
     assert.equal(view.webContents.backgroundThrottling,true);
     await call('Input.synthesizeScrollGesture',{x:100,y:100,xDistance:0,yDistance:-250,gestureSourceType:'mouse',preventFling:true});

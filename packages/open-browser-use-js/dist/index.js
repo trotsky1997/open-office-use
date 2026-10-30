@@ -566,7 +566,7 @@ export class OpenBrowserUseTab {
             await this.validateFrames(node.frameChain);
         const targetSession = node.frameChain?.[0]?.sessionId;
         const targetTree = node.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: node.frameId }, { sessionId: targetSession }) : await this.getAXState();
-        const current = interactiveNodes(targetTree, 0, ["heading", "StaticText", "image"].includes(node.role)).find((item) => item.backendNodeId === node.backendNodeId && item.role === node.role);
+        const current = interactiveNodes(targetTree, 0, ["heading", "StaticText", "image", "dialog", "alertdialog"].includes(node.role)).find((item) => item.backendNodeId === node.backendNodeId && item.role === node.role);
         if (!current || current.role !== node.role || current.name !== node.name || current.stateKey !== node.stateKey)
             throw new RetryablePreflightError("Target changed; observe again");
         if (checked !== undefined) {
@@ -636,7 +636,7 @@ export class OpenBrowserUseTab {
                 moving(first.point.x, second.point.x) || moving(first.point.y, second.point.y))
                 throw new RetryablePreflightError("Target is moving; observe again");
             const finalTree = node.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: node.frameId }, { sessionId: targetSession }) : await this.getAXState();
-            const finalNode = interactiveNodes(finalTree, 0, ["heading", "StaticText", "image"].includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
+            const finalNode = interactiveNodes(finalTree, 0, ["heading", "StaticText", "image", "dialog", "alertdialog"].includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
             if (!finalNode || finalNode.name !== node.name || finalNode.stateKey !== node.stateKey)
                 throw new RetryablePreflightError("Target changed; observe again");
             let { point, inputPoint } = second;
@@ -969,7 +969,7 @@ export class OpenBrowserUseRoleLocator {
     }
     first() { return this.nth(0); }
     async find() {
-        const state = await this.tab.observe({ includeFrames: true, ...(this.roles.some(role => ["heading", "StaticText", "image"].includes(role)) ? { includeText: true } : {}) });
+        const state = await this.tab.observe({ includeFrames: true, ...(this.roles.some(role => ["heading", "StaticText", "image", "dialog", "alertdialog"].includes(role)) ? { includeText: true } : {}) });
         if (state.unavailableFrames?.length)
             throw new Error("Some frames could not be observed; locator results are incomplete");
         if (this.field === "placeholder" && state.nodes.some(node => this.roles.includes(node.role) && node.placeholderTruncated))
@@ -1256,7 +1256,7 @@ function frameAncestry(frame, frames) {
 function interactiveNodes(tree, offset = 0, includeText = false) {
     if (!isObject(tree) || !Array.isArray(tree.nodes))
         throw new Error("Invalid accessibility tree");
-    const roles = new Set(["button", "link", "checkbox", "radio", "switch", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "option", "combobox", "listbox", "textbox", "searchbox", "slider", "spinbutton", "Date", "DateTime", "InputTime", ...(includeText ? ["heading", "StaticText", "image"] : [])]);
+    const roles = new Set(["button", "link", "checkbox", "radio", "switch", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "option", "combobox", "listbox", "textbox", "searchbox", "slider", "spinbutton", "Date", "DateTime", "InputTime", ...(includeText ? ["heading", "StaticText", "image", "dialog", "alertdialog"] : [])]);
     const nodes = [];
     const byId = new Map(tree.nodes.filter(isObject).filter(node => typeof node.nodeId === "string").map(node => [node.nodeId, node]));
     const temporalAncestor = (node) => {

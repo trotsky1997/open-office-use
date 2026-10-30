@@ -64,6 +64,7 @@
 - [x] 可访问名称定位表单控件、checked 状态与幂等 check/uncheck；真实 Chrome 和 Electron 跨进程表单验证可信事件。
 - [x] 原生 select 的单选、多选及选项等待；明确记录 DOM 事件的 isTrusted 为 false，并验证跨进程 frame。
 - [x] 可选输出当前可访问字段值，原生密码框遮蔽并限制单值与总量；跨 frame 验证和差异基线隔离。
+- [x] 支持 dialog 和 alertdialog 角色定位；macOS Electron 模态窗口及 Chromium 跨进程 frame 验证。
 - [x] 支持图像 alt 文本定位，包括名称被 aria-label 覆盖时的原始 alt；长文本截断与变化有检查。macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证。
 - [x] 支持按可访问名称定位图像角色；macOS Chromium 和 Electron 验证跨进程 frame 的可信点击。
 - [x] 支持静态文本及标题定位；按可见文字范围点击并检查禁用祖先和遮挡。

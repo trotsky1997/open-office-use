@@ -101,3 +101,5 @@ macOS 隔离 Chromium 原生消息完整链路及 Electron 44 跨进程 frame �
 增加 getByAltText，读取可访问性来源中的原始 alt，即使 aria-label 覆盖名称也可匹配。长文本截断时拒绝不完整定位，完整内容的摘要用于识别截断后缀变化；placeholder 的截断变化也使用同样检查。macOS Chromium 和 Electron 跨进程 frame 验证可信点击。
 
 Linux ARM64 Chromium 150 在隔离临时 profile 中复跑真实扩展、原生 host 与 SDK/REPL：跨进程 frame 可信悬停和被 aria-label 覆盖的 alt 定位通过；SDK 34 项测试通过。测试 Chromium 使用 --no-sandbox。
+
+新增 dialog 与 alertdialog 语义角色。macOS Electron 验证原生模态 dialog 的定位和可信悬停；macOS Chromium 原生消息链路验证主页面 dialog 与跨进程 frame alertdialog。

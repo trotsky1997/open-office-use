@@ -151,10 +151,12 @@ await tab.playwright.getByLabel("Colour", { exact: true }).selectOption({ label:
 await tab.playwright.getByText("Continue", { exact: true }).click();
 await tab.playwright.getByRole("img", { name: "Product photo", exact: true }).click();
 await tab.playwright.getByAltText("Product photo", { exact: true }).click();
+const dialog = tab.playwright.getByRole("dialog", { name: "Sign in", exact: true });
+await dialog.hover();
 ```
 
 This locator covers the interactive roles exposed by `observe`, including
-accessible frames, plus headings, accessible text and images. The `img` role
+accessible frames, plus headings, accessible text, images and dialog roles. The `img` role
 uses the accessibility name, including an image alt attribute when it supplies
 that name. It reobserves on every `count`, `click`, `fill`, or `type`
 call and refuses incomplete frame results. Actions require exactly one match;
@@ -174,7 +176,9 @@ Playwright locator method.
 whitespace; text split across multiple elements is matched separately. Text
 clicks target the visible text rectangle, checking disabled ancestors and
 hit-testing shadow roots and frames. `getByRole("heading", ...)` supports
-accessible headings; `getByRole("img", ...)` supports accessible images. To include these nodes in an indexed observation directly,
+accessible headings; `getByRole("img", ...)` supports accessible images.
+`getByRole("dialog", ...)` and `getByRole("alertdialog", ...)` support
+accessible dialog containers. To include these nodes in an indexed observation directly,
 use `includeText: true`; switching it resets the diff baseline.
 
 `getByLabel` matches the accessible name of supported form controls and accepts

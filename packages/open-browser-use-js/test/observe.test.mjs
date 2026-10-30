@@ -482,7 +482,9 @@ test('text and heading locators observe semantic nodes and match normalized text
     if(command==='Accessibility.getFullAXTree')return {nodes:[
       {backendDOMNodeId:2,role:{value:'heading'},name:{value:'Welcome'}},
       {backendDOMNodeId:3,role:{value:'StaticText'},name:{value:'  Save   now  '}},
-      {backendDOMNodeId:4,role:{value:'image'},name:{value:'Catalog image',sources:[{attribute:'alt',attributeValue:{value:'Product photo'},superseded:true}]}}
+      {backendDOMNodeId:4,role:{value:'image'},name:{value:'Catalog image',sources:[{attribute:'alt',attributeValue:{value:'Product photo'},superseded:true}]}},
+      {backendDOMNodeId:5,role:{value:'dialog'},name:{value:'Sign in'}},
+      {backendDOMNodeId:6,role:{value:'alertdialog'},name:{value:'Confirm'}}
     ]};
     if(command==='DOM.resolveNode')return {object:{objectId:'text'}};
     if(command==='Runtime.callFunctionOn')return {result:{value:{x:10,y:10,width:10,height:10}}};
@@ -497,8 +499,10 @@ test('text and heading locators observe semantic nodes and match normalized text
   await tab.playwright.getByRole('img',{name:'Catalog image',exact:true}).click();assert.equal(mouse,4);
   assert.equal(await tab.playwright.getByAltText('Product photo',{exact:true}).count(),1);
   await tab.playwright.getByAltText('Product photo',{exact:true}).click();assert.equal(mouse,6);
+  assert.equal(await tab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).count(),1);
+  assert.equal(await tab.playwright.getByRole('alertdialog',{name:'Confirm',exact:true}).count(),1);
   const state=await tab.observe({includeText:true});
-  assert.equal(state.nodes.find(node=>node.role==='image').altText,'Product photo');assert.deepEqual(state.nodes.map(node=>node.role),['heading','StaticText','image']);
+  assert.equal(state.nodes.find(node=>node.role==='image').altText,'Product photo');assert.deepEqual(state.nodes.map(node=>node.role),['heading','StaticText','image','dialog','alertdialog']);
   const changed=await tab.observe({diff:true});assert.equal(changed.textMode,'full');
 });
 
