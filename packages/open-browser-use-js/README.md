@@ -556,7 +556,12 @@ unsubscribe();
 - CDP: `attach`, `detach`, `executeCdp`, `request`
 - Input: `moveMouse`
 - File chooser: `waitForFileChooser`, `setFileChooserFiles`
-- Downloads: `waitForDownload`, `downloadPath`
+- Downloads: `waitForDownload`, `downloadPath`. Chrome's download wait returns
+  the next download started after the wait is registered. Chrome download events
+  currently lack a reliable tab association here, so a concurrent download from
+  another tab can satisfy the wait; verify the result before using its path.
+  The wait has no registration acknowledgement, so initiating an action
+  immediately on another connection can race with listener setup.
 - Clipboard: `readClipboardText`, `writeClipboardText`, `readClipboard`,
   `writeClipboard`
 

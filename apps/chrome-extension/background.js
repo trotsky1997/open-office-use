@@ -742,12 +742,10 @@ class BrowserBackend {
         ? params.timeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
     const download = await this.waitForDownloadChange(
-      (change) =>
-        change.status === "started" ||
-        change.status === "in_progress" ||
-        change.status === "complete",
+      (change) => change.status === "started",
       timeoutMs,
-      "Timed out waiting for download."
+      "Timed out waiting for download.",
+      { includeExisting: false }
     );
     return { downloadId: download.id };
   }
@@ -1042,10 +1040,10 @@ class BrowserBackend {
     }
   }
 
-  waitForDownloadChange(predicate, timeoutMs, timeoutMessage) {
-    for (const change of this.downloadsById.values()) {
-      if (predicate(change)) {
-        return Promise.resolve(change);
+  waitForDownloadChange(predicate, timeoutMs, timeoutMessage, { includeExisting = true } = {}) {
+    if (includeExisting) {
+      for (const change of this.downloadsById.values()) {
+        if (predicate(change)) return Promise.resolve(change);
       }
     }
     return new Promise((resolve, reject) => {

@@ -139,3 +139,5 @@ getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察�
 SDK 增加标签页 back、forward、reload。历史边界直接返回，导航动作不自动重试；reload 等待主页面 load 事件并在失败时清理监听。后退和前进返回时命令已发送，调用方核验目的地。macOS Electron、macOS/Linux Chromium 实页验证 history API 路由往返与重新加载；Linux 使用隔离浏览器与 --no-sandbox。
 
 新增 fullPage 截图，使用 CSS 内容尺寸捕获视口外区域，与局部裁剪互斥；限制单边 32767 CSS 像素及 3200 万 CSS 平方像素。Electron 对接近 8 MiB 传输上限的截图直接报错，保留连接和页面队列。macOS Electron、macOS/Linux Chromium 实页验证视口外像素；未滚动触发的懒加载内容可能尚未出现。Linux 使用隔离浏览器与 --no-sandbox。
+
+修复 Chrome waitForDownload 返回历史缓存的问题：现在等待注册后的下一次 started 事件，downloadPath 仍可查询已完成下载。macOS/Linux Chromium 隔离 profile 连续两次真实下载、读取临时文件并验证旧下载不会提前结束新等待；Linux 使用 --no-sandbox。Chrome 下载事件目前没有可靠标签归属，且等待注册没有确认信号，并发下载与立即触发存在关联或时序限制；文档明确说明，后续需设计可靠的事件关联协议。
