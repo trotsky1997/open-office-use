@@ -932,7 +932,7 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
-    async actCss(snapshot, id, hover, key, text) {
+    async actCss(snapshot, id, hover, key, text, doubleClick = false) {
         if (key !== undefined)
             this.parseKey(key);
         const frame = snapshot.frame;
@@ -1049,6 +1049,16 @@ export class OpenBrowserUseTab {
             else {
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...second.inputPoint, button: "left", buttons: 1, clickCount: 1 }, options);
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...second.inputPoint, button: "left", buttons: 0, clickCount: 1 }, options);
+                if (doubleClick) {
+                    const after = await measure();
+                    if (moving(second.geometry.x, after.geometry.x) || moving(second.geometry.y, after.geometry.y) || moving(second.geometry.width, after.geometry.width) || moving(second.geometry.height, after.geometry.height) || moving(second.point.x, after.point.x) || moving(second.point.y, after.point.y))
+                        throw new Error("Target moved after the first click; observe again");
+                    const latest = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+                    if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids))
+                        throw new Error("Selector target changed after the first click; observe again");
+                    await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...second.inputPoint, button: "left", buttons: 1, clickCount: 2 }, options);
+                    await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...second.inputPoint, button: "left", buttons: 0, clickCount: 2 }, options);
+                }
             }
         }
         catch (error) {
@@ -2327,6 +2337,33 @@ export class OpenBrowserUseCssLocator {
     select(ids) { return this.position === undefined ? ids : this.position === -1 ? ids.slice(-1) : ids.slice(this.position, this.position + 1); }
     async count() { return this.select((await this.tab.queryCss(this.selector, this.framePath, this.scopes)).ids).length; }
     async all() { return Array.from({ length: await this.count() }, (_, i) => this.nth(i)); }
+    async allTextContents(options = {}) {
+        const timeoutMs = options.timeoutMs ?? 5000;
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+            throw new Error("Invalid locator timeout");
+        const deadline = performance.now() + timeoutMs;
+        while (true) {
+            try {
+                const snapshot = await this.tab.queryCss(this.selector, this.framePath, this.scopes), values = [];
+                let total = 0;
+                for (const id of this.select(snapshot.ids)) {
+                    const value = await this.tab.readCss(snapshot, id, "textContent");
+                    if (typeof value !== "string")
+                        throw new RetryablePreflightError("Target text is unavailable; observe again");
+                    total += value.length;
+                    if (total > 1_000_000)
+                        throw new Error("Locator values exceed the 1000000 character limit");
+                    values.push(value);
+                }
+                return values;
+            }
+            catch (error) {
+                if (!(error instanceof RetryablePreflightError) || performance.now() >= deadline)
+                    throw error;
+                await new Promise(resolve => setTimeout(resolve, Math.min(100, deadline - performance.now())));
+            }
+        }
+    }
     async perform(action, timeoutMs = 5000) {
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid locator timeout");
@@ -2389,6 +2426,7 @@ export class OpenBrowserUseCssLocator {
         }
     }
     click(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false), options.timeoutMs); }
+    dblclick(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, undefined, true), options.timeoutMs); }
     hover(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, true), options.timeoutMs); }
     press(key, options = {}) {
         if (typeof key !== "string")

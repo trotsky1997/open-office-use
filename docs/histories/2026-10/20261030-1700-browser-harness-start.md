@@ -237,3 +237,5 @@ CSS locator fill 增加原生 date、time、month、week、datetime-local 类型
 CSS locator 支持链式后代作用域和中间 first/last/nth，查询开放 shadow root 并在读取或输入前复核每级作用域及目标集合；链深上限 32、累计匹配上限 1000。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证多容器定位、shadow 内链式可信鼠标事件、空作用域非法选择器及作用域变化时拒绝点击；Electron 44/Xvfb socket 验证跨进程 frame 内链式查询。语义和 CSS 混合链及其他 CSS locator API 仍待实现；macOS/Windows 本轮未测。
 
 CSS locator 增加 isVisible、isEnabled 和 waitFor（attached/detached/visible/hidden），可见性检查目标及各层 frame 的样式和尺寸，使用隔离 world 并复核匹配。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证隐藏元素、动态出现、禁用、无目标、多个匹配拒绝及零宽跨进程 frame；Electron 44/Xvfb socket 验证跨进程状态读取。可见性查询不做遮挡命中测试，输入操作另有命中校验；macOS/Windows 本轮未测。
+
+CSS locator 增加 dblclick 与 allTextContents，双击第一次输入后重新检查目标、作用域及几何，批量文本限制总输出并逐项复核目标。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证开放 shadow root 的可信双击、首次点击改变选择器时停止第二次点击、隐藏元素的批量文本；Electron 44/Xvfb socket 验证跨进程 frame 可信双击。批量读取逐项进行，页面可在读取期间改变文本；macOS/Windows 本轮未测。
