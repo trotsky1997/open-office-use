@@ -457,3 +457,5 @@ Distinguished fixed workbook chart data from worksheet-linked caches, with bound
 Added bounded literal chart point samples and targeted numeric literal edits for workbook charts.
 
 Added synchronized workbook literal-category editing across matching chart series with validation and snapshot protection.
+
+Added workbook chart series-name inventory and targeted literal series-name edits.

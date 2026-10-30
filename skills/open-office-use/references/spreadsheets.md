@@ -54,3 +54,5 @@ Chart-cache scans report `literal_sources` and `status: literal` for bounded fix
 Use `session_set_chart_literal_value` with an inspected chart part, literal reference index, one-based point and snapshot to edit an existing fixed numeric chart value. Worksheet cells stay unchanged, and all chart placements sharing that part are affected. Render and review.
 
 Use `session_set_chart_literal_category` with a scanned literal category reference to update a one-based category point across matching series of a workbook chart. Mismatched or referenced categories are rejected; worksheet cells remain unchanged.
+
+Chart-cache scans expose bounded plot and series indices and direct literal series names. Use `session_set_chart_literal_series_name` to rename an inspected literal series in a single plot; referenced names require changing their source cells.

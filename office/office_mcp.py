@@ -111,6 +111,12 @@ def session_scan_chart_caches(directory: str, revision: int) -> dict[str, Any]:
 
 
 @server.tool()
+def session_set_chart_literal_series_name(directory: str, base_revision: int, part: str, series: StrictInt, text: str, expected_sha256: str | None = None) -> dict[str, Any]:
+    """Change a direct literal series name in a single-plot XLSX chart using its inspected one-based series index."""
+    return session.set_chart_literal_series_name(directory, base_revision, part, series, text, expected_sha256)
+
+
+@server.tool()
 def session_set_chart_literal_category(directory: str, base_revision: int, part: str, reference: StrictInt, point: StrictInt, text: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Change a literal chart category across matching series using a scanned part and one-based reference and point indices."""
     return session.set_chart_literal_category(directory, base_revision, part, reference, point, text, expected_sha256)

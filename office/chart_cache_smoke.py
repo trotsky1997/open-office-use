@@ -155,6 +155,29 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Mismatched category arrays accepted')
     assert session.info(conflict_draft)['latest_revision']==0
+    def literal_name(tree):
+        title=tree.find('.//'+C+'ser/'+C+'tx'); title.clear(); etree.SubElement(title,C+'v').text='Revenue'
+    names_source=rewrite('literal-series.xlsx',literal_name); names_report=chart_cache.scan(names_source)
+    assert names_report['charts'][0]['series_complete'] and names_report['charts'][0]['series'][0]['name']=='Revenue' and names_report['charts'][0]['series'][0]['name_status']=='literal'
+    names_draft=root/'literal-name-draft';session.start(names_draft,source=names_source)
+    for text in ('','x'*256,'bad\x01'):
+        try: session.set_chart_literal_series_name(names_draft,0,names_report['charts'][0]['part'],1,text)
+        except ValueError: pass
+        else: raise AssertionError('Invalid chart name accepted')
+    try: session.set_chart_literal_series_name(names_draft,0,names_report['charts'][0]['part'],1,'New','0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale chart name snapshot accepted')
+    named=session.set_chart_literal_series_name(names_draft,0,names_report['charts'][0]['part'],1,'Sales & Service',names_report['snapshot_sha256'])
+    assert named['old_text']=='Revenue' and session.scan_chart_caches(names_draft,1)['charts'][0]['series'][0]['name']=='Sales & Service'
+    with zipfile.ZipFile(names_source) as before,zipfile.ZipFile(named['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=names_report['charts'][0]['part'])
+    code,validation,_=officecli_backend.invoke('validate',named['output']); assert code==0 and validation['success'],validation
+    cmd=[sys.executable,str(cli),'session','set-chart-literal-series-name',str(names_draft),'--base','1','--part',names_report['charts'][0]['part'],'--series','1','--text','Updated']
+    assert json.loads(subprocess.run(cmd,capture_output=True,text=True,check=True).stdout)['revision']==2
+    source_draft=root/'referenced-name-draft';session.start(source_draft,source=source)
+    try: session.set_chart_literal_series_name(source_draft,0,baseline['charts'][0]['part'],1,'Wrong')
+    except ValueError: pass
+    else: raise AssertionError('Referenced chart name accepted')
     def missing(tree):
         ref=tree.find('.//'+C+'cat/'+C+'strRef'); ref.remove(ref.find(C+'strCache'))
     missing_result=chart_cache.scan(rewrite('missing.xlsx',missing)); assert missing_result['missing_caches']==1 and not missing_result['complete']
