@@ -73,6 +73,34 @@ render loading immediately from these snapshots without awaiting a page command.
 The example separately normalizes user-entered addresses; the runtime still
 requires an explicit permitted URL.
 
+## Explicit file upload authorization
+
+Uploads are disabled by default. The host can authorize specific existing
+regular files for a scope and grant `files.upload` together with `page.control`
+to a trusted client:
+
+```ts
+await task.files.authorize(['/absolute/path/to/report.pdf']);
+const worker = await iab.launchClient({
+  scopeId: task.id,
+  command: '/absolute/path/to/node',
+  args: ['/absolute/path/to/worker.mjs'],
+  transport: 'private',
+  ttlMs: 60_000,
+  operations: ['tabs.read', 'page.control', 'files.upload'],
+});
+```
+
+The list replaces the scope's previous list; `await task.files.authorize([])`
+revokes it. Paths are resolved to regular files both when authorized and before
+each selection. Authorization is scope-wide and applies to any client in that
+scope with both grants. The host should authorize only files and clients chosen
+for the task and keep approved files stable until the decision completes; path
+authorization does not freeze file contents. The worker uses `tab.prepareFileChooser()` and the SDK chooser
+handle. File decisions are one-use, and navigation or debugger detachment
+invalidates them. Revoking the list or grant prevents a not-yet-issued decision.
+An already issued decision can have an unknown outcome; inspect the page.
+
 ## Private tool process
 
 Host main:
@@ -317,9 +345,10 @@ enables/disables both effects during manual steps or automatic playback.
   scope's control; revoke the client grant explicitly when handing control back.
 - CDP commands are limited to the owned page and its registered iframe
   sessions. The allowed Target operation attaches iframe sessions only;
-  browser-global operations, cookie-jar APIs, file uploads, downloads,
-  clipboard and WebMCP are unavailable. Upload/download and browser permission
-  requests are denied by default.
+  browser-global operations, cookie-jar APIs, downloads, clipboard and WebMCP
+  are unavailable. File uploads require explicit scope file authorization and a
+  `files.upload` grant. Downloads and browser permission requests are denied by
+  default.
 - Navigation accepts http, https and about:blank. The host UI's preload is
   never loaded in remote guest pages; guests enforce sandbox, context isolation,
   disabled Node integration and enabled web security.

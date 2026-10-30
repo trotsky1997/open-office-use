@@ -101,3 +101,14 @@ test('read-only leases do not receive page debugger events', { skip: !supported 
   await new Promise(resolve=>setTimeout(resolve,20));
   assert.deepEqual(controlEvents.map(event=>event.method),['onCDPEvent']);
 });
+
+test('file chooser readiness requires both upload and page control grants', {skip:!supported}, async t => {
+  const {grant,emit}=await setup(t);
+  const readOnly=await connectSocketIab(grant('a',{operations:['tabs.read','page.control']}));t.after(()=>readOnly.close());
+  const upload=await connectSocketIab(grant('a',{operations:['page.control','files.upload']}));t.after(()=>upload.close());
+  const seenRead=[],seenUpload=[];readOnly.onNotification(event=>seenRead.push(event));upload.onNotification(event=>seenUpload.push(event));
+  emit({scopeId:'a',method:'onFileChooserWaitReady',params:{waitId:'test'}});
+  emit({scopeId:'b',method:'onFileChooserWaitReady',params:{waitId:'other'}});
+  await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal(seenRead.length,0);assert.deepEqual(seenUpload.map(event=>event.params.waitId),['test']);
+});

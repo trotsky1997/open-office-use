@@ -147,3 +147,5 @@ Chrome 下载等待新增注册确认：`tab.prepareDownload()` 等扩展实际�
 Chrome SDK 新增文件选择器准备握手：监听与拦截就绪后返回句柄，支持单文件或多文件绝对路径；同一个选择器只允许一次文件决策。页面 frame 导航或调试器断开会清除旧句柄，发送前再次核实并消费句柄，未知结果不重复提交。macOS/Linux Chromium 隔离 profile 通过真实本地文件选择；跨进程 frame 的会话路由有单元覆盖，尚未实机验证。Electron 未开放文件上传；Linux 使用 --no-sandbox。
 
 Chrome 文件选择器覆盖已附着的跨进程 iframe 会话：准备阶段启用 frame 会话并逐个开启拦截，文件决策发送到来源会话。等待期间 frame 树变化会中止并清理；拦截关闭完成前拒绝第二个等待，设置拦截失败也尝试关闭。macOS/Linux Chromium 实页验证跨进程多文件选择和本地测试文件；Linux 使用 --no-sandbox。iframe 后续动态变化时需重新准备。
+
+Electron 新增显式授权的文件选择：宿主通过 scope.files.authorize 设置允许的现有常规文件，客户端需同时持有 page.control 与 files.upload 权限；文件路径在授权和决策时解析校验，授权替换或撤销会阻止尚未发送的决策。主页面和已附着跨进程 frame 使用 SDK 的 prepareFileChooser；选择器句柄一次性消费，导航或断连失效，准备超时会释放队列并阻止迟发命令。macOS Electron 实页验证主页面单文件与跨进程 frame 多文件；本机套接字集成与单元测试覆盖作用域、拒绝、符号链接改向、撤权和超时。路径授权不固定文件内容；Linux/Windows Electron 尚未实测。

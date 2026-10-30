@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { app, BrowserWindow, nativeImage } from 'electron';
@@ -28,6 +28,16 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    const uploadFile=join(userData,'upload-fixture.txt'), secondUpload=join(userData,'upload-second.txt');writeFileSync(uploadFile,'isolated fixture');writeFileSync(secondUpload,'second fixture');
+    await scope.files.authorize([uploadFile,secondUpload]);
+    await evaluate(`(()=>{const input=document.createElement('input');input.type='file';input.id='iab-upload';Object.assign(input.style,{position:'fixed',left:'20px',top:'150px',width:'250px',height:'40px',zIndex:'999999'});document.body.append(input)})()`);
+    const preparedUpload=await sdkTab.prepareFileChooser({timeoutMs:20000});const choosingUpload=preparedUpload.wait();void choosingUpload.catch(()=>{});
+    const uploadClick=sdkTab.clickAt(40,158);void uploadClick.catch(()=>{});
+    const chooserUpload=await choosingUpload;assert.equal(chooserUpload.isMultiple(),false);
+    await chooserUpload.setFiles(uploadFile);await uploadClick;
+    assert.deepEqual(await evaluate(`Array.from(document.querySelector('#iab-upload').files,f=>f.name)`),['upload-fixture.txt']);
+    await evaluate("document.querySelector('#iab-upload').remove()");
+
     await sdkTab.goto(`${fixture.url}/#same-document`,{timeoutMs:1500});
     assert.match(await evaluate('location.href'),/#same-document$/);
     await sdkTab.goto(`${fixture.url}/`,{timeoutMs:1500});
@@ -135,6 +145,14 @@ app.whenReady().then(async () => {
     const crossFrame=frameState.nodes.find(node=>node.name==='Cross-frame text').frameId;
     const frameSession=(await sdkTab.browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===crossFrame)?.sessionId;
     assert.ok(frameSession);
+    await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const input=document.createElement('input');input.type='file';input.multiple=true;input.id='cross-upload';input.setAttribute('aria-label','Cross upload');document.body.prepend(input)})()`},{sessionId:frameSession});
+    const preparedCrossUpload=await sdkTab.prepareFileChooser({timeoutMs:20000});const choosingCross=preparedCrossUpload.wait();void choosingCross.catch(()=>{});
+    const crossUploadClick=sdkTab.playwright.getByRole('button',{name:'Cross upload',exact:true}).click({timeoutMs:20000});void crossUploadClick.catch(()=>{});
+    const crossUpload=await choosingCross;assert.equal(crossUpload.isMultiple(),true);await crossUpload.setFiles([uploadFile,secondUpload]);await crossUploadClick;
+    const crossFiles=await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`Array.from(document.querySelector('#cross-upload').files,f=>f.name)`,returnByValue:true},{sessionId:frameSession});
+    assert.deepEqual(crossFiles.result.value,['upload-fixture.txt','upload-second.txt']);
+    await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('#cross-upload').remove()`},{sessionId:frameSession});
+
     await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'(()=>{const box=document.createElement(\'section\');box.id=\'state-fixture\';box.innerHTML=\'<input type="checkbox" aria-label="Notifications" checked><input type="checkbox" aria-label="Notifications"><input type="checkbox" aria-label="Notifications" checked disabled><fieldset disabled><button aria-label="Locked by fieldset">Locked</button></fieldset><div aria-disabled="true"><button aria-label="Locked by parent">Locked</button></div><button aria-label="View mode" aria-pressed="true">On</button><button aria-label="View mode" aria-pressed="false">Off</button><button aria-label="Details" aria-expanded="false">Details</button><div role="tablist"><button role="tab" aria-label="Period" aria-selected="true">One</button><button role="tab" aria-label="Period" aria-selected="false">Two</button></div>\';box.querySelectorAll(\'input\').forEach((el,i)=>el.onchange=e=>parent.postMessage({kind:\'state-check\',index:i,checked:el.checked,trusted:e.isTrusted},\'*\'));box.querySelectorAll(\'[aria-pressed]\').forEach((el,i)=>el.onclick=e=>parent.postMessage({kind:\'state-pressed\',index:i,trusted:e.isTrusted},\'*\'));document.body.append(box)})()'},{sessionId:frameSession});
     assert.equal(await sdkTab.playwright.getByRole('checkbox',{name:'Notifications',disabled:true}).count(),1);
     assert.equal(await sdkTab.playwright.getByRole('checkbox',{name:'Notifications',disabled:false}).count(),2);

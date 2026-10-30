@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once, EventEmitter } from 'node:events';
+import { realpath, stat } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import type { Duplex } from 'node:stream';
 import type { WebContentsView, WebContents, Session, BaseWindow } from 'electron';
 import { IabConnections, type Backend, type IabEvent, type Operation, type GrantOptions } from './transport.js';
@@ -18,7 +20,7 @@ type Tab = {
   frameSessions: Map<string, string | undefined>;
   loading: boolean; pendingUrl?: string; loadError?: { code: number; description: string; url: string };
 };
-type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; closing?: boolean };
+type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; uploadFiles: Set<string>; uploadEpoch: number; closing?: boolean };
 type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds: { x: number; y: number; width: number; height: number }; remove: () => void };
 const pageCommands = new Set([
   'Page.enable', 'Page.disable', 'Page.navigate', 'Page.reload', 'Page.stopLoading', 'Page.handleJavaScriptDialog',
@@ -50,6 +52,8 @@ export class IabRuntime implements Backend {
   private states = new Map<string, ScopeState>();
   private scopeDisposals = new Map<string, Promise<void>>();
   private tabsById = new Map<number, Tab>();
+  private chooserWaits = new Set<number>();
+  private choosers = new Map<string, {scopeId: string; tabId: number; backendNodeId: number; sessionId?: string; multiple: boolean}>();
   private surfaceStates = new Map<string, Surface>();
   private workers = new Set<ChildProcess>();
   private nextTabId = 1;
@@ -95,7 +99,7 @@ export class IabRuntime implements Backend {
       const previous = this.states.get(options.id);
       if (previous?.closing) throw new Error('IAB_SCOPE_CLOSED');
       if (previous && previous.profileId !== options.profileId) throw new Error('Cannot change scope profile');
-      if (!previous) this.states.set(options.id, { ...options, tabs: new Map(), name: options.id });
+      if (!previous) this.states.set(options.id, { ...options, tabs: new Map(), name: options.id, uploadFiles: new Set(), uploadEpoch: 0 });
       return new IabScope(this, options.id);
     },
   };
@@ -159,6 +163,7 @@ export class IabRuntime implements Backend {
     }
     listen(wc, 'render-process-gone', () => { void this.destroyTab(tab).catch(() => {}); });
     listen(wc.debugger, 'message', (_event, method, params, sessionId) => {
+      if (['Page.frameNavigated','Page.frameDetached','Target.detachedFromTarget'].includes(method)) this.invalidateChoosers(tab.id);
       if (sessionId && !tab.frameSessions.has(sessionId)) return;
       if (method === 'Target.attachedToTarget') {
         if (params?.targetInfo?.type !== 'iframe' || typeof params?.sessionId !== 'string') return;
@@ -170,7 +175,7 @@ export class IabRuntime implements Backend {
       }
       if (this.states.get(scopeId)?.tabs.has(tab.id)) this.emit(scopeId, 'onCDPEvent', { source: { tabId: tab.id, ...(sessionId ? {sessionId} : {}) }, method, params });
     });
-    listen(wc.debugger, 'detach', () => { tab.attached = false; tab.frameSessions.clear(); this.emit(scopeId, 'onDebuggerDetach', { tabId: tab.id }); });
+    listen(wc.debugger, 'detach', () => { this.invalidateChoosers(tab.id); tab.attached = false; tab.frameSessions.clear(); this.emit(scopeId, 'onDebuggerDetach', { tabId: tab.id }); });
     wc.setWindowOpenHandler(details => {
       try { assertUrl(details.url); } catch { return { action: 'deny' }; }
       if (!this.hasScope(scopeId) || scope.tabs.size >= 32 || this.tabsById.size >= 128) return { action: 'deny' };
@@ -193,6 +198,7 @@ export class IabRuntime implements Backend {
   }
   listTabs(scopeId: string): Record<string, any>[] { return [...this.scope(scopeId).tabs.values()].map(t => this.snapshot(t)); }
   private forget(tab: Tab): void {
+    this.invalidateChoosers(tab.id);
     if (!this.tabsById.delete(tab.id)) return;
     this.feedbackController.release(tab.contents);
     this.states.get(tab.scopeId)?.tabs.delete(tab.id);
@@ -214,7 +220,7 @@ export class IabRuntime implements Backend {
       await done;
     }
   }
-  private async cdp(tab: Tab, method: string, params: Record<string, any>, authorized: () => boolean, sessionId?: string, visualPoint?: {x: number; y: number}): Promise<any> {
+  private async cdp(tab: Tab, method: string, params: Record<string, any>, authorized: () => boolean, sessionId?: string, visualPoint?: {x: number; y: number}, internalFileCommand = false): Promise<any> {
     if (sessionId && !tab.frameSessions.has(sessionId)) throw new Error('Invalid CDP frame session');
     if (method === 'Target.setAutoAttach') {
       const filter = [{type:'iframe',exclude:false},{exclude:true}];
@@ -222,7 +228,7 @@ export class IabRuntime implements Backend {
           (params.autoAttach && JSON.stringify(params.filter) !== JSON.stringify(filter)) ||
           Object.keys(params).some(key => !['autoAttach','waitForDebuggerOnStart','flatten','filter'].includes(key))) throw new Error('Invalid frame auto-attach');
       if (!params.autoAttach && !sessionId) tab.frameSessions.clear();
-    } else if (!pageCommands.has(method)) throw new Error('IAB CDP command is outside page permissions');
+    } else if (!pageCommands.has(method) && !(internalFileCommand && ['Page.setInterceptFileChooserDialog','DOM.setFileInputFiles'].includes(method))) throw new Error('IAB CDP command is outside page permissions');
     if (params.includeCommandLineAPI) throw new Error('DevTools command-line helpers are not exposed to page grants');
     if (method === 'Page.navigate') assertUrl(params.url);
     if (method === 'Page.handleJavaScriptDialog' && (typeof params.accept !== 'boolean' || (params.promptText !== undefined && typeof params.promptText !== 'string') || Object.keys(params).some(key => !['accept','promptText'].includes(key)))) throw new Error('Invalid dialog decision');
@@ -289,6 +295,100 @@ export class IabRuntime implements Backend {
       if (backgroundInput && !tab.contents.isDestroyed()) tab.contents.setBackgroundThrottling(previousThrottling!);
     }
   }
+  private invalidateChoosers(tabId: number): void {
+    for (const [id, chooser] of this.choosers) if (chooser.tabId === tabId) this.choosers.delete(id);
+  }
+
+  async authorizeUploadFiles(scopeId: string, paths: string[]): Promise<void> {
+    const scope = this.scope(scopeId), epoch = ++scope.uploadEpoch;
+    if (!Array.isArray(paths) || paths.length > 128 || paths.some(path => typeof path !== 'string' || !isAbsolute(path))) throw new Error('Upload paths must be absolute');
+    const files = await Promise.all(paths.map(async path => {
+      const resolved = await realpath(path);
+      if (!(await stat(resolved)).isFile()) throw new Error('Upload path must be a regular file');
+      return resolved;
+    }));
+    if (this.scope(scopeId) !== scope || scope.uploadEpoch !== epoch) throw new Error('Upload authorization changed');
+    scope.uploadFiles = new Set(files);
+  }
+
+  private async waitForFileChooser(scopeId: string, tab: Tab, params: Record<string, any>, authorized: () => boolean): Promise<any> {
+    const timeoutMs = params.timeoutMs ?? 10_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000 || (params.waitId !== undefined && (typeof params.waitId !== 'string' || !/^[0-9a-f-]{36}$/.test(params.waitId)))) throw new Error('Invalid file chooser wait');
+    if (this.chooserWaits.has(tab.id)) throw new Error('File chooser already pending');
+    this.chooserWaits.add(tab.id); tab.pending++;
+    let failure: Error | undefined, settled = false;
+    let resolveEvent!: (event: {params: Record<string, any>; sessionId?: string}) => void;
+    let rejectEvent!: (error: Error) => void;
+    const event = new Promise<{params: Record<string, any>; sessionId?: string}>((resolve,reject) => { resolveEvent=resolve; rejectEvent=reject; });
+    void event.catch(() => {});
+    const reject = (error: Error) => { if (!settled) { settled=true; failure=error; rejectEvent(error); } };
+    const unsubscribe = this.subscribe(message => {
+      if (message.scopeId !== scopeId || settled) return;
+      if (message.method === 'onDebuggerDetach' && message.params.tabId === tab.id) return reject(new Error('File chooser debugger detached'));
+      if (message.method === 'onTabClosed' && message.params.tabId === tab.id) return reject(new Error('File chooser tab closed'));
+      if (message.method !== 'onCDPEvent' || message.params.source?.tabId !== tab.id) return;
+      const method = message.params.method;
+      if (['Page.frameNavigated','Page.frameDetached','Target.attachedToTarget','Target.detachedFromTarget'].includes(method)) return reject(new Error('Frame tree changed while waiting for file chooser'));
+      if (method === 'Page.fileChooserOpened') {
+        if (!authorized()) return reject(new Error('IAB_AUTH_REVOKED'));
+        const data = message.params.params;
+        if (!Number.isInteger(data?.backendNodeId) || !['selectSingle','selectMultiple'].includes(data.mode)) return reject(new Error('Invalid file chooser event'));
+        settled=true; resolveEvent({params:data,sessionId:message.params.source.sessionId});
+      }
+    });
+    const timer = setTimeout(() => reject(new Error('Timed out waiting for file chooser')), timeoutMs);
+    const enabled: Array<string | undefined> = [];
+    let active = true, setupFinished = false;
+    const setupAuthorized = () => active && authorized();
+    try {
+      const setup = tab.queue.then(async () => {
+        for (const sessionId of [undefined, ...tab.frameSessions.keys()]) {
+          await this.cdp(this.tab(scopeId,tab.id),'Page.enable',{},setupAuthorized,sessionId);
+          enabled.push(sessionId);
+          await this.cdp(this.tab(scopeId,tab.id),'Page.setInterceptFileChooserDialog',{enabled:true},setupAuthorized,sessionId,undefined,true);
+        }
+      });
+      const boundedSetup = Promise.race([setup, event.then(() => setup)]);
+      tab.queue=boundedSetup.catch(() => {}); await boundedSetup; setupFinished = true;
+      if (failure) throw failure;
+      if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
+      if (params.waitId) this.emit(scopeId,'onFileChooserWaitReady',{waitId:params.waitId});
+      const opened = await event;
+      if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
+      const id=randomUUID();
+      this.choosers.set(id,{scopeId,tabId:tab.id,backendNodeId:opened.params.backendNodeId,sessionId:opened.sessionId,multiple:opened.params.mode==='selectMultiple'});
+      return {fileChooserId:id,isMultiple:opened.params.mode==='selectMultiple'};
+    } finally {
+      active = false;
+      clearTimeout(timer); reject(new Error('File chooser wait ended')); unsubscribe();
+      if (!setupFinished && !tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) {
+        try { tab.contents.debugger.detach(); } catch {}
+      }
+      try {
+        await Promise.all(enabled.map(sessionId => this.cdp(tab,'Page.setInterceptFileChooserDialog',{enabled:false},()=>true,sessionId,undefined,true).catch(() => {})));
+      } finally { this.chooserWaits.delete(tab.id); tab.pending--; }
+    }
+  }
+
+  private async setFileChooserFiles(scopeId: string, params: Record<string, any>, authorized: () => boolean): Promise<void> {
+    const id=params.fileChooserId, chooser=typeof id === 'string' ? this.choosers.get(id) : undefined;
+    if (!chooser || chooser.scopeId !== scopeId) throw new Error('File chooser is unavailable');
+    const scope=this.scope(scopeId), epoch=scope.uploadEpoch;
+    if (!Array.isArray(params.files) || !params.files.length || params.files.length > 128 || params.files.some((path: unknown) => typeof path !== 'string' || !isAbsolute(path))) throw new Error('Upload paths must be absolute');
+    if (!chooser.multiple && params.files.length > 1) throw new Error('File chooser does not accept multiple files');
+    const files=await Promise.all(params.files.map(async (path: string) => {
+      const resolved=await realpath(path);
+      if (!scope.uploadFiles.has(resolved) || !(await stat(resolved)).isFile()) throw new Error('Upload file is not authorized');
+      return resolved;
+    }));
+    if (!authorized() || this.scope(scopeId) !== scope || scope.uploadEpoch !== epoch) throw new Error('IAB_AUTH_REVOKED');
+    if (this.choosers.get(id) !== chooser) throw new Error('File chooser is unavailable');
+    const tab=this.tab(scopeId,chooser.tabId);
+    this.choosers.delete(id); tab.pending++;
+    try { await this.cdp(tab,'DOM.setFileInputFiles',{backendNodeId:chooser.backendNodeId,files},authorized,chooser.sessionId,undefined,true); }
+    finally { tab.pending--; }
+  }
+
   async dispatch(scopeId: string, method: string, params: Record<string, any> = {}, operations: readonly Operation[] = ['tabs.read', 'tabs.create', 'page.control'], authorized: () => boolean = () => true): Promise<any> {
     this.ensureOpen();
     if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
@@ -297,8 +397,9 @@ export class IabRuntime implements Backend {
     const need = (operation: Operation) => { if (!operations.includes(operation)) throw new Error('IAB_OPERATION_DENIED'); };
     switch (method) {
       case 'getInfo': return { name: 'Open Browser Use IAB', type: 'iab', version: '1.1.0', metadata: { instanceId: this.instanceId, scopeId },
-        capabilities: { multiTab: true, fileUploads: false, downloads: false, clipboard: false, history: false, childTargets: false } };
+        capabilities: { multiTab: true, fileUploads: operations.includes('files.upload') && operations.includes('page.control') && scope.uploadFiles.size > 0, downloads: false, clipboard: false, history: false, childTargets: false } };
       case 'ping': return 'pong';
+      case 'setFileChooserFiles': need('page.control'); need('files.upload'); await this.setFileChooserFiles(scopeId,params,authorized); return {};
       case 'getTabs': case 'getUserTabs': need('tabs.read'); return this.listTabs(scopeId);
       case 'createTab': need('tabs.create'); return this.createTab(scopeId, { url: params.url, turnId: params.turn_id });
       case 'nameSession': need('page.control'); scope.name = String(params.name).slice(0, 200); return { name: scope.name };
@@ -331,6 +432,7 @@ export class IabRuntime implements Backend {
     need('page.control');
     const tab = this.tab(scopeId, params.tabId ?? params.target?.tabId);
     if (typeof params.turn_id === 'string') tab.touched.add(params.turn_id);
+    if (method === 'waitForFileChooser') { need('files.upload'); return this.waitForFileChooser(scopeId,tab,params,authorized); }
     if (method === 'markTab') {
       if (!['handoff', 'deliverable'].includes(params.status) || typeof params.turn_id !== 'string') throw new Error('Invalid mark');
       tab.marks.set(params.turn_id, params.status); return {};
@@ -450,6 +552,7 @@ export class IabScope {
   readonly visualFeedback = {
     setActive: (tabId: number,active: boolean) => this.runtime.setFeedbackActive(this.id,tabId,active),
   };
-  call(method: string, params: Record<string, any> = {}): Promise<any> { return this.runtime.dispatch(this.id, method, params); }
+  readonly files = { authorize: (paths: string[]) => this.runtime.authorizeUploadFiles(this.id, paths) };
+  call(method: string, params: Record<string, any> = {}): Promise<any> { return this.runtime.dispatch(this.id, method, params, ['tabs.read','tabs.create','page.control','files.upload']); }
   dispose(): Promise<void> { return this.runtime.disposeScope(this.id); }
 }

@@ -1,7 +1,11 @@
+import { mkdtemp, writeFile, rm, symlink, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { IabRuntime } from '../dist/runtime.js';
+import { connectSocketIab } from '../dist/client.js';
 import { fakeElectron } from './fake-electron.mjs';
 import { once } from 'node:events';
 
@@ -12,6 +16,59 @@ function setup(t) {
   const b = runtime.scopes.open({ id: 'b', profileId: 'work' });
   t.after(() => runtime.dispose()); return { runtime, adapter, a, b };
 }
+test('file chooser requires a scoped grant and explicit file authorization', async t => {
+  const {runtime,adapter,a,b}=setup(t), tab=await a.tabs.create();
+  const dir=await mkdtemp(join(tmpdir(),'obu-upload-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const allowed=join(dir,'allowed.txt'),other=join(dir,'other.txt');await writeFile(allowed,'allowed');await writeFile(other,'other');
+  await a.files.authorize([allowed]);
+  await assert.rejects(runtime.dispatch('a','waitForFileChooser',{tabId:tab.id,waitId:'00000000-0000-0000-0000-000000000000'},['page.control']),/DENIED/);
+  await assert.rejects(a.call('executeCdp',{target:{tabId:tab.id},method:'DOM.setFileInputFiles',commandParams:{files:[allowed]}}),/outside page permissions/);
+  const debuggerApi=adapter.views[0].webContents.debugger;
+  debuggerApi.emit('message',{},'Target.attachedToTarget',{sessionId:'child',targetInfo:{type:'iframe'}},undefined);
+  let ready=false;const unsubscribe=runtime.subscribe(e=>{if(e.method==='onFileChooserWaitReady')ready=true;});
+  const pending=runtime.dispatch('a','waitForFileChooser',{tabId:tab.id,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'},['page.control','files.upload']);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(ready,true);
+  debuggerApi.emit('message',{},'Page.fileChooserOpened',{backendNodeId:42,mode:'selectSingle'},'child');
+  const chooser=await pending;unsubscribe();
+  await assert.rejects(runtime.dispatch('b','setFileChooserFiles',{fileChooserId:chooser.fileChooserId,files:[allowed]},['page.control','files.upload']),/unavailable/);
+  await assert.rejects(runtime.dispatch('a','setFileChooserFiles',{fileChooserId:chooser.fileChooserId,files:[other]},['page.control','files.upload']),/not authorized/);
+  await runtime.dispatch('a','setFileChooserFiles',{fileChooserId:chooser.fileChooserId,files:[allowed]},['page.control','files.upload']);
+  const command=debuggerApi.commands.at(-1);assert.equal(command.method,'DOM.setFileInputFiles');assert.equal(command.sessionId,'child');assert.deepEqual(command.params.files,[await import('node:fs/promises').then(fs=>fs.realpath(allowed))]);
+  await assert.rejects(a.call('setFileChooserFiles',{fileChooserId:chooser.fileChooserId,files:[allowed]}),/unavailable/);
+});
+
+test('upload decisions recheck grant and resolve symlinks against the approved files', async t => {
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create();
+  const dir=await mkdtemp(join(tmpdir(),'obu-upload-revoke-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const allowed=join(dir,'allowed.txt'),other=join(dir,'other.txt'),link=join(dir,'link');
+  await writeFile(allowed,'allowed');await writeFile(other,'other');await symlink(allowed,link);await a.files.authorize([link]);
+  const debug=adapter.views[0].webContents.debugger;
+  async function chooser(){
+    const pending=runtime.dispatch('a','waitForFileChooser',{tabId:tab.id,timeoutMs:1000},['page.control','files.upload']);
+    await new Promise(resolve=>setImmediate(resolve));debug.emit('message',{},'Page.fileChooserOpened',{backendNodeId:9,mode:'selectSingle'},undefined);
+    return (await pending).fileChooserId;
+  }
+  let id=await chooser();await unlink(link);await symlink(other,link);
+  await assert.rejects(runtime.dispatch('a','setFileChooserFiles',{fileChooserId:id,files:[link]},['page.control','files.upload']),/not authorized/);
+  let checks=0;await assert.rejects(runtime.dispatch('a','setFileChooserFiles',{fileChooserId:id,files:[allowed]},['page.control','files.upload'],()=>++checks===1),/REVOKED/);
+  assert.equal(debug.commands.some(command=>command.method==='DOM.setFileInputFiles'),false);
+  await a.files.authorize([]);await assert.rejects(a.call('setFileChooserFiles',{fileChooserId:id,files:[allowed]}),/not authorized/);
+});
+
+test('authorized socket client can complete the file chooser handshake', {skip:!['darwin','linux'].includes(process.platform)}, async t => {
+  const {runtime,adapter,a}=setup(t), tab=await a.tabs.create();
+  const dir=await mkdtemp(join(tmpdir(),'obu-upload-socket-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const file=join(dir,'fixture.txt');await writeFile(file,'fixture');await a.files.authorize([file]);
+  await runtime.connections.openSocket();
+  const bootstrap=runtime.connections.grant('a','socket',{ttlMs:5000,operations:['page.control','files.upload']},process.pid);
+  const client=await connectSocketIab(bootstrap);t.after(()=>client.close());
+  const ready=await client.browser().tab(tab.id).prepareFileChooser({timeoutMs:1000});
+  const waiting=ready.wait();
+  adapter.views[0].webContents.debugger.emit('message',{},'Page.fileChooserOpened',{backendNodeId:7,mode:'selectSingle'},undefined);
+  const chooser=await waiting;await chooser.setFiles(file);
+  assert.equal(adapter.views[0].webContents.debugger.commands.at(-1).method,'DOM.setFileInputFiles');
+});
+
 test('managed clients opt into piped stdin without exposing the private bootstrap', async t => {
   const { runtime, a } = setup(t);
   const { child } = await runtime.launchClient({scopeId:a.id,command:process.execPath,
@@ -270,4 +327,19 @@ test('frame debugger sessions stay inside their owning tab and permit iframe aut
   await assert.rejects(b.call('executeCdp',{target:{tabId:tab.id,sessionId:'child'},method:'Runtime.evaluate'}));
   debuggerApi.emit('message',{},'Target.detachedFromTarget',{sessionId:'child'},undefined);
   await assert.rejects(call({tabId:tab.id,sessionId:'child'},'Runtime.evaluate'), /Invalid CDP frame session/);
+});
+
+test('stalled chooser setup times out and does not issue late interception', async t => {
+  const {runtime,adapter,a}=setup(t), tab=await a.tabs.create(), debuggerApi=adapter.views[0].webContents.debugger;
+  let release;const commands=[];
+  debuggerApi.sendCommand=async method=>{
+    commands.push(method);
+    if(method==='Page.enable')await new Promise(resolve=>{release=resolve;});
+    return {};
+  };
+  await assert.rejects(runtime.dispatch('a','waitForFileChooser',{tabId:tab.id,timeoutMs:25,waitId:'00000000-0000-0000-0000-000000000000'},['page.control','files.upload']),/Timed out/);
+  assert.equal(debuggerApi.isAttached(),false);
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});
+  release();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(commands,['Page.enable','Runtime.evaluate']);
 });

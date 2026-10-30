@@ -8,7 +8,7 @@ import type { Duplex } from 'node:stream';
 import { FramedChannel, type Message } from './wire.js';
 import { processIdentity, peerIdentity, sameIdentity, type ProcessIdentity } from './peer.js';
 
-export type Operation = 'tabs.read' | 'tabs.create' | 'page.control';
+export type Operation = 'tabs.read' | 'tabs.create' | 'page.control' | 'files.upload';
 export type IabEvent = { scopeId: string; method: string; params: Record<string, any> };
 export interface Backend {
   readonly instanceId: string;
@@ -84,7 +84,7 @@ export class IabConnections {
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0 || options.ttlMs > 86_400_000) throw new Error('ttlMs must be between 1 and 86400000');
     if (this.grants.size >= 256) throw new Error('IAB_GRANT_LIMIT');
     const operations = options.operations ?? ['tabs.read', 'tabs.create', 'page.control'];
-    if (operations.some(op => !['tabs.read', 'tabs.create', 'page.control'].includes(op))) throw new Error('Unsupported operation');
+    if (operations.some(op => !['tabs.read', 'tabs.create', 'page.control', 'files.upload'].includes(op))) throw new Error('Unsupported operation');
     const maxConnections = options.maxConnections ?? 1;
     if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 16) throw new Error('Invalid maxConnections');
     const peer = transport === 'socket' ? processIdentity(pid) : undefined;
@@ -148,7 +148,7 @@ export class IabConnections {
         channel.send({ jsonrpc: '2.0', id: message.id, result: { authenticated: true, scopeId: grant.scope } });
         unsubscribe = this.backend.subscribe(event => {
           if (grant && this.valid(grant) && event.scopeId === grant.scope &&
-              grant.operations.includes(['onCDPEvent','onDebuggerDetach'].includes(event.method) ? 'page.control' : 'tabs.read')) {
+              (event.method === 'onFileChooserWaitReady' ? grant.operations.includes('files.upload') && grant.operations.includes('page.control') : grant.operations.includes(['onCDPEvent','onDebuggerDetach'].includes(event.method) ? 'page.control' : 'tabs.read'))) {
             channel.send({ jsonrpc: '2.0', method: event.method, params: event.params });
           }
         });

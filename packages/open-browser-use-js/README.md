@@ -532,7 +532,8 @@ await client.request("executeCdp", {
 
 ## File chooser
 
-On the Chrome extension backend, register the chooser before opening it:
+On Chrome or an explicitly authorized Electron scope, register the chooser
+before opening it:
 
 ```js
 const ready = await tab.prepareFileChooser({timeoutMs: 30000});
@@ -552,7 +553,8 @@ chooser handles. An error after issuing a decision can leave the outcome
 unknown; inspect the page before another action. Cross-process iframe sessions
 already attached at preparation are intercepted. If the frame tree changes
 while waiting, the wait fails; prepare a new one after observing the page.
-Electron does not expose uploads.
+Electron hosts must authorize the exact files and grant `files.upload` and
+`page.control` first; see the Electron integration guide.
 
 ## Waiting for a download
 
