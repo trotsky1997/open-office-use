@@ -10,6 +10,7 @@ from pathlib import Path
 from lxml import etree
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
+from openpyxl.utils.datetime import CALENDAR_MAC_1904
 import xlsxwriter
 import officecli_backend
 import grid_values
@@ -46,6 +47,36 @@ with tempfile.TemporaryDirectory() as tmp:
     recalc = session.recalculate(draft, 1); recalculated = load_workbook(recalc['file'], data_only=True)
     assert recalculated.active['B1'].value == 16 and recalculated.active['C1'].value == 9
     assert source.read_bytes() == original
+    for epoch in (None, CALENDAR_MAC_1904):
+        dated_source=root/('date-1904.xlsx' if epoch else 'date-1900.xlsx');dated_book=Workbook()
+        if epoch: dated_book.epoch=epoch
+        dated=dated_book.active;dated['A1']=datetime(2026,10,31,9,30);dated['A1'].number_format='yyyy-mm-dd hh:mm:ss.000';dated['A1'].font=Font(bold=True);dated['B1']=5;dated['B1'].number_format='0.00';dated_book.save(dated_source)
+        dated_draft=root/('date-draft-1904' if epoch else 'date-draft-1900');session.start(dated_draft,source=dated_source)
+        result=session.edit_grid(dated_draft,0,'Sheet','A1:B1',[{'cell':'A1','value':'2026-11-01T10:45:30.125'}])
+        saved=load_workbook(result['file']);cell=saved.active['A1']
+        assert cell.value==datetime(2026,11,1,10,45,30,125000) and cell.number_format=='yyyy-mm-dd hh:mm:ss.000' and cell.font.bold
+        assert saved.epoch==dated_book.epoch and load_workbook(dated_source).active['A1'].value==datetime(2026,10,31,9,30)
+        try: session.edit_grid(dated_draft,1,'Sheet','B1',[{'cell':'B1','value':'2026-11-01'}])
+        except ValueError as error: assert 'number format' in str(error)
+        else: raise AssertionError('Non-date numeric style silently changed')
+        assert session.info(dated_draft)['latest_revision']==1
+    date_batch=officecli_backend.batch
+    def tamper_date(operations, output, original):
+        result=date_batch(operations,output,original); modified=Path(str(output)+'.tmp')
+        with zipfile.ZipFile(output) as before,zipfile.ZipFile(modified,'w') as after:
+            for entry in before.infolist():
+                data=before.read(entry)
+                if entry.filename=='xl/worksheets/sheet1.xml':
+                    tree=etree.fromstring(data); cell=next(item for item in tree.iter(X+'c') if item.get('r')=='A1'); value=cell.find(X+'v');value.text=str(float(value.text)+1);data=etree.tostring(tree)
+                after.writestr(entry,data)
+        modified.replace(output);return result
+    officecli_backend.batch=tamper_date
+    try:
+        try: session.edit_grid(dated_draft,1,'Sheet','A1',[{'cell':'A1','value':'2026-11-03T10:45:30.125'}])
+        except ValueError as error: assert 'date differs' in str(error)
+        else: raise AssertionError('Altered candidate date accepted')
+    finally: officecli_backend.batch=date_batch
+    assert session.info(dated_draft)['latest_revision']==1
     tampered_draft = root / 'tampered-draft'; session.start(tampered_draft, source=source)
     batch_original = officecli_backend.batch
     def tampered_batch(operations, output, original):

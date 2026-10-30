@@ -230,3 +230,5 @@ Workbook authoring rejects unsupported cell characters, oversized text and formu
 Workbook authoring supports bounded rectangular arrays per sheet, with overlap checks and the same typed-cell validation and source table protections as individual cell writes.
 
 Workbook authoring supports native typed date and millisecond date-time values, respecting the source workbook date epoch.
+
+Date-formatted grid cells support verified ISO date/date-time updates without replacing the saved number format; numeric results are checked against the workbook epoch.

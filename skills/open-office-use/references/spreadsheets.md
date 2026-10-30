@@ -34,3 +34,5 @@ Workbook creation rejects oversized cell text and formulas, unsupported XML char
 For tabular workbook creation, `author_file` accepts `ranges` keyed by sheet, each containing `{"start":"A1","values":[[...],...]}`. Blocks are rectangular and cannot overlap each other or individually authored cells.
 
 For native spreadsheet dates, use typed values such as `{"type":"date","value":"2026-10-31"}` or `{"type":"datetime","value":"2026-10-31T09:30:45.125"}`. Date-times are timezone-free and limited to milliseconds; use a number format for the desired display.
+
+For date-formatted cells, ISO date and millisecond date-time grid edits verify the resulting value against the workbook epoch and retain the existing date format. Use explicit text mode when the input should be literal text.

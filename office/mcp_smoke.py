@@ -59,6 +59,9 @@ async def main():
                 assert sheet_table_grid.structuredContent['rows'][0][0]['read_only_reason'] == 'table_header' and sheet_table_grid.structuredContent['rows'][1][0]['editable'], sheet_table_grid
                 sheet_renamed = await session.call_tool('session_rename_table_column', {'directory':str(sheet_table_draft),'base_revision':0,'sheet':'Data','table_name':'RevenueTable','old_name':'Revenue','new_name':'Net Revenue'})
                 assert not sheet_renamed.isError and sheet_renamed.structuredContent['rewritten_references'] == 1 and load_workbook(sheet_renamed.structuredContent['file'])['Data']['B2'].value == '=SUM(RevenueTable[Net Revenue])' and load_workbook(sheet_renamed.structuredContent['file'])['Data'].tables['RevenueTable'].tableColumns[0].name == 'Net Revenue', sheet_renamed
+                dated_draft = root/'mcp-date-draft'; assert not (await session.call_tool('start_session', {'directory':str(dated_draft),'source':str(formatted_book)})).isError
+                dated_edit = await session.call_tool('session_edit_grid', {'directory':str(dated_draft),'base_revision':0,'sheet':'Data','cell_range':'H3','changes':[{'cell':'H3','value':'2026-11-02T10:45:30.125'}]})
+                assert not dated_edit.isError and load_workbook(dated_edit.structuredContent['file'])['Data']['H3'].value.isoformat() == '2026-11-02T10:45:30.125000', dated_edit
                 sheet_chart_check = await session.call_tool('session_scan_chart_caches', {'directory':str(sheet_table_draft),'revision':1})
                 assert not sheet_chart_check.isError and sheet_chart_check.structuredContent['mismatch_references'] >= 1, sheet_chart_check
                 positioned = root / 'positioned.pptx'

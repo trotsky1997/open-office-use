@@ -6,9 +6,13 @@ import re
 import tempfile
 import zipfile
 from pathlib import Path
+from datetime import datetime
 from urllib.parse import unquote, urlsplit
 from lxml import etree
 from openpyxl.formula import Tokenizer
+from openpyxl import load_workbook
+from openpyxl.styles.numbers import BUILTIN_FORMATS, is_date_format
+from openpyxl.utils.datetime import from_excel
 import cell_text
 import grid_styles
 import officecli_backend
@@ -366,7 +370,10 @@ def apply(source, output, sheet, changes, operations):
             if root.tag != X + 'worksheet': raise ValueError('Invalid worksheet')
             original_styles = archive.read(style_name); merged, style_count = grid_styles.merge_styles(original_styles, candidate_styles)
             original_xfs = ooxml.parse_xml(original_styles).getroot().find(X + 'cellXfs')
-            merged_xfs = ooxml.parse_xml(merged).getroot().find(X + 'cellXfs')
+            merged_root = ooxml.parse_xml(merged).getroot(); merged_xfs = merged_root.find(X + 'cellXfs')
+            formats = merged_root.find(X + 'numFmts')
+            custom_formats = {item.get('numFmtId'): item.get('formatCode', '') for item in formats} if formats is not None else {}
+            epoch = None
             for style, _, _ in values.values():
                 if style is not None and (not re.fullmatch(r'[0-9]{1,10}', style) or int(style) >= style_count): raise ValueError('Invalid target style index')
             existing = {cell.get('r') for data in root.findall(X + 'sheetData') for row in data.findall(X + 'row') for cell in row.findall(X + 'c')}
@@ -399,15 +406,35 @@ def apply(source, output, sheet, changes, operations):
                 if old_formula != new_formula or old_is_dynamic != (address in dynamic): formula_changed = True
                 old_style = cell.get('s', '0')
                 if not re.fullmatch(r'[0-9]{1,10}', old_style) or original_xfs is None or int(old_style) >= len(original_xfs): raise ValueError('Invalid source style index')
+                requested = targets[address]; candidate_format = merged_xfs[int(style)].get('numFmtId', '0') if style is not None else '0'
+                candidate_code = custom_formats.get(candidate_format, BUILTIN_FORMATS.get(int(candidate_format), ''))
+                iso_date = re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?)?', requested)
+                original_format = original_xfs[int(old_style)].get('numFmtId', '0')
+                original_code = custom_formats.get(original_format, BUILTIN_FORMATS.get(int(original_format), ''))
+                if address not in literal and iso_date and is_date_format(original_code) and (kind not in (None, 'n') or not children or not is_date_format(candidate_code)): raise ValueError('Candidate did not preserve a date value')
+                if kind in (None, 'n') and children and iso_date and is_date_format(candidate_code):
+                    if epoch is None:
+                        workbook = load_workbook(source, read_only=True, data_only=False, keep_links=False)
+                        try: epoch = workbook.epoch
+                        finally: workbook.close()
+                    try:
+                        expected = datetime.fromisoformat(requested)
+                        actual = from_excel(float(children[0].text), epoch=epoch)
+                        if actual != expected: raise ValueError()
+                    except (TypeError, ValueError, OverflowError): raise ValueError('Candidate date differs from requested value') from None
                 if style is not None and int(style) != int(old_style):
                     before_xf = copy.deepcopy(original_xfs[int(old_style)]); after_xf = copy.deepcopy(merged_xfs[int(style)])
                     old_format = before_xf.get('numFmtId', '0'); new_format = after_xf.get('numFmtId', '0')
-                    if old_format != new_format and old_format != '0': raise ValueError('Candidate changed an existing number format')
                     for xf in (before_xf, after_xf):
                         xf.attrib.pop('numFmtId', None); xf.attrib.pop('applyNumberFormat', None)
                         for key in ('xfId', 'pivotButton', 'quotePrefix'):
                             if xf.get(key) in ('0', 'false'): xf.attrib.pop(key)
                     if grid_styles.equivalent(before_xf) != grid_styles.equivalent(after_xf): raise ValueError('Candidate changed unrelated cell formatting')
+                    if old_format != new_format and old_format != '0':
+                        old_code = custom_formats.get(old_format, BUILTIN_FORMATS.get(int(old_format), ''))
+                        new_code = custom_formats.get(new_format, BUILTIN_FORMATS.get(int(new_format), ''))
+                        if kind not in (None, 'n') or not is_date_format(old_code) or not is_date_format(new_code) or not iso_date: raise ValueError('Candidate changed an existing number format')
+                        style = old_style
                 if style is not None and int(style) != int(old_style): cell.set('s', style)
                 if address in dynamic: cell.set('cm', min(indices, key=int))
                 elif old_is_dynamic: cell.attrib.pop('cm', None)
