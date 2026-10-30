@@ -336,11 +336,12 @@ locator by its accessible static-text descendants. Matching is a case-insensitiv
 substring after whitespace normalization; text fragments are joined with spaces.
 This includes readable child frames and shadow roots. The filter uses indexed
 accessibility text, so `aria-label` alone does not count as descendant text. Semantic locators also
-support `filter({has: inner})` and `filter({hasNot: inner})` with semantic
-locators from the same tab and frame. Each inner locator is evaluated relative
-to the candidate, including its position and nested text filters; descendant
-frame documents are outside that inner match. Inner semantic locators rooted in
-CSS scopes are not yet supported. Filter nesting is limited to eight levels.
+support `filter({has: inner})` and `filter({hasNot: inner})` with semantic or
+CSS locators from the same tab and frame. Each inner locator is evaluated relative
+to the candidate, including its position and nested filters; descendant frame
+documents are outside that inner match. Inner semantic locators rooted in CSS
+scopes and inner CSS locators rooted in semantic scopes are not supported. Filter
+nesting is limited to eight levels.
 The operation rejects a candidate when unindexed text may belong to it or
 the text relationship cannot be determined, when frames are inaccessible, or
 when the candidate contains more than 30,000 characters. Text is checked again before input and after focus; pages with many

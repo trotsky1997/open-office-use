@@ -91,7 +91,7 @@ type RoleGuard = {locator:OpenBrowserUseRoleLocator; expected:Array<{backendNode
 type LocatorMatch = {node:InteractiveNode; path:number[]; filters:FilterGuard[]; css?:CssGuard};
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
-type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator; hasNot?:OpenBrowserUseRoleLocator };
+type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator; hasNot?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator };
 type LogCapture = {generation: number; entries: OpenBrowserUseLogEntry[]; sessions: Map<string,Promise<void>>; ready?: Promise<void>};
 type FilterGuard = { index: number; filters: TextFilter[] };
 type UnindexedText = { backendNodeId?: number; frameId?: string; frameChain?: FrameInfo[] };
@@ -798,14 +798,16 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async queryCss(step: CssStep, framePath?: readonly string[], scopes: readonly CssStep[] = [], semanticScope?: OpenBrowserUseRoleLocator): Promise<CssSnapshot> {
+  async queryCss(step: CssStep, framePath?: readonly string[], scopes: readonly CssStep[] = [], semanticScope?: OpenBrowserUseRoleLocator, base?: {observation:Observation; index:number}): Promise<CssSnapshot> {
     const selector=step.selector;
     if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
     const documentId = await this.documentId();
     const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
     const frames = await this.frameTree();
     if (framePath && !crossProcess) throw new Error("Frame routing is unavailable");
-    const semantic=semanticScope ? await semanticScope.detachedRoots() : undefined;
+    const baseNode=base?.observation.nodes.find(node=>node.index===base.index);
+    if (base && (!baseNode || !base.observation.frames || semanticScope)) throw new RetryablePreflightError("Filter scope is unavailable; observe again");
+    const semantic=semanticScope ? await semanticScope.detachedRoots() : base && baseNode ? {documentId:base.observation.documentId,frames:base.observation.frames!,roots:[{backendNodeId:baseNode.backendNodeId,frameId:baseNode.frameId ?? ""}]} : undefined;
     if (semantic && (semantic.documentId!==documentId || JSON.stringify(semantic.frames)!==JSON.stringify(frames))) throw new RetryablePreflightError("Semantic scope changed; observe again");
     if (semantic && semantic.roots.length>1000) throw new Error("Semantic scope matched more than 1000 elements");
     const semanticFrames=new Set(semantic?.roots.map(root=>root.frameId || frames[0].id));
@@ -2206,6 +2208,14 @@ export class OpenBrowserUseCssLocator {
   }
   /** @internal */
   getFramePath(): readonly string[] | undefined { return this.framePath; }
+  /** @internal */
+  isRelativeTo(tab:OpenBrowserUseTab, framePath?:readonly string[]): boolean {
+    return this.tab.browser===tab.browser && this.tab.id===tab.id && JSON.stringify(this.framePath ?? null)===JSON.stringify(framePath ?? null) && !this.semanticScope;
+  }
+  /** @internal */
+  async countWithin(observation:Observation, index:number): Promise<number> {
+    return (await this.tab.queryCss(this.step(),this.framePath,this.scopes,undefined,{observation,index})).ids.length;
+  }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByRole(role,options).withinCss(this); }
   getByLabel(name: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByLabel(name,options).withinCss(this); }
@@ -2384,14 +2394,18 @@ export class OpenBrowserUseRoleLocator {
   getByAltText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByAltText(text,options)); }
   getByPlaceholder(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByPlaceholder(text,options)); }
 
-  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator; hasNot?:OpenBrowserUseRoleLocator}): OpenBrowserUseRoleLocator {
+  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator; hasNot?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator}): OpenBrowserUseRoleLocator {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText","hasNotText","has","hasNot"].includes(key)) ||
         (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined) ||
         (options.hasText !== undefined && (typeof options.hasText === "string" ? options.hasText.length > 30_000 : !types.isRegExp(options.hasText))) ||
         (options.hasNotText !== undefined && (typeof options.hasNotText === "string" ? options.hasNotText.length > 30_000 : !types.isRegExp(options.hasNotText)))) throw new Error("Invalid locator filter");
-    const check=(locator:OpenBrowserUseRoleLocator,level:number):void=>{
-      if (!(locator instanceof OpenBrowserUseRoleLocator) || locator.tab.browser!==this.tab.browser || locator.tab.id!==this.tab.id || JSON.stringify(locator.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Filter locator must belong to the same tab and frame");
+    const check=(locator:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator,level:number):void=>{
       if (level>8) throw new Error("Locator filter nesting exceeds 8 levels");
+      if (locator instanceof OpenBrowserUseCssLocator) {
+        if (!locator.isRelativeTo(this.tab,this.framePath)) throw new Error("Filter locator must belong to the same tab and frame without a semantic scope");
+        return;
+      }
+      if (!(locator instanceof OpenBrowserUseRoleLocator) || locator.tab.browser!==this.tab.browser || locator.tab.id!==this.tab.id || JSON.stringify(locator.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Filter locator must belong to the same tab and frame");
       if (locator.cssScope) throw new Error("Semantic filter locator cannot use a CSS scope yet");
       if(locator.scope) check(locator.scope,level);
       for(const filter of [...locator.filtersBefore,...locator.filtersAfter]) {if(filter.has)check(filter.has,level+1);if(filter.hasNot)check(filter.hasNot,level+1);}
@@ -2451,9 +2465,10 @@ export class OpenBrowserUseRoleLocator {
         const textFilters=filters.filter(filter=>filter.hasText !== undefined || filter.hasNotText !== undefined);
         if (textFilters.length && !matchesTextFilters(await this.tab.scopeText(observation,item.node.index),textFilters)) continue;
         let matched=true;
+        const count=(locator:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator)=>locator instanceof OpenBrowserUseCssLocator ? locator.countWithin(observation,item.node.index) : locator.matches(observation,item.node.index).then(matches=>matches.length);
         for(const filter of filters) {
-          if(filter.has && !(await filter.has.matches(observation,item.node.index)).length) {matched=false;break;}
-          if(filter.hasNot && (await filter.hasNot.matches(observation,item.node.index)).length) {matched=false;break;}
+          if(filter.has && !(await count(filter.has))) {matched=false;break;}
+          if(filter.hasNot && await count(filter.hasNot)) {matched=false;break;}
         }
         if(matched) accepted.push({...item,filters:[...item.filters,{index:item.node.index,filters}]});
       }
