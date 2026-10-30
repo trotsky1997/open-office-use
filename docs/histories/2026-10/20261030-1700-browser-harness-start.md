@@ -271,3 +271,5 @@ CSS locator 增加 or 并集，对同一 browser/tab/frame 的结果按文档及
 语义定位器新增 locator/getByTestId，独立重算语义容器并在隔离 world 中查询 CSS 后代；作用域身份纳入读写复核，支持同 frame 多容器、CSS 链和继续语义查询。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证多容器与位置、交并集、作用域变更阻止点击、跨多个 frame 明确报错；Electron 44/Xvfb socket 验证跨进程语义容器内 CSS 可信点击。跨多个 frame 的语义容器集合需先缩小范围；macOS/Windows 本轮未测。
 
 CSS locator 增加 type，在当前光标/选区插入文本并复核目标、焦点与 frame；不全选现有内容，日期时间控件提示使用 fill。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证开放 shadow root 的 Unicode 插入、空文本及跨进程可信输入，Electron 44/Xvfb socket 验证跨进程追加。实现使用单次文本插入，不逐字符发送键盘事件；跨多 frame 的语义作用域集合仍待完善，macOS/Windows 本轮未测。
+
+locator(selector, options) 现在实际应用 hasText/hasNotText/has/hasNot，空选项保持原查询，未知键直接拒绝；语义与 CSS 混合链保留 frame 路径，支持同 frame 内相对筛选。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证混合链中的筛选点击、文本/后代条件与无效参数；Electron 44/Xvfb socket 验证跨进程语义容器内文本和后代排除。内层 has/hasNot 目前接受 CSS 定位器，跨多 frame 的语义容器集合仍待完善；macOS/Windows 本轮未测。

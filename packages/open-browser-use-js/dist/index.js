@@ -20,6 +20,13 @@ function testIdSelector(testId) {
         throw new Error("Invalid test id");
     return `[data-testid="${Array.from(testId, char => `\\${char.codePointAt(0).toString(16)} `).join("")}"]`;
 }
+function applyLocatorOptions(locator, options) {
+    if (options === undefined)
+        return locator;
+    if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText", "has", "hasNot"].includes(key)))
+        throw new Error("Invalid locator options");
+    return Object.values(options).every(value => value === undefined) ? locator : locator.filter(options);
+}
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 class RetryablePreflightError extends Error {
 }
@@ -2459,7 +2466,7 @@ export class OpenBrowserUseTabPlaywright {
     frameLocator(selector) {
         return new OpenBrowserUseFrameLocator(this.tab, []).frameLocator(selector);
     }
-    locator(selector) { return new OpenBrowserUseCssLocator(this.tab, selector); }
+    locator(selector, options) { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab, selector), options); }
     getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     getByRole(role, options = {}) {
         if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
@@ -2503,7 +2510,7 @@ export class OpenBrowserUseFrameLocator {
             throw new Error("Invalid frame selector");
         return new OpenBrowserUseFrameLocator(this.tab, [...this.path, selector]);
     }
-    locator(selector) { return new OpenBrowserUseCssLocator(this.tab, selector, this.path); }
+    locator(selector, options) { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab, selector, this.path), options); }
     getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     getByRole(role, options = {}) { return this.tab.playwright.getByRole(role, options).withinFrame(this.path); }
     getByLabel(name, options = {}) { return this.tab.playwright.getByLabel(name, options).withinFrame(this.path); }
@@ -2541,11 +2548,13 @@ export class OpenBrowserUseCssLocator {
     }
     first() { return this.nth(0); }
     last() { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, -1, this.scopes, this.before, this.after, this.union, this.semanticScope) : this; }
-    locator(selector) {
+    locator(selector, options) {
         if (this.scopes.length >= 31)
             throw new Error("CSS locator nesting exceeds 32 levels");
-        return new OpenBrowserUseCssLocator(this.tab, selector, this.framePath, undefined, [...this.scopes, this.step()], [], [], undefined, this.semanticScope);
+        return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab, selector, this.framePath, undefined, [...this.scopes, this.step()], [], [], undefined, this.semanticScope), options);
     }
+    /** @internal */
+    getFramePath() { return this.framePath; }
     getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     getByRole(role, options = {}) { return this.tab.playwright.getByRole(role, options).withinCss(this); }
     getByLabel(name, options = {}) { return this.tab.playwright.getByLabel(name, options).withinCss(this); }
@@ -2768,7 +2777,7 @@ export class OpenBrowserUseRoleLocator {
     }
     /** @internal */
     withinCss(scope) {
-        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, scope);
+        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath ?? scope.getFramePath(), scope);
     }
     nth(index) {
         if (!Number.isSafeInteger(index) || index < 0)
@@ -2781,7 +2790,7 @@ export class OpenBrowserUseRoleLocator {
     last() {
         return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, -1, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, this.cssScope);
     }
-    locator(selector) { return new OpenBrowserUseCssLocator(this.tab, selector, undefined, undefined, [], [], [], undefined, this); }
+    locator(selector, options) { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab, selector, this.framePath, undefined, [], [], [], undefined, this), options); }
     getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     child(locator) {
         return new OpenBrowserUseRoleLocator(this.tab, locator.roles, locator.options, locator.position, locator.textMatch, locator.field, this, locator.filtersBefore, locator.filtersAfter, this.framePath);

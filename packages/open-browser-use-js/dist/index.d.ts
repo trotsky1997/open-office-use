@@ -80,6 +80,12 @@ export type OpenBrowserUseTabPresentation = {
     windowFocused: boolean | null;
 };
 export type TextMatcher = string | RegExp;
+export type LocatorLocatorOptions = {
+    hasText?: TextMatcher;
+    hasNotText?: TextMatcher;
+    has?: OpenBrowserUseCssLocator;
+    hasNot?: OpenBrowserUseCssLocator;
+};
 export type RoleLocatorOptions = {
     name?: TextMatcher;
     exact?: boolean;
@@ -403,7 +409,7 @@ export declare class OpenBrowserUseTabPlaywright {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseFileChooser>;
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
-    locator(selector: string): OpenBrowserUseCssLocator;
+    locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
@@ -424,7 +430,7 @@ export declare class OpenBrowserUseFrameLocator {
     private path;
     constructor(tab: OpenBrowserUseTab, path: readonly string[]);
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
-    locator(selector: string): OpenBrowserUseCssLocator;
+    locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
@@ -454,7 +460,7 @@ export declare class OpenBrowserUseCssLocator {
     nth(index: number): OpenBrowserUseCssLocator;
     first(): OpenBrowserUseCssLocator;
     last(): OpenBrowserUseCssLocator;
-    locator(selector: string): OpenBrowserUseCssLocator;
+    locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
@@ -550,7 +556,7 @@ export declare class OpenBrowserUseRoleLocator {
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
     last(): OpenBrowserUseRoleLocator;
-    locator(selector: string): OpenBrowserUseCssLocator;
+    locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
     private child;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;

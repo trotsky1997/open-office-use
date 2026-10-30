@@ -267,6 +267,7 @@ console.log(await items.count(), await items.first().textContent());
 await tab.playwright.getByTestId("save-button").click();
 await tab.playwright.locator(".product").getByTestId("price").textContent();
 await tab.playwright.locator(".product").first().locator("button.buy").click();
+const books = tab.playwright.locator(".catalog").locator(".product", {hasText: "Book"});
 console.log(await payment.locator("input[name=card]").getAttribute("name"));
 ```
 
@@ -302,7 +303,9 @@ scope is rechecked along with the final matches before reads and input. CSS loca
 expressions, before or after `first`/`last`/`nth`. Filters use normalized DOM
 text including open shadow roots and hidden text, excluding script, style and
 noscript; they stay within the selected frame. A filtered element's collected
-text is limited to 30,000 characters. Filters are re-evaluated before input. CSS `filter({has: inner})`
+text is limited to 30,000 characters. Filters are re-evaluated before input. `locator(selector, options)` also accepts
+`hasText`, `hasNotText`, `has` and `hasNot`, applying them to the newly
+selected descendants; unsupported option keys are rejected. CSS `filter({has: inner})`
 and `filter({hasNot: inner})` accept CSS locators from the same browser tab and
 frame, evaluated relative to each candidate, including open shadow roots.
 Nested locator filters are limited to eight levels and 100,000 element visits. `and(other)` intersects two CSS locators
