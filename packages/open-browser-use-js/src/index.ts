@@ -98,6 +98,22 @@ async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, si
 function validateSequentialText(text:string):void {
   if(typeof text!=="string" || /[\u0000-\u0008\u000b-\u001f\u007f\ud800-\udfff]/u.test(text)) throw new Error("Invalid sequential text");
 }
+function evaluationArgument(arg:unknown):string {
+  let serialized: string | undefined;
+  try {
+    serialized=arg === undefined ? undefined : JSON.stringify(arg,(_key,value)=>{
+      if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value,-0))) throw new Error("Invalid JSON number");
+      if (["undefined","function","symbol","bigint"].includes(typeof value) || (value && typeof value === "object" && Object.getOwnPropertySymbols(value).length)) throw new Error("Invalid JSON value");
+      return value;
+    });
+  } catch { throw new Error("Evaluation argument must be JSON serializable without losing values"); }
+  if (arg !== undefined && serialized === undefined) throw new Error("Evaluation argument must be JSON serializable");
+  // Computed keys preserve __proto__ as data without using the page’s JSON.parse.
+  const encode=(value:JsonValue):string => Array.isArray(value) ? `[${value.map(encode).join(",")}]` : value !== null && typeof value === "object" ? `{${Object.entries(value).map(([key,item])=>`[${JSON.stringify(key)}]:${encode(item)}`).join(",")}}` : JSON.stringify(value);
+  let input:string;
+  try { input=serialized === undefined ? "undefined" : encode(JSON.parse(serialized) as JsonValue); } catch { throw new Error("Evaluation argument must be JSON serializable"); }
+  return input;
+}
 function testIdSelector(testId: string): string {
   if (typeof testId !== "string" || testId.length > 500 || /[\u0000\ud800-\udfff]/u.test(testId)) throw new Error("Invalid test id");
   return `[data-testid="${Array.from(testId,char=>`\\${char.codePointAt(0)!.toString(16)} `).join("")}"]`;
@@ -1284,6 +1300,39 @@ export class OpenBrowserUseTab {
       } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId:ownerId},{sessionId:ownerSession}).catch(()=>{}); }
     }
     return true;
+  }
+
+  /** @internal */
+  evaluateNode(id:number,frame:FrameInfo,fn:string,input:string,timeoutMs:number,deadline:number,verify:()=>Promise<void>):Promise<JsonValue> {
+    const controller=new AbortController(),sessionId=frame.sessionId,key=`__obu_eval_${randomUUID().replace(/-/g,"")}`;
+    const check=()=>{if(controller.signal.aborted || (timeoutMs!==0 && performance.now()>=deadline)){controller.abort();throw new Error("Locator evaluation timed out");}};
+    const work=async()=>{
+      await verify();check();
+      const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId:frame.id,worldName:"open-browser-use-selector"},{sessionId,signal:controller.signal});
+      if(!isObject(world) || typeof world.executionContextId!=="number")throw new RetryablePreflightError("Target context is unavailable; observe again");
+      const contextId=world.executionContextId;check();
+      const resolved=await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:id,executionContextId:contextId},{sessionId,signal:controller.signal});
+      const objectId=isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+      if(typeof objectId!=="string")throw new RetryablePreflightError("Target is unavailable; observe again");
+      let stored=false;
+      try {
+        check();stored=true;
+        const saved=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,functionDeclaration:"function(key){globalThis[key]=this;return true}",arguments:[{value:key}],returnByValue:true},{sessionId,signal:controller.signal});
+        if(!isObject(saved) || !isObject(saved.result) || saved.result.value!==true)throw new Error("Cannot prepare locator evaluation");
+        await verify();check();
+        const executionTimeout=timeoutMs===0 ? 5000 : Math.max(1,Math.ceil(deadline-performance.now()));
+        const expression=`(node=>{const element=node?.nodeType===3 ? node.parentElement : node;if(!(element instanceof Element) || !element.isConnected)throw new Error('Target changed');return (${fn})(element,${input})})(globalThis[${JSON.stringify(key)}])`;
+        const result=await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression,contextId,returnByValue:true,awaitPromise:true,throwOnSideEffect:true,timeout:executionTimeout},{sessionId,signal:controller.signal,timeoutMs:executionTimeout});
+        if(isObject(result) && isObject(result.exceptionDetails)){const error=result.exceptionDetails.exception;throw new Error(isObject(error) && typeof error.description==="string" ? error.description : String(result.exceptionDetails.text ?? "Locator evaluation failed"));}
+        if(!isObject(result) || !isObject(result.result))throw new Error("Invalid locator evaluation result");
+        const remote=result.result;if(remote.unserializableValue!==undefined || (!("value" in remote) && remote.type!=="undefined"))throw new Error("Evaluation result is not JSON serializable");
+        await verify();check();return remote.type==="undefined" ? null : remote.value as JsonValue;
+      } finally {
+        if(stored)await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,functionDeclaration:"function(key){delete globalThis[key]}",arguments:[{value:key}],returnByValue:true},{sessionId}).catch(()=>{});
+        await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});
+      }
+    };
+    return locatorReadBeforeDeadline(work(),timeoutMs,deadline,"Locator evaluation timed out").catch(error=>{controller.abort();throw error;});
   }
 
   /** @internal */
@@ -2904,19 +2953,7 @@ export class OpenBrowserUseTabPlaywright {
       return read(pageFunction);
     }
     if (typeof pageFunction !== "function") throw new Error("Evaluation requires a function or expression");
-    let serialized: string | undefined;
-    try {
-      serialized=arg === undefined ? undefined : JSON.stringify(arg,(_key,value)=>{
-        if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value,-0))) throw new Error("Invalid JSON number");
-        if (["undefined","function","symbol","bigint"].includes(typeof value) || (value && typeof value === "object" && Object.getOwnPropertySymbols(value).length)) throw new Error("Invalid JSON value");
-        return value;
-      });
-    } catch { throw new Error("Evaluation argument must be JSON serializable without losing values"); }
-    if (arg !== undefined && serialized === undefined) throw new Error("Evaluation argument must be JSON serializable");
-    // Computed keys preserve __proto__ as data without using the page’s JSON.parse.
-    const encode=(value:JsonValue):string => Array.isArray(value) ? `[${value.map(encode).join(",")}]` : value !== null && typeof value === "object" ? `{${Object.entries(value).map(([key,item])=>`[${JSON.stringify(key)}]:${encode(item)}`).join(",")}}` : JSON.stringify(value);
-    let input:string;
-    try { input=serialized === undefined ? "undefined" : encode(JSON.parse(serialized) as JsonValue); } catch { throw new Error("Evaluation argument must be JSON serializable"); }
+    const input=evaluationArgument(arg);
     return read(`(${Function.prototype.toString.call(pageFunction)})(${input})`);
   }
 
@@ -3105,6 +3142,16 @@ export class OpenBrowserUseCssLocator {
       if (remaining <= 0) throw new Error(`Locator target unavailable before timeout (${timeoutMs} ms)`);
       await new Promise(resolve=>setTimeout(resolve,Math.min(100,remaining)));
     }
+  }
+  evaluate<T extends JsonValue = JsonValue>(pageFunction:string | ((element:Element,arg:T)=>unknown),arg?:T,options:{timeoutMs?:number} = {}):Promise<JsonValue> {
+    if(typeof pageFunction!=="string" && typeof pageFunction!=="function")throw new Error("Evaluation requires a function");
+    if(!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>key!=="timeoutMs"))throw new Error("Invalid evaluation options");
+    const fn=typeof pageFunction==="string" ? pageFunction : Function.prototype.toString.call(pageFunction),input=evaluationArgument(arg),timeoutMs=options.timeoutMs ?? 5000;
+    return this.perform((snapshot,id,deadline)=>{
+      if(!snapshot.frame)throw new RetryablePreflightError("Target frame unavailable; observe again");
+      const verify=async()=>{const fresh=await this.tab.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);if(fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids))throw new RetryablePreflightError("Selector target changed; observe again");};
+      return this.tab.evaluateNode(id,snapshot.frame,fn,input,timeoutMs,deadline,verify);
+    },timeoutMs,true);
   }
   private read(mode: "innerText" | "textContent" | "attribute", name = "", timeoutMs = 5000): Promise<string | null> {
     return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,mode,name) as string | null,timeoutMs,true);
@@ -3413,6 +3460,17 @@ export class OpenBrowserUseRoleLocator {
     }
   }
 
+  evaluate<T extends JsonValue = JsonValue>(pageFunction:string | ((element:Element,arg:T)=>unknown),arg?:T,options:{timeoutMs?:number} = {}):Promise<JsonValue> {
+    if(typeof pageFunction!=="string" && typeof pageFunction!=="function")throw new Error("Evaluation requires a function");
+    if(!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>key!=="timeoutMs"))throw new Error("Invalid evaluation options");
+    const fn=typeof pageFunction==="string" ? pageFunction : Function.prototype.toString.call(pageFunction),input=evaluationArgument(arg),timeoutMs=options.timeoutMs ?? 5000;
+    return this.perform((node,id,deadline)=>{
+      const observation=this.tab.currentObservation(id),target=observation.nodes.find(item=>item.index===node.index),frame=observation.frames?.find(item=>item.id===(target?.frameId ?? observation.frames?.[0]?.id));
+      if(!target || !frame)throw new RetryablePreflightError("Target frame unavailable; observe again");
+      const verify=async()=>{await this.tab.locatorRead(id,node.index,"visible");};
+      return this.tab.evaluateNode(target.backendNodeId,frame,fn,input,timeoutMs,deadline,verify);
+    },timeoutMs,true);
+  }
   async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs,true); }
   async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs,true); }
   async isEnabled(options: {timeoutMs?:number} = {}): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean,options.timeoutMs,true); }

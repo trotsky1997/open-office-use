@@ -244,6 +244,13 @@ await tab.playwright.getByRole("listitem").filter({ hasText: "Apples" })
   .getByRole("button", { name: "Add", exact: true }).click();
 ```
 
+`locator.evaluate((element, argument) => ..., argument, {timeoutMs})` reads one
+matched element in an isolated browser world. The locator must resolve uniquely;
+its target and scope are checked before and after evaluation. Chromium rejects
+operations it considers to have side effects, and the execution deadline stops
+long-running code. Text-node matches provide their parent element. The page's
+JavaScript variables are unavailable in this isolated world.
+
 `innerText()` reads the matched DOM node, including in supported frames. It
 requires one match and rejects text longer than 30,000 characters.
 Heading locators can filter by positive integer `level`; observations expose
