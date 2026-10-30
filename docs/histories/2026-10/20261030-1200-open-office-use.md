@@ -367,3 +367,5 @@ Bound shared OOXML part selection and rewriting to a checked source snapshot. Sl
 Bound spreadsheet grid reads, value edits and style edits to matching snapshots, and connected the viewer and MCP to optional expected hashes. Other grid operations need separate consistency review.
 
 Bound merge, frozen-pane and grid sizing edits to checked workbook snapshots and exposed expected hashes to MCP and the viewer.
+
+Bound element inspection and direct text edits to checked source snapshots; viewer direct edits and replacements supply the loaded snapshot hash.

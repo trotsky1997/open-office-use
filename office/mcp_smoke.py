@@ -374,7 +374,9 @@ async def main():
                 assert outdated_restore.isError, outdated_restore
                 target = await session.call_tool('session_edit_target', {'directory': str(directory), 'base_revision': 3, 'path': '/body/p[1]'})
                 assert not target.isError and target.structuredContent['value'] == 'MCP works', target
-                edited = await session.call_tool('session_edit', {'directory': str(directory), 'base_revision': 3, 'path': target.structuredContent['path'], 'mode': 'text', 'value': 'Edited via MCP'})
+                wrong_target = await session.call_tool('session_edit', {'directory':str(directory),'base_revision':3,'path':target.structuredContent['path'],'mode':'text','value':'bad','expected_sha256':'0'*64})
+                assert wrong_target.isError, wrong_target
+                edited = await session.call_tool('session_edit', {'directory': str(directory), 'base_revision': 3, 'path': target.structuredContent['path'], 'mode': 'text', 'value': 'Edited via MCP', 'expected_sha256':target.structuredContent['snapshot_sha256']})
                 assert not edited.isError and edited.structuredContent['revision'] == 4, edited
 
                 conflict = await session.call_tool('session_apply', {'directory': str(directory), 'base_revision': 0, 'operations': []})

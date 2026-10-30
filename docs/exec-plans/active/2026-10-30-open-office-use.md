@@ -264,3 +264,5 @@ Shared OOXML part selection and rewriting use one checked snapshot; slide reorde
 Grid read, value edit and formatting now use snapshot-bound checks and allow an expected hash; viewer value/style edits bind to the loaded grid. Other grid mutations remain to be reviewed.
 
 Grid merge, freeze and resize now bind validation and writes to checked snapshots; the viewer and MCP can validate against a previously read grid hash.
+
+Element target inspection and direct/replacement edits support expected source hashes; viewer binds those actions to the displayed snapshot. Other element actions need separate consistency review.

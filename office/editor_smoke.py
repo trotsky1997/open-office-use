@@ -1,6 +1,7 @@
 """Verify version-bound single-element edits against real OfficeCLI."""
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from docx import Document
 from openpyxl import Workbook, load_workbook
@@ -29,7 +30,10 @@ with tempfile.TemporaryDirectory() as tmp:
             assert target['value'] == '=1+2'
         else:
             assert target['value'] == 'Original'
-        edited = session.edit(draft, 0, target['path'], mode, value)
+        try: session.edit(draft, 0, target['path'], mode, value, expected_sha256='0'*64)
+        except ValueError as exc: assert 'snapshot changed' in str(exc)
+        else: raise AssertionError('Wrong target snapshot accepted')
+        edited = session.edit(draft, 0, target['path'], mode, value, expected_sha256=target['snapshot_sha256'])
         assert edited['revision'] == 1 and source.read_bytes() == original
         after = session.edit_target(draft, 1, target['path'])
         assert after['value'] == value, after
@@ -52,6 +56,25 @@ with tempfile.TemporaryDirectory() as tmp:
             except ValueError as error:
                 assert 'formula mode' in str(error)
         assert session.info(draft)['latest_revision'] == 1
+    race_source = root/'race.docx'; doc = Document(); doc.add_paragraph('Original'); doc.save(race_source)
+    other = root/'other.docx'; doc = Document(); doc.add_paragraph('Original extra'); doc.save(other)
+    race_draft = root/'race-draft'; session.start(race_draft, source=race_source)
+    original_target = session.edit_target
+    def swap_after_target(*args):
+        target = original_target(*args)
+        (race_draft/'revision-000000.docx').write_bytes(other.read_bytes())
+        return target
+    with patch.object(session, 'edit_target', side_effect=swap_after_target):
+        try: session.edit(race_draft, 0, '/body/p[1]', 'text', 'Changed')
+        except ValueError as exc: assert 'snapshot changed' in str(exc)
+        else: raise AssertionError('Changed target source accepted')
+    assert session.info(race_draft)['latest_revision'] == 0
+    stale_hash = session.edit_target(race_draft, 0, '/body/p[1]')['snapshot_sha256']
+    (race_draft/'revision-000000.docx').write_bytes(race_source.read_bytes())
+    try: session.replace_text(race_draft, 0, '/body/p[1]', 'Original', 'Changed', expected_sha256=stale_hash)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Changed replacement source accepted')
+    assert session.info(race_draft)['latest_revision'] == 0
     literal_source = root / 'literal.xlsx'; book = Workbook(); book.active['A1'] = '00123'; book.save(literal_source)
     literal_draft = root / 'literal'; session.start(literal_draft, source=literal_source)
     assert session.edit_target(literal_draft, 0, '/Sheet/A1')['mode'] == 'literal'

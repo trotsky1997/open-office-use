@@ -124,7 +124,7 @@ def dump(directory, revision, path='/'):
     return {'revision': revision, **officecli_backend.dump(source, path)}
 
 
-def apply(directory, base_revision, operations):
+def apply(directory, base_revision, operations, expected_sha256=None):
     state = info(directory)
     source = revision_file(state, base_revision)
     if base_revision != state['latest_revision']:
@@ -133,7 +133,10 @@ def apply(directory, base_revision, operations):
         raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.{state['format']}"
     try:
-        result = officecli_backend.batch(operations, output, source)
+        with tempfile.TemporaryDirectory(prefix='office-apply-source-') as tmp:
+            frozen, digest = snapshots.copy(source, tmp)
+            if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Document snapshot changed; reload the target')
+            result = officecli_backend.batch(operations, output, frozen)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], **({'formula_cache_effect': result['formula_cache_effect']} if 'formula_cache_effect' in result else {})}
@@ -427,10 +430,14 @@ def get_selection(directory):
 def edit_target(directory, base_revision, path):
     if not isinstance(path, str) or not path.startswith('/') or len(path) > 512 or '\x00' in path:
         raise ValueError('Provide a valid element path of at most 512 characters')
-    state = info(directory)
-    source = revision_file(state, base_revision)
-    if base_revision != state['latest_revision']:
-        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    state = info(directory); source = revision_file(state, base_revision)
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    with tempfile.TemporaryDirectory(prefix='office-edit-target-') as tmp:
+        frozen, digest = snapshots.copy(source, tmp)
+        return {**_edit_target(directory, base_revision, path, state, frozen), 'snapshot_sha256': digest}
+
+
+def _edit_target(directory, base_revision, path, state, source):
     if state['format'] == 'docx' and word.NOTE_PATH.fullmatch(path):
         part = word.paragraph_part(source, path)
         with zipfile.ZipFile(source) as archive:
@@ -504,7 +511,7 @@ def edit_target(directory, base_revision, path):
             read_only_reason = 'unsupported_cell_path'
         else:
             address = match.group(2).upper() + match.group(3)
-            cell = read_grid(directory, base_revision, match.group(1), address)['rows'][0][0]
+            cell = _read_grid(directory, base_revision, match.group(1), address, source)['rows'][0][0]
             read_only_reason = cell['read_only_reason']
     latest = info(directory)['latest_revision']
     if base_revision != latest:
@@ -514,10 +521,11 @@ def edit_target(directory, base_revision, path):
             'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode in ('value', 'literal') and format_data.get('type') in {'String', 'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
 
 
-def edit(directory, base_revision, path, mode, value):
+def edit(directory, base_revision, path, mode, value, expected_sha256=None):
     if not isinstance(value, str) or len(value) > 4000:
         raise ValueError('Value must be text of at most 4,000 characters')
     target = edit_target(directory, base_revision, path)
+    if expected_sha256 is not None and target['snapshot_sha256'] != expected_sha256: raise ValueError('Document snapshot changed; reload the target')
     if target.get('read_only_reason'): raise ValueError(f"Cell cannot be edited: {target['read_only_reason']}")
     if target.get('replace_only'): raise ValueError('Use text replacement for this paragraph')
     if target['format'] == 'pptx' and target['type'] == 'tc':
@@ -532,8 +540,8 @@ def edit(directory, base_revision, path, mode, value):
     if target['format'] == 'xlsx':
         match = cell_text.PATH.fullmatch(target['path'])
         address = match.group(2).upper() + match.group(3)
-        return edit_grid(directory, base_revision, match.group(1), address, [{'cell': address, 'value': value, **({'type': 'text'} if mode == 'literal' and value else {})}])
-    return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])
+        return edit_grid(directory, base_revision, match.group(1), address, [{'cell': address, 'value': value, **({'type': 'text'} if mode == 'literal' and value else {})}], expected_sha256=target['snapshot_sha256'])
+    return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}], expected_sha256=target['snapshot_sha256'])
 
 
 def replace_document_text(format, source, output, path, find, replacement):
@@ -543,7 +551,7 @@ def replace_document_text(format, source, output, path, find, replacement):
     return {'docx': word, 'pptx': slides, 'xlsx': cell_text}[format].replace_text(source, output, path, find, replacement)
 
 
-def replace_text(directory, base_revision, path, find, replacement):
+def replace_text(directory, base_revision, path, find, replacement, expected_sha256=None):
     state = info(directory)
     source = revision_file(state, base_revision)
     if base_revision != state['latest_revision']:
@@ -552,7 +560,10 @@ def replace_text(directory, base_revision, path, find, replacement):
         raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.{state['format']}"
     try:
-        replace_document_text(state['format'], source, output, path, find, replacement)
+        with tempfile.TemporaryDirectory(prefix='office-replace-source-') as tmp:
+            frozen, digest = snapshots.copy(source, tmp)
+            if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Document snapshot changed; reload the target')
+            replace_document_text(state['format'], frozen, output, path, find, replacement)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'path': path, **({'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True} if state['format'] == 'xlsx' else {})}

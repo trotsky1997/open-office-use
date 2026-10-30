@@ -198,7 +198,10 @@ with tempfile.TemporaryDirectory() as tmp:
         element = urllib.request.Request(url + 'element', data=json.dumps({'base_revision': 2, 'path': '/body/p[1]'}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         target = json.loads(urllib.request.urlopen(element).read())
         assert target['value'] == 'First' and target['revision'] == 2
-        edit_data = {'base_revision': 2, 'path': target['path'], 'mode': 'text', 'value': 'User edit'}
+        edit_data = {'base_revision': 2, 'path': target['path'], 'mode': 'text', 'value': 'User edit', 'snapshot_sha256':target['snapshot_sha256']}
+        wrong_hash = urllib.request.Request(url + 'edit', data=json.dumps({**edit_data,'snapshot_sha256':'0'*64}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        try: urllib.request.urlopen(wrong_hash); raise AssertionError('Wrong element snapshot accepted')
+        except urllib.error.HTTPError as error: assert error.code == 400
         forbidden_edit = urllib.request.Request(url + 'edit', data=json.dumps(edit_data).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
         try:
             urllib.request.urlopen(forbidden_edit)

@@ -617,7 +617,7 @@ async function loadElement(path) {
  try {
   const response=await fetch('element', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:current,path})});
   const target=await response.json(); if (!response.ok) throw new Error(target.error || 'Could not load element');
-  if (target.revision !== current || pinned !== null || document.getElementById('edit-path').value !== path) throw new Error('Version or path changed; load the element again.');
+  if (target.revision !== current || target.snapshot_sha256 !== displayedHash || pinned !== null || document.getElementById('edit-path').value !== path) throw new Error('Version or path changed; load the element again.');
   loaded=target; document.getElementById('edit-path').value=target.path;
   const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula','literal'] : ['text'];
   mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind==='literal' ? 'literal text' : kind;return option;}));
@@ -649,7 +649,7 @@ document.getElementById('edit-form').addEventListener('submit', async event => {
  const mode=document.getElementById('edit-mode'), value=document.getElementById('edit-value'), snapshot={value:value.value,mode:mode.value};
  editBusy=true; button.disabled=true; document.getElementById('edit-load').disabled=true; path.disabled=true; mode.disabled=true; value.readOnly=true;
  try {
-  const response=await fetch('edit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,mode:snapshot.mode,value:snapshot.value})});
+  const response=await fetch('edit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,mode:snapshot.mode,value:snapshot.value,snapshot_sha256:target.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Edit failed');
   editBaseline=snapshot; invalidateEdit(`Saved as revision ${result.revision}.${result.recalculation_requested ? ' Formula caches may be stale; recalculation is requested on open.' : ''}${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}${result.dynamic_formula_cells?.length ? ' Dynamic formula spill ranges require compatible recalculation and review.' : ''}`); await refresh();
  } catch (error) {
@@ -683,7 +683,7 @@ document.getElementById('word-replace').addEventListener('click', async () => {
  const replacementPath=number && !paragraph.parentElement.hidden ? `${target.path}/paragraph[${number}]` : target.path;
  editBusy=true; button.disabled=true; find.disabled=true; replacement.disabled=true; document.getElementById('edit-save').disabled=true; document.getElementById('edit-load').disabled=true; path.disabled=true; mode.disabled=true; value.readOnly=true;
  try {
-  const response=await fetch('replace-text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:replacementPath,find:find.value,replacement:replacement.value})});
+  const response=await fetch('replace-text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:replacementPath,find:find.value,replacement:replacement.value,snapshot_sha256:target.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Replacement failed');
   invalidateEdit(`Replacement saved as revision ${result.revision}. ${result.recalculation_requested ? 'Formula caches may be stale; recalculation is requested on open. ' : ''}Reload the element to see its updated content.`); await refresh();
  } catch(error) {
@@ -1597,9 +1597,9 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Tracked replacement requires revision, path, find, replacement and author')
                             saved = session.track_replace_text(directory, payload['base_revision'], payload['path'], payload['find'], payload['replacement'], payload['author'])
                         elif route.endswith('/replace-text'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'find', 'replacement'}, {'base_revision', 'path', 'find', 'replacement', 'snapshot_sha256'}):
                                 raise ValueError('Text replacement requires revision, path, find and replacement')
-                            saved = session.replace_text(directory, payload['base_revision'], payload['path'], payload['find'], payload['replacement'])
+                            saved = session.replace_text(directory, payload['base_revision'], payload['path'], payload['find'], payload['replacement'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/element'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path'}:
                                 raise ValueError('Element requires base_revision and path')
@@ -1631,9 +1631,9 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Grid edit requires base_revision, sheet, cell_range and changes')
                             saved = session.edit_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['changes'], expected_sha256=payload.get('snapshot_sha256'))
                         else:
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'mode', 'value'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'mode', 'value'}, {'base_revision', 'path', 'mode', 'value', 'snapshot_sha256'}):
                                 raise ValueError('Edit requires base_revision, path, mode and value')
-                            saved = session.edit(directory, payload['base_revision'], payload['path'], payload['mode'], payload['value'])
+                            saved = session.edit(directory, payload['base_revision'], payload['path'], payload['mode'], payload['value'], expected_sha256=payload.get('snapshot_sha256'))
                     self.send(200, json.dumps(saved, default=str).encode(), 'application/json')
                 except (ValueError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
                     self.send(400, json.dumps({'error': str(exc)}).encode(), 'application/json')
