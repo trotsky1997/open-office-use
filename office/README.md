@@ -79,6 +79,17 @@ For ordered Word content, `author` and MCP `author_file` accept `blocks`:
 
 Text blocks accept either `text` or `runs`; runs accept boolean `bold`, `italic` and `underline`. Heading levels range from 1 to 9. A table's optional `header` bolds its first row and marks it as a repeating header; optional `style` must name a table style available in the document. Lists use the document's `List Bullet` and `List Number` styles. Blocks follow any legacy `paragraphs` entries and, with a source, are appended after existing content. Limits are 200 blocks, 200 runs per text block, 100 rows and 20 columns per table, 2,000 cells per table, 10,000 characters per run or cell, and 2,000,000 serialized characters for all blocks. Render and inspect the resulting document in the target application.
 
+For basic Excel authoring, `sheet_options` can format a workbook in the same request:
+
+```json
+{"sheets":{"Forecast":{"A1":"Quarter","B1":"Revenue","A2":"Q1","B2":100,"A3":"Q2","B3":"=B2*1.2"}},
+ "sheet_options":{"Forecast":{"freeze_panes":"B2","auto_filter":"A1:B3","column_widths":{"A":18,"B":20},"row_heights":{"1":24},
+   "formats":[{"range":"A1:B1","bold":true,"fill":"236B8E","font_color":"FFFFFF","horizontal":"center"},
+              {"range":"B2:B3","number_format":"#,##0.00"}]}}}
+```
+
+Options apply to existing worksheets after values are written. Freeze panes accepts a single cell or `null`; auto-filter accepts a range of at most 10,000,000 cells or `null` and rejects replacement when existing filter criteria or sort state are present. Column widths use Excel character units (greater than 0 and at most 255); row heights use points (greater than 0 and at most 409.5). Format entries accept `bold`, `italic`, `font_size`, six-digit RGB `font_color` and `fill`, `number_format`, `horizontal` (`general`, `left`, `center`, `right`) and boolean `wrap`. Omitted properties retain their existing direct settings. Each format covers up to 10,000 cells; all formats together cover up to 20,000 cells, with at most 100 format entries per sheet and 200 dimension entries of each kind. Merged-cell placeholders are rejected. Formulas are stored without calculation; formula caches may be missing and LibreOffice previews may recalculate them. When modifying an existing workbook, library round-tripping can change unsupported features and formula caches; use the targeted session grid when preserving those matters.
+
 PowerPoint authoring also supports positioned elements and a custom slide size for new files:
 
 ```json

@@ -1,5 +1,6 @@
 """Small local file-oriented office harness."""
 import argparse
+from copy import copy
 import importlib
 import importlib.metadata
 import io
@@ -18,6 +19,10 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook
+from openpyxl.styles import PatternFill
+from openpyxl.cell.cell import MergedCell
+from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.utils.cell import column_index_from_string, range_boundaries
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -286,11 +291,86 @@ def append_slides(presentation, slides):
                 shape._element.nvPicPr.cNvPr.set('descr', description)
 
 
+def format_workbook(workbook, options):
+    """Apply bounded presentation settings to an authored workbook."""
+    if not isinstance(options, dict) or len(options) > 100: raise ValueError('Sheet options must be an object with at most 100 sheets')
+    total_cells = 0
+    def bounds(reference, limit):
+        if not isinstance(reference, str) or len(reference) > 32: raise ValueError('Invalid cell range')
+        try: a, b, c, d = range_boundaries(reference)
+        except ValueError: raise ValueError('Invalid cell range') from None
+        if not all(isinstance(value, int) for value in (a, b, c, d)) or not (1 <= a <= c <= 16384 and 1 <= b <= d <= 1048576) or (c-a+1)*(d-b+1) > limit:
+            raise ValueError('Invalid or oversized cell range')
+        return a, b, c, d
+    def amount(value, name, maximum):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= maximum or not math.isfinite(value): raise ValueError(f'Invalid {name}')
+        return value
+    def rgb(value):
+        if not isinstance(value, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', value): raise ValueError('Colors must be six-digit RGB values')
+        return 'FF' + value.upper()
+    for name, setting in options.items():
+        if name not in workbook.sheetnames: raise ValueError(f'Worksheet not found: {name}')
+        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats'}: raise ValueError('Invalid worksheet options')
+        sheet = workbook[name]
+        if not isinstance(sheet, Worksheet): raise ValueError('Sheet options require a worksheet')
+        if 'freeze_panes' in setting:
+            value = setting['freeze_panes']
+            if value is not None:
+                if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', value): raise ValueError('Freeze panes requires a single cell')
+                bounds(value, 1)
+            sheet.freeze_panes = value
+        if 'auto_filter' in setting:
+            value = setting['auto_filter']
+            if value is not None: bounds(value, 10000000)
+            if sheet.auto_filter.filterColumn or sheet.auto_filter.sortState is not None: raise ValueError('Existing filter criteria or sort state require targeted editing')
+            sheet.auto_filter.ref = value
+        for key, maximum in (('column_widths', 255), ('row_heights', 409.5)):
+            dimensions = setting.get(key, {})
+            if not isinstance(dimensions, dict) or len(dimensions) > 200: raise ValueError('Dimensions must be an object with at most 200 entries')
+            for index, value in dimensions.items():
+                if key == 'column_widths':
+                    if not isinstance(index, str) or not re.fullmatch(r'[A-Za-z]{1,3}', index) or column_index_from_string(index.upper()) > 16384: raise ValueError('Invalid column')
+                    sheet.column_dimensions[index.upper()].width = amount(value, 'column width', maximum)
+                else:
+                    if not isinstance(index, str) or not re.fullmatch(r'[1-9][0-9]{0,6}', index) or int(index) > 1048576: raise ValueError('Invalid row')
+                    sheet.row_dimensions[int(index)].height = amount(value, 'row height', maximum)
+        formats = setting.get('formats', [])
+        if not isinstance(formats, list) or len(formats) > 100: raise ValueError('Formats must be a list of at most 100 entries')
+        for style in formats:
+            allowed = {'range', 'bold', 'italic', 'font_size', 'font_color', 'fill', 'number_format', 'horizontal', 'wrap'}
+            if not isinstance(style, dict) or not set(style) <= allowed or 'range' not in style or len(style) == 1: raise ValueError('Invalid worksheet format')
+            a, b, c, d = bounds(style['range'], 10000); total_cells += (c-a+1)*(d-b+1)
+            if total_cells > 20000: raise ValueError('Worksheet formats exceed 20,000 cells')
+            for key in ('bold', 'italic', 'wrap'):
+                if key in style and not isinstance(style[key], bool): raise ValueError(f'{key} must be a boolean')
+            if 'font_size' in style and amount(style['font_size'], 'font size', 409) < 1: raise ValueError('Font size must be at least 1 point')
+            for key in ('font_color', 'fill'):
+                if key in style: rgb(style[key])
+            if 'number_format' in style and (not isinstance(style['number_format'], str) or not 1 <= len(style['number_format']) <= 255): raise ValueError('Number format must be text of at most 255 characters')
+            if 'horizontal' in style and style['horizontal'] not in ('general', 'left', 'center', 'right'): raise ValueError('Invalid horizontal alignment')
+            for row in sheet.iter_rows(min_row=b, max_row=d, min_col=a, max_col=c):
+                for cell in row:
+                    if isinstance(cell, MergedCell): raise ValueError('Cannot format merged-cell placeholders in basic authoring')
+                    if any(key in style for key in ('bold', 'italic', 'font_size', 'font_color')):
+                        font = copy(cell.font)
+                        for key, attr in (('bold','bold'), ('italic','italic'), ('font_size','size'), ('font_color','color')):
+                            if key in style: setattr(font, attr, rgb(style[key]) if key == 'font_color' else style[key])
+                        cell.font = font
+                    if 'fill' in style: cell.fill = PatternFill(fill_type='solid', fgColor=rgb(style['fill']))
+                    if 'horizontal' in style or 'wrap' in style:
+                        alignment = copy(cell.alignment)
+                        if 'horizontal' in style: alignment.horizontal = style['horizontal']
+                        if 'wrap' in style: alignment.wrap_text = style['wrap']
+                        cell.alignment = alignment
+                    if 'number_format' in style: cell.number_format = style['number_format']
+
+
 def author(spec, output, source=None):
     if not isinstance(spec, dict): raise ValueError('Author specification must be a JSON object')
     suffix = kind(output)
     if 'blocks' in spec and suffix != '.docx': raise ValueError('Word blocks require DOCX output')
     if 'slide_size' in spec and suffix != '.pptx': raise ValueError('Slide size requires PPTX output')
+    if 'sheet_options' in spec and suffix != '.xlsx': raise ValueError('Sheet options require XLSX output')
     if source and kind(source) != suffix:
         raise ValueError('Source and output formats must match')
     out = Path(output)
@@ -319,6 +399,7 @@ def author(spec, output, source=None):
                     ws[address] = value
             if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:
                 del obj['Sheet']
+            if 'sheet_options' in spec: format_workbook(obj, spec['sheet_options'])
         else:
             obj = Presentation(source) if source else Presentation()
             for item in spec.get('replace_text', []):

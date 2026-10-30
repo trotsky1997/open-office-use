@@ -43,6 +43,10 @@ async def main():
                 blocks = [{'type':'heading','text':'Summary'}, {'type':'paragraph','runs':[{'text':'Growth '},{'text':'18%','bold':True}]}, {'type':'table','header':True,'rows':[['Metric','Value'],['Growth','18%']]}]
                 authored_blocks = await session.call_tool('author_file', {'spec':{'blocks':blocks}, 'output':str(structured_word)})
                 assert not authored_blocks.isError and Document(structured_word).paragraphs[1].runs[1].bold and Document(structured_word).tables[0].cell(1,1).text == '18%', authored_blocks
+                formatted_book = root / 'formatted.xlsx'
+                book_spec = {'sheets':{'Data':{'A1':'Revenue','A2':120}}, 'sheet_options':{'Data':{'freeze_panes':'A2','column_widths':{'A':20},'formats':[{'range':'A1','bold':True,'fill':'236B8E'}]}}}
+                authored_book = await session.call_tool('author_file', {'spec':book_spec, 'output':str(formatted_book)})
+                assert not authored_book.isError and load_workbook(formatted_book)['Data']['A1'].font.bold and load_workbook(formatted_book)['Data'].freeze_panes == 'A2', authored_book
                 positioned = root / 'positioned.pptx'
                 slide_spec = {'slide_size':{'width':13.333,'height':7.5}, 'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':5,'height':1,'text':'Positioned title','font_size':32}, {'type':'table','x':1,'y':2,'width':5,'height':1,'rows':[['Metric','Value'],['Growth','18%']],'header':True}]}]}
                 authored_slide = await session.call_tool('author_file', {'spec':slide_spec, 'output':str(positioned)})

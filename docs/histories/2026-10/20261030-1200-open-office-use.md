@@ -211,3 +211,7 @@ Added aspect-preserving contain and centered cover modes to CLI/MCP slide image 
 ### Editable PowerPoint table authoring
 
 Added positioned native table elements to basic CLI/MCP slide authoring, with bounded text grids, headers, colors, fonts and proportional column widths. Verified PPTX structure, invalid input, real MCP creation and LibreOffice rendering. Native PowerPoint rendering remains unverified.
+
+### Formatted spreadsheet authoring
+
+Added `sheet_options` to basic CLI/MCP workbook authoring for direct formats, number formats, sizing, freeze panes and auto-filter ranges. Tested real workbook structure, formula cache state, source-copy behavior, protected filter criteria, invalid input, MCP and LibreOffice preview. Native Excel rendering and complex source round-tripping remain unverified.
