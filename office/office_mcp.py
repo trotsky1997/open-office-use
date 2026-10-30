@@ -171,6 +171,18 @@ def list_word_comments(file: str) -> dict[str, Any]:
 
 
 @server.tool()
+def list_word_stories(file: str) -> dict[str, Any]:
+    """List bounded header and footer paragraphs and explicit section references in a saved DOCX."""
+    return word.list_stories(file)
+
+
+@server.tool()
+def session_list_word_stories(directory: str, revision: int) -> dict[str, Any]:
+    """List header and footer paragraph targets from an exact DOCX session revision."""
+    return session.list_stories(directory, revision)
+
+
+@server.tool()
 def session_list_comments(directory: str, revision: int) -> dict[str, Any]:
     """List comments from an exact DOCX session revision and report main-body anchor hints."""
     return session.list_comments(directory, revision)

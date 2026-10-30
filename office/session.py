@@ -228,6 +228,13 @@ def edit_target(directory, base_revision, path):
     source = revision_file(state, base_revision)
     if base_revision != state['latest_revision']:
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if state['format'] == 'docx' and word.STORY_PATH.fullmatch(path):
+        inventory = word.list_stories(source)
+        matches = [p for story in inventory['stories'] for p in story['paragraphs'] if p['path'] == path]
+        if len(matches) != 1 or matches[0]['truncated']:
+            raise ValueError('Header or footer paragraph is unavailable in the bounded inventory')
+        if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
+        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': matches[0]['text'], 'replace_text_path_supported': True, 'replace_only': True}
     result = officecli_backend.read(source, 'get', path)
     if not isinstance(result, dict) or result.get('matches') != 1 or not isinstance(result.get('results'), list) or len(result['results']) != 1:
         raise ValueError('The path must identify exactly one editable element')
@@ -263,6 +270,7 @@ def edit(directory, base_revision, path, mode, value):
     if not isinstance(value, str) or len(value) > 4000:
         raise ValueError('Value must be text of at most 4,000 characters')
     target = edit_target(directory, base_revision, path)
+    if target.get('replace_only'): raise ValueError('Use text replacement for header and footer paragraphs')
     if target['format'] == 'pptx' and target['type'] == 'tc':
         raise ValueError('Use text replacement to edit PowerPoint table cells')
     allowed = {'xlsx': {'value', 'formula'}, 'docx': {'text'}, 'pptx': {'text'}}
@@ -294,6 +302,11 @@ def read_notes(directory, revision, slide):
     state = info(directory); source = revision_file(state, revision)
     result = notes.read(source, slide); result['revision'] = revision
     return result
+
+
+def list_stories(directory, revision):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **word.list_stories(source)}
 
 
 def compare_notes(directory, before_revision, after_revision, before_slide, after_slide):

@@ -146,6 +146,7 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     read = commands.add_parser('inspect'); read.add_argument('file')
     comments = commands.add_parser('comments'); comments.add_argument('file')
+    stories = commands.add_parser('stories'); stories.add_argument('file')
     note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
@@ -182,6 +183,7 @@ def main():
     picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True)
     session_review = sub.add_parser('review'); session_review.add_argument('directory'); session_review.add_argument('--revision', type=int, required=True); session_review.add_argument('--out-dir', required=True)
     session_comments = sub.add_parser('comments'); session_comments.add_argument('directory'); session_comments.add_argument('--revision', type=int, required=True)
+    session_stories = sub.add_parser('stories'); session_stories.add_argument('directory'); session_stories.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
@@ -243,6 +245,8 @@ def main():
                 result = review_bundle.create(source, args.out_dir, render, args.revision)
             elif args.action == 'comments':
                 result = session.list_comments(args.directory, args.revision)
+            elif args.action == 'stories':
+                result = session.list_stories(args.directory, args.revision)
             elif args.action == 'inspect-layout':
                 result = session.inspect_layout(args.directory, args.revision)
             elif args.action == 'recalculate':
@@ -261,6 +265,8 @@ def main():
             result = inspect(args.file)
         elif args.command == 'comments':
             result = word.list_comments(args.file)
+        elif args.command == 'stories':
+            result = word.list_stories(args.file)
         elif args.command == 'notes':
             result = notes.read(args.file, args.slide)
         elif args.command == 'inspect-layout':

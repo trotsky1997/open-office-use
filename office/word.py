@@ -1,6 +1,9 @@
 """Conservative, targeted text replacement in a saved Word document."""
 import re
+import posixpath
+import zipfile
 from pathlib import Path
+from lxml import etree
 
 import ooxml
 
@@ -9,18 +12,98 @@ W14_PARAGRAPH_ID = '{http://schemas.microsoft.com/office/word/2010/wordml}paraId
 INDEX = r'[1-9][0-9]{0,5}'
 PATH = re.compile(r'/body(?:(?:/(?:tbl|table)\[' + INDEX + r'\]/(?:tr|row)\[' + INDEX + r'\]/(?:tc|cell)\[' + INDEX + r'\])){0,8}/p(?:\[' + INDEX + r'\]|\[@paraId=[0-9A-Fa-f]{8}\])\Z')
 SEGMENT = re.compile(r'/(tbl|table|tr|row|tc|cell|p)\[([^]]+)\]')
+REL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+STORY_ID = r'[A-Za-z_][A-Za-z0-9_.-]{0,127}'
+STORY_PATH = re.compile(r'^/(header|footer)\[@id=(' + STORY_ID + r')\](?:(?:/(?:tbl|table)\[' + INDEX + r'\]/(?:tr|row)\[' + INDEX + r'\]/(?:tc|cell)\[' + INDEX + r'\])){0,8}/p(?:\[' + INDEX + r'\]|\[@paraId=[0-9A-Fa-f]{8}\])\Z')
 
 
 def paragraph_path(path):
     return isinstance(path, str) and len(path) <= 512 and PATH.fullmatch(path) is not None
 
 
+def replacement_path(path):
+    return paragraph_path(path) or isinstance(path, str) and len(path) <= 512 and STORY_PATH.fullmatch(path) is not None
+
+
+def story_relationships(archive):
+    tree = ooxml.parse_xml(archive.read('word/_rels/document.xml.rels'))
+    if tree.getroot().tag != REL + 'Relationships': raise ValueError('Invalid document relationships')
+    seen = set(); stories = {}
+    for rel in tree.getroot().findall(REL + 'Relationship'):
+        rid = rel.get('Id'); relation_type = rel.get('Type', '')
+        if not rid or rid in seen: raise ValueError('Missing or duplicate relationship ID')
+        seen.add(rid)
+        types = {R[1:-1] + '/header': 'header', R[1:-1] + '/footer': 'footer'}
+        if relation_type not in types: continue
+        kind = types[relation_type]
+        target = rel.get('Target', '')
+        if not re.fullmatch(STORY_ID, rid) or rel.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('\\', '%', '?', '#')):
+            raise ValueError('Unsupported header or footer relationship')
+        path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+        if not path.startswith('word/') or path not in archive.namelist(): raise ValueError('Invalid header or footer part')
+        stories[rid] = {'type': kind, 'part': path}
+    return stories
+
+
+def list_stories(source):
+    source = Path(source).resolve(strict=True)
+    if source.suffix.lower() != '.docx': raise ValueError('Headers and footers require a DOCX file')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
+    try:
+        with zipfile.ZipFile(source) as archive:
+            entries = archive.infolist(); names = [entry.filename for entry in entries]
+            if len(entries) > 5000 or len(set(names)) != len(names) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                raise ValueError('Document exceeds package limits or contains duplicate parts')
+            stories = story_relationships(archive); doc = ooxml.parse_xml(archive.read('word/document.xml'))
+            if doc.getroot().tag != W + 'document': raise ValueError('Document XML has an invalid root')
+            body = doc.getroot().find(W + 'body')
+            if body is None: raise ValueError('Document has no body')
+            sections = body.xpath('./w:p/w:pPr/w:sectPr | ./w:sectPr', namespaces={'w': W[1:-1]})
+            for story in stories.values(): story['references'] = []
+            for number, section in enumerate(sections, 1):
+                for kind in ('header', 'footer'):
+                    for ref in section.findall(W + kind + 'Reference'):
+                        rid = ref.get(R + 'id')
+                        if rid not in stories or stories[rid]['type'] != kind: raise ValueError('Invalid section header or footer reference')
+                        stories[rid]['references'].append({'section': number, 'type': ref.get(W + 'type', 'default')})
+            result = []; total = 0; complete = True
+            for rid, story in stories.items():
+                root = ooxml.parse_xml(archive.read(story['part'])).getroot()
+                if root.tag != W + ('hdr' if story['type'] == 'header' else 'ftr'): raise ValueError('Header or footer has an invalid root')
+                prefix = f"/{story['type']}[@id={rid}]"; paragraphs = []
+                def walk(container, path, depth):
+                    nonlocal total, complete
+                    if depth > 8: complete = False; return
+                    counts = {'p': 0, 'tbl': 0}
+                    for child in container:
+                        tag = child.tag.removeprefix(W) if isinstance(child.tag, str) else ''
+                        if tag == 'p':
+                            counts['p'] += 1; total += 1
+                            if total > 200: complete = False; continue
+                            text = ''.join(node.text or '' for node in child.iter(W + 't'))
+                            paragraphs.append({'path': f"{path}/p[{counts['p']}]", 'text': text[:4000], 'truncated': len(text) > 4000})
+                        elif tag == 'tbl':
+                            counts['tbl'] += 1
+                            for row_index, row in enumerate(child.findall(W + 'tr'), 1):
+                                for cell_index, cell in enumerate(row.findall(W + 'tc'), 1): walk(cell, f"{path}/tbl[{counts['tbl']}]/tr[{row_index}]/tc[{cell_index}]", depth + 1)
+                        elif tag not in ('pPr', 'tblPr', 'tblGrid', 'tcPr'): complete = False
+                walk(root, prefix, 0)
+                result.append({'id': rid, **story, 'paragraphs': paragraphs})
+            return {'stories': result, 'sections': len(sections), 'paragraphs_scanned': min(total, 200), 'complete': complete}
+    except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
+        raise ValueError(f'Invalid Word document: {exc}') from exc
+
+
 def find_paragraph(tree, path):
-    if tree.getroot().tag != W + 'document':
-        raise ValueError('Document XML has an invalid root')
-    paragraph = tree.getroot().find(W + 'body')
-    if paragraph is None:
-        raise ValueError('Document has no body')
+    story = STORY_PATH.fullmatch(path)
+    if story:
+        if tree.getroot().tag != W + ('hdr' if story.group(1) == 'header' else 'ftr'): raise ValueError('Header or footer has an invalid root')
+        paragraph = tree.getroot()
+    else:
+        if tree.getroot().tag != W + 'document': raise ValueError('Document XML has an invalid root')
+        paragraph = tree.getroot().find(W + 'body')
+        if paragraph is None: raise ValueError('Document has no body')
     aliases = {'table': 'tbl', 'row': 'tr', 'cell': 'tc'}
     for tag, selector in SEGMENT.findall(path):
         candidates = paragraph.findall(W + aliases.get(tag, tag))
@@ -110,8 +193,8 @@ def anchor_runs(paragraph, anchor):
 
 
 def replace_text(source, output, path, find, replacement):
-    if not paragraph_path(path):
-        raise ValueError('Target must be a body or table paragraph path such as /body/p[1]')
+    if not replacement_path(path):
+        raise ValueError('Target must be a body, header or footer paragraph path')
     if Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
         raise ValueError('Text replacement requires DOCX input and output')
 
@@ -159,7 +242,14 @@ def replace_text(source, output, path, find, replacement):
             offset += length
         raise ValueError('Match crosses a hyperlink or annotation boundary')
 
-    return ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
+    def part(file):
+        story = STORY_PATH.fullmatch(path)
+        if story is None: return 'word/document.xml'
+        with zipfile.ZipFile(file) as archive: relationships = story_relationships(archive)
+        info = relationships.get(story.group(2))
+        if info is None or info['type'] != story.group(1): raise ValueError('Header or footer relationship does not exist')
+        return info['part']
+    return ooxml.edit_xml(source, output, part, edit)
 
 
 def add_comment(source, output, path, text, author, anchor=None):

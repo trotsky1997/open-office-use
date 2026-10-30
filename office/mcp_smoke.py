@@ -27,7 +27,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'read_slide_notes', 'session_read_slide_notes', 'compare_slide_notes', 'session_compare_slide_notes', 'session_replace_slide_notes', 'session_replace_slide_notes_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'read_slide_notes', 'session_read_slide_notes', 'compare_slide_notes', 'session_compare_slide_notes', 'session_replace_slide_notes', 'session_replace_slide_notes_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'list_word_stories', 'session_list_word_stories', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -101,6 +101,16 @@ async def main():
                 assert not comment_result.isError and next(iter(Document(comment_draft / 'revision-000001.docx').comments)).text == 'Review this', comment_result
                 listed_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 1})
                 assert not listed_comments.isError and listed_comments.structuredContent['comments'][0]['anchor_text'] == 'review', listed_comments
+                header_source = root / 'header.docx'; header_doc = Document(); header_doc.sections[0].header.paragraphs[0].text = 'Header text'; header_doc.save(header_source)
+                header_listing = await session.call_tool('list_word_stories', {'file': str(header_source)})
+                assert not header_listing.isError, header_listing
+                header_path = header_listing.structuredContent['stories'][0]['paragraphs'][0]['path']; header_draft = root / 'header-draft'
+                header_start = await session.call_tool('start_session', {'directory': str(header_draft), 'source': str(header_source)})
+                assert not header_start.isError, header_start
+                header_edit = await session.call_tool('session_replace_text', {'directory': str(header_draft), 'base_revision': 0, 'path': header_path, 'find': 'Header', 'replacement': 'Updated'})
+                assert not header_edit.isError, header_edit
+                header_new = await session.call_tool('session_list_word_stories', {'directory': str(header_draft), 'revision': 1})
+                assert not header_new.isError and header_new.structuredContent['stories'][0]['paragraphs'][0]['text'] == 'Updated text', header_new
                 empty_comments = await session.call_tool('list_word_comments', {'file': str(comment_source)})
                 assert not empty_comments.isError and empty_comments.structuredContent['total_comments'] == 0, empty_comments
                 threaded = await session.call_tool('list_word_comments', {'file': str(thread_fixture(root))})

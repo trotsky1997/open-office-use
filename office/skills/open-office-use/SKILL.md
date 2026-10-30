@@ -10,3 +10,5 @@ Read the office/README.md for installation, commands, MCP tools, spec formats an
 For PowerPoint speaker notes, use `read_slide_notes` or `session_read_slide_notes` with a one-based slide number. Use `session_replace_slide_notes_text` for a unique literal replacement within a one-based simple paragraph, retaining run formatting. `session_replace_slide_notes` creates a revision and replaces the entire notes text, resetting its formatting; inspect the result and keep the original revision for reference.
 
 Use `compare_slide_notes` or `session_compare_slide_notes` to compare corresponding speaker notes when reviewing a deck or session; select slide numbers on both sides and check truncation.
+
+For Word headers and footers, use `list_word_stories` or `session_list_word_stories` to obtain relation-ID paragraph paths, then `session_replace_text` for a unique literal match. A part can be inherited or shared by multiple sections; inspect the references and rendered document before editing.

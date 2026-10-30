@@ -64,6 +64,9 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>For simple nonempty Word paragraphs. Leave anchor text empty to cover the paragraph. A specified anchor must match exactly once within adjacent text runs; fields and tracked changes require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
+<details id="stories-panel" hidden><summary>Word headers and footers</summary>
+<p>List paragraph targets and direct section references. A part may be inherited by other sections; edits affect every section that uses it. Review fields and shared parts before editing.</p>
+<button type="button" id="stories-load">Load displayed revision</button><p id="stories-status" role="status"></p><ul id="stories-list"></ul></details>
 <details id="comments-panel" hidden><summary>Word comments</summary>
 <p>Read comments from the displayed revision. Anchor text and paths are bounded body hints. Word 2013 thread metadata is shown when available; review unknown or ambiguous states in Word. Root comments can be resolved or reopened in the latest revision.</p>
 <button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul>
@@ -132,7 +135,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
-let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0;
+let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -378,15 +381,15 @@ async function loadElement(path) {
   loaded=target; document.getElementById('edit-path').value=target.path;
   const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula'] : ['text'];
   mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind;return option;}));
-  const tableCell=target.format==='pptx' && target.type==='tc';
+  const tableCell=target.format==='pptx' && target.type==='tc' || target.replace_only;
   mode.value=target.mode; mode.disabled=tableCell;
   const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=tableCell; value.value=target.value;
   editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=tableCell;
   document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
-  document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported); document.getElementById('comment-text').value=''; document.getElementById('comment-anchor').value='';
+  document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only); document.getElementById('comment-text').value=''; document.getElementById('comment-anchor').value='';
   document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
-  document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
+  document.getElementById('edit-status').textContent=target.replace_only ? `Loaded ${target.type} at revision ${target.revision}. Use Replace once; the part may be shared by sections.` : `Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
  finally { editBusy=false; button.disabled = pinned !== null; }
 }
@@ -573,6 +576,31 @@ function clearCommentsFor(revision) {
   commentListEpoch++; commentListRevision=null; replyTarget=null; document.getElementById('reply-panel').hidden=true; document.getElementById('comments-status').textContent=''; document.getElementById('comments-list').replaceChildren();
  }
 }
+function clearStoriesFor(revision) {
+ if (storiesRevision!==null && storiesRevision!==revision) { storiesEpoch++; storiesRevision=null; document.getElementById('stories-status').textContent=''; document.getElementById('stories-list').replaceChildren(); }
+}
+document.getElementById('stories-load').addEventListener('click', async () => {
+ if (displayed<0) return;
+ const revision=displayed, epoch=++storiesEpoch, button=document.getElementById('stories-load'), status=document.getElementById('stories-status'), list=document.getElementById('stories-list');
+ storiesRevision=revision; button.disabled=true; list.replaceChildren(); status.textContent=`Loading revision ${revision}…`;
+ try {
+  const response=await fetch('stories-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not load headers and footers');
+  if (epoch!==storiesEpoch || displayed!==revision) return;
+  for (const story of result.stories) {
+   const row=document.createElement('li'); row.appendChild(document.createTextNode(`${story.type} ${story.id} · ${story.part} · direct references: ${story.references.map(r=>`section ${r.section} (${r.type})`).join(', ') || 'none'} `));
+   const paragraphs=document.createElement('ul');
+   for (const paragraph of story.paragraphs) {
+    const item=document.createElement('li'); item.textContent=`${paragraph.path}: ${paragraph.text}${paragraph.truncated ? '…' : ''} `;
+    const edit=document.createElement('button'); edit.type='button'; edit.textContent='Load for replacement'; edit.disabled=revision!==current || pinned!==null || paragraph.truncated;
+    edit.addEventListener('click',()=>{ if (revision!==current || pinned!==null) { status.textContent='Revision changed; load the latest revision.'; return; } document.getElementById('edit-panel').open=true; loadElement(paragraph.path); }); item.appendChild(edit); paragraphs.appendChild(item);
+   }
+   row.appendChild(paragraphs); list.appendChild(row);
+  }
+  status.textContent=`Revision ${revision}: ${result.stories.length} part(s), ${result.paragraphs_scanned} paragraph(s). ${result.complete ? '' : 'Inventory incomplete.'} Section references are direct; inherited use is not enumerated.`;
+ } catch(error) { if (epoch===storiesEpoch) status.textContent=`Header/footer error: ${error.message}`; }
+ finally {button.disabled=false;}
+});
 document.getElementById('comments-load').addEventListener('click', async () => {
  if (commentsBusy || displayed<0) return;
  const revision=displayed, epoch=++commentListEpoch, button=document.getElementById('comments-load'); commentsBusy=true; commentListRevision=revision; button.disabled=true;
@@ -690,6 +718,8 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
  } finally { notesBusy=false; }
 });
 function display(state, live) {
+ clearStoriesFor(state.revision);
+ if (!live) document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
  notesComparisonEpoch++;
  clearNotesFor(state.revision, live);
  clearCommentsFor(state.revision);
@@ -713,6 +743,8 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ clearStoriesFor(state.revision);
+ document.querySelectorAll('#stories-list button').forEach(button=>button.disabled=true);
  clearNotesFor(state.revision, false);
  clearCommentsFor(state.revision);
  clearLayoutFor(state.revision);
@@ -829,6 +861,7 @@ async function refresh() {
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   document.getElementById('comments-panel').hidden=state.format !== 'docx';
+  document.getElementById('stories-panel').hidden=state.format !== 'docx';
   document.getElementById('notes-panel').hidden=state.format !== 'pptx';
   document.getElementById('notes-comparison').hidden=state.format !== 'pptx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
@@ -899,7 +932,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -907,6 +940,10 @@ def serve(directory, preview, port=0, render=None):
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/stories-read'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Header/footer inventory requires a revision')
+                        saved = session.list_stories(directory, payload['revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/notes-comparison'):
                         if not isinstance(payload, dict) or set(payload) != {'before', 'after', 'before_slide', 'after_slide'}:
                             raise ValueError('Notes comparison requires revisions and slide numbers')
