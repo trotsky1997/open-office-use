@@ -920,6 +920,8 @@ export class OpenBrowserUseTab {
     return this.frameTree();
   }
   /** @internal */
+  async domFrameInViewport(frame:FrameInfo,frames:FrameInfo[]):Promise<boolean> { return this.cssFrameVisible(frame,frames,true); }
+  /** @internal */
   async domFramePoint(snapshot:CssSnapshot,point:{x:number;y:number}):Promise<{x:number;y:number}> {
     if (!snapshot.frame) throw new RetryablePreflightError("Frame is unavailable; observe again");
     const chain=frameAncestry(snapshot.frame,snapshot.frames);
@@ -927,7 +929,7 @@ export class OpenBrowserUseTab {
     await this.validateFrames(chain);return point;
   }
 
-  private async cssFrameVisible(frame: FrameInfo, frames: FrameInfo[]): Promise<boolean> {
+  private async cssFrameVisible(frame: FrameInfo, frames: FrameInfo[], viewport = false): Promise<boolean> {
     const chain=frameAncestry(frame,frames);
     for (let i=0;i<chain.length;i++) {
       const child=chain[i], ownerSession=chain[i+1]?.sessionId;
@@ -939,7 +941,7 @@ export class OpenBrowserUseTab {
       const ownerId=isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
       if (typeof ownerId !== "string") throw new RetryablePreflightError("Frame owner is unavailable; observe again");
       try {
-        const state=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId:ownerId,returnByValue:true,functionDeclaration:`function() { if(!this.isConnected)return null;const r=this.getBoundingClientRect();return getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0; }`},{sessionId:ownerSession});
+        const state=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId:ownerId,returnByValue:true,arguments:[{value:viewport}],functionDeclaration:`function(viewport) { if(!this.isConnected)return null;const r=this.getBoundingClientRect();return getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0 && (!viewport || (r.right>0 && r.bottom>0 && r.left<innerWidth && r.top<innerHeight)); }`},{sessionId:ownerSession});
         const value=isObject(state) && isObject(state.result) ? state.result.value : undefined;
         if (typeof value !== "boolean") throw new RetryablePreflightError("Frame owner changed; observe again");
         if (!value) return false;
@@ -2145,8 +2147,9 @@ export class OpenBrowserUseTabDomCUA {
     const step:CssStep={selector:'a[href],button,input,textarea,select,summary,details,label,img,video,audio,[role],[onclick],[contenteditable="true"],[tabindex]',before:[{visible:true}]};
     const frames=await this.tab.domFrames();
     const nodes:Array<{node_id:string;frame_id:string;tag:string;role:string | null;name:string | null}>=[];
-    let total=0;
+    let total=0;const frameVisibility=new Map<string,boolean>();
     for(const frame of frames) {
+    const inViewport=await this.tab.domFrameInViewport(frame,frames);frameVisibility.set(frame.id,inViewport);if(!inViewport)continue;
     const snapshot=await this.tab.queryCss(step,undefined,[],undefined,undefined,frame.id);
     if(JSON.stringify(snapshot.frames)!==JSON.stringify(frames))throw new RetryablePreflightError("Frame tree changed; observe again");
     total+=snapshot.ids.length;if(total>1000)throw new Error("DOM snapshot matched more than 1000 elements");
@@ -2170,13 +2173,15 @@ export class OpenBrowserUseTabDomCUA {
     const fresh=await this.tab.queryCss(step,undefined,[],undefined,undefined,frame.id);
     if(fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids)) {this.ids.clear();throw new RetryablePreflightError('DOM changed; observe again');}
     }
+    if(JSON.stringify(await this.tab.domFrames())!==JSON.stringify(frames))throw new RetryablePreflightError("Frame tree changed; observe again");
+    for(const frame of frames)if(await this.tab.domFrameInViewport(frame,frames)!==frameVisibility.get(frame.id))throw new RetryablePreflightError("Frame visibility changed; observe again");
     this.snapshot=true;return {nodes};
   }
   private target(node_id:string):{snapshot:CssSnapshot;id:number;identity:{tag:string;role:string | null;name:string | null}} {
     const target=this.ids.get(node_id);if(!this.snapshot || !target)throw new Error('Unknown or stale DOM node id');return target;
   }
   private async clickNode(node_id:string,double:boolean):Promise<void> {
-    const {snapshot,id,identity}=this.target(node_id);this.snapshot=false;this.ids.clear();await this.tab.actCss(snapshot,id,false,undefined,undefined,double,undefined,undefined,false,undefined,identity);
+    const {snapshot,id,identity}=this.target(node_id);this.snapshot=false;this.ids.clear();if(!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame,snapshot.frames))throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');await this.tab.actCss(snapshot,id,false,undefined,undefined,double,undefined,undefined,false,undefined,identity);
   }
   click(options:{node_id:string}):Promise<void> { return this.clickNode(options.node_id,false); }
   double_click(options:{node_id:string}):Promise<void> { return this.clickNode(options.node_id,true); }
@@ -2185,7 +2190,7 @@ export class OpenBrowserUseTabDomCUA {
   async scroll(options:{node_id?:string;x:number;y:number}):Promise<void> {
     let point:{x:number;y:number};
     if(options.node_id!==undefined) {
-      const {snapshot,id,identity}=this.target(options.node_id);if(await this.tab.readCss(snapshot,id,'visible')!==true)throw new RetryablePreflightError('DOM target is hidden; observe again');
+      const {snapshot,id,identity}=this.target(options.node_id);if(!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame,snapshot.frames))throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');if(await this.tab.readCss(snapshot,id,'visible')!==true)throw new RetryablePreflightError('DOM target is hidden; observe again');
       const world=await this.tab.browser.cdp.call(this.tab.id,'Page.createIsolatedWorld',{frameId:snapshot.frame!.id,worldName:'open-browser-use-selector'},{sessionId:snapshot.frame?.sessionId});
       if(!isObject(world) || typeof world.executionContextId!=='number')throw new RetryablePreflightError('DOM context unavailable; observe again');
       const resolved=await this.tab.browser.cdp.call(this.tab.id,'DOM.resolveNode',{backendNodeId:id,executionContextId:world.executionContextId},{sessionId:snapshot.frame?.sessionId});

@@ -970,6 +970,8 @@ export class OpenBrowserUseTab {
         return this.frameTree();
     }
     /** @internal */
+    async domFrameInViewport(frame, frames) { return this.cssFrameVisible(frame, frames, true); }
+    /** @internal */
     async domFramePoint(snapshot, point) {
         if (!snapshot.frame)
             throw new RetryablePreflightError("Frame is unavailable; observe again");
@@ -979,7 +981,7 @@ export class OpenBrowserUseTab {
         await this.validateFrames(chain);
         return point;
     }
-    async cssFrameVisible(frame, frames) {
+    async cssFrameVisible(frame, frames, viewport = false) {
         const chain = frameAncestry(frame, frames);
         for (let i = 0; i < chain.length; i++) {
             const child = chain[i], ownerSession = chain[i + 1]?.sessionId;
@@ -994,7 +996,7 @@ export class OpenBrowserUseTab {
             if (typeof ownerId !== "string")
                 throw new RetryablePreflightError("Frame owner is unavailable; observe again");
             try {
-                const state = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId: ownerId, returnByValue: true, functionDeclaration: `function() { if(!this.isConnected)return null;const r=this.getBoundingClientRect();return getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0; }` }, { sessionId: ownerSession });
+                const state = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId: ownerId, returnByValue: true, arguments: [{ value: viewport }], functionDeclaration: `function(viewport) { if(!this.isConnected)return null;const r=this.getBoundingClientRect();return getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0 && (!viewport || (r.right>0 && r.bottom>0 && r.left<innerWidth && r.top<innerHeight)); }` }, { sessionId: ownerSession });
                 const value = isObject(state) && isObject(state.result) ? state.result.value : undefined;
                 if (typeof value !== "boolean")
                     throw new RetryablePreflightError("Frame owner changed; observe again");
@@ -2498,7 +2500,12 @@ export class OpenBrowserUseTabDomCUA {
         const frames = await this.tab.domFrames();
         const nodes = [];
         let total = 0;
+        const frameVisibility = new Map();
         for (const frame of frames) {
+            const inViewport = await this.tab.domFrameInViewport(frame, frames);
+            frameVisibility.set(frame.id, inViewport);
+            if (!inViewport)
+                continue;
             const snapshot = await this.tab.queryCss(step, undefined, [], undefined, undefined, frame.id);
             if (JSON.stringify(snapshot.frames) !== JSON.stringify(frames))
                 throw new RetryablePreflightError("Frame tree changed; observe again");
@@ -2539,6 +2546,11 @@ export class OpenBrowserUseTabDomCUA {
                 throw new RetryablePreflightError('DOM changed; observe again');
             }
         }
+        if (JSON.stringify(await this.tab.domFrames()) !== JSON.stringify(frames))
+            throw new RetryablePreflightError("Frame tree changed; observe again");
+        for (const frame of frames)
+            if (await this.tab.domFrameInViewport(frame, frames) !== frameVisibility.get(frame.id))
+                throw new RetryablePreflightError("Frame visibility changed; observe again");
         this.snapshot = true;
         return { nodes };
     }
@@ -2552,6 +2564,8 @@ export class OpenBrowserUseTabDomCUA {
         const { snapshot, id, identity } = this.target(node_id);
         this.snapshot = false;
         this.ids.clear();
+        if (!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame, snapshot.frames))
+            throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');
         await this.tab.actCss(snapshot, id, false, undefined, undefined, double, undefined, undefined, false, undefined, identity);
     }
     click(options) { return this.clickNode(options.node_id, false); }
@@ -2562,6 +2576,8 @@ export class OpenBrowserUseTabDomCUA {
         let point;
         if (options.node_id !== undefined) {
             const { snapshot, id, identity } = this.target(options.node_id);
+            if (!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame, snapshot.frames))
+                throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');
             if (await this.tab.readCss(snapshot, id, 'visible') !== true)
                 throw new RetryablePreflightError('DOM target is hidden; observe again');
             const world = await this.tab.browser.cdp.call(this.tab.id, 'Page.createIsolatedWorld', { frameId: snapshot.frame.id, worldName: 'open-browser-use-selector' }, { sessionId: snapshot.frame?.sessionId });

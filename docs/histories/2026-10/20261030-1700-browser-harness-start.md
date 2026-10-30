@@ -289,3 +289,5 @@ locator(selector, options) 现在实际应用 hasText/hasNotText/has/hasNot，�
 新增 tab.dom_cua 主文档和开放 shadow root 可见节点快照、节点单击/双击、焦点输入/按键及节点或视口滚动。节点 ID 绑定快照，点击前重核文本、角色、标签、CSS 匹配、位置及命中；节点动作后失效。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证可信点击、旧 ID 和文本变化拒绝；Electron 44/Xvfb 验证节点点击、焦点输入及滚动。当前仅主 frame，匹配数上限 1000，子 frame 快照仍待实现；macOS/Windows 本轮未测。
 
 DOM CUA 快照扩展到可读取的同进程和跨进程 frame，每个节点携带 frame_id 和所属 frame 快照；点击前复核 frame、目标和名称，节点滚动通过 frame 链换算坐标。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证跨进程节点可信点击；Electron 44/Xvfb 验证跨进程节点点击和滚动。每个 frame 按自身视口筛选，视口外的 frame 可能仍有节点；总匹配上限 1000，macOS/Windows 本轮未测。
+
+DOM CUA 可见快照检查每层 frame 宿主与父视口相交；快照期间 frame 可见性变化时要求重新观察，节点点击和滚动前重新检查 frame 是否在视口中。SDK 66 项通过；Linux ARM64 Chromium 原生消息和 Electron 44/Xvfb 均验证移出视口的跨进程 frame 被排除、旧 ID 被拒绝、恢复后可信点击。部分裁剪尚未完整反映在快照中；macOS/Windows 本轮未测。

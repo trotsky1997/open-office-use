@@ -844,8 +844,9 @@ Electron hosts must authorize the exact files and grant `files.upload` and
 
 `tab.dom_cua.get_visible_dom()` returns `{nodes}` with opaque `node_id`,
 `frame_id`, tag, role and a short name for visible, viewport-intersecting
-interactive elements in readable frames and open shadow roots. Each frame is
-checked in its own viewport; an offscreen frame may still contribute nodes.
+interactive elements in readable frames and open shadow roots. Each node and
+each frame owner must intersect its own viewport. Partial clipping by frame
+ancestors is not reflected in the snapshot; input performs hit checks.
 The underlying match set is limited to 1000 elements across frames. Text and
 attributes are page data and may be incomplete.
 
