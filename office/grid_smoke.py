@@ -121,6 +121,16 @@ with tempfile.TemporaryDirectory() as tmp:
         payload['base_revision'] = 2
         assert post('grid-edit', payload)['revision'] == 3
         assert load_workbook(draft / 'revision-000003.xlsx').active['A1'].value == 'Updated'
+        request = {'before': 0, 'after': 3, 'sheet': 'Sales Data', 'cell_range': 'A1:C2'}
+        comparison = post('cell-comparison', request)
+        assert comparison['changed_count'] == 4 and any('format.font' in change['changed_fields'] for change in comparison['changes']), comparison
+        for bad, origin_value in [(dict(request, after=2), origin), (dict(request, before=True), origin), (request, 'http://evil.test')]:
+            try:
+                post('cell-comparison', bad, origin_value)
+                raise AssertionError('Invalid cell comparison was accepted')
+            except urllib.error.HTTPError as error:
+                assert error.code == (403 if origin_value != origin else 400)
+
         try:
             post('grid-edit', payload)
             raise AssertionError('Stale grid edit was accepted')

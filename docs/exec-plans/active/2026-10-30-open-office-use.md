@@ -79,7 +79,7 @@ Added a side-by-side rendered comparison of a selected revision and latest revis
 
 ## Viewer change details
 
-Added on-demand text and OOXML part change details to the visual comparison viewer. The request identifies both revisions and the UI clears old results when the pair changes. Tested real Chrome display, version updates and invalid revision requests. Text views remain bounded and omit some semantics.
+Added on-demand text and OOXML part change details to the visual comparison viewer. The request identifies both revisions and the UI clears old results when the pair changes. Tested real Chrome display, version updates and invalid revision requests. The XLSX comparison viewer additionally shows cell-level values, formulas and direct formatting for a user-selected range; results clear when the revision pair changes. Text views remain bounded and omit some semantics.
 
 ## Worksheet grid
 

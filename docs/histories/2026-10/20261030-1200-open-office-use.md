@@ -45,3 +45,5 @@ Added formula-range protection for array, data-table and shared formula spans du
 Added version-bound grid formatting for bold, RGB fill and number formats, with protected formula ranges and preservation of pending edits.
 
 Extended bounded cell comparison to direct formatting, resolving workbook-local style IDs for font, fill, border, alignment, protection and number formats.
+
+Connected bounded worksheet cell and formatting diffs to the visual revision comparison, including stale-result rejection and clearing.

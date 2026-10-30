@@ -31,6 +31,7 @@ summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:
 input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
+#compare-sheet{width:min(14rem,70vw)}#compare-range{width:8rem}#cell-comparison-output td{max-width:24rem;overflow-wrap:anywhere}
 #edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
 
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
@@ -71,11 +72,17 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <details id="comparison-details" hidden><summary>Text and file changes</summary>
 <p>Text is a bounded view; file-part changes may include formatting or metadata. Compare page appearance separately.</p>
 <button type="button" id="load-changes">Load changes</button><p id="changes-status" role="status"></p>
-<h2>Text</h2><pre id="comparison-text"></pre><h2>Changed file parts</h2><pre id="comparison-parts"></pre></details>
+<h2>Text</h2><pre id="comparison-text"></pre><h2>Changed file parts</h2><pre id="comparison-parts"></pre>
+<section id="cell-comparison" hidden><h2>Worksheet changes</h2>
+<p>Compare values, formulas and direct formatting. Cached formula results may be stale; conditional formatting and theme changes need separate review.</p>
+<form id="cell-comparison-form"><label>Worksheet <input id="compare-sheet" required maxlength="31"></label>
+<label>Cell range <input id="compare-range" required value="A1:D10" maxlength="32"></label>
+<button id="compare-cells" type="submit">Compare cells</button></form>
+<p id="cell-comparison-status" role="status"></p><div id="cell-comparison-output" class="grid-scroll"></div></section></details>
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -313,6 +320,7 @@ function displayComparison(state) {
  document.getElementById('comparison-details').hidden=false;
  document.getElementById('changes-status').textContent='';
  document.getElementById('comparison-text').textContent=''; document.getElementById('comparison-parts').textContent='';
+ cellComparisonEpoch++; document.getElementById('cell-comparison-output').replaceChildren(); document.getElementById('cell-comparison-status').textContent='';
  document.getElementById('selection').textContent='Selections are available on the latest revision.';
  document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load, #grid-sheets, #grid-sheet, #grid-range, #grid-load').forEach(element => element.disabled=true);
  invalidateGrid('Return to the latest revision to edit cells.');
@@ -330,6 +338,33 @@ document.getElementById('load-changes').addEventListener('click', async () => {
   document.getElementById('comparison-parts').textContent=['added','removed','modified'].map(kind => `${kind}:\\n${result.parts[kind].join('\\n') || '(none)'}`).join('\\n\\n');
   document.getElementById('changes-status').textContent=`Revision ${before} → ${after}. Text view may be truncated; ${result.text_diff_truncated ? 'diff output was truncated.' : 'diff output is within its limit.'}`;
  } catch (error) { if (comparing && pinned === before && comparedLatest === after) document.getElementById('changes-status').textContent=`Changes error: ${error.message}`; }
+ finally { button.disabled=false; }
+});
+for (const id of ['compare-sheet','compare-range']) document.getElementById(id).addEventListener('input', () => {
+ cellComparisonEpoch++; document.getElementById('cell-comparison-output').replaceChildren(); document.getElementById('cell-comparison-status').textContent='Inputs changed; compare again.';
+});
+document.getElementById('cell-comparison-form').addEventListener('submit', async event => {
+ event.preventDefault(); if (!comparing || pinned === null || comparedLatest < 0) return;
+ const before=pinned, after=comparedLatest, sheet=document.getElementById('compare-sheet').value, cell_range=document.getElementById('compare-range').value;
+ const epoch=++cellComparisonEpoch, button=document.getElementById('compare-cells'), output=document.getElementById('cell-comparison-output');
+ button.disabled=true; output.replaceChildren(); document.getElementById('cell-comparison-status').textContent='Comparing cells…';
+ try {
+  const response=await fetch('cell-comparison', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({before,after,sheet,cell_range})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Comparison unavailable');
+  if (epoch !== cellComparisonEpoch || !comparing || pinned !== before || comparedLatest !== after) return;
+  const table=document.createElement('table'), head=document.createElement('thead'), header=document.createElement('tr');
+  for (const label of ['Cell','Changed field','Before','After']) { const th=document.createElement('th'); th.scope='col'; th.textContent=label; header.appendChild(th); }
+  head.appendChild(header); table.appendChild(head); const body=document.createElement('tbody');
+  for (const change of result.changes) for (const field of change.changed_fields) {
+   const row=document.createElement('tr'), key=field.startsWith('format.') ? field.slice(7) : field;
+   const old=field.startsWith('format.') ? change.before.format[key] : change.before[key];
+   const next=field.startsWith('format.') ? change.after.format[key] : change.after[key];
+   for (const value of [change.cell,field,old,next]) { const td=document.createElement('td'); td.textContent=value === undefined ? '(absent)' : (typeof value === 'string' ? value : JSON.stringify(value)); row.appendChild(td); }
+   body.appendChild(row);
+  }
+  table.appendChild(body); if (result.changes.length) output.appendChild(table);
+  document.getElementById('cell-comparison-status').textContent=`Revision ${before} → ${after}: ${result.changed_count} changed cell(s). ${result.truncated ? 'Showing the first 500 cells.' : ''}`;
+ } catch(error) { if (epoch === cellComparisonEpoch && comparing && pinned === before && comparedLatest === after) document.getElementById('cell-comparison-status').textContent=`Cell comparison error: ${error.message}`; }
  finally { button.disabled=false; }
 });
 async function loadComparison(revision) {
@@ -360,7 +395,7 @@ async function refresh() {
   const response = await fetch('state', {cache:'no-store'});
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
-  document.getElementById('grid-panel').hidden=state.format !== 'xlsx';
+  document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
   if (state.revision !== current) {
    if (gridLoaded) invalidateGrid('Version changed; copy unsaved edits and reload the range.');
    if (loaded) invalidateEdit('Version changed; load the element again.');
@@ -425,13 +460,27 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/cell-comparison'):
+                        if not isinstance(payload, dict) or set(payload) != {'before', 'after', 'sheet', 'cell_range'}:
+                            raise ValueError('Cell comparison requires revisions, sheet and range')
+                        with lock:
+                            state = session.info(directory)
+                            before = session.revision_file(state, payload['before'])
+                            after = session.revision_file(state, payload['after'])
+                            if payload['after'] != state['latest_revision']:
+                                raise ValueError('Latest revision changed; compare again')
+                        result = review.compare_cells(before, after, payload['sheet'], payload['cell_range'])
+                        with lock:
+                            if session.info(directory)['latest_revision'] != payload['after']:
+                                raise ValueError('Latest revision changed; compare again')
+                        self.send(200, json.dumps(result, default=str).encode(), 'application/json'); return
                     if route.endswith('/candidates'):
                         if not isinstance(payload, dict) or set(payload) != {'selection'}:
                             raise ValueError('Candidates require a saved selection')
