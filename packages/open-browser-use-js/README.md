@@ -868,6 +868,28 @@ reports presented tabs. Multiple active tabs cause an explicit error. Tab-list
 IDs are strings; tab handles retain their numeric `id`. Electron user tab
 listing is limited to its authorized scope, and its history is unavailable.
 
+## Capabilities and WebMCP
+
+`browser.capabilities.list()` and `tab.capabilities.list()` return advertised
+capability IDs and descriptions. Chrome advertises `webmcp` for session-owned
+tabs when its WebMCP gate is enabled:
+
+```js
+if ((await tab.capabilities.list()).some(cap => cap.id === 'webmcp')) {
+  const webmcp = await tab.capabilities.get('webmcp');
+  const tools = await webmcp.listTools();
+  // Inspect the page-provided tool and obtain authorization for its action.
+  // const result = await webmcp.invokeTool(tools[0], { /* tool input */ });
+}
+```
+
+Tools and results come from the page. Listing creates registration IDs tied to
+that page's current tool snapshot; listing again, tool changes or navigation
+can invalidate them. Invocation is sent once, so inspect the page before
+retrying an uncertain result. Electron currently advertises no WebMCP tab
+capability. Capability metadata without an SDK implementation is listed but
+`get()` reports it as unimplemented.
+
 ## DOM CUA
 
 `tab.dom_cua.get_visible_dom()` returns `{nodes}` with opaque `node_id`,

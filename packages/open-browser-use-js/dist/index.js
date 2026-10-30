@@ -383,12 +383,14 @@ export class OpenBrowserUseBrowser {
     cdp;
     browserId;
     tabs;
+    capabilities;
     user;
     #domCua = new Map();
     constructor(options) {
         this.client = "client" in options ? options.client : new OpenBrowserUseClient(options);
         this.cdp = new OpenBrowserUseCdp(this.client);
         this.tabs = new OpenBrowserUseTabs(this);
+        this.capabilities = new OpenBrowserUseCapabilities(this);
         this.user = new OpenBrowserUseBrowserUser(this);
     }
     async connect() {
@@ -515,6 +517,70 @@ export class OpenBrowserUseBrowserUser {
         return this.browser.client.getUserHistory({ ...(from ? { from } : {}), ...(to ? { to } : {}), ...(options.limit !== undefined ? { limit: options.limit } : {}), ...(options.query !== undefined ? { query: options.query } : {}) });
     }
 }
+export class OpenBrowserUseCapabilities {
+    browser;
+    tab;
+    constructor(browser, tab) {
+        this.browser = browser;
+        this.tab = tab;
+    }
+    async list() {
+        const info = await this.browser.client.getInfo();
+        if (!isObject(info) || !isObject(info.capabilities))
+            throw new Error('Browser capability metadata is unavailable');
+        const entries = info.capabilities[this.tab ? 'tab' : 'browser'];
+        if (entries === undefined)
+            return [];
+        if (!Array.isArray(entries))
+            throw new Error('Invalid browser capability metadata');
+        const seen = new Set();
+        const result = entries.map(item => {
+            if (!isObject(item) || typeof item.id !== 'string' || !item.id || typeof item.description !== 'string' || seen.has(item.id))
+                throw new Error('Invalid browser capability metadata');
+            seen.add(item.id);
+            return { id: item.id, description: item.description };
+        });
+        if (this.tab && result.length)
+            await this.browser.tabs.get(this.tab.id);
+        return result;
+    }
+    async get(id) {
+        if (typeof id !== 'string' || !id)
+            throw new Error('Invalid capability ID');
+        if (!(await this.list()).some(item => item.id === id))
+            throw new Error(`Capability unavailable: ${id}`);
+        if (id === 'webmcp' && this.tab)
+            return new OpenBrowserUseWebMcp(this.tab);
+        throw new Error(`Capability is not implemented: ${id}`);
+    }
+}
+export class OpenBrowserUseWebMcp {
+    tab;
+    constructor(tab) {
+        this.tab = tab;
+    }
+    async listTools() {
+        const result = await this.tab.browser.client.request('webmcp_list_tools', { tabId: this.tab.id });
+        if (!isObject(result) || !Array.isArray(result.tools))
+            throw new Error('Invalid WebMCP tool list');
+        return result.tools.map(tool => {
+            if (!isObject(tool) || typeof tool.name !== 'string' || !tool.name || typeof tool.registration_id !== 'string' || !tool.registration_id || !Object.hasOwn(tool, 'input_schema') || (tool.title !== undefined && typeof tool.title !== 'string') || (tool.description !== undefined && typeof tool.description !== 'string') || (tool.origin !== undefined && typeof tool.origin !== 'string') || (tool.pageUrl !== undefined && typeof tool.pageUrl !== 'string'))
+                throw new Error('Invalid WebMCP tool descriptor');
+            return tool;
+        });
+    }
+    async invokeTool(tool, input, options = {}) {
+        if (!tool || typeof tool.name !== 'string' || !tool.name.trim() || typeof tool.registration_id !== 'string' || !tool.registration_id.trim() || input === undefined || !options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => key !== 'timeoutMs'))
+            throw new Error('Invalid WebMCP invocation');
+        const timeoutMs = options.timeoutMs ?? 10_000;
+        if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000)
+            throw new Error('Invalid WebMCP timeout');
+        const result = await this.tab.browser.client.request('webmcp_invoke_tool', { tabId: this.tab.id, tool_name: tool.name, registration_id: tool.registration_id, input, timeout_ms: timeoutMs, ...(typeof tool.title === 'string' ? { tool_title: tool.title } : {}), ...(typeof tool.description === 'string' ? { tool_description: tool.description } : {}) }, undefined, Math.max(this.tab.browser.client.timeoutMs, timeoutMs + 2000));
+        if (!isObject(result) || !Object.hasOwn(result, 'result'))
+            throw new Error('Invalid WebMCP invocation result');
+        return result.result;
+    }
+}
 export class OpenBrowserUseDialog {
     cdp;
     tabId;
@@ -602,6 +668,7 @@ export class OpenBrowserUseTab {
     browser;
     id;
     playwright;
+    capabilities;
     cua;
     dom_cua;
     dev;
@@ -612,6 +679,7 @@ export class OpenBrowserUseTab {
         this.browser = browser;
         this.id = id;
         this.playwright = new OpenBrowserUseTabPlaywright(this);
+        this.capabilities = new OpenBrowserUseCapabilities(browser, this);
         this.cua = new OpenBrowserUseTabCUA(this);
         this.dom_cua = browser.domCuaFor(this);
         this.dev = new OpenBrowserUseTabDev(this);

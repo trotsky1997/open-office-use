@@ -208,6 +208,7 @@ export declare class OpenBrowserUseBrowser {
     readonly cdp: OpenBrowserUseCdp;
     browserId?: string;
     readonly tabs: OpenBrowserUseTabs;
+    readonly capabilities: OpenBrowserUseCapabilities;
     readonly user: OpenBrowserUseBrowserUser;
     constructor(options: OpenBrowserUseBrowserOptions);
     connect(): Promise<this>;
@@ -245,6 +246,36 @@ export declare class OpenBrowserUseBrowserUser {
         to?: string | Date;
         limit?: number;
         query?: string;
+    }): Promise<JsonValue>;
+}
+export type OpenBrowserUseCapabilityInfo = {
+    id: string;
+    description: string;
+};
+export type OpenBrowserUseWebMcpTool = {
+    name: string;
+    registration_id: string;
+    input_schema: JsonValue;
+    title?: string;
+    description?: string;
+    annotations?: JsonValue;
+    origin?: string;
+    pageUrl?: string;
+};
+export declare class OpenBrowserUseCapabilities {
+    private browser;
+    private tab?;
+    constructor(browser: OpenBrowserUseBrowser, tab?: OpenBrowserUseTab | undefined);
+    list(): Promise<OpenBrowserUseCapabilityInfo[]>;
+    get(id: 'webmcp'): Promise<OpenBrowserUseWebMcp>;
+    get(id: string): Promise<unknown>;
+}
+export declare class OpenBrowserUseWebMcp {
+    private tab;
+    constructor(tab: OpenBrowserUseTab);
+    listTools(): Promise<OpenBrowserUseWebMcpTool[]>;
+    invokeTool(tool: OpenBrowserUseWebMcpTool, input: JsonValue, options?: {
+        timeoutMs?: number;
     }): Promise<JsonValue>;
 }
 export declare class OpenBrowserUseDialog {
@@ -289,6 +320,7 @@ export declare class OpenBrowserUseTab {
     readonly browser: OpenBrowserUseBrowser;
     readonly id: number;
     readonly playwright: OpenBrowserUseTabPlaywright;
+    readonly capabilities: OpenBrowserUseCapabilities;
     readonly cua: OpenBrowserUseTabCUA;
     readonly dom_cua: OpenBrowserUseTabDomCUA;
     readonly dev: OpenBrowserUseTabDev;
