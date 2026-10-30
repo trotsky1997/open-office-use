@@ -31,6 +31,7 @@ from openpyxl.drawing.image import Image as WorkbookImage
 from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing, _check_anchor
 from openpyxl.chart.data_source import AxDataSource, StrRef, StrData, StrVal, NumData, NumVal
 from openpyxl.styles import PatternFill
+from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.cell.cell import MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.properties import PageSetupProperties
@@ -599,7 +600,7 @@ def format_workbook(workbook, options):
         return 'FF' + value.upper()
     for name, setting in options.items():
         if name not in workbook.sheetnames: raise ValueError(f'Worksheet not found: {name}')
-        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options', 'images', 'tables', 'list_validations'}: raise ValueError('Invalid worksheet options')
+        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options', 'images', 'tables', 'list_validations', 'conditional_formats'}: raise ValueError('Invalid worksheet options')
         sheet = workbook[name]
         if not isinstance(sheet, Worksheet): raise ValueError('Sheet options require a worksheet')
         if 'freeze_panes' in setting:
@@ -703,6 +704,42 @@ def format_workbook(workbook, options):
                         if 'wrap' in style: alignment.wrap_text = style['wrap']
                         cell.alignment = alignment
                     if 'number_format' in style: cell.number_format = style['number_format']
+        conditional_formats = setting.get('conditional_formats', [])
+        if not isinstance(conditional_formats, list) or len(conditional_formats) > 100: raise ValueError('Conditional formats must be a list of at most 100 entries')
+        if conditional_formats:
+            priorities = [rule.priority for rules in sheet.conditional_formatting._cf_rules.values() for rule in rules]
+            if any(not isinstance(value, int) or not 1 <= value <= 2147483647 for value in priorities) or len(set(priorities)) != len(priorities) or max(priorities, default=0) + len(conditional_formats) > 2147483647: raise ValueError('Existing conditional format priorities are ambiguous')
+            sheet.conditional_formatting.max_priority = max(sheet.conditional_formatting.max_priority, max(priorities, default=0))
+        for rule in conditional_formats:
+            if not isinstance(rule, dict): raise ValueError('Invalid conditional format')
+            kind = rule.get('type'); a, b, c, d = bounds(rule.get('range'), 1000000)
+            if kind == 'cell':
+                if set(rule) - {'type', 'range', 'operator', 'values', 'fill', 'stop_if_true'}: raise ValueError('Invalid cell conditional format')
+                operator = rule.get('operator'); values = rule.get('values')
+                allowed = ('equal', 'notEqual', 'lessThan', 'lessThanOrEqual', 'greaterThan', 'greaterThanOrEqual', 'between', 'notBetween')
+                if operator not in allowed or not isinstance(values, list) or len(values) != (2 if operator in ('between', 'notBetween') else 1): raise ValueError('Invalid conditional format operator or values')
+                if any(isinstance(value, bool) or not isinstance(value, (int, float)) or abs(value) > 1e307 or not math.isfinite(value) for value in values): raise ValueError('Conditional format values must be finite numbers')
+                if len(values) == 2 and values[0] > values[1]: raise ValueError('Conditional format bounds are reversed')
+                if 'stop_if_true' in rule and not isinstance(rule['stop_if_true'], bool): raise ValueError('stop_if_true must be a boolean')
+                formatted = CellIsRule(operator=operator, formula=[str(value) for value in values], fill=PatternFill(fill_type='solid', fgColor=rgb(rule.get('fill'))), stopIfTrue=rule.get('stop_if_true', False))
+            elif kind == 'formula':
+                if set(rule) - {'type', 'range', 'formula', 'fill', 'stop_if_true'}: raise ValueError('Invalid formula conditional format')
+                formula = rule.get('formula')
+                if not isinstance(formula, str) or not formula or re.search(r'[\x00-\x1f\ud800-\udfff\ufffe\uffff]|_x[0-9a-fA-F]{4}_', formula) or len(formula.encode('utf-16-le')) // 2 > 8192: raise ValueError('Invalid conditional format formula')
+                if formula.startswith('='): formula = formula[1:]
+                if not formula: raise ValueError('Invalid conditional format formula')
+                if 'stop_if_true' in rule and not isinstance(rule['stop_if_true'], bool): raise ValueError('stop_if_true must be a boolean')
+                formatted = FormulaRule(formula=[formula], fill=PatternFill(fill_type='solid', fgColor=rgb(rule.get('fill'))), stopIfTrue=rule.get('stop_if_true', False))
+            elif kind == 'color_scale':
+                if set(rule) - {'type', 'range', 'min_color', 'mid_color', 'max_color'}: raise ValueError('Invalid color scale')
+                args = {'start_type':'min', 'start_color':rgb(rule.get('min_color')), 'end_type':'max', 'end_color':rgb(rule.get('max_color'))}
+                if 'mid_color' in rule: args.update(mid_type='percentile', mid_value=50, mid_color=rgb(rule['mid_color']))
+                formatted = ColorScaleRule(**args)
+            elif kind == 'data_bar':
+                if set(rule) - {'type', 'range', 'color'}: raise ValueError('Invalid data bar')
+                formatted = DataBarRule(start_type='min', end_type='max', color=rgb(rule.get('color')), showValue=True)
+            else: raise ValueError('Unsupported conditional format type')
+            sheet.conditional_formatting.add(f'{get_column_letter(a)}{b}:{get_column_letter(c)}{d}', formatted)
         list_validations = setting.get('list_validations', [])
         if not isinstance(list_validations, list) or len(list_validations) > 100: raise ValueError('List validations must be a list of at most 100 entries')
         for rule in list_validations:

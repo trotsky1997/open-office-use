@@ -315,3 +315,5 @@ Extended table renaming to update calculated-column and totals-row formula metad
 Resolved implicit references using unique worksheet and table ownership across sheets, preserving references to other tables while rewriting explicit references to the renamed table. Ambiguous ownership remains a refusal.
 
 Added authoring of fixed-list and same-sheet range-based spreadsheet dropdown validation, with bounded inputs and overlap rejection. The local grid can display supported choices; its edits do not enforce validation.
+
+Added native workbook conditional-format authoring for numeric thresholds, formulas, color scales and data bars, preserving valid existing priority order. OfficeCLI validation and LibreOffice rendering covered representative rules; native Excel remains unverified.

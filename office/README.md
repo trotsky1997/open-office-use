@@ -105,6 +105,14 @@ For basic Excel authoring, `sheet_options` can format a workbook in the same req
 
 Options apply to existing worksheets after values are written. Freeze panes accepts a single cell or `null`; auto-filter accepts a range of at most 10,000,000 cells or `null` and rejects replacement when existing filter criteria or sort state are present. Column widths use Excel character units (greater than 0 and at most 255); row heights use points (greater than 0 and at most 409.5). Format entries accept `bold`, `italic`, `font_size`, six-digit RGB `font_color` and `fill`, `number_format`, `horizontal` (`general`, `left`, `center`, `right`) and boolean `wrap`. Omitted properties retain their existing direct settings. Each format covers up to 10,000 cells; all formats together cover up to 20,000 cells, with at most 100 format entries per sheet and 200 dimension entries of each kind. Merged-cell placeholders are rejected. Formulas are stored without calculation; formula caches may be missing and LibreOffice previews may recalculate them. When modifying an existing workbook, library round-tripping can change unsupported features and formula caches; use the targeted session grid when preserving those matters.
 
+Create native conditional formats with `conditional_formats` in `sheet_options`:
+
+```json
+{"sheets":{"Data":{"A1":-10,"A2":5,"A3":30}},"sheet_options":{"Data":{"conditional_formats":[{"type":"cell","range":"A1:A3","operator":"lessThan","values":[0],"fill":"FFC7CE"},{"type":"color_scale","range":"B1:B3","min_color":"F8696B","mid_color":"FFEB84","max_color":"63BE7B"},{"type":"data_bar","range":"C1:C3","color":"638EC6"},{"type":"formula","range":"D1:D3","formula":"=A1>20","fill":"C6EFCE"}]}}}
+```
+
+Cell rules accept numeric `values` and `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`, `greaterThanOrEqual`, `between` or `notBetween`; the last two take two ordered values. Formula rules store an Excel formula with an optional leading `=`; syntax and results require review in a spreadsheet application. Cell and formula rules accept `stop_if_true`. Color scales use minimum and maximum values, with an optional 50th-percentile midpoint. Data bars use the range minimum and maximum and display cell values. Colors are six-digit RGB. Rules are appended after existing priorities; ambiguous existing priorities are rejected. Each rule covers at most 1,000,000 cells and each sheet accepts up to 100 added rules. The saved workbook carries the rules, which are evaluated by the spreadsheet application. Source-based authoring uses an openpyxl round trip and can change unsupported features or caches.
+
 Create spreadsheet dropdowns using `list_validations` in `sheet_options`:
 
 ```json

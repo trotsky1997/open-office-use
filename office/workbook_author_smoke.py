@@ -115,6 +115,29 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid or overlapping list validation accepted')
         assert not invalid.exists()
+    conditional_file=root/'conditional.xlsx'
+    conditional_spec={'sheets':{'Data':{'A1':-10,'A2':5,'A3':30,'B1':1,'B2':2,'B3':3,'C1':1,'C2':2,'C3':3}},'sheet_options':{'Data':{'conditional_formats':[{'type':'cell','range':'A1:A3','operator':'lessThan','values':[0],'fill':'FFC7CE','stop_if_true':True},{'type':'formula','range':'A1:A3','formula':'=A1>20','fill':'C6EFCE'},{'type':'color_scale','range':'B1:B3','min_color':'F8696B','mid_color':'FFEB84','max_color':'63BE7B'},{'type':'data_bar','range':'C1:C3','color':'638EC6'}]}}}
+    conditional_json=root/'conditional-spec.json';conditional_json.write_text(json.dumps(conditional_spec))
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(conditional_json),'--out',str(conditional_file)],capture_output=True,text=True,check=True)
+    conditional_sheet=load_workbook(conditional_file)['Data']; all_rules=[rule for rules in conditional_sheet.conditional_formatting._cf_rules.values() for rule in rules]
+    assert [rule.type for rule in all_rules]==['cellIs','expression','colorScale','dataBar'] and [rule.priority for rule in all_rules]==[1,2,3,4]
+    assert all_rules[0].formula==['0'] and all_rules[0].stopIfTrue and all_rules[1].formula==['A1>20']
+    assert len(all_rules[2].colorScale.color)==3 and all_rules[3].dataBar.color.rgb=='FF638EC6'
+    code, validation, _=officecli_backend.invoke('validate',conditional_file); assert code==0 and validation['success'],validation
+    priority_source=root/'conditional-priority-source.xlsx'; priority_book=load_workbook(conditional_file)
+    priority_rules=[rule for rules in priority_book['Data'].conditional_formatting._cf_rules.values() for rule in rules]
+    for priority, rule in enumerate(priority_rules, 30): rule.priority=priority
+    priority_book.save(priority_source)
+    priority_output=root/'conditional-priority-output.xlsx'
+    open_office_use.author({'sheet_options':{'Data':{'conditional_formats':[{'type':'data_bar','range':'D1:D3','color':'638EC6'}]}}},priority_output,priority_source)
+    priority_after=[rule.priority for rules in load_workbook(priority_output)['Data'].conditional_formatting._cf_rules.values() for rule in rules]
+    assert priority_after==[30,31,32,33,34]
+    for index, rule in enumerate([{'type':'cell','range':'A1','operator':'between','values':[3,1],'fill':'FFC7CE'},{'type':'formula','range':'A1','formula':'=','fill':'C6EFCE'},{'type':'data_bar','range':'A1','color':'invalid'}]):
+        invalid=root/f'invalid-conditional-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Data':{}},'sheet_options':{'Data':{'conditional_formats':[rule]}}},invalid)
+        except ValueError: pass
+        else: raise AssertionError('Invalid conditional format accepted')
+        assert not invalid.exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))
