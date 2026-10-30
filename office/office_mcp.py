@@ -241,6 +241,23 @@ def session_view_page(directory: str, revision: int, page: int, box: list[float]
 
 
 @server.tool()
+def compare_page_images(before: str, after: str, before_page: int, after_page: int) -> Image:
+    """Compare rendered pages visually; red shows RGB differences of at least 16/255."""
+    data, _ = visual.compare_pages(before, after, before_page, after_page, render)
+    return Image(data=data, format='png')
+
+
+@server.tool()
+def session_compare_page_images(directory: str, before_revision: int, after_revision: int, before_page: int, after_page: int) -> Image:
+    """Compare rendered pages from two exact session revisions; red marks visible pixel differences."""
+    state = session.info(directory)
+    before = session.revision_file(state, before_revision)
+    after = session.revision_file(state, after_revision)
+    data, _ = visual.compare_pages(before, after, before_page, after_page, render)
+    return Image(data=data, format='png')
+
+
+@server.tool()
 def view_contact_sheet(file: str, start_page: int = 1, count: int = 12) -> Image:
     """Render up to 12 numbered pages as a PNG overview. Page numbers refer to rendered PDF pages."""
     data, _ = visual.contact_sheet(file, start_page, count, render)

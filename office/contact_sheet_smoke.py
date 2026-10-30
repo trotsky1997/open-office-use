@@ -49,6 +49,17 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([sys.executable, str(cli), 'render-page', str(source), '--out', str(single), '--page', '3'], check=True, capture_output=True)
     with Image.open(single) as image:
         assert image.getpixel((image.width // 2, image.height // 2))[2] > 200
+    _, identical = visual.compare_pages(source, source, 2, 2, open_office_use.render)
+    assert identical['changed_pixels'] == 0, identical
+    _, changed = visual.compare_pages(source, source, 2, 3, open_office_use.render)
+    assert changed['changed_fraction'] > .9 and changed['channel_threshold'] == 16, changed
+    comparison = root / 'compare.png'
+    subprocess.run([sys.executable, str(cli), 'compare-pages', str(source), str(source), '--before-page', '2', '--after-page', '3', '--out', str(comparison)], check=True, capture_output=True)
+    with Image.open(comparison) as image: assert image.width > image.height
+    portrait = Presentation(); portrait.slide_width, portrait.slide_height = Inches(7.5), Inches(10); portrait.slides.add_slide(portrait.slide_layouts[6]); portrait_path = root / 'portrait.pptx'; portrait.save(portrait_path)
+    try: visual.compare_pages(source, portrait_path, 1, 1, open_office_use.render)
+    except ValueError as exc: assert 'different dimensions' in str(exc)
+    else: raise AssertionError('Mismatched page sizes accepted')
     output = root / 'contact.png'
     subprocess.run([sys.executable, str(cli), 'contact-sheet', str(source), '--out', str(output), '--start', '12'], check=True, capture_output=True)
     original = output.read_bytes()
@@ -67,4 +78,4 @@ with tempfile.TemporaryDirectory() as tmp:
     book = Workbook(); book.active['A1'] = 'Workbook'; book_path = root / 'book.xlsx'; book.save(book_path)
     assert visual.contact_sheet(book_path, 1, 12, open_office_use.render)[1]['total_pages'] == 1
     assert visual.page_image(book_path, 1, open_office_use.render)[1]['total_pages'] == 1
-print('Visual smoke passed: single page, crop, three formats, pagination and output protection')
+print('Visual smoke passed: page comparison, crops, formats, pagination and output protection')

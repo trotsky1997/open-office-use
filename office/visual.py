@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 
 def pdf_page_count(pdf):
@@ -67,6 +67,46 @@ def page_image(source, page, render, box=None):
         if len(data) > 10 * 1024 * 1024:
             raise ValueError('Rendered page exceeds 10 MiB')
         return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box, 'raster_scale': scale}
+
+
+def compare_pages(before, after, before_page, after_page, render):
+    before_data, before_info = page_image(before, before_page, render)
+    after_data, after_info = page_image(after, after_page, render)
+    with Image.open(io.BytesIO(before_data)) as image:
+        old = image.convert('RGB')
+    with Image.open(io.BytesIO(after_data)) as image:
+        new = image.convert('RGB')
+    if old.size != new.size:
+        raise ValueError(f'Rendered pages have different dimensions: {old.size} and {new.size}')
+    diff = ImageChops.difference(old, new)
+    red, green, blue = diff.split()
+    mask = ImageChops.lighter(ImageChops.lighter(red, green), blue).point(lambda value: 255 if value >= 16 else 0)
+    changed = mask.histogram()[255]; total = old.width * old.height
+    # shortcut: expand the mask for legibility at overview size; retain unexpanded pixels for the count.
+    highlight = Image.blend(old, Image.new('RGB', old.size, 'white'), .7)
+    highlight.paste((220, 30, 30), mask=mask.filter(ImageFilter.MaxFilter(5)))
+    panels = [old, new, highlight]
+    for image in panels:
+        image.thumbnail((760, 760), Image.Resampling.LANCZOS)
+    width, height = panels[0].size; gap, header = 16, 62
+    result = Image.new('RGB', (gap + 3 * (width + gap), height + header + gap), '#e9edf2')
+    draw = ImageDraw.Draw(result)
+    try: font = ImageFont.load_default(size=16)
+    except TypeError: font = ImageFont.load_default()
+    draw.text((gap, 8), f'Changed pixels: {changed / total * 100:.2f}% (RGB threshold 16/255)', fill='#1f2937', font=font)
+    labels = (f'Before - page {before_page}', f'After - page {after_page}', 'Changes highlighted in red')
+    for index, (image, label) in enumerate(zip(panels, labels)):
+        x = gap + index * (width + gap)
+        draw.text((x, 35), label, fill='#1f2937', font=font)
+        result.paste(image, (x, header))
+    output = io.BytesIO(); result.save(output, format='PNG')
+    data = output.getvalue()
+    if len(data) > 10 * 1024 * 1024:
+        raise ValueError('Page comparison exceeds 10 MiB')
+    return data, {'before_page': before_page, 'after_page': after_page,
+                  'before_total_pages': before_info['total_pages'], 'after_total_pages': after_info['total_pages'],
+                  'page_size': list(mask.size), 'changed_pixels': changed, 'total_pixels': total,
+                  'changed_fraction': changed / total, 'channel_threshold': 16}
 
 
 def contact_sheet(source, start, count, render):

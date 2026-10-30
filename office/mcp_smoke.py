@@ -26,7 +26,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -132,6 +132,10 @@ async def main():
                 first_page = await session.call_tool('session_view_page', {'directory': str(directory), 'revision': 0, 'page': 1})
                 second_page = await session.call_tool('session_view_page', {'directory': str(directory), 'revision': 1, 'page': 1})
                 assert not first_page.isError and not second_page.isError and first_page.content[0].data != second_page.content[0].data
+                visual_comparison = await session.call_tool('session_compare_page_images', {'directory': str(directory), 'before_revision': 0, 'after_revision': 1, 'before_page': 1, 'after_page': 1})
+                assert not visual_comparison.isError and visual_comparison.content[0].type == 'image', visual_comparison
+                file_comparison = await session.call_tool('compare_page_images', {'before': str(output), 'after': str(output), 'before_page': 1, 'after_page': 1})
+                assert not file_comparison.isError and file_comparison.content[0].type == 'image', file_comparison
                 missing_page = await session.call_tool('session_view_page', {'directory': str(directory), 'revision': 0, 'page': 100})
                 assert missing_page.isError, missing_page
                 overview = await session.call_tool('view_contact_sheet', {'file': str(output), 'start_page': 1, 'count': 1})
