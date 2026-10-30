@@ -311,3 +311,5 @@ Extended table column rename to rewrite simple explicit structured references, i
 Extended table column rename to handle explicit nested selectors and implicit references in uniquely identified table data cells. Ambiguous implicit contexts and calculated table-column metadata still require review.
 
 Extended table renaming to update calculated-column and totals-row formula metadata and target-table totals cells. Verified with an XlsxWriter workbook containing a calculated column and totals; native Excel validation remains pending.
+
+Resolved implicit references using unique worksheet and table ownership across sheets, preserving references to other tables while rewriting explicit references to the renamed table. Ambiguous ownership remains a refusal.

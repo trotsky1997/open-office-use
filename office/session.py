@@ -906,7 +906,7 @@ def table_formula_node(part, node):
     return part.startswith('xl/charts/') and tag == '{http://schemas.openxmlformats.org/drawingml/2006/chart}f'
 
 
-def rewrite_table_formula(formula, table_name, old_name, new_name, allow_implicit=False):
+def rewrite_table_formula(formula, table_name, old_name, new_name, implicit_table=None):
     prefix = '=' if formula.startswith('=') else ''; expression = formula[len(prefix):]
     try: tokens = Tokenizer('=' + expression).items
     except (TokenizerError, ValueError, IndexError) as exc: raise ValueError('Unsupported structured formula') from exc
@@ -918,8 +918,8 @@ def rewrite_table_formula(formula, table_name, old_name, new_name, allow_implici
             match = re.fullmatch(r'([A-Za-z_][A-Za-z0-9_.]*)?(\[.*\])', value) if token.type == 'OPERAND' and token.subtype == 'RANGE' else None
             if match is None: raise ValueError('Unsupported structured reference')
             owner, selector = match.groups()
-            if owner is None and not allow_implicit: raise ValueError('Implicit structured reference has ambiguous table context')
-            target = owner is None or owner.casefold() == table_name.casefold()
+            if owner is None and implicit_table is None: raise ValueError('Implicit structured reference has ambiguous table context')
+            target = (implicit_table if owner is None else owner.casefold() == table_name.casefold())
             # shortcut: escaped structured names need a full Excel grammar before they can be rewritten.
             nested = selector.startswith('[[') and selector.endswith(']')
             inner = selector[1:-1] if nested else selector
@@ -970,7 +970,7 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
         with zipfile.ZipFile(snapshot) as archive:
             parts = archive.namelist()
             if any(name.startswith(('customXml/', 'xl/pivotTables/', 'xl/pivotCache/', 'xl/slicers/', 'xl/slicerCaches/', 'xl/queryTables/', 'xl/externalLinks/', 'xl/embeddings/', 'xl/webextensions/', 'xl/activeX/', 'xl/model/', 'xl/richData/')) or name == 'xl/connections.xml' or name.startswith('xl/') and name.endswith('.bin') for name in parts): raise ValueError('Workbook contains unsupported dependent features')
-            sheet_part = grid_styles.sheet_part(snapshot, sheet); table_owners = []
+            sheet_part = grid_styles.sheet_part(snapshot, sheet); table_owners = []; table_relationships = {}
             for rel_path in (name for name in parts if name.endswith('.rels')):
                 if archive.getinfo(rel_path).file_size > 4 * 1024 * 1024: raise ValueError('Relationship part exceeds table rename inspection limit')
                 rel_root = ooxml.parse_xml(archive.read(rel_path)).getroot()
@@ -986,8 +986,30 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
                     target = rel.get('Target', '')
                     if not target or any(char in target for char in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported package relationship for table rename')
                     resolved = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(owner), target))
+                    table_relationships.setdefault(resolved, []).append((owner, rel.get('Type')))
                     if resolved == table['part']: table_owners.append((owner, rel.get('Type')))
             if table_owners != [(sheet_part, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table')]: raise ValueError('Table part has shared or unsupported relationships')
+            book = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
+            try:
+                worksheet_paths = {}
+                for worksheet in book.worksheets:
+                    path = getattr(worksheet, '_worksheet_path', None)
+                    if isinstance(path, str): worksheet_paths.setdefault(path, []).append(worksheet.title)
+            finally: book.close()
+            sheet_constraints = {sheet_part: constraints}
+            def table_context(path, address=None, part=None):
+                titles = worksheet_paths.get(path, [])
+                if len(titles) != 1: return None
+                if path not in sheet_constraints: sheet_constraints[path] = spreadsheet.worksheet_constraints(snapshot, titles[0])
+                tables = sheet_constraints[path]['table_parts']
+                if part is not None:
+                    matching = [item for item in tables if item['part'] == part]
+                else:
+                    if not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', address or ''): return None
+                    col, row = range_boundaries(address)[:2]
+                    matching = [item for item in tables if (lambda bounds: bounds[0] <= col <= bounds[2] and bounds[1] + item['header_rows'] <= row <= bounds[3])(range_boundaries(item['ref']))]
+                if len(matching) != 1 or table_relationships.get(matching[0]['part']) != [(path, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table')]: return None
+                return matching[0]['part'] == table['part']
             xml_parts = [name for name in parts if name.startswith('xl/') and name.endswith('.xml')]
             if len(xml_parts) > 1000: raise ValueError('Workbook has too many XML parts to inspect')
             table_declarations = []; rewrites = {}; rewrite_count = 0
@@ -1005,14 +1027,13 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
                     if node.tag.rsplit('}',1)[-1].lower() in ('f','formula','formula1','formula2','definedname','calculatedcolumnformula','totalsrowformula') and re.search(r'(?i)\b(?:INDIRECT|EVALUATE)\s*\(', text): raise ValueError('Workbook contains indirect references; rename requires separate review')
                     if '[' in text or ']' in text:
                         if not eligible: raise ValueError('Workbook contains possible structured references outside supported formulas')
-                        allow_implicit = name == table['part'] and node.tag in (grid_styles.X+'calculatedColumnFormula', grid_styles.X+'totalsRowFormula') and node.getparent().tag == grid_styles.X+'tableColumn'
-                        if name == sheet_part and node.tag == grid_styles.X+'f' and node.getparent().tag == grid_styles.X+'c':
-                            address = node.getparent().get('r', '')
-                            if re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', address):
-                                col, row = range_boundaries(address)[:2]
-                                containing = [item for item in constraints['table_parts'] if (lambda bounds: bounds[0] <= col <= bounds[2] and bounds[1] < row <= bounds[3])(range_boundaries(item['ref']))]
-                                allow_implicit = len(containing) == 1 and containing[0]['part'] == table['part']
-                        updated, count = rewrite_table_formula(text, table_name, old_name, new_name, allow_implicit)
+                        implicit_table = None
+                        if name.startswith('xl/tables/') and node.getparent().tag == grid_styles.X+'tableColumn' and node.getparent().getparent() is not None and node.getparent().getparent().tag == grid_styles.X+'tableColumns' and node.getparent().getparent().getparent() is root:
+                            owners = table_relationships.get(name, [])
+                            if len(owners) == 1 and owners[0][1] == 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table': implicit_table = table_context(owners[0][0], part=name)
+                        elif name.startswith('xl/worksheets/') and node.tag == grid_styles.X+'f' and node.getparent().tag == grid_styles.X+'c':
+                            implicit_table = table_context(name, address=node.getparent().get('r'))
+                        updated, count = rewrite_table_formula(text, table_name, old_name, new_name, implicit_table)
                         if count:
                             if name.startswith('xl/tables/') and (node.attrib or len(node) or node.getparent().tag != grid_styles.X+'tableColumn'): raise ValueError('Unsupported table formula metadata')
                             if node.tag == grid_styles.X+'f' and (node.getparent().tag != grid_styles.X+'c' or node.get('t') not in (None, 'normal') or any(key != 't' for key in node.attrib)): raise ValueError('Shared or array formulas require separate review')

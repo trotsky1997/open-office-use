@@ -194,6 +194,31 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Array table formula accepted')
     assert session.info(array_draft)['latest_revision']==0
+    multi=root/'multiple-tables.xlsx'
+    multi_book=xlsxwriter.Workbook(multi); sales=multi_book.add_worksheet('Sales'); other=multi_book.add_worksheet('Other')
+    sales.add_table('A1:B3',{'name':'SalesTable','data':[['Q1',120],['Q2',140]],'columns':[{'header':'Quarter'},{'header':'Revenue'}]})
+    other.add_table('A1:B3',{'name':'OtherTable','data':[[30],[40]],'columns':[{'header':'Revenue'},{'header':'Adjusted','formula':'=[@Revenue]+SUM(SalesTable[Revenue])'}]}); multi_book.close()
+    multi_draft=root/'multiple-tables-draft';session.start(multi_draft,source=multi)
+    multi_result=session.rename_table_column(multi_draft,0,'Sales','SalesTable','Revenue','Amount')
+    multi_after=load_workbook(multi_result['file']); other_after=multi_after['Other']
+    assert multi_result['rewritten_references']==3
+    assert other_after['B2'].value=='=[[#This Row],Revenue]+SUM(SalesTable[Amount])'
+    assert other_after.tables['OtherTable'].tableColumns[1].calculatedColumnFormula.text=='[[#This Row],Revenue]+SUM(SalesTable[Amount])'
+    assert other_after.tables['OtherTable'].tableColumns[0].name=='Revenue'
+    assert load_workbook(multi_result['file'],data_only=True)['Other']['B2'].value is None
+    ambiguous_multi=root/'ambiguous-multiple-tables.xlsx'
+    with zipfile.ZipFile(multi) as before,zipfile.ZipFile(ambiguous_multi,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/_rels/workbook.xml.rels':
+                relationships=etree.fromstring(data); rel=etree.SubElement(relationships,'{http://schemas.openxmlformats.org/package/2006/relationships}Relationship')
+                rel.set('Id','rIdAmbiguousOtherTable'); rel.set('Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'); rel.set('Target','/xl/tables/table2.xml'); data=etree.tostring(relationships)
+            after.writestr(entry,data)
+    ambiguous_draft=root/'ambiguous-multiple-tables-draft';session.start(ambiguous_draft,source=ambiguous_multi)
+    try: session.rename_table_column(ambiguous_draft,0,'Sales','SalesTable','Revenue','Amount')
+    except ValueError as exc: assert 'ambiguous' in str(exc).lower()
+    else: raise AssertionError('Ambiguous foreign table context accepted')
+    assert session.info(ambiguous_draft)['latest_revision']==0
     shared=root/'shared-table.xlsx'
     with zipfile.ZipFile(table_file) as before, zipfile.ZipFile(shared,'w') as after:
         for entry in before.infolist():
