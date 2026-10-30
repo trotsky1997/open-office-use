@@ -136,6 +136,40 @@ def dynamic_metadata_indices(raw):
     return result
 
 
+def add_dynamic_metadata(archive, path):
+    raw = archive.read(path); tree = ooxml.parse_xml(raw); root = tree.getroot()
+    dynamic_metadata_indices(raw)
+    types = root.find(X + 'metadataTypes')
+    # shortcut: extend only image-style metadata with no cell records; support more shapes after validating all references.
+    if any(item.get('name') == 'XLDAPR' for item in types) or root.find(X + 'cellMetadata') is not None: raise ValueError('Unsupported metadata extension')
+    allowed = [X + name for name in ('metadataTypes', 'futureMetadata', 'valueMetadata', 'extLst')]
+    if any(node.tag not in allowed for node in root) or [allowed.index(node.tag) for node in root] != sorted(allowed.index(node.tag) for node in root): raise ValueError('Unsupported metadata order')
+    rels = ooxml.parse_xml(archive.read('xl/_rels/workbook.xml.rels')).getroot()
+    for rel in rels.findall(grid_styles.REL + 'Relationship'):
+        if rel.get('Type', '').endswith('/worksheet'):
+            target = rel.get('Target', '')
+            if rel.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported worksheet relationship')
+            part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('xl', target))
+            if not part.startswith('xl/') or part not in archive.namelist(): raise ValueError('Invalid worksheet relationship')
+            worksheet = ooxml.parse_xml(archive.read(part)).getroot()
+            if worksheet.tag != X + 'worksheet' or any(cell.get('cm') is not None for cell in worksheet.iter(X + 'c')): raise ValueError('Existing cell metadata references require verification')
+    expected = ooxml.parse_xml(DYNAMIC_METADATA).getroot()
+    types.append(copy.deepcopy(expected.find(X + 'metadataTypes')[0])); types.set('count', str(len(types)))
+    future = copy.deepcopy(expected.find(X + 'futureMetadata'))
+    following = next((node for node in root if node.tag in (X + 'valueMetadata', X + 'extLst')), None)
+    root.insert(root.index(following) if following is not None else len(root), future)
+    cells = copy.deepcopy(expected.find(X + 'cellMetadata')); cells[0][0].set('t', str(len(types)))
+    root.insert(root.index(following) if following is not None else len(root), cells)
+    result = ooxml.serialize_xml(tree, raw)
+    if dynamic_metadata_indices(result) != {'1'}: raise ValueError('Unable to verify added dynamic metadata')
+    return result
+
+
+def formula_node_is_array(cell):
+    formula = cell.find(X + 'f')
+    return formula is not None and formula.get('t') == 'array'
+
+
 def valid_dynamic_index(value, indices):
     return bool(value and re.fullmatch(r'[0-9]{1,10}', value) and str(int(value)) in indices)
 
@@ -270,7 +304,15 @@ def apply(source, output, sheet, changes, operations):
                 cm = cell.get('cm')
                 if cm is not None:
                     metadata_path = metadata_part(archive)
-                    if metadata_path is None or not valid_dynamic_index(cm, dynamic_metadata_indices(archive.read(metadata_path))) or (address not in old_dynamic and (address in literal or not requested.startswith('='))): raise ValueError('Unsupported candidate cell metadata')
+                    candidate_metadata = archive.read(metadata_path) if metadata_path else None
+                    valid = candidate_metadata is not None and valid_dynamic_index(cm, dynamic_metadata_indices(candidate_metadata))
+                    incomplete = False
+                    if not valid and cm == '1' and candidate_metadata is not None and formula_node_is_array(cell):
+                        with zipfile.ZipFile(source) as original:
+                            source_metadata_path = metadata_part(original)
+                            source_metadata = original.read(source_metadata_path) if source_metadata_path else None
+                        incomplete = candidate_metadata == source_metadata and source_metadata is not None and not dynamic_metadata_indices(source_metadata)
+                    if not (valid or incomplete) or (address not in old_dynamic and (address in literal or not requested.startswith('='))): raise ValueError('Unsupported candidate cell metadata')
                 formula_node = cell.find(X + 'f')
                 is_dynamic = cm is not None and formula_node is not None and formula_node.get('t') == 'array'
                 if cm is not None and not is_dynamic and address not in old_dynamic: raise ValueError('Unsupported candidate cell metadata')
@@ -333,7 +375,9 @@ def apply(source, output, sheet, changes, operations):
             formula_changed = False; string_count_uncertain = False
             existing_metadata = metadata_part(archive) if dynamic or old_dynamic else None
             indices = dynamic_metadata_indices(archive.read(existing_metadata)) if existing_metadata else set()
-            if dynamic and existing_metadata and not indices: raise ValueError('No reusable dynamic metadata record')
+            added_metadata = None
+            if dynamic and existing_metadata and not indices:
+                added_metadata = add_dynamic_metadata(archive, existing_metadata); indices = {'1'}
             if dynamic and not existing_metadata:
                 if grid_styles.equivalent(ooxml.parse_xml(dynamic_metadata).getroot()) != grid_styles.equivalent(ooxml.parse_xml(DYNAMIC_METADATA).getroot()): raise ValueError('Unsupported new dynamic metadata')
                 indices = {'1'}
@@ -371,7 +415,7 @@ def apply(source, output, sheet, changes, operations):
                 else: cell.set('t', kind)
                 for child in list(cell): cell.remove(child)
                 for child in children or (): cell.append(child)
-            additional = {}
+            additional = {existing_metadata: added_metadata} if added_metadata is not None else {}
             if grid_styles.equivalent(ooxml.parse_xml(original_styles).getroot()) != grid_styles.equivalent(ooxml.parse_xml(merged).getroot()): additional[style_name] = merged
             manifest_tree = ooxml.parse_xml(archive.read('[Content_Types].xml')); manifest = manifest_tree.getroot()
             if manifest.tag != CT + 'Types': raise ValueError('Invalid content types')

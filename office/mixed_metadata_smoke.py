@@ -51,7 +51,30 @@ with tempfile.TemporaryDirectory() as tmp:
     image_only = root / 'image-only.xlsx'; book = xlsxwriter.Workbook(image_only); sheet = book.add_worksheet('Sheet')
     sheet.embed_image('A1', str(image)); book.close()
     image_draft = root / 'image-only'; session.start(image_draft, source=image_only)
-    try: session.edit_grid(image_draft, 0, 'Sheet', 'C1', [{'cell': 'C1', 'value': '=SEQUENCE(3)'}])
-    except ValueError: pass
-    else: raise AssertionError('Metadata without a dynamic record accepted')
+    added = session.edit_grid(image_draft, 0, 'Sheet', 'C1', [{'cell': 'C1', 'value': '=SEQUENCE(3)'}])
+    with zipfile.ZipFile(image_only) as before, zipfile.ZipFile(added['file']) as after:
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name not in ('xl/metadata.xml', 'xl/worksheets/sheet1.xml', 'xl/styles.xml'))
+        original = etree.fromstring(before.read('xl/metadata.xml')); updated = etree.fromstring(after.read('xl/metadata.xml'))
+        assert grid_values.dynamic_metadata_indices(after.read('xl/metadata.xml')) == {'1'}
+        assert grid_values.grid_styles.equivalent(original.find(X + 'valueMetadata')) == grid_values.grid_styles.equivalent(updated.find(X + 'valueMetadata'))
+        assert grid_values.grid_styles.equivalent(original.find(X + 'futureMetadata')) == grid_values.grid_styles.equivalent(updated.find(X + 'futureMetadata'))
+        assert grid_values.grid_styles.equivalent(original.find(X + 'metadataTypes')[0]) == grid_values.grid_styles.equivalent(updated.find(X + 'metadataTypes')[0])
+        cells = {cell.get('r'): cell for cell in etree.fromstring(after.read('xl/worksheets/sheet1.xml')).iter(X + 'c')}
+        assert cells['A1'].get('vm') == '1' and cells['C1'].get('cm') == '1'
+    assert officecli_backend.audit(added['file'])['validation']['exit_code'] == 0
+    assert session.read_grid(image_draft, 1, 'Sheet', 'C1')['rows'][0][0]['editable']
+    changed = session.edit_grid(image_draft, 1, 'Sheet', 'C1', [{'cell': 'C1', 'value': '=SEQUENCE(5)'}])
+    with zipfile.ZipFile(added['file']) as before, zipfile.ZipFile(changed['file']) as after:
+        assert before.read('xl/metadata.xml') == after.read('xl/metadata.xml')
+    dangling = root / 'dangling.xlsx'
+    with zipfile.ZipFile(image_only) as before, zipfile.ZipFile(dangling, 'w') as after:
+        for entry in before.infolist():
+            data = before.read(entry)
+            if entry.filename == 'xl/worksheets/sheet1.xml':
+                tree = etree.fromstring(data); next(tree.iter(X + 'c')).set('cm', '1'); data = etree.tostring(tree)
+            after.writestr(entry, data)
+    with zipfile.ZipFile(dangling) as archive:
+        try: grid_values.add_dynamic_metadata(archive, 'xl/metadata.xml')
+        except ValueError: pass
+        else: raise AssertionError('Dangling metadata reference accepted')
 print('mixed metadata smoke passed')
