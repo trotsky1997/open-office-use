@@ -55,6 +55,7 @@ try {
    await tab.evaluate(`document.querySelector('#download-fixture').href='/download?run=${run}'`);
    const prepared=await tab.prepareDownload({timeoutMs:5000});
    const waiting=prepared.wait();void waiting.catch(()=>{});
+   if(run===1) await assert.rejects(tab.prepareDownload({timeoutMs:5000}),/Already waiting for a Chrome download/);
    await tab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click();
    const download=await waiting;const path=await download.path(5000);
    assert.equal(await readFile(path,'utf8'),'fixture download');
