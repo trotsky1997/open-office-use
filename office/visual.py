@@ -45,16 +45,28 @@ def page_image(source, page, render, box=None):
             raise RuntimeError(f'Page rendering failed: {result.stderr or result.stdout}')
         with Image.open(png) as image:
             page_size = [image.width, image.height]
-            if box is not None:
-                x1, y1, x2, y2 = box
-                image = image.crop((math.floor(x1 * image.width), math.floor(y1 * image.height),
-                                    math.ceil(x2 * image.width), math.ceil(y2 * image.height)))
+        scale = 1800
+        if box is not None:
+            x1, y1, x2, y2 = box
+            extent = max((x2 - x1) * page_size[0], (y2 - y1) * page_size[1])
+            # shortcut: limit the full-page raster scale to 7200; increase only with a stronger resource bound.
+            scale = 7200 if extent <= 450 else max(1800, math.floor(1800 * 1800 / extent))
+            ratio = scale / 1800
+            left = math.floor(x1 * page_size[0] * ratio); top = math.floor(y1 * page_size[1] * ratio)
+            right = math.ceil(x2 * page_size[0] * ratio); bottom = math.ceil(y2 * page_size[1] * ratio)
+            result = subprocess.run([raster, '-f', str(page), '-l', str(page), '-singlefile', '-scale-to', str(scale),
+                                     '-x', str(left), '-y', str(top), '-W', str(right - left), '-H', str(bottom - top),
+                                     '-png', pdf, str(root / 'crop')], capture_output=True, text=True, timeout=120, check=False)
+            png = root / 'crop.png'
+            if result.returncode or not png.is_file():
+                raise RuntimeError(f'Page crop rendering failed: {result.stderr or result.stdout}')
+        with Image.open(png) as image:
             image_size = [image.width, image.height]
             output = io.BytesIO(); image.save(output, format='PNG')
         data = output.getvalue()
         if len(data) > 10 * 1024 * 1024:
             raise ValueError('Rendered page exceeds 10 MiB')
-        return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box}
+        return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box, 'raster_scale': scale}
 
 
 def contact_sheet(source, start, count, render):

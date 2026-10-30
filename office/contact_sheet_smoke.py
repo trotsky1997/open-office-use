@@ -10,6 +10,8 @@ from docx import Document
 from openpyxl import Workbook
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.util import Inches
 
 import open_office_use
 import visual
@@ -20,6 +22,8 @@ with tempfile.TemporaryDirectory() as tmp:
     for color in ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)):
         slide = deck.slides.add_slide(deck.slide_layouts[6]); fill = slide.background.fill
         fill.solid(); fill.fore_color.rgb = RGBColor(*color)
+    marker = deck.slides[1].shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(2), Inches(1.5), Inches(1), Inches(.75))
+    marker.fill.solid(); marker.fill.fore_color.rgb = RGBColor(255, 0, 0); marker.line.fill.background()
     for _ in range(8): deck.slides.add_slide(deck.slide_layouts[6])
     source = root / 'slides.pptx'; deck.save(source)
     data, meta = visual.contact_sheet(source, 2, 2, open_office_use.render)
@@ -29,8 +33,14 @@ with tempfile.TemporaryDirectory() as tmp:
     assert visual.contact_sheet(source, 10, 12, open_office_use.render)[1]['end_page'] == 12
     page, page_meta = visual.page_image(source, 2, open_office_use.render, [0, 0, .5, .5])
     image = Image.open(io.BytesIO(page))
-    assert page_meta['page'] == 2 and page_meta['total_pages'] == 12 and image.width == 900
-    assert image.getpixel((image.width // 2, image.height // 2))[1] > 200
+    assert page_meta['page'] == 2 and page_meta['total_pages'] == 12 and image.width == 1800 and page_meta['raster_scale'] == 3600
+    assert image.getpixel((image.width * 4 // 5, image.height * 4 // 5))[1] > 200
+    detail, detail_meta = visual.page_image(source, 2, open_office_use.render, [.2, .2, .3, .3])
+    detail_image = Image.open(io.BytesIO(detail))
+    assert detail_meta['raster_scale'] == 7200 and 715 <= detail_image.width <= 725
+    for x, y in ((5, 5), (detail_image.width//2, detail_image.height//2), (detail_image.width-5, detail_image.height-5)):
+        red, green, blue = detail_image.getpixel((x, y))[:3]; assert red > 240 and green < 20 and blue < 20, (x, y, red, green, blue)
+    assert visual.page_image(source, 2, open_office_use.render, [0, 0, 5e-324, 5e-324])[1]['raster_scale'] == 7200
     for invalid in ([0, 0, 0, 1], [0, 0, 1.01, 1], [0, 0, float('nan'), 1], [False, 0, 1, 1]):
         try: visual.page_image(source, 1, open_office_use.render, invalid)
         except ValueError: pass
@@ -53,6 +63,7 @@ with tempfile.TemporaryDirectory() as tmp:
     doc = Document(); doc.add_paragraph('Page one'); doc.add_page_break(); doc.add_paragraph('Page two'); doc_path = root / 'doc.docx'; doc.save(doc_path)
     assert visual.contact_sheet(doc_path, 2, 12, open_office_use.render)[1]['total_pages'] == 2
     assert visual.page_image(doc_path, 2, open_office_use.render)[1]['page'] == 2
+    assert visual.page_image(doc_path, 2, open_office_use.render, [.99999, .99999, 1, 1])[1]['image_size'][0] > 0
     book = Workbook(); book.active['A1'] = 'Workbook'; book_path = root / 'book.xlsx'; book.save(book_path)
     assert visual.contact_sheet(book_path, 1, 12, open_office_use.render)[1]['total_pages'] == 1
     assert visual.page_image(book_path, 1, open_office_use.render)[1]['total_pages'] == 1
