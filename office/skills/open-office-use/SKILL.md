@@ -12,3 +12,5 @@ For PowerPoint speaker notes, use `read_slide_notes` or `session_read_slide_note
 Use `compare_slide_notes` or `session_compare_slide_notes` to compare corresponding speaker notes when reviewing a deck or session; select slide numbers on both sides and check truncation.
 
 For Word headers and footers, use `list_word_stories` or `session_list_word_stories` to obtain relation-ID paragraph paths, then `session_replace_text` for a unique literal match. Inspect `linked_sections`, `same_part_ids` and `reference_resolution_complete` before editing a shared part; first/even page display depends on document settings and pagination, so inspect the rendered document.
+
+For XLSX editing, check `session_read_grid` for `sheet_protected`, cell `read_only_reason` and `merged_anchor`. Use the merge origin and preserve worksheet protection; explicitly unlocked cells on a protected sheet remain editable.

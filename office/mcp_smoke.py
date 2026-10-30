@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Font, Protection
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -237,6 +237,13 @@ async def main():
                 assert not sheets.isError and sheets.structuredContent['sheets'] == ['Sheet'], sheets
                 grid = await session.call_tool('session_read_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2'})
                 assert not grid.isError and grid.structuredContent['rows'][1][0]['formula'] == '=A1*3', grid
+                guarded_source = root / 'guarded.xlsx'; guarded = Workbook(); guarded.active['A1'] = 'Merged'; guarded.active.merge_cells('A1:B2'); guarded.active['C1'] = 'Unlocked'; guarded.active['C1'].protection = Protection(locked=False); guarded.active.protection.sheet = True; guarded.save(guarded_source)
+                guarded_draft = root / 'guarded-draft'; guarded_start = await session.call_tool('start_session', {'directory': str(guarded_draft), 'source': str(guarded_source)})
+                assert not guarded_start.isError, guarded_start
+                guarded_grid = await session.call_tool('session_read_grid', {'directory': str(guarded_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:C1'})
+                assert not guarded_grid.isError and guarded_grid.structuredContent['sheet_protected'] and guarded_grid.structuredContent['rows'][0][1]['read_only_reason'] == 'merged_placeholder' and guarded_grid.structuredContent['rows'][0][2]['editable'], guarded_grid
+                guarded_edit = await session.call_tool('session_edit_grid', {'directory': str(guarded_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:C1', 'changes': [{'cell': 'B1', 'value': 'hidden'}]})
+                assert guarded_edit.isError, guarded_edit
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
                 assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1, saved_grid
                 styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True}})

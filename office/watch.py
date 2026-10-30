@@ -263,7 +263,7 @@ document.getElementById('grid-load').addEventListener('click', async () => {
     const td=document.createElement('td'), input=document.createElement('input'); input.type='text'; input.maxLength=4000;
     const formula=cell.formula, value=typeof formula==='string' ? formula : (formula && typeof formula==='object' ? (formula.text || '[complex formula]') : (cell.value == null ? '' : String(cell.value)));
     input.value=value; input.dataset.baseline=value; input.dataset.cell=cell.cell; input.dataset.editable=String(cell.editable);
-    input.readOnly=!cell.editable; input.setAttribute('aria-label', `${sheet} ${cell.cell}`);
+    input.readOnly=!cell.editable; input.setAttribute('aria-label', `${sheet} ${cell.cell}${cell.read_only_reason ? ' · '+cell.read_only_reason.replaceAll('_',' ') : ''}`);
     if (cell.style.bold) input.style.fontWeight='bold';
     if (/^[0-9A-Fa-f]{6}$/.test(cell.style.fill_rgb || '')) {
      input.style.backgroundColor='#'+cell.style.fill_rgb;
@@ -272,13 +272,14 @@ document.getElementById('grid-load').addEventListener('click', async () => {
     }
     input.title=`Number format: ${cell.style.number_format}`;
     if (typeof formula==='string') input.title+=`; cached result: ${cell.value == null ? 'unknown' : cell.value}`;
-    if (!cell.editable) input.title='Protected formula range: use a supported workflow';
+    if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : 'Protected formula range';
+    else if (cell.merged_anchor) input.title+=`; merged region anchor ${cell.merged_anchor}`;
     td.appendChild(input); tr.appendChild(td);
    }
    body.appendChild(tr);
   }
-  table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range};
-  document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=false; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.`;
+  table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range,sheet_protected:data.sheet_protected};
+  document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=data.sheet_protected; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.${data.sheet_protected ? ' Worksheet protection is enabled; locked cells and grid formatting are read-only.' : ''}`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
 });
@@ -340,7 +341,7 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
   invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
-  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-format').disabled=false; }
+  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; }
  } finally { gridBusy=false; }
 });
 document.getElementById('grid-format').addEventListener('click', async () => {
@@ -381,7 +382,7 @@ async function loadElement(path) {
   loaded=target; document.getElementById('edit-path').value=target.path;
   const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula'] : ['text'];
   mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind;return option;}));
-  const tableCell=target.format==='pptx' && target.type==='tc' || target.replace_only;
+  const tableCell=target.format==='pptx' && target.type==='tc' || target.replace_only || Boolean(target.read_only_reason);
   mode.value=target.mode; mode.disabled=tableCell;
   const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=tableCell; value.value=target.value;
   editBaseline={value:value.value,mode:mode.value};
@@ -392,7 +393,7 @@ async function loadElement(path) {
   if (target.replace_only) {
    const impact=target.story_impact, linked=impact.linked_sections.map(r=>`${r.section} (${r.type}, ${r.inherited ? 'linked' : 'direct'}, ${r.relationship_id})`).join(', ') || 'none found';
    document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Part ${impact.part}; sections: ${linked}. ${impact.same_part_ids.length ? 'Other relationship IDs share this part: '+impact.same_part_ids.join(', ')+'. ' : ''}${impact.complete ? '' : 'Section links are incomplete. '}Use Replace once; verify the rendered document.`;
-  } else document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
+  } else document.getElementById('edit-status').textContent=target.read_only_reason ? `Loaded read-only cell: ${target.read_only_reason.replaceAll('_',' ')}.` : `Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
  finally { editBusy=false; button.disabled = pinned !== null; }
 }

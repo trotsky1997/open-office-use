@@ -54,9 +54,12 @@ def replace_text(source, output, path, find, replacement):
                 raise ValueError('Worksheet part is referenced by multiple sheets')
         finally:
             workbook.close()
-        protected = spreadsheet.protected_formula_ranges(file, sheet)
-        if any(c1 <= col <= c2 and r1 <= row <= r2 for c1, r1, c2, r2 in protected):
-            raise ValueError('Array, data-table or shared formula ranges cannot be edited')
+        constraints = spreadsheet.worksheet_constraints(file, sheet)
+        locked = spreadsheet.read_range(file, sheet, address, include_style=True)['rows'][0][0]['locked'] if constraints['sheet_protected'] else False
+        reason, _ = spreadsheet.cell_constraint(constraints, col, row, locked)
+        if reason == 'formula_range': raise ValueError('Array, data-table or shared formula ranges cannot be edited')
+        if reason in ('merged_placeholder', 'overlapping_merges'): raise ValueError('Merged-cell placeholders or overlapping merges cannot be edited')
+        if reason == 'locked_cell': raise ValueError('Locked cells on protected worksheets cannot be edited')
         return part
 
     def edit(tree, archive):

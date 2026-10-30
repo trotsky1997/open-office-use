@@ -72,6 +72,7 @@ def read_range(file, sheet, cell_range, include_style=False):
                         cell['style'] = {'bold': bool(getattr(font, 'bold', False)),
                                          'fill_rgb': rgb[-6:] if isinstance(rgb, str) else None,
                                          'number_format': getattr(f, 'number_format', 'General')}
+                        cell['locked'] = getattr(getattr(f, 'protection', None), 'locked', True) is not False
             rows.append(row)
         return {'sheet': sheet, 'range': cell_range, 'rows': rows, 'cache_freshness': 'unknown'}
     finally:
@@ -192,11 +193,16 @@ def recalculate(source, output):
     return str(output)
 
 
-def protected_formula_ranges(file, sheet):
-    """Find multi-cell formula ranges in the saved worksheet without rewriting it."""
+def worksheet_constraints(file, sheet):
+    """Inspect multi-cell formulas, merged ranges and sheet protection without rewriting."""
     import xml.etree.ElementTree as ET
     import zipfile
 
+    if Path(file).stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+    with zipfile.ZipFile(file) as archive:
+        entries = archive.infolist(); names = [entry.filename for entry in entries]
+        if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+            raise ValueError('Workbook exceeds package limits or contains duplicate parts')
     workbook = load_workbook(file, read_only=True, data_only=False)
     try:
         if sheet not in workbook.sheetnames:
@@ -205,12 +211,26 @@ def protected_formula_ranges(file, sheet):
         path = getattr(workbook[sheet], '_worksheet_path', None)
         if not isinstance(path, str):
             raise RuntimeError('Cannot locate worksheet XML for formula protection')
+        if sum(getattr(item, '_worksheet_path', None) == path for item in workbook.worksheets) != 1:
+            raise ValueError('Worksheet part is referenced by multiple sheets')
     finally:
         workbook.close()
-    ranges = []
+    ranges = []; merges = []; sheet_protected = False; protection_seen = False
     shared_ranges, shared_uses = {}, set()
     with zipfile.ZipFile(file) as archive, archive.open(path) as stream:
         for _, element in ET.iterparse(stream, events=('end',)):
+            if element.tag == '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}mergeCell':
+                try:
+                    bounds = range_boundaries(element.get('ref'))
+                    if any(v is None for v in bounds) or not (1 <= bounds[0] <= bounds[2] <= 16384 and 1 <= bounds[1] <= bounds[3] <= 1048576): raise ValueError
+                except (TypeError, ValueError):
+                    raise ValueError('Invalid merged-cell range') from None
+                merges.append(bounds)
+            elif element.tag == '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheetProtection':
+                if protection_seen: raise ValueError('Worksheet has duplicate protection settings')
+                protection_seen = True; flag = element.get('sheet', '0')
+                if flag not in ('0', '1', 'true', 'false'): raise ValueError('Invalid worksheet protection setting')
+                sheet_protected = flag in ('1', 'true')
             if element.tag.rsplit('}', 1)[-1] == 'f':
                 kind, ref, shared_id = element.get('t'), element.get('ref'), element.get('si')
                 if kind == 'shared':
@@ -220,7 +240,7 @@ def protected_formula_ranges(file, sheet):
                 if kind in ('array', 'dataTable', 'shared') and ref:
                     try:
                         bounds = range_boundaries(ref)
-                        if any(value is None for value in bounds):
+                        if any(value is None for value in bounds) or not (1 <= bounds[0] <= bounds[2] <= 16384 and 1 <= bounds[1] <= bounds[3] <= 1048576):
                             raise ValueError
                     except (TypeError, ValueError):
                         raise ValueError('Invalid multi-cell formula range') from None
@@ -235,4 +255,15 @@ def protected_formula_ranges(file, sheet):
             element.clear()
     if shared_uses - shared_ranges.keys():
         raise ValueError('Shared formula has no protected range')
-    return ranges
+    return {'formula_ranges': ranges, 'merged_ranges': merges, 'sheet_protected': sheet_protected}
+
+
+def cell_constraint(constraints, col, row, locked, complex_formula=False):
+    ranges = [bounds for bounds in constraints['merged_ranges'] if bounds[0] <= col <= bounds[2] and bounds[1] <= row <= bounds[3]]
+    from openpyxl.utils.cell import get_column_letter
+    anchor = f'{get_column_letter(ranges[0][0])}{ranges[0][1]}' if len(ranges) == 1 else None
+    reason = ('overlapping_merges' if len(ranges) > 1 else
+              'merged_placeholder' if ranges and (col, row) != ranges[0][:2] else
+              'formula_range' if complex_formula or any(c1 <= col <= c2 and r1 <= row <= r2 for c1, r1, c2, r2 in constraints['formula_ranges']) else
+              'locked_cell' if constraints['sheet_protected'] and locked else None)
+    return reason, anchor

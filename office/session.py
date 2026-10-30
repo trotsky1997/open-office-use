@@ -261,18 +261,28 @@ def edit_target(directory, base_revision, path):
         value = text or ''
     if len(value) > 4000:
         raise ValueError('Element value exceeds the 4,000-character editor limit')
+    read_only_reason = None
+    if state['format'] == 'xlsx':
+        match = cell_text.PATH.fullmatch(item['path'])
+        if not match or not cell_text.cell_path(item['path']):
+            read_only_reason = 'unsupported_cell_path'
+        else:
+            address = match.group(2).upper() + match.group(3)
+            cell = read_grid(directory, base_revision, match.group(1), address)['rows'][0][0]
+            read_only_reason = cell['read_only_reason']
     latest = info(directory)['latest_revision']
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
-            'format': state['format'], 'mode': mode, 'value': value,
-            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and mode == 'value' and format_data.get('type') in {'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
+            'format': state['format'], 'mode': mode, 'value': value, 'read_only_reason': read_only_reason,
+            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode == 'value' and format_data.get('type') in {'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
 
 
 def edit(directory, base_revision, path, mode, value):
     if not isinstance(value, str) or len(value) > 4000:
         raise ValueError('Value must be text of at most 4,000 characters')
     target = edit_target(directory, base_revision, path)
+    if target.get('read_only_reason'): raise ValueError(f"Cell cannot be edited: {target['read_only_reason']}")
     if target.get('replace_only'): raise ValueError('Use text replacement for header and footer paragraphs')
     if target['format'] == 'pptx' and target['type'] == 'tc':
         raise ValueError('Use text replacement to edit PowerPoint table cells')
@@ -425,21 +435,21 @@ def read_grid(directory, base_revision, sheet, cell_range):
         raise ValueError('Grid editing requires an XLSX session')
     if base_revision != state['latest_revision']:
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    constraints = spreadsheet.worksheet_constraints(source, sheet)
     result = spreadsheet.read_range(source, sheet, cell_range, include_style=True)
-    protected = spreadsheet.protected_formula_ranges(source, sheet)
     rows = []
     for row_index, row in enumerate(result['rows']):
         cells = []
         for col_index, cell in enumerate(row):
             col, row_number = min_col + col_index, min_row + row_index
-            inside = any(c1 <= col <= c2 and r1 <= row_number <= r2 for c1, r1, c2, r2 in protected)
+            reason, origin = spreadsheet.cell_constraint(constraints, col, row_number, cell['locked'], isinstance(cell.get('formula'), dict))
             cells.append({'cell': f'{get_column_letter(col)}{row_number}', **cell,
-                          'editable': not inside and not isinstance(cell.get('formula'), dict)})
+                          'editable': reason is None, 'read_only_reason': reason, 'merged_anchor': origin})
         rows.append(cells)
     latest = info(directory)['latest_revision']
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
-    return {'revision': base_revision, 'sheet': sheet, 'range': cell_range,
+    return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'],
             'rows': rows, 'cache_freshness': 'unknown'}
 
 
@@ -462,7 +472,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
         if not (min_col <= col <= max_col and min_row <= row <= max_row) or address in seen:
             raise ValueError('Cell is outside the range or repeated')
         if not original[address]['editable']:
-            raise ValueError('Array, data-table or shared formula ranges are not supported by grid editing')
+            raise ValueError(f"Array, data-table or shared formula ranges, merged placeholders and locked cells cannot be edited: {address} ({original[address]['read_only_reason']})")
         if not isinstance(value, str) or len(value) > 4000:
             raise ValueError('Cell values must be text of at most 4,000 characters')
         if value.lstrip().startswith('=') and not value.startswith('='):
@@ -493,6 +503,7 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
             raise ValueError('Number format must contain 1 to 120 characters')
         props['numberformat'] = value
     grid = read_grid(directory, base_revision, sheet, cell_range)
+    if grid['sheet_protected']: raise ValueError('Grid formatting is unavailable for protected worksheets')
     c1, r1, c2, r2 = grid_bounds(cell_range)
     sc1, sr1, sc2, sr2 = grid_bounds(style_range)
     if not (c1 <= sc1 <= sc2 <= c2 and r1 <= sr1 <= sr2 <= r2):
@@ -504,7 +515,7 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
             col, number = column_index_from_string(match.group(1)), int(match.group(2))
             if sc1 <= col <= sc2 and sr1 <= number <= sr2:
                 if not cell['editable']:
-                    raise ValueError('Array, data-table or shared formula ranges are not supported by grid formatting')
+                    raise ValueError('Array, data-table or shared formula ranges and merged placeholders are not supported by grid formatting')
                 operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': props})
     return apply(directory, base_revision, operations)
 
