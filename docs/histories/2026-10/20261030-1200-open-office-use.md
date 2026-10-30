@@ -23,3 +23,5 @@ Added revision-bound visual area selection in the session viewer and MCP access 
 Added selected-region PDF text and word geometry through CLI and MCP, retaining revision and staleness context. Verified three formats and narrow-region selection.
 
 Added text-based OfficeCLI candidate paths for visual selections with explicit uncertainty and revision context. Verified duplicate matches in three formats and stale selections.
+
+Added historical revision restoration as a new version through CLI, MCP and the local viewer, with conflict detection. Verified all three formats, MCP and browser interaction.

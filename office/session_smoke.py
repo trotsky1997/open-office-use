@@ -53,6 +53,11 @@ with tempfile.TemporaryDirectory() as tmp:
             results = list(pool.map(lambda _: writer(), range(2)))
         assert sorted(r.returncode == 0 for r in results) == [False, True], [(r.stdout, r.stderr) for r in results]
         assert run('info', directory)['latest_revision'] == 2
+        restored = run('restore', directory, '--base', '2', '--revision', '0')
+        assert restored['revision'] == 3 and restored['restored_revision'] == 0
+        assert Path(restored['file']).read_bytes() == source_bytes
+        assert 'conflict' in run('restore', directory, '--base', '2', '--revision', '0', ok=False).lower()
+        assert Path(edited['file']).exists() and source.read_bytes() == source_bytes
     blank = run('start', root / 'blank', '--format', 'docx')
     assert blank['latest_revision'] == 0
 print('Session smoke passed: three formats, failed edits, exports and concurrent revision conflict')

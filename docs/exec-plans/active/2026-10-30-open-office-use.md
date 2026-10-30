@@ -52,3 +52,7 @@ Added PDF word-geometry extraction for saved visual selections via CLI and MCP. 
 ## Selection candidate paths
 
 Added text-based candidate lookup for visual selections via CLI and MCP. Tests cover duplicate text across DOCX, XLSX and PPTX, an empty selection and stale revision handling. The result requires verification; geometric mapping, editable text ranges, OCR and direct editor integration remain open.
+
+## Revision restoration
+
+Added optimistic restore to a new revision through CLI, MCP and the local preview. Original revisions remain intact; cross-origin restrictions and version conflict checks apply. Verified three formats and real Chrome interaction. Direct canvas editing and live collaboration remain open.

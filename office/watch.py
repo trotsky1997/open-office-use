@@ -22,7 +22,14 @@ h1{font-size:1.1rem;margin:0 0 .3rem}p{margin:0;color:#48596b}main{max-width:105
 .page{position:relative;width:fit-content;max-width:100%;margin:1rem auto;touch-action:none;cursor:crosshair}
 img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 12px #0002}
 .box{position:absolute;border:2px solid #0867c4;background:#087dd126;pointer-events:none;display:none;box-sizing:border-box}
+details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
+summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
+input{width:4.5rem}button,select,input{font:inherit}button{cursor:pointer}form p{flex-basis:100%}
+
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
+<details><summary>Restore a previous revision</summary><form id="restore-form">
+<label for="restore-revision">Revision</label> <select id="restore-revision" required></select>
+<button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
 <label>Left % <input name="left" type="number" min="0" max="100" step="0.1" required value="10"></label>
@@ -43,6 +50,17 @@ async function saveSelection(revision, page, coordinates) {
   if (selected) Object.assign(selected.style, {display:'block', left:`${coordinates[0]*100}%`, top:`${coordinates[1]*100}%`, width:`${(coordinates[2]-coordinates[0])*100}%`, height:`${(coordinates[3]-coordinates[1])*100}%`});
  } catch (error) { document.getElementById('selection').textContent = `Selection error: ${error.message}`; }
 }
+document.getElementById('restore-form').addEventListener('submit', async event => {
+ event.preventDefault(); const button = event.currentTarget.querySelector('button'); button.disabled = true;
+ try {
+  const revision = Number(document.getElementById('restore-revision').value);
+  const response = await fetch('restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:current, revision})});
+  const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Restore failed');
+  document.getElementById('restore-status').textContent = `Restored revision ${revision} as revision ${result.revision}`;
+  await refresh();
+ } catch (error) { document.getElementById('restore-status').textContent = `Restore error: ${error.message}`; }
+ finally { button.disabled = false; }
+});
 document.getElementById('selection-form').addEventListener('submit', event => {
  event.preventDefault(); const data = new FormData(event.currentTarget);
  const page = Number(data.get('page'));
@@ -81,6 +99,9 @@ async function refresh() {
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   document.getElementById('status').textContent = `Revision ${state.revision} · ${state.pages} page(s)`;
   if (state.revision !== current) {
+   const select = document.getElementById('restore-revision'); const previous = select.value;
+   select.replaceChildren(...state.revisions.map(revision => {const option=document.createElement('option'); option.value=revision; option.textContent=`Revision ${revision}`; return option;}));
+   if (state.revisions.some(revision => String(revision) === previous)) select.value=previous;
    const fragment = document.createDocumentFragment();
    for (let i=0; i<state.pages; i++) {
     const image = document.createElement('img'); image.src = `page/${state.revision}/${i}`;
@@ -127,17 +148,24 @@ def serve(directory, preview, port=0):
                 host = f'127.0.0.1:{port}'
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
-                if urlsplit(self.path).path != '/' + token + '/selection':
+                route = urlsplit(self.path).path
+                if route not in ('/' + token + '/selection', '/' + token + '/restore'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 4 or not 0 < int(length) <= 4096:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
-                    selection = session.validate_selection(json.loads(self.rfile.read(int(length))))
+                    payload = json.loads(self.rfile.read(int(length)))
                     with lock:
-                        if selection['revision'] != cache['revision'] or selection['page'] > len(cache['pages']):
-                            raise ValueError('Selection refers to an unavailable preview')
-                        saved = session.set_selection(directory, selection)
+                        if route.endswith('/selection'):
+                            selection = session.validate_selection(payload)
+                            if selection['revision'] != cache['revision'] or selection['page'] > len(cache['pages']):
+                                raise ValueError('Selection refers to an unavailable preview')
+                            saved = session.set_selection(directory, selection)
+                        else:
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'revision'}:
+                                raise ValueError('Restore requires base_revision and revision')
+                            saved = session.restore(directory, payload['base_revision'], payload['revision'])
                     self.send(200, json.dumps(saved).encode(), 'application/json')
                 except (ValueError, OSError, json.JSONDecodeError) as exc:
                     self.send(400, json.dumps({'error': str(exc)}).encode(), 'application/json')
@@ -164,7 +192,8 @@ def serve(directory, preview, port=0):
                                 cache.update(revision=rev, pages=pages)
                                 if old >= 0:
                                     shutil.rmtree(root / f'rev-{old}', ignore_errors=True)
-                            data = {'revision': rev, 'pages': len(cache['pages'])}
+                            data = {'revision': rev, 'pages': len(cache['pages']),
+                                    'revisions': [item['revision'] for item in state['revisions']]}
                         self.send(200, json.dumps(data).encode(), 'application/json'); return
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                         self.send(500, json.dumps({'error': str(exc)}).encode(), 'application/json'); return

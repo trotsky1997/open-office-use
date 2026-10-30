@@ -82,6 +82,25 @@ def apply(directory, base_revision, operations):
     return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result']}
 
 
+def restore(directory, base_revision, revision):
+    state = info(directory)
+    revision_file(state, base_revision)
+    source = revision_file(state, revision)
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999:
+        raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.{state['format']}"
+    with tempfile.TemporaryDirectory(dir=state['directory'], prefix='.office-restore-') as tmp:
+        candidate = Path(tmp) / ('document' + source.suffix)
+        shutil.copyfile(source, candidate)
+        try:
+            os.link(candidate, output)
+        except FileExistsError as exc:
+            raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'restored_revision': revision, 'file': str(output)}
+
+
 def export(directory, revision, output):
     state = info(directory)
     source = revision_file(state, revision)

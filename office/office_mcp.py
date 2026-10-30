@@ -105,6 +105,12 @@ def session_apply(directory: str, base_revision: int, operations: list[dict[str,
 
 
 @server.tool()
+def session_restore(directory: str, base_revision: int, revision: int) -> dict[str, Any]:
+    """Copy a historical revision into a new latest revision; reject stale or concurrent writes."""
+    return session.restore(directory, base_revision, revision)
+
+
+@server.tool()
 def session_export(directory: str, revision: int, output: str) -> dict[str, Any]:
     """Export a revision to a new file outside the session directory."""
     return session.export(directory, revision, output)

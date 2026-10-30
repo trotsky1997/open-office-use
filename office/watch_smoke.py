@@ -54,6 +54,24 @@ with tempfile.TemporaryDirectory() as tmp:
         except urllib.error.HTTPError as error:
             assert error.code == 400
         assert get(url + 'page/1/0').startswith(b'\x89PNG\r\n\x1a\n')
+        restore = urllib.request.Request(url + 'restore', data=json.dumps({'base_revision': 1, 'revision': 0}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        forbidden_restore = urllib.request.Request(url + 'restore', data=json.dumps({'base_revision': 1, 'revision': 0}).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(forbidden_restore)
+            raise AssertionError('Unexpected cross-origin restore')
+        except urllib.error.HTTPError as error:
+            assert error.code == 403
+        assert json.loads(urllib.request.urlopen(restore).read())['revision'] == 2
+        third = json.loads(get(url + 'state'))
+        assert third['revision'] == 2 and third['revisions'] == [0, 1, 2]
+        stale_restore = urllib.request.Request(url + 'restore', data=json.dumps({'base_revision': 1, 'revision': 0}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(stale_restore)
+            raise AssertionError('Unexpected stale restore')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400
+        assert (directory / 'revision-000002.docx').read_bytes() == source.read_bytes()
+
         for address, headers, status in [(url.replace('/state', '') + '../state', {}, 404), (url + 'state', {'Host': 'example.com'}, 403)]:
             try:
                 get(address, headers)
