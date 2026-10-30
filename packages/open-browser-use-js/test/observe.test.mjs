@@ -85,14 +85,16 @@ test('locator innerText requires a unique current target and enforces its size l
     if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'one',url:'https://example.test'}}};
     if(params.method==='Accessibility.getFullAXTree')return {nodes:Array.from({length:count},(_,i)=>({backendDOMNodeId:7+i,role:{value:'button'},name:{value:'Save'}}))};
     if(params.method==='DOM.resolveNode')return {object:{objectId:'node'}};
-    if(params.method==='Runtime.callFunctionOn')return {result:{value:text}};
+    if(params.method==='Runtime.callFunctionOn')return {result:{value:{value:params.commandParams.arguments[0].value === '' ? text : params.commandParams.arguments[0].value === 'href' ? '/target' : null}}};
     if(params.method==='Runtime.releaseObject'){released++;return {};}
     return {};
   };
   const locator=new OpenBrowserUseBrowser({client}).tab(1).playwright.getByRole('button',{name:'Save',exact:true});
   assert.equal(await locator.innerText(),'Visible text');
+  assert.equal(await locator.getAttribute('href'),'/target');assert.equal(await locator.getAttribute('missing'),null);
+  await assert.rejects(locator.getAttribute(''),/Invalid attribute name/);
   text='x'.repeat(30001);await assert.rejects(locator.innerText({timeoutMs:0}),/30000 character limit/);
-  assert.equal(released,2);count=2;await assert.rejects(locator.innerText({timeoutMs:0}),/matched 2/);
+  assert.equal(released,4);count=2;await assert.rejects(locator.innerText({timeoutMs:0}),/matched 2/);
 });
 
 test('history navigation stays within the tab and does not repeat a failed action', async () => {

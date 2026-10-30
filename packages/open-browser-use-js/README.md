@@ -143,6 +143,7 @@ For semantic selection, the REPL and SDK also accept:
 ```js
 const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
 console.log(await save.innerText());
+console.log(await save.getAttribute("type")); // null if the attribute is absent
 await save.hover(); // move the pointer over the matched control
 await save.click();
 await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
@@ -163,6 +164,9 @@ await tab.playwright.getByRole("listitem").filter({ hasText: "Apples" })
 
 `innerText()` reads the matched DOM node, including in supported frames. It
 requires one match and rejects text longer than 30,000 characters.
+`getAttribute(name)` reads the raw attribute from one match and returns `null`
+when absent; it applies the same size limit. Text-node matches do not have
+attributes; select their containing element to read its attributes.
 
 This locator covers the interactive roles exposed by `observe`, including
 accessible frames, plus headings, accessible text, images, dialogs and

@@ -41,6 +41,7 @@ app.whenReady().then(async () => {
     await evaluate(`(()=>{const a=document.createElement('a');a.href='/download-fixture';a.textContent='Download fixture';a.id='iab-download';Object.assign(a.style,{position:'fixed',left:'20px',top:'100px',zIndex:'999999'});document.body.append(a)})()`);
     const downloadReady=await sdkTab.prepareDownload({timeoutMs:20000});const downloading=downloadReady.wait();void downloading.catch(()=>{});
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).innerText(),'Download fixture');
+    assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).getAttribute('href'),'/download-fixture');
     await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});
     const download=await downloading,downloadPath=await download.path(20000);assert.equal(download.url,fixture.url+'/download-fixture');assert.ok(downloadPath);assert.equal(readFileSync(downloadPath,'utf8'),'isolated download fixture');
     await evaluate("document.querySelector('#iab-download').remove()");

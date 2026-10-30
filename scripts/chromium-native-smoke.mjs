@@ -41,6 +41,7 @@ try {
  assert.match(await tab.evaluate('location.href'),/#same-document$/);
  await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:1500});
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
+ assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).getAttribute('missing'),null);
  const fixtureFile=join(dir,'upload-fixture.txt');await writeFile(fixtureFile,'isolated fixture');
  await tab.evaluate(`(()=>{const input=document.createElement('input');input.id='chooser-fixture';input.type='file';Object.assign(input.style,{position:'fixed',left:'20px',top:'150px',width:'250px',height:'40px',zIndex:'999999'});document.body.append(input)})()`);
  const preparedChooser=await tab.prepareFileChooser({timeoutMs:20000});const choosing=preparedChooser.wait();void choosing.catch(()=>{});
@@ -55,6 +56,7 @@ try {
  for(let run=1;run<=2;run++){
    await tab.evaluate(`document.querySelector('#download-fixture').href='/download?run=${run}'`);
    const prepared=await tab.prepareDownload({timeoutMs:5000});
+   assert.equal(await tab.playwright.getByRole('link',{name:'Download fixture',exact:true}).getAttribute('href'),`/download?run=${run}`);
    const waiting=prepared.wait();void waiting.catch(()=>{});
    if(run===1) await assert.rejects(tab.prepareDownload({timeoutMs:5000}),/Already waiting for a Chrome download/);
    await tab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click();
@@ -157,6 +159,7 @@ try {
  await new Promise(r=>setTimeout(r,500));
  const crossState=await tab.observe({includeFrames:true});const cross=crossState.nodes.find(node=>node.name==='Cross-process action');assert.ok(cross?.frameId,JSON.stringify(crossState));assert.equal(crossState.frameCoverage,'cross-process');
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
+ assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).getAttribute('onclick'),"parent.postMessage({kind:'cross-click',trusted:event.isTrusted},'*')");
  await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).hover();
  await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-hover',trusted:true});

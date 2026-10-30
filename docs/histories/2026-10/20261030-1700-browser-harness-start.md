@@ -165,3 +165,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 下载句柄新增浏览器报告的 URL，Chrome 扩展及 Electron 后端均提供，未提供时为 null。macOS 隔离 Chromium 原生消息链路及 Electron 44 页面分别验证下载 URL 与文件内容；SDK 53 项、Electron 45 项及扩展下载测试通过。Chrome 的 URL 有助于人工或调用方核对，但同 URL 并发仍无法可靠判定标签归属。隔离 Chromium 141 实验中，页面调试目标拒绝 Browser.setDownloadBehavior，Page.downloadProgress 不含保存路径。
 
 语义定位器增加 innerText()：等待唯一匹配，读取前核对目标、作用域及 frame，限定 30000 字符并释放 CDP 对象。SDK 54 项通过；macOS 隔离 Chromium 原生消息及 Electron 44 页面实测主页面和跨进程 iframe 读取，后者包含作用域定位。
+
+语义定位器增加 getAttribute(name)，返回单个匹配元素的原始属性或 null，并复用 innerText 的目标、作用域、frame 与长度校验。macOS 隔离 Chromium 原生消息链路实测主页面 href、缺失属性和跨进程 frame 属性；Electron 44 页面实测 href。真实链路发现 null CDP 参数会变化，已改为空字符串哨兵并重新验证；SDK 54 项通过。

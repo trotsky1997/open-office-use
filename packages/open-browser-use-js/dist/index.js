@@ -627,7 +627,7 @@ export class OpenBrowserUseTab {
         return this.scopeText(observation, index);
     }
     /** @internal */
-    async locatorInnerText(snapshotId, index) {
+    async locatorRead(snapshotId, index, attribute) {
         const observation = this.#observation;
         if (!observation || observation.id !== snapshotId)
             throw new RetryablePreflightError("Observation is stale; observe again");
@@ -648,14 +648,17 @@ export class OpenBrowserUseTab {
             throw new RetryablePreflightError("Target is unavailable; observe again");
         try {
             const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
-                objectId, returnByValue: true,
-                functionDeclaration: `function() { if (!this.isConnected) return null; const text = this.nodeType === 3 ? this.textContent : this.innerText; return typeof text === 'string' ? text.slice(0, 30001) : null; }`
+                objectId, returnByValue: true, arguments: [{ value: attribute ?? "" }],
+                functionDeclaration: `function(name) { if (!this.isConnected) return null; const value = name === '' ? (this.nodeType === 3 ? this.textContent : this.innerText) : (this.nodeType === 1 ? this.getAttribute(name) : null); return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
             }, { sessionId });
-            const value = isObject(result) && isObject(result.result) ? result.result.value : undefined;
-            if (typeof value !== "string")
+            const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (!isObject(payload) || (typeof payload.value !== "string" && payload.value !== null))
+                throw new RetryablePreflightError("Target value is unavailable; observe again");
+            const value = payload.value;
+            if (value === null && attribute === undefined)
                 throw new RetryablePreflightError("Target text is unavailable; observe again");
-            if (value.length > 30_000)
-                throw new Error("Locator text exceeds the 30000 character limit");
+            if (typeof value === "string" && value.length > 30_000)
+                throw new Error("Locator value exceeds the 30000 character limit");
             if (await this.documentId() !== observation.documentId)
                 throw new RetryablePreflightError("Page changed; observe again");
             if (target.frameChain)
@@ -1662,7 +1665,12 @@ export class OpenBrowserUseRoleLocator {
         return { state, matches: await this.matches(state) };
     }
     async count() { return (await this.find()).matches.length; }
-    async innerText(options = {}) { return this.perform((node, id) => this.tab.locatorInnerText(id, node.index), options.timeoutMs); }
+    async innerText(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index)), options.timeoutMs); }
+    async getAttribute(name, options = {}) {
+        if (typeof name !== "string" || !name || name.length > 256)
+            throw new Error("Invalid attribute name");
+        return this.perform((node, id) => this.tab.locatorRead(id, node.index, name), options.timeoutMs);
+    }
     async perform(action, timeoutMs = 5_000) {
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid locator timeout");
