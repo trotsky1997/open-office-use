@@ -853,9 +853,10 @@ attributes are page data and may be incomplete.
 Use `click({node_id})` or `double_click({node_id})` for a node, then
 `type({text})` or `keypress({keys})` for the focused element. `scroll({x,y,
 node_id?})` sends a wheel gesture at the node or viewport center. A new
-snapshot or DOM CUA action invalidates old IDs. Concurrent snapshots on the
-same `tab.dom_cua` supersede earlier ones; new snapshots and actions are
-rejected while a DOM CUA input is in progress. Before clicking, the SDK rechecks
+snapshot or DOM CUA action invalidates old IDs. Tab handles from the same
+browser share DOM CUA state; concurrent snapshots supersede earlier ones, and
+reconnecting invalidates node IDs. New snapshots and actions are rejected while
+a DOM CUA input is in progress. Before clicking, the SDK rechecks
 node identity, its visible match set, geometry and hit target; an outdated or
 changed target fails and requires another snapshot. Downloads use the separate download workflow.
 

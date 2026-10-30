@@ -44,7 +44,7 @@ try {
  await tab.cua.move({x:210,y:50,keys:['Shift']});await tab.cua.double_click({x:220,y:60,keypress:['Shift']});await tab.cua.click({x:220,y:60,button:3});await tab.cua.scroll({x:220,y:60,scrollX:0,scrollY:20});assert.ok(await tab.evaluate(`document.querySelector('#cua-box').scrollTop`) > 0);await tab.cua.scroll({x:220,y:60,scrollX:0,scrollY:20,keypress:['Shift']});await tab.cua.drag({path:[{x:220,y:60},{x:230,y:70},{x:240,y:80}],keys:['Alt']});
  const cuaEvents=await tab.evaluate('window.cuaEvents');assert.ok(cuaEvents.some(e=>e.type==='mousemove'&&e.x===210&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='dblclick'&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='mousedown'&&e.button===2&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='wheel'&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='mousemove'&&e.x===230&&e.y===70&&e.alt&&e.trusted));assert.equal(Buffer.from((await tab.cua.get_visible_screenshot()).toBase64(),'base64').subarray(1,4).toString(),'PNG');await tab.evaluate(`document.querySelector('#cua-box').remove()`);
  await tab.evaluate(`(()=>{const b=document.createElement('button');b.id='dom-fixture';b.textContent='DOM fixture';Object.assign(b.style,{position:'fixed',left:'20px',top:'20px',zIndex:'99999'});b.onclick=e=>window.domTrusted=e.isTrusted;document.body.append(b)})()`);
- const domView=await tab.dom_cua.get_visible_dom(),domNode=domView.nodes.find(n=>n.name==='DOM fixture');assert.ok(domNode);await tab.dom_cua.click({node_id:domNode.node_id});assert.equal(await tab.evaluate('window.domTrusted'),true);await assert.rejects(tab.dom_cua.click({node_id:domNode.node_id}),/stale/);
+ const domView=await tab.dom_cua.get_visible_dom(),domNode=domView.nodes.find(n=>n.name==='DOM fixture');assert.ok(domNode);assert.equal(browser.tab(tab.id).dom_cua,tab.dom_cua);await browser.tab(tab.id).dom_cua.click({node_id:domNode.node_id});assert.equal(await tab.evaluate('window.domTrusted'),true);await assert.rejects(tab.dom_cua.click({node_id:domNode.node_id}),/stale/);
  const staleDom=(await tab.dom_cua.get_visible_dom()).nodes.find(n=>n.name==='DOM fixture');await tab.evaluate(`document.querySelector('#dom-fixture').textContent='Changed DOM'`);await assert.rejects(tab.dom_cua.click({node_id:staleDom.node_id}),/DOM target changed/);
  await tab.evaluate(`document.querySelector('#dom-fixture').remove()`);
 
@@ -568,7 +568,9 @@ try {
  await tab.evaluate('document.querySelector("#frame-cover").remove();document.querySelector("iframe").style.transform="rotate(10deg)"');
  const rotated=await tab.observe({includeFrames:true});const rotatedFrame=rotated.nodes.find(node=>node.name==='Frame done');assert.ok(rotatedFrame);
  await assert.rejects(tab.click(rotatedFrame.index,rotated.snapshotId),/unsupported transform/);
- browser.close();await browser.connect();
+ await tab.evaluate(`(()=>{const b=document.createElement('button');b.textContent='Reconnect DOM';Object.assign(b.style,{position:'fixed',left:'10px',top:'10px'});document.body.append(b)})()`);const reconnectDom=(await tab.dom_cua.get_visible_dom()).nodes.find(n=>n.name==='Reconnect DOM');assert.ok(reconnectDom);
+ browser.close();await browser.connect();await assert.rejects(tab.dom_cua.click({node_id:reconnectDom.node_id}),/stale/);
+
  const reconnected=await tab.observe({includeFrames:true});assert.ok(reconnected.nodes.some(node=>node.name==='Cross-process action'));
  assert.equal((await tab.getScreenshot()).subarray(1,4).toString(),'PNG');
  const closingTab=await browser.newTab();await closingTab.watchDialogs();

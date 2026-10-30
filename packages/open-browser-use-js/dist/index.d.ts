@@ -182,6 +182,7 @@ export declare class OpenBrowserUseClient {
 }
 export declare function connectOpenBrowserUse(options: OpenBrowserUseBrowserOptions): Promise<OpenBrowserUseBrowser>;
 export declare class OpenBrowserUseBrowser {
+    #private;
     readonly client: OpenBrowserUseClient;
     readonly cdp: OpenBrowserUseCdp;
     constructor(options: OpenBrowserUseBrowserOptions);
@@ -298,7 +299,7 @@ export declare class OpenBrowserUseTab {
         y: number;
     }>, modifiers?: number): Promise<void>;
     drag(from: [number, number], to: [number, number]): Promise<void>;
-    scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers?: number): Promise<void>;
+    scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers?: number, expectedGeneration?: number): Promise<void>;
     private parseKey;
     pressKey(key: string): Promise<void>;
     typeAtFocus(text: string): Promise<void>;
@@ -380,6 +381,7 @@ export declare class OpenBrowserUseTabDomCUA {
     private tab;
     private snapshot;
     private generation;
+    private connectionGeneration;
     private busy;
     private ids;
     constructor(tab: OpenBrowserUseTab);

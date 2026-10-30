@@ -346,6 +346,7 @@ export async function connectOpenBrowserUse(options) {
 export class OpenBrowserUseBrowser {
     client;
     cdp;
+    #domCua = new Map();
     constructor(options) {
         this.client = "client" in options ? options.client : new OpenBrowserUseClient(options);
         this.cdp = new OpenBrowserUseCdp(this.client);
@@ -368,6 +369,15 @@ export class OpenBrowserUseBrowser {
     }
     tab(tabId) {
         return new OpenBrowserUseTab(this, tabId);
+    }
+    /** @internal */
+    domCuaFor(tab) {
+        const existing = this.#domCua.get(tab.id)?.deref();
+        if (existing)
+            return existing;
+        const dom = new OpenBrowserUseTabDomCUA(tab);
+        this.#domCua.set(tab.id, new WeakRef(dom));
+        return dom;
     }
     getTabs() {
         return this.client.getTabs();
@@ -482,7 +492,7 @@ export class OpenBrowserUseTab {
         this.id = id;
         this.playwright = new OpenBrowserUseTabPlaywright(this);
         this.cua = new OpenBrowserUseTabCUA(this);
-        this.dom_cua = new OpenBrowserUseTabDomCUA(this);
+        this.dom_cua = browser.domCuaFor(this);
         this.dev = new OpenBrowserUseTabDev(this);
         this.clipboard = new OpenBrowserUseTabClipboard(this);
     }
@@ -1043,7 +1053,7 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
-    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked, selection, append = false, mouse = { button: "left", buttons: 1, modifiers: 0 }, domIdentity) {
+    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked, selection, append = false, mouse = { button: "left", buttons: 1, modifiers: 0 }, domIdentity, domConnectionGeneration) {
         if (key !== undefined)
             this.parseKey(key);
         const frame = snapshot.frame;
@@ -1199,14 +1209,16 @@ export class OpenBrowserUseTab {
             const verifyDomIdentity = async () => {
                 if (!domIdentity)
                     return;
+                if (this.browser.client.connectionGeneration !== domConnectionGeneration)
+                    throw new RetryablePreflightError('Connection changed; observe again');
                 const result = await this.browser.cdp.call(this.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return null;const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role')?.slice(0,200) ?? null,name:name.trim().slice(0,500) || null}}` }, { sessionId });
                 const value = isObject(result) && isObject(result.result) ? result.result.value : null;
-                if (!isObject(value) || value.tag !== domIdentity.tag || value.role !== domIdentity.role || value.name !== domIdentity.name)
+                if (this.browser.client.connectionGeneration !== domConnectionGeneration || !isObject(value) || value.tag !== domIdentity.tag || value.role !== domIdentity.role || value.name !== domIdentity.name)
                     throw new RetryablePreflightError('DOM target changed; observe again');
             };
             await verifyDomIdentity();
             this.#observation = undefined;
-            const options = { sessionId, ...(sessionId ? { visualPoint: second.point } : {}) };
+            const options = { sessionId, ...(sessionId ? { visualPoint: second.point } : {}), ...(domConnectionGeneration !== undefined ? { expectedGeneration: domConnectionGeneration } : {}) };
             inputIssued = true;
             if (key !== undefined || text !== undefined) {
                 await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId });
@@ -1825,17 +1837,18 @@ export class OpenBrowserUseTab {
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 }).catch(() => { });
         }
     }
-    async scrollAt(x, y, deltaX, deltaY, modifiers = 0) {
+    async scrollAt(x, y, deltaX, deltaY, modifiers = 0, expectedGeneration) {
         this.#observation = undefined;
         if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY))
             throw new Error("Scroll deltas must be finite numbers");
         if (!Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15)
             throw new Error("Invalid mouse modifiers");
         await this.checkPoint(x, y);
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers });
+        const options = expectedGeneration === undefined ? {} : { expectedGeneration };
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers }, options);
         if (modifiers) {
             try {
-                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX, deltaY, modifiers });
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX, deltaY, modifiers }, options);
             }
             catch (error) {
                 if (error instanceof Error && /Timed out after \d+ms waiting for CDP command/.test(error.message))
@@ -1844,7 +1857,7 @@ export class OpenBrowserUseTab {
             }
         }
         else
-            await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true });
+            await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true }, options);
     }
     parseKey(key) {
         if (typeof key !== "string")
@@ -2490,6 +2503,7 @@ export class OpenBrowserUseTabDomCUA {
     tab;
     snapshot = false;
     generation = 0;
+    connectionGeneration = -1;
     busy = false;
     ids = new Map();
     constructor(tab) {
@@ -2510,7 +2524,7 @@ export class OpenBrowserUseTabDomCUA {
         const generation = this.generation;
         const ids = new Map();
         const step = { selector: 'a[href],button,input,textarea,select,summary,details,label,img,video,audio,[role],[onclick],[contenteditable="true"],[tabindex]', before: [{ visible: true }] };
-        const frames = await this.tab.domFrames();
+        const frames = await this.tab.domFrames(), connectionGeneration = this.tab.browser.client.connectionGeneration;
         const nodes = [];
         let total = 0;
         const frameVisibility = new Map();
@@ -2563,15 +2577,16 @@ export class OpenBrowserUseTabDomCUA {
         for (const frame of frames)
             if (await this.tab.domFrameInViewport(frame, frames) !== frameVisibility.get(frame.id))
                 throw new RetryablePreflightError("Frame visibility changed; observe again");
-        if (this.busy || this.generation !== generation)
+        if (this.busy || this.generation !== generation || this.tab.browser.client.connectionGeneration !== connectionGeneration)
             throw new RetryablePreflightError('DOM snapshot superseded; observe again');
         this.ids = ids;
+        this.connectionGeneration = connectionGeneration;
         this.snapshot = true;
         return { nodes };
     }
     target(node_id) {
         const target = this.ids.get(node_id);
-        if (!this.snapshot || !target)
+        if (!this.snapshot || !target || this.tab.browser.client.connectionGeneration !== this.connectionGeneration)
             throw new Error('Unknown or stale DOM node id');
         return target;
     }
@@ -2580,7 +2595,7 @@ export class OpenBrowserUseTabDomCUA {
         try {
             if (!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame, snapshot.frames))
                 throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');
-            await this.tab.actCss(snapshot, id, false, undefined, undefined, double, undefined, undefined, false, undefined, identity);
+            await this.tab.actCss(snapshot, id, false, undefined, undefined, double, undefined, undefined, false, undefined, identity, this.connectionGeneration);
         }
         finally {
             finish();
@@ -2636,7 +2651,9 @@ export class OpenBrowserUseTabDomCUA {
                     throw new Error('Browser viewport is unavailable');
                 point = { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 };
             }
-            await this.tab.scrollAt(point.x, point.y, options.x, options.y);
+            if (target && this.tab.browser.client.connectionGeneration !== this.connectionGeneration)
+                throw new RetryablePreflightError('Connection changed; observe again');
+            await this.tab.scrollAt(point.x, point.y, options.x, options.y, 0, target ? this.connectionGeneration : undefined);
         }
         finally {
             finish();
