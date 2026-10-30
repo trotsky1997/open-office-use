@@ -33,4 +33,31 @@ with tempfile.TemporaryDirectory() as tmp:
     payload = root / 'notes.txt'; payload.write_text('CLI edit', encoding='utf-8')
     subprocess.run([sys.executable, str(cli), 'session', 'replace-notes', str(draft), '--base', '2', '--slide', '1', '--text-file', str(payload)], capture_output=True, text=True, check=True)
     assert session.read_notes(draft, 3, 1)['text'] == 'CLI edit'
+    formatted = root / 'formatted.pptx'; formatted_draft = root / 'formatted-draft'
+    presentation = Presentation(); slide = presentation.slides.add_slide(presentation.slide_layouts[1]); frame = slide.notes_slide.notes_text_frame
+    paragraph = frame.paragraphs[0]; first = paragraph.add_run(); first.text = 'Hello '; first.font.bold = True
+    second = paragraph.add_run(); second.text = 'world'; second.font.italic = True
+    frame.add_paragraph().text = 'Second paragraph'; presentation.save(formatted)
+    session.start(formatted_draft, source=formatted)
+    result = session.replace_notes_text(formatted_draft, 0, 1, 1, 'lo wo', 'LO WO')
+    edited = Presentation(result['file']).slides[0].notes_slide.notes_text_frame
+    assert edited.text == 'HelLO WOrld\nSecond paragraph', edited.text
+    assert edited.paragraphs[0].runs[0].font.bold and edited.paragraphs[0].runs[1].font.italic
+    with zipfile.ZipFile(formatted) as a, zipfile.ZipFile(result['file']) as b:
+        changed = {name for name in a.namelist() if a.read(name) != b.read(name)}
+        assert len(changed) == 1 and next(iter(changed)).startswith('ppt/notesSlides/'), changed
+    for base, find in [(1, 'missing'), (1, 'l'), (0, 'Hello')]:
+        try: session.replace_notes_text(formatted_draft, base, 1, 1, find, 'x')
+        except ValueError: pass
+        else: raise AssertionError('Invalid edit succeeded')
+    assert session.info(formatted_draft)['latest_revision'] == 1
+    subprocess.run([sys.executable, str(cli), 'session', 'replace-notes-text', str(formatted_draft), '--base', '1', '--slide', '1', '--paragraph', '2', '--find', 'Second', '--replace', 'Next'], capture_output=True, text=True, check=True)
+    assert session.read_notes(formatted_draft, 2, 1)['text'].endswith('Next paragraph')
+    hyperlink = root / 'hyperlink.pptx'; link_deck = Presentation(); link_slide = link_deck.slides.add_slide(link_deck.slide_layouts[1])
+    link_run = link_slide.notes_slide.notes_text_frame.paragraphs[0].add_run(); link_run.text = 'Linked'; link_run.hyperlink.address = 'https://example.com'; link_deck.save(hyperlink)
+    rejected = root / 'rejected.pptx'
+    try: notes.replace_text(hyperlink, rejected, 1, 1, 'Linked', 'Other')
+    except ValueError as exc: assert 'hyperlink' in str(exc)
+    else: raise AssertionError('Hyperlink edit succeeded')
+    assert not rejected.exists()
 print('Speaker notes smoke passed: create, replace, CLI and revision safety')

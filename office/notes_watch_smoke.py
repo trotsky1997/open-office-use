@@ -24,15 +24,17 @@ with tempfile.TemporaryDirectory() as tmp:
         assert not post('notes-read', {'revision': 0, 'slide': 1})['has_notes_slide']
         assert post('notes-replace', {'base_revision': 0, 'slide': 1, 'text': 'Notes'})['revision'] == 1
         assert post('notes-read', {'revision': 1, 'slide': 1})['text'] == 'Notes'
+        assert post('notes-replace-text', {'base_revision': 1, 'slide': 1, 'paragraph': 1, 'find': 'Notes', 'replacement': 'Edited'})['revision'] == 2
+        assert post('notes-read', {'revision': 2, 'slide': 1})['text'] == 'Edited'
         for route, data, request_origin, code in [
             ('notes-replace', {'base_revision': 0, 'slide': 1, 'text': 'Stale'}, origin, 400),
-            ('notes-replace', {'base_revision': 1, 'slide': 1, 'text': 'Forbidden'}, 'http://evil.test', 403),
+            ('notes-replace', {'base_revision': 2, 'slide': 1, 'text': 'Forbidden'}, 'http://evil.test', 403),
             ('notes-read', {'revision': 1, 'slide': 0}, origin, 400),
         ]:
             try: post(route, data, request_origin)
             except urllib.error.HTTPError as exc: assert exc.code == code, exc
             else: raise AssertionError('Invalid request accepted')
-        assert session.info(draft)['latest_revision'] == 1
+        assert session.info(draft)['latest_revision'] == 2
     finally:
         server.terminate(); server.wait(timeout=10)
 print('Speaker notes viewer routes passed: read, save, stale revision and origin checks')

@@ -147,6 +147,12 @@ def session_replace_slide_notes(directory: str, base_revision: int, slide: int, 
 
 
 @server.tool()
+def session_replace_slide_notes_text(directory: str, base_revision: int, slide: int, paragraph: int, find: str, replacement: str) -> dict[str, Any]:
+    """Replace one unique literal in a one-based notes paragraph, preserving run formatting."""
+    return session.replace_notes_text(directory, base_revision, slide, paragraph, find, replacement)
+
+
+@server.tool()
 def list_word_comments(file: str) -> dict[str, Any]:
     """List Word comments, bounded body anchor hints and available Word 2013 thread metadata."""
     return word.list_comments(file)

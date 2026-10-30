@@ -173,6 +173,7 @@ def main():
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
     note_session = sub.add_parser('notes'); note_session.add_argument('directory'); note_session.add_argument('--revision', type=int, required=True); note_session.add_argument('--slide', type=int, required=True)
     note_write = sub.add_parser('replace-notes'); note_write.add_argument('directory'); note_write.add_argument('--base', type=int, required=True); note_write.add_argument('--slide', type=int, required=True); note_write.add_argument('--text-file', required=True)
+    note_edit = sub.add_parser('replace-notes-text'); note_edit.add_argument('directory'); note_edit.add_argument('--base', type=int, required=True); note_edit.add_argument('--slide', type=int, required=True); note_edit.add_argument('--paragraph', type=int, required=True); note_edit.add_argument('--find', required=True); note_edit.add_argument('--replace', required=True, dest='replacement')
     reply = sub.add_parser('reply-comment'); reply.add_argument('directory'); reply.add_argument('--base', type=int, required=True); reply.add_argument('--parent-id', required=True); reply.add_argument('--text', required=True); reply.add_argument('--author', required=True)
     resolve = sub.add_parser('resolve-comment'); resolve.add_argument('directory'); resolve.add_argument('--base', type=int, required=True); resolve.add_argument('--id', required=True); resolve.add_argument('--resolved', choices=['true', 'false'], required=True)
     comment = sub.add_parser('add-comment'); comment.add_argument('directory'); comment.add_argument('--base', type=int, required=True); comment.add_argument('--path', required=True); comment.add_argument('--text', required=True); comment.add_argument('--author', required=True); comment.add_argument('--anchor')
@@ -219,6 +220,8 @@ def main():
             elif args.action == 'replace-notes':
                 if Path(args.text_file).stat().st_size > 400000: raise ValueError('Notes text file exceeds 400,000 bytes')
                 result = session.replace_notes(args.directory, args.base, args.slide, Path(args.text_file).read_text(encoding='utf-8'))
+            elif args.action == 'replace-notes-text':
+                result = session.replace_notes_text(args.directory, args.base, args.slide, args.paragraph, args.find, args.replacement)
             elif args.action == 'reply-comment':
                 result = session.reply_comment(args.directory, args.base, args.parent_id, args.text, args.author)
             elif args.action == 'resolve-comment':

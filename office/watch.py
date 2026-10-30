@@ -74,7 +74,12 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <label>Slide number <input id="notes-slide" type="number" min="1" step="1" value="1" required></label>
 <button type="button" id="notes-load">Load displayed revision</button>
 <label>Speaker notes <textarea id="notes-text" maxlength="100000" rows="8" disabled></textarea></label>
-<button type="submit" id="notes-save" disabled>Save notes as new revision</button><p id="notes-status" role="status"></p>
+<button type="submit" id="notes-save" disabled>Save notes as new revision</button>
+<fieldset><legend>Replace text while retaining formatting</legend>
+<label>Paragraph number <input id="notes-paragraph" type="number" min="1" step="1" value="1"></label>
+<label>Find <input id="notes-find" maxlength="4000"></label><label>Replace with <input id="notes-replacement" maxlength="4000"></label>
+<button type="button" id="notes-replace-text" disabled>Replace once in paragraph</button>
+<p>One exact match in a simple paragraph is required. Replacement uses the first matched run's formatting.</p></fieldset><p id="notes-status" role="status"></p>
 </form></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
@@ -617,13 +622,13 @@ document.getElementById('reply-send').addEventListener('click', async () => {
  finally {commentsBusy=false; button.disabled=false; load.disabled=false; if (current===target.revision && pinned===null) document.querySelectorAll('#comments-list button').forEach(item=>item.disabled=false);}
 });
 function invalidateNotes(message) {
- notesEpoch++; notesLoaded=null; document.getElementById('notes-text').readOnly=true; document.getElementById('notes-save').disabled=true;
+ notesEpoch++; notesLoaded=null; document.getElementById('notes-text').readOnly=true; document.getElementById('notes-save').disabled=true; document.getElementById('notes-replace-text').disabled=true;
  if (message) document.getElementById('notes-status').textContent=message;
 }
 function clearNotesFor(revision, live) {
  if (notesLoaded && (notesLoaded.revision!==revision || !live || notesLoaded.slide!==Number(document.getElementById('notes-slide').value))) {
   if (notesLoaded.revision!==revision || notesLoaded.slide!==Number(document.getElementById('notes-slide').value)) invalidateNotes('View changed; copy pending notes and load the displayed revision.');
-  else { document.getElementById('notes-text').readOnly=true; document.getElementById('notes-save').disabled=true; }
+  else { document.getElementById('notes-text').readOnly=true; document.getElementById('notes-save').disabled=true; document.getElementById('notes-replace-text').disabled=true; }
  }
 }
 document.getElementById('notes-slide').addEventListener('input', () => invalidateNotes('Slide changed; load notes before saving.'));
@@ -633,19 +638,19 @@ document.getElementById('notes-load').addEventListener('click', async () => {
  const revision=displayed, slide=Number(document.getElementById('notes-slide').value), epoch=++notesEpoch;
  const button=document.getElementById('notes-load'), text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
  if (!Number.isSafeInteger(slide) || slide<1) { status.textContent='Choose a positive slide number.'; return; }
- notesBusy=true; button.disabled=true; text.readOnly=true; document.getElementById('notes-save').disabled=true; status.textContent=`Loading slide ${slide} in revision ${revision}…`;
+ notesBusy=true; button.disabled=true; text.readOnly=true; document.getElementById('notes-save').disabled=true; document.getElementById('notes-replace-text').disabled=true; status.textContent=`Loading slide ${slide} in revision ${revision}…`;
  try {
   const response=await fetch('notes-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,slide})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not read notes');
   if (epoch!==notesEpoch || displayed!==revision || Number(document.getElementById('notes-slide').value)!==slide) return;
   text.value=result.text; text.disabled=false; notesBaseline=result.text; notesLoaded={revision,slide,truncated:result.truncated};
   const editable=revision===current && pinned===null && !result.truncated;
-  text.readOnly=!editable; document.getElementById('notes-save').disabled=!editable;
+  text.readOnly=!editable; document.getElementById('notes-save').disabled=!editable; document.getElementById('notes-replace-text').disabled=!editable;
   status.textContent=`Revision ${revision}, slide ${slide}. ${result.truncated ? 'Notes were truncated; editing is unavailable.' : editable ? 'Ready to edit.' : 'Read-only preview.'}`;
  } catch(error) {
   if (epoch===notesEpoch) {
    status.textContent=`Notes error: ${error.message}`;
-   if (notesLoaded && notesLoaded.revision===current && notesLoaded.revision===displayed && notesLoaded.slide===Number(document.getElementById('notes-slide').value) && pinned===null && !notesLoaded.truncated) { text.readOnly=false; document.getElementById('notes-save').disabled=false; }
+   if (notesLoaded && notesLoaded.revision===current && notesLoaded.revision===displayed && notesLoaded.slide===Number(document.getElementById('notes-slide').value) && pinned===null && !notesLoaded.truncated) { text.readOnly=false; document.getElementById('notes-save').disabled=false; document.getElementById('notes-replace-text').disabled=false; }
   }
  }
  finally { notesBusy=false; button.disabled=false; }
@@ -653,14 +658,30 @@ document.getElementById('notes-load').addEventListener('click', async () => {
 document.getElementById('notes-form').addEventListener('submit', async event => {
  event.preventDefault(); const target=notesLoaded, text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
  if (notesBusy || !target || target.truncated || pinned!==null || target.revision!==current || target.revision!==displayed || target.slide!==Number(document.getElementById('notes-slide').value)) { invalidateNotes('Version or slide changed; load notes again.'); return; }
- const value=text.value, button=document.getElementById('notes-save'); notesBusy=true; button.disabled=true; text.readOnly=true;
+ const value=text.value, button=document.getElementById('notes-save'); notesBusy=true; button.disabled=true; document.getElementById('notes-replace-text').disabled=true; text.readOnly=true;
  try {
   const response=await fetch('notes-replace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,slide:target.slide,text:value})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not save notes');
   notesBaseline=value; invalidateNotes(`Notes saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
   status.textContent=`Notes error: ${error.message}`;
-  if (notesLoaded===target && current===target.revision && pinned===null && displayed===target.revision) { text.readOnly=false; button.disabled=false; }
+  if (notesLoaded===target && current===target.revision && pinned===null && displayed===target.revision) { text.readOnly=false; button.disabled=false; document.getElementById('notes-replace-text').disabled=false; }
+ } finally { notesBusy=false; }
+});
+document.getElementById('notes-replace-text').addEventListener('click', async () => {
+ const target=notesLoaded, text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
+ if (notesBusy || !target || target.truncated || pinned!==null || target.revision!==current || target.revision!==displayed || target.slide!==Number(document.getElementById('notes-slide').value)) { invalidateNotes('Version or slide changed; load notes again.'); return; }
+ if (notesDirty()) { status.textContent='Save or copy the pending notes before replacing text.'; return; }
+ const paragraph=Number(document.getElementById('notes-paragraph').value), find=document.getElementById('notes-find').value, replacement=document.getElementById('notes-replacement').value;
+ if (!Number.isSafeInteger(paragraph) || paragraph<1 || !find) { status.textContent='Enter a paragraph number and text to find.'; return; }
+ notesBusy=true; text.readOnly=true; document.getElementById('notes-save').disabled=true; document.getElementById('notes-replace-text').disabled=true;
+ try {
+  const response=await fetch('notes-replace-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,slide:target.slide,paragraph,find,replacement})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not replace notes text');
+  invalidateNotes(`Replacement saved as revision ${result.revision}; load it to see updated notes.`); await refresh();
+ } catch(error) {
+  status.textContent=`Notes error: ${error.message}`;
+  if (notesLoaded===target && current===target.revision && pinned===null && displayed===target.revision) { text.readOnly=false; document.getElementById('notes-save').disabled=false; document.getElementById('notes-replace-text').disabled=false; }
  } finally { notesBusy=false; }
 });
 function display(state, live) {
@@ -853,10 +874,10 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/notes-read', '/' + token + '/notes-replace'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
-                limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 20000
+                limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 8 or not 0 < int(length) <= limit:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
@@ -928,7 +949,11 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Selection changed; select the current page again')
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
                     with lock:
-                        if route.endswith('/notes-replace'):
+                        if route.endswith('/notes-replace-text'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'slide', 'paragraph', 'find', 'replacement'}:
+                                raise ValueError('Notes text replacement requires revision, slide, paragraph, find and replacement')
+                            saved = session.replace_notes_text(directory, payload['base_revision'], payload['slide'], payload['paragraph'], payload['find'], payload['replacement'])
+                        elif route.endswith('/notes-replace'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'slide', 'text'}:
                                 raise ValueError('Notes replacement requires revision, slide and text')
                             saved = session.replace_notes(directory, payload['base_revision'], payload['slide'], payload['text'])

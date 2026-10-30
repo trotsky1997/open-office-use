@@ -306,6 +306,17 @@ def replace_notes(directory, base_revision, slide, text):
     return {'revision': base_revision + 1, 'file': str(output), 'slide': slide}
 
 
+def replace_notes_text(directory, base_revision, slide, paragraph, find, replacement):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'pptx': raise ValueError('Speaker notes require a PPTX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
+    try: notes.replace_text(source, output, slide, paragraph, find, replacement)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'slide': slide, 'paragraph': paragraph}
+
+
 def reply_comment(directory, base_revision, parent_id, text, author):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'docx': raise ValueError('Comment replies require a DOCX session')
