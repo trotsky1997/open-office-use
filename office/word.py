@@ -86,7 +86,7 @@ def tracked_changes(source):
                             elif value in ('0', 'false', 'off'): tracking_enabled = False
                             else: issues.add('invalid_tracking_setting')
                 kinds = {'ins', 'del', 'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
-                         'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'tblGridChange', 'trPrChange', 'tcPrChange', 'numberingChange',
+                         'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'tblPrExChange', 'tblGridChange', 'trPrChange', 'tcPrChange', 'numberingChange',
                          'cellIns', 'cellDel', 'cellMerge', 'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd',
                          'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd'}
                 revision_tags = {W + kind for kind in kinds} | {W14 + kind for kind in ('customXmlConflictInsRangeStart', 'customXmlConflictInsRangeEnd', 'customXmlConflictDelRangeStart', 'customXmlConflictDelRangeEnd', 'conflictIns', 'conflictDel')}
@@ -335,7 +335,7 @@ def anchor_runs(paragraph, anchor):
     def run_text(run):
         if any(child.tag not in (W + 'rPr', W + 't') for child in run):
             raise ValueError('Paragraph contains unsupported run content')
-        if any(node.get(W + 'id') is not None or node.get('{http://www.w3.org/XML/1998/namespace}id') is not None or node.tag in {W + 'rPrChange', W + 'ins', W + 'del', W + 'moveFrom', W + 'moveTo'} for node in run.iter()):
+        if any(node.get(W + 'id') is not None or node.get('{http://www.w3.org/XML/1998/namespace}id') is not None or node.tag in {W + 'rPrChange', W + 'ins', W + 'del', W + 'moveFrom', W + 'moveTo', W14 + 'conflictIns', W14 + 'conflictDel'} for node in run.iter()):
             raise ValueError('Run contains tracked or identity-bearing formatting')
         return ''.join(node.text or '' for node in run.findall(W + 't'))
     boundaries = {W + name for name in ('bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'proofErr')}
@@ -455,6 +455,47 @@ def replace_text(source, output, path, find, replacement):
     return ooxml.edit_xml(source, output, part, edit)
 
 
+def validate_tracked_context(tree, targets):
+    """Reject targets inside ambiguous tracked ranges or structural revisions."""
+    known = {W + name for name in ('ins', 'del', 'moveFrom', 'moveTo')}
+    conflicts = {W14 + 'conflictIns', W14 + 'conflictDel'}
+    range_names = [(W, name) for name in ('moveFrom', 'moveTo', 'customXmlIns', 'customXmlDel', 'customXmlMoveFrom', 'customXmlMoveTo')]
+    range_names += [(W14, name) for name in ('customXmlConflictIns', 'customXmlConflictDel')]
+    markers = {namespace + name + 'Range' + suffix: (namespace + name, suffix == 'Start')
+               for namespace, name in range_names for suffix in ('Start', 'End')}
+    active, seen, found = set(), set(), set()
+    targets = set(targets)
+    def story_scope(node):
+        return next((parent for parent in node.iterancestors() if parent.tag in (W + 'footnote', W + 'endnote', W + 'txbxContent')), tree.getroot())
+    for node in tree.iter():
+        if node.tag in markers:
+            raw = node.get(W + 'id', '').strip()
+            if not re.fullmatch(r'[+-]?[0-9]{1,100}', raw): raise ValueError('Tracked range has an invalid ID')
+            kind, starting = markers[node.tag]; key = (kind, int(raw), story_scope(node))
+            if starting:
+                if key in seen: raise ValueError('Tracked range IDs are ambiguous')
+                seen.add(key); active.add(key)
+            else:
+                if key not in active: raise ValueError('Tracked range markers are unmatched')
+                active.remove(key)
+        if node in targets:
+            found.add(node); current_scope = story_scope(node)
+            if any(scope == current_scope for _, _, scope in active): raise ValueError('Target lies inside a tracked move or custom XML range')
+    if active: raise ValueError('Tracked range markers are unmatched')
+    if found != targets: raise ValueError('Tracked revision target is missing')
+    structural = known | conflicts | {W + name for name in ('cellIns', 'cellDel', 'cellMerge', 'tblGridChange', 'tblPrExChange', 'numberingChange')}
+    for node in targets:
+        if any(ancestor.tag in known or ancestor.tag in conflicts for ancestor in node.iterancestors()): raise ValueError('Nested tracked revisions are not supported')
+        for ancestor in node.iterancestors():
+            prop_name = {W + 'p': 'pPr', W + 'tr': 'trPr', W + 'tc': 'tcPr', W + 'tbl': 'tblPr'}.get(ancestor.tag)
+            props = ancestor.find(W + prop_name) if prop_name else None
+            grid = ancestor.find(W + 'tblGrid') if ancestor.tag == W + 'tbl' else None
+            exceptions = ancestor.find(W + 'tblPrEx') if ancestor.tag == W + 'tr' else None
+            for container in (props, grid, exceptions):
+                if container is not None and any(item.tag in structural or isinstance(item.tag, str) and item.tag.startswith(W) and item.tag.endswith('PrChange') for item in container.iter()):
+                    raise ValueError('Tracked paragraph, table or row properties are not supported')
+
+
 def track_replace_text(source, output, path, find, replacement, author):
     """Replace a unique body text range with Word insertion and deletion records."""
     import copy
@@ -470,6 +511,7 @@ def track_replace_text(source, output, path, find, replacement, author):
     def edit(tree, archive):
         paragraph = find_paragraph(tree, path)
         first, last = anchor_runs(paragraph, find)
+        validate_tracked_context(tree, (first, last))
         selected = []; node = first
         while node is not None:
             if node.tag != W + 'r': raise ValueError('Tracked replacement crosses an unsupported boundary')
@@ -548,50 +590,20 @@ def resolve_tracked_runs(source, output, part, ids, accept):
     def edit(tree, archive):
         if tree.getroot().tag != W + selected_kind: raise ValueError('Word story has an invalid root')
         known = {W + name for name in ('ins', 'del', 'moveFrom', 'moveTo')}
-        range_names = [(W, name) for name in ('moveFrom', 'moveTo', 'customXmlIns', 'customXmlDel', 'customXmlMoveFrom', 'customXmlMoveTo')]
-        range_names += [(W14, name) for name in ('customXmlConflictIns', 'customXmlConflictDel')]
-        markers = {namespace + name + 'Range' + suffix: (namespace + name, suffix == 'Start')
-                   for namespace, name in range_names for suffix in ('Start', 'End')}
-        conflicts = {W14 + 'conflictIns', W14 + 'conflictDel'}
-        active, seen, enclosed = set(), set(), set()
-        def story_scope(node):
-            return next((parent for parent in node.iterancestors() if parent.tag in (W + 'footnote', W + 'endnote', W + 'txbxContent')), tree.getroot())
         matches = {identifier: [] for identifier in requested}
         for node in tree.iter():
-            if node.tag in markers:
-                raw = node.get(W + 'id', '').strip()
-                if not re.fullmatch(r'[+-]?[0-9]{1,100}', raw): raise ValueError('Tracked range has an invalid ID')
-                kind, starting = markers[node.tag]; key = (kind, int(raw), story_scope(node))
-                if starting:
-                    if key in seen: raise ValueError('Tracked range IDs are ambiguous')
-                    seen.add(key); active.add(key)
-                else:
-                    if key not in active: raise ValueError('Tracked range markers are unmatched')
-                    active.remove(key)
-                continue
             if node.tag not in known: continue
             value = node.get(W + 'id', '').strip()
             if re.fullmatch(r'[+-]?[0-9]{1,100}', value):
                 key = int(value)
-                if key in matches:
-                    matches[key].append(node)
-                    current_scope = story_scope(node)
-                    if any(scope == current_scope for _, _, scope in active): enclosed.add(key)
-        if active: raise ValueError('Tracked range markers are unmatched')
+                if key in matches: matches[key].append(node)
         chosen = []
         for identifier in requested:
             candidates = matches[identifier]
             if len(candidates) != 1: raise ValueError(f'Revision ID {identifier} is missing or ambiguous')
-            if identifier in enclosed: raise ValueError('Revision lies inside a tracked move or custom XML range')
             node = candidates[0]; parent = node.getparent()
             if node.tag not in (W + 'ins', W + 'del') or parent is None or parent.tag != W + 'p':
                 raise ValueError('Only direct paragraph insertion or deletion runs can be resolved')
-            if any(ancestor.tag in known or ancestor.tag in conflicts for ancestor in node.iterancestors()): raise ValueError('Nested tracked revisions are not supported')
-            for ancestor in node.iterancestors():
-                prop_name = {W + 'p': 'pPr', W + 'tr': 'trPr', W + 'tc': 'tcPr', W + 'tbl': 'tblPr'}.get(ancestor.tag)
-                props = ancestor.find(W + prop_name) if prop_name else None
-                if props is not None and any(item.tag in known or isinstance(item.tag, str) and item.tag.startswith(W) and item.tag.endswith('PrChange') for item in props.iter()):
-                    raise ValueError('Tracked paragraph, table or row properties are not supported')
             if any(key not in (W + 'id', W + 'author', W + 'date') for key in node.attrib): raise ValueError('Revision has unsupported metadata')
             runs = list(node)
             if not runs or any(run.tag != W + 'r' for run in runs): raise ValueError('Revision contains unsupported content')
@@ -599,12 +611,13 @@ def resolve_tracked_runs(source, output, part, ids, accept):
             for run in runs:
                 if any(child.tag not in (W + 'rPr', text_tag) for child in run) or not run.findall(text_tag):
                     raise ValueError('Revision contains unsupported run content')
-                if any(item.tag in known or item.tag == W + 'rPrChange' for item in run.iter()):
+                if any(item.tag in known or item.tag in (W + 'rPrChange', W14 + 'conflictIns', W14 + 'conflictDel') for item in run.iter()):
                     raise ValueError('Revision contains nested tracked formatting')
                 for text in run.findall(text_tag):
                     if len(text) or any(key != '{http://www.w3.org/XML/1998/namespace}space' for key in text.attrib):
                         raise ValueError('Revision text has unsupported content or attributes')
             chosen.append(node)
+        validate_tracked_context(tree, chosen)
         for node in chosen:
             parent = node.getparent(); keep = (node.tag == W + 'ins') == accept
             if keep:

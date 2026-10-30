@@ -69,6 +69,45 @@ with tempfile.TemporaryDirectory() as temp:
     except ValueError: pass
     else: raise AssertionError('annotation boundary was crossed')
     assert session.info(boundary_draft)['latest_revision'] == 0
+    range_source = root / 'range.docx'; range_doc = Document(); range_doc.add_paragraph('outside target'); inside = range_doc.add_paragraph('inside target')
+    start = OxmlElement('w:moveFromRangeStart'); start.set(qn('w:id'), '40'); inside._p.addprevious(start)
+    end = OxmlElement('w:moveFromRangeEnd'); end.set(qn('w:id'), '40'); inside._p.addnext(end); range_doc.save(range_source)
+    range_draft = root / 'range'; session.start(range_draft, source=range_source)
+    try: session.track_replace_text(range_draft, 0, '/body/p[2]', 'target', 'new', 'Editor')
+    except ValueError as exc: assert 'inside' in str(exc)
+    else: raise AssertionError('tracked replacement was created inside a move range')
+    assert session.info(range_draft)['latest_revision'] == 0
+    range_edit = session.track_replace_text(range_draft, 0, '/body/p[1]', 'target', 'new', 'Editor')
+    range_records = session.tracked_changes(range_draft, 1)
+    ids = [r['id'] for r in range_records['records'] if r['kind'] in ('ins', 'del')]
+    assert session.resolve_tracked_runs(range_draft, 1, 'word/document.xml', ids, True)['revision'] == 2
+    assert Document(range_edit['file']).paragraphs[1].text == 'inside target'
+    row_source = root / 'row.docx'; row_doc = Document(); table = row_doc.add_table(rows=1, cols=1); table.cell(0, 0).text = 'target'
+    row_props = table.rows[0]._tr.get_or_add_trPr(); row_mark = OxmlElement('w:ins'); row_mark.set(qn('w:id'), '41'); row_props.append(row_mark); row_doc.save(row_source)
+    row_draft = root / 'row'; session.start(row_draft, source=row_source)
+    try: session.track_replace_text(row_draft, 0, '/body/tbl[1]/tr[1]/tc[1]/p[1]', 'target', 'new', 'Editor')
+    except ValueError as exc: assert 'properties' in str(exc)
+    else: raise AssertionError('tracked replacement inside a tracked row was accepted')
+    assert session.info(row_draft)['latest_revision'] == 0
+    for kind in ('tblGridChange', 'tblPrExChange'):
+        structural_doc = Document(); structural_table = structural_doc.add_table(rows=1, cols=1); structural_table.cell(0, 0).text = 'target'
+        if kind == 'tblGridChange': container = structural_table._tbl.tblGrid
+        else:
+            container = OxmlElement('w:tblPrEx'); structural_table.rows[0]._tr.insert(0, container)
+        marker = OxmlElement('w:' + kind); marker.set(qn('w:id'), '42'); container.append(marker)
+        structural_source = root / (kind + '.docx'); structural_doc.save(structural_source)
+        structural_draft = root / kind; session.start(structural_draft, source=structural_source)
+        try: session.track_replace_text(structural_draft, 0, '/body/tbl[1]/tr[1]/tc[1]/p[1]', 'target', 'new', 'Editor')
+        except ValueError as exc: assert 'properties' in str(exc)
+        else: raise AssertionError('tracked table structure was accepted')
+        assert session.info(structural_draft)['latest_revision'] == 0 and session.tracked_changes(structural_draft, 0)['counts'][kind] == 1
+    conflict_source = root / 'run-conflict.docx'; conflict_doc = Document(); run = conflict_doc.add_paragraph().add_run('target')
+    run._r.get_or_add_rPr().append(etree.Element(word.W14 + 'conflictIns')); conflict_doc.save(conflict_source)
+    conflict_draft = root / 'run-conflict'; session.start(conflict_draft, source=conflict_source)
+    try: session.track_replace_text(conflict_draft, 0, '/body/p[1]', 'target', 'new', 'Editor')
+    except ValueError: pass
+    else: raise AssertionError('run with tracked conflict formatting was accepted')
+    assert session.info(conflict_draft)['latest_revision'] == 0
     concurrent_draft = root / 'concurrent-draft'; session.start(concurrent_draft, source=source)
     def concurrent_edit():
         try: return session.track_replace_text(concurrent_draft, 0, '/body/p[1]', 'old text', 'new', 'Editor')
