@@ -1,0 +1,7 @@
+# PowerPoint workflows
+
+Use `search_slide_text` / `session_search_slide_text` with `scope: "slides"` for shape and table paragraphs or `scope: "notes"` for speaker-note paragraphs. Results include hidden slides. Page with the same scope, query, optional slide, `next_offset`, and `snapshot_sha256`; check completeness and inspect candidates. Notes results include `slide` and `notes_paragraph` for targeted editing. Masters, charts, SmartArt, and other notes shapes are outside these searches.
+
+`session_replace_text` performs a unique literal replacement in supported slide shape or table-cell paragraphs, retaining run formatting. Use `read_slide_notes` / `session_read_slide_notes` with a one-based slide number and `session_replace_slide_notes_text` for a unique match in a one-based simple paragraph. `session_replace_slide_notes` replaces the entire notes text and resets its formatting. `compare_slide_notes` / `session_compare_slide_notes` compare explicitly corresponding slides and report truncation.
+
+For an embedded picture, use `session_replace_picture` with a local PNG or JPEG; the existing crop remains. `inspect_slide_layout` / `session_inspect_slide_layout` report overlap and off-slide candidates; `inspect_slide_text` / `session_inspect_slide_text` report text rendering candidates. Check coverage and inspect rendered pages: intentional overlaps, master content, hidden slides, text overflow, and page-to-slide mapping need review. Contact sheets are overviews; inspect important slides at full size.

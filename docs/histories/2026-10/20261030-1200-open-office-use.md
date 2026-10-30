@@ -149,3 +149,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Add snapshot-bound speaker notes search to CLI, MCP and the viewer, with hidden-slide and paragraph candidates routed to the targeted notes editor.
 
 - Add Word footnote/endnote search and targeted run-preserving text replacement through CLI, MCP and viewer, including note-marker preservation and coverage reporting.
+
+- Reorganize the agent skill into a concise shared entrypoint and format-specific references, including notes search, worksheet merge, freeze and borders, and verify referenced MCP tools.

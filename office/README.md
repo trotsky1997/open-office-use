@@ -16,7 +16,7 @@ The Codex skill is discoverable from the repository root and can be installed se
 npx skills add trotsky1997/open-office-use -g -a codex --skill open-office-use -y
 ```
 
-The skill supplies agent guidance; install the CLI and, for MCP, the optional dependency as described below. OfficeCLI, LibreOffice and Poppler are separate system tools.
+The skill supplies agent guidance and links format-specific Word, PowerPoint and spreadsheet references; install the CLI and, for MCP, the optional dependency as described below. OfficeCLI, LibreOffice and Poppler are separate system tools.
 
 Run `office-use doctor` to probe the available executables, versions and optional MCP import. MCP clients can call `office_doctor` for the same report. Capability flags summarize the dependencies used by structured authoring, PDF rendering, page images and selected-text extraction. A successful version probe confirms startup only; it does not validate a document or guarantee rendering fidelity. The command returns a report even when dependencies are missing.
 
