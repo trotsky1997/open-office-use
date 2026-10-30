@@ -107,3 +107,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - XLSX 单元素编辑支持文字类型并识别已有文字；校验公式候选文本与请求一致，阻止意外改写后提交。
 
 - XLSX 网格与单元素编辑支持可验证的动态数组元数据及常用公式，保留无关缓存和部件；实测 LibreOffice 未填充 SEQUENCE 溢出结果，目标应用互操作仍待验证。
+
+- 公式扫描和审阅包识别动态数组元数据；LibreOffice 重算默认拦截已识别或无法检查的元数据，CLI、MCP 和界面提供明确的转换选项。

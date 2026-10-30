@@ -1,5 +1,6 @@
 """Bounded worksheet inspection and explicit LibreOffice recalculation."""
 import os
+import posixpath
 import hashlib
 import re
 import json
@@ -405,6 +406,8 @@ def scan_formulas(file):
                     raise ValueError('Workbook exceeds package limits or contains duplicate parts')
                 try: _, workbook_mode = workbook_calculation(archive); workbook_mode_issue = None
                 except Exception as exc: workbook_mode = None; workbook_mode_issue = f'{type(exc).__name__}: {str(exc)[:300]}'
+                try: dynamic_arrays = dynamic_array_metadata(archive); dynamic_issue = None
+                except Exception as exc: dynamic_arrays = None; dynamic_issue = f'{type(exc).__name__}: {str(exc)[:300]}'
                 workbook = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
                 try:
                     sheets = [(sheet.title, getattr(sheet, '_worksheet_path', None)) for sheet in workbook.worksheets]
@@ -471,7 +474,7 @@ def scan_formulas(file):
                 return {**counts, 'sheets': scanned_sheets, 'total_sheets': len(sheets), 'complete': complete,
                         'errors': errors, 'errors_truncated': counts['formula_errors'] + counts['literal_errors'] > len(errors),
                         'empty_or_missing': missing, 'empty_or_missing_truncated': counts['empty_or_missing_cache'] > len(missing),
-                        'cache_freshness': 'unknown', 'recalculation_requests': sum(item['recalculation_requested'] is True for item in scanned_sheets),
+                        'cache_freshness': 'unknown', 'dynamic_array_metadata': dynamic_arrays, 'dynamic_array_metadata_issue': dynamic_issue, 'recalculation_requests': sum(item['recalculation_requested'] is True for item in scanned_sheets),
                         'workbook_calculation_mode': workbook_mode, 'workbook_calculation_metadata_issue': workbook_mode_issue,
                         'calculation_metadata_complete': complete and not workbook_mode_issue and all(item['calculation_metadata_complete'] for item in scanned_sheets)}
         except (zipfile.BadZipFile, ET.ParseError) as exc:
@@ -499,7 +502,41 @@ def workbook_calculation(archive):
     if mode not in (None, 'auto', 'autoNoTable', 'manual'): raise ValueError('Invalid workbook calculation mode')
     return path, mode
 
-def recalculate(source, output):
+
+def dynamic_array_metadata(archive):
+    """Check the workbook's sheet metadata for dynamic-array markers."""
+    import ooxml
+    ct = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+    rel = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+    x = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+    xda = '{http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray}'
+    content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
+    relationship_type = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata'
+    workbook, _ = workbook_calculation(archive)
+    manifest = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
+    if any(item.get('ContentType') == content_type for item in manifest.findall(ct + 'Default')): raise ValueError('Unsupported default sheet metadata type')
+    overrides = [item for item in manifest.findall(ct + 'Override') if item.get('ContentType', '').endswith('.sheetMetadata+xml')]
+    rel_path = posixpath.join(posixpath.dirname(workbook), '_rels', posixpath.basename(workbook) + '.rels')
+    if rel_path not in archive.namelist(): raise ValueError('Workbook relationships are missing')
+    rels = ooxml.parse_xml(archive.read(rel_path)).getroot()
+    if rels.tag != rel + 'Relationships': raise ValueError('Invalid workbook relationships')
+    relationships = [item for item in rels.findall(rel + 'Relationship') if item.get('Type', '').endswith('/sheetMetadata')]
+    if not relationships and not overrides: return False
+    if len(relationships) != 1 or len(overrides) != 1 or relationships[0].get('Type') != relationship_type or overrides[0].get('ContentType') != content_type:
+        raise ValueError('Sheet metadata is ambiguous')
+    item = relationships[0]; target = item.get('Target', '')
+    if item.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', '\\', ':')):
+        raise ValueError('Sheet metadata target is unsupported')
+    part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(workbook), target))
+    if not part or part.startswith('../') or part not in archive.namelist() or overrides[0].get('PartName') != '/' + part:
+        raise ValueError('Sheet metadata part is missing or ambiguous')
+    if len([item for item in manifest.findall(ct + 'Override') if item.get('PartName') == '/' + part]) != 1: raise ValueError('Sheet metadata type is ambiguous')
+    root = ooxml.parse_xml(archive.read(part)).getroot()
+    if root.tag != x + 'metadata': raise ValueError('Invalid sheet metadata')
+    return any(item.get('name') == 'XLDAPR' for item in root.iter() if item.tag in (x + 'metadataType', x + 'futureMetadata')) or any(True for _ in root.iter(xda + 'dynamicArrayProperties'))
+
+def recalculate(source, output, allow_dynamic_arrays=False):
+    if not isinstance(allow_dynamic_arrays, bool): raise ValueError('allow_dynamic_arrays must be a boolean')
     source = Path(source).resolve(strict=True)
     output = Path(output).absolute()
     if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx':
@@ -524,6 +561,12 @@ def recalculate(source, output):
                 raise ValueError('Workbook exceeds package limits or contains duplicate parts')
             if any(name.startswith('_xmlsignatures/') for name in names): raise ValueError('Digitally signed workbooks cannot be recalculated')
             _, original_mode = workbook_calculation(archive)
+            import ooxml
+            try: dynamic = dynamic_array_metadata(archive)
+            except (ValueError, KeyError, ooxml.etree.XMLSyntaxError) as exc:
+                if not allow_dynamic_arrays: raise ValueError(f'Cannot inspect dynamic-array metadata: {exc}; explicitly allow dynamic arrays to continue') from exc
+            else:
+                if dynamic and not allow_dynamic_arrays: raise ValueError('Dynamic-array metadata detected; LibreOffice may not preserve spill results. Explicitly allow dynamic arrays to continue')
         # A fresh default profile can reuse stale OOXML caches, including in manual mode.
         profile_path = root / 'profile'; user_profile = profile_path / 'user'; user_profile.mkdir(parents=True)
         (user_profile / 'registrymodifications.xcu').write_text(

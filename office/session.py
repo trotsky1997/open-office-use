@@ -182,7 +182,7 @@ def search_slides(directory, revision, query, slide=None, offset=0, snapshot_sha
     return {'revision': revision, **slides.search_text(source, query, slide, offset, snapshot_sha256)}
 
 
-def recalculate(directory, base_revision):
+def recalculate(directory, base_revision, allow_dynamic_arrays=False):
     state = info(directory)
     source = revision_file(state, base_revision)
     if state['format'] != 'xlsx':
@@ -193,10 +193,10 @@ def recalculate(directory, base_revision):
         raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
     try:
-        spreadsheet.recalculate(source, output)
+        spreadsheet.recalculate(source, output, allow_dynamic_arrays=allow_dynamic_arrays)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': str(output), 'engine': 'LibreOffice'}
+    return {'revision': base_revision + 1, 'file': str(output), 'engine': 'LibreOffice', 'dynamic_array_override': allow_dynamic_arrays}
 
 
 def scan_formulas(directory, base_revision):

@@ -208,7 +208,7 @@ def main():
     search.add_argument('--sheet'); search.add_argument('--offset', type=int, default=0); search.add_argument('--snapshot-sha256')
     formula_scan = commands.add_parser('scan-formulas'); formula_scan.add_argument('file')
     chart_scan = commands.add_parser('scan-chart-caches'); chart_scan.add_argument('file')
-    calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
+    calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True); calc.add_argument('--allow-dynamic-arrays', action='store_true')
     bundle = commands.add_parser('review-bundle'); bundle.add_argument('file'); bundle.add_argument('--out-dir', required=True)
     audit = commands.add_parser('audit'); audit.add_argument('file')
     comparison = commands.add_parser('compare'); comparison.add_argument('before'); comparison.add_argument('after')
@@ -245,7 +245,7 @@ def main():
     session_stories = sub.add_parser('stories'); session_stories.add_argument('directory'); session_stories.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_slide_text = sub.add_parser('inspect-slide-text'); session_slide_text.add_argument('directory'); session_slide_text.add_argument('--revision', type=int, required=True)
-    session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
+    session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True); session_calc.add_argument('--allow-dynamic-arrays', action='store_true')
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
     session_chart_scan = sub.add_parser('scan-chart-caches'); session_chart_scan.add_argument('directory'); session_chart_scan.add_argument('--revision', type=int, required=True)
     session_chart_sync = sub.add_parser('sync-chart-cache'); session_chart_sync.add_argument('directory'); session_chart_sync.add_argument('--base', type=int, required=True); session_chart_sync.add_argument('--part', required=True); session_chart_sync.add_argument('--reference', type=int, required=True); session_chart_sync.add_argument('--allow-formula-caches', action='store_true')
@@ -339,7 +339,7 @@ def main():
             elif args.action == 'inspect-layout':
                 result = session.inspect_layout(args.directory, args.revision)
             elif args.action == 'recalculate':
-                result = session.recalculate(args.directory, args.base)
+                result = session.recalculate(args.directory, args.base, args.allow_dynamic_arrays)
             elif args.action == 'scan-formulas':
                 result = session.scan_formulas(args.directory, args.base)
             elif args.action == 'scan-chart-caches':
@@ -415,7 +415,7 @@ def main():
         elif args.command == 'scan-chart-caches':
             result = chart_cache.scan(args.file)
         elif args.command == 'recalculate':
-            result = {'output': spreadsheet.recalculate(args.file, args.out)}
+            result = {'output': spreadsheet.recalculate(args.file, args.out, args.allow_dynamic_arrays)}
         elif args.command == 'structured':
             if (args.mode == 'outline') != (args.target is None):
                 raise ValueError('get and query require a target; outline takes no target')

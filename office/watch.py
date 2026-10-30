@@ -97,7 +97,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details><p>Compare text boxes and table cells with extracted text from the rendered PDF; review candidates visually.</p><button type="button" id="slide-text-scan">Check rendered text</button><p id="slide-text-status" role="status"></p><ul id="slide-text-results"></ul><details><summary>Full rendered text report</summary><pre id="slide-text-output"></pre></details></details>
 <details id="formula-panel" hidden><summary>Workbook calculation and checks</summary>
 <p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
-<button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
+<button type="button" id="formula-scan">Scan formulas</button> <label><input type="checkbox" id="formula-allow-dynamic"> Allow conversion with dynamic-array metadata or incomplete inspection; spill results may be lost</label> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
 <p id="formula-status" role="status"></p><pre id="formula-scan-output"></pre></details>
 <details id="chart-cache-panel" hidden><summary>Chart cache checks</summary>
 <p>Compare supported chart caches with stored worksheet values. Sync affects every placement sharing a chart part. Formula caches may be stale; inspect chart rendering and unverified sources separately.</p>
@@ -296,7 +296,7 @@ document.getElementById('formula-scan').addEventListener('click', async () => {
   const response=await fetch('formula-scan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Scan failed');
   if (current!==revision || pinned!==null) return;
-  document.getElementById('formula-status').textContent=`Revision ${revision}: ${result.formula_errors} formula error(s), ${result.literal_errors} literal error(s), ${result.empty_or_missing_cache} empty or missing cache(s), ${result.recalculation_requests} worksheet recalculation request(s). ${result.complete && result.calculation_metadata_complete ? 'Scan complete.' : 'Scan incomplete.'}`;
+  document.getElementById('formula-status').textContent=`Revision ${revision}: ${result.formula_errors} formula error(s), ${result.literal_errors} literal error(s), ${result.empty_or_missing_cache} empty or missing cache(s), ${result.recalculation_requests} worksheet recalculation request(s). Dynamic-array metadata: ${result.dynamic_array_metadata === null ? 'unknown' : result.dynamic_array_metadata ? 'present' : 'not found'}. ${result.complete && result.calculation_metadata_complete && result.dynamic_array_metadata !== null ? 'Scan complete.' : 'Scan incomplete.'}`;
   document.getElementById('formula-scan-output').textContent=JSON.stringify(result, null, 2);
  } catch(error) { if (current===revision && pinned===null) document.getElementById('formula-status').textContent=`Scan error: ${error.message}`; }
  finally { scanBusy=false; button.disabled=pinned!==null; document.getElementById('formula-recalculate').disabled=pinned!==null || calcBusy; }
@@ -307,9 +307,9 @@ document.getElementById('formula-recalculate').addEventListener('click', async (
  const revision=current, button=document.getElementById('formula-recalculate'); calcBusy=true; formulaStatusRevision=revision; button.disabled=true; document.getElementById('formula-scan').disabled=true; document.getElementById('formula-scan-output').textContent='';
  document.getElementById('formula-status').textContent=`Recalculating revision ${revision} with LibreOffice…`;
  try {
-  const response=await fetch('formula-recalculate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
+  const response=await fetch('formula-recalculate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,allow_dynamic_arrays:document.getElementById('formula-allow-dynamic').checked})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Recalculation failed');
-  formulaStatusRevision=result.revision; await refresh(); document.getElementById('formula-status').textContent=`Recalculated revision ${revision} as revision ${result.revision}. Review formulas, errors and file changes.`;
+  document.getElementById('formula-allow-dynamic').checked=false; formulaStatusRevision=result.revision; await refresh(); document.getElementById('formula-status').textContent=`Recalculated revision ${revision} as revision ${result.revision}. Review formulas, errors and file changes.`;
  } catch(error) { document.getElementById('formula-status').textContent=`Recalculation error: ${error.message}`; }
  finally { calcBusy=false; button.disabled=pinned!==null; document.getElementById('formula-scan').disabled=pinned!==null || scanBusy; }
 });
@@ -1166,6 +1166,7 @@ async function refresh() {
   document.getElementById('workbook-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
   if (state.revision !== current) {
+   document.getElementById('formula-allow-dynamic').checked=false;
    if (formulaStatusRevision !== state.revision) { formulaStatusRevision=null; document.getElementById('formula-status').textContent=''; document.getElementById('formula-scan-output').textContent=''; }
    if (gridLoaded) invalidateGrid('Version changed; copy unsaved edits and reload the range.');
    if (loaded) invalidateEdit('Version changed; load the element again.');
@@ -1296,9 +1297,9 @@ def serve(directory, preview, port=0, render=None):
                         saved = session.inspect_layout(directory, payload['revision'])
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/formula-scan') or route.endswith('/formula-recalculate'):
-                        if not isinstance(payload, dict) or set(payload) != {'base_revision'}:
-                            raise ValueError('Formula operation requires base_revision')
-                        saved = session.scan_formulas(directory, payload['base_revision']) if route.endswith('/formula-scan') else session.recalculate(directory, payload['base_revision'])
+                        if not isinstance(payload, dict) or (set(payload) != {'base_revision'} and not (route.endswith('/formula-recalculate') and set(payload) == {'base_revision', 'allow_dynamic_arrays'})):
+                            raise ValueError('Formula operation requires base_revision and optional dynamic-array override')
+                        saved = session.scan_formulas(directory, payload['base_revision']) if route.endswith('/formula-scan') else session.recalculate(directory, payload['base_revision'], payload.get('allow_dynamic_arrays', False))
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/visual-comparison'):
                         if not isinstance(payload, dict) or set(payload) != {'before', 'after', 'before_page', 'after_page'}:

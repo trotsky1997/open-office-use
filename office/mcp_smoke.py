@@ -377,6 +377,12 @@ async def main():
                 assert not dynamic.isError and dynamic.structuredContent['recalculation_requested'] and dynamic.structuredContent['dynamic_formula_cells'] == ['C1'], dynamic
                 dynamic_read = await session.call_tool('session_read_grid', {'directory': str(dynamic_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'C1'})
                 assert not dynamic_read.isError and not dynamic_read.structuredContent['rows'][0][0]['editable'], dynamic_read
+                dynamic_scan = await session.call_tool('session_scan_formulas', {'directory': str(dynamic_draft), 'base_revision': 1})
+                assert not dynamic_scan.isError and dynamic_scan.structuredContent['dynamic_array_metadata'] is True, dynamic_scan
+                denied_calc = await session.call_tool('session_recalculate', {'directory': str(dynamic_draft), 'base_revision': 1})
+                assert denied_calc.isError, denied_calc
+                allowed_calc = await session.call_tool('session_recalculate', {'directory': str(dynamic_draft), 'base_revision': 1, 'allow_dynamic_arrays': True})
+                assert not allowed_calc.isError and allowed_calc.structuredContent['dynamic_array_override'], allowed_calc
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
                 assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1 and saved_grid.structuredContent['formula_cache_effect'] == 'may_be_stale' and saved_grid.structuredContent['recalculation_requested'], saved_grid
                 styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True, 'italic': True, 'font_color': '336699', 'horizontal': 'center', 'wrap': True}})

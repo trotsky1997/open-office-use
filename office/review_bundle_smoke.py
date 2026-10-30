@@ -46,6 +46,10 @@ with tempfile.TemporaryDirectory() as tmp:
     failed_report = json.loads(Path(failed['report']).read_text())
     assert failed['check_errors'] == ['render_pdf'] and failed_report['checks']['overview']['status'] == 'skipped'
     assert 'preview.pdf' not in failed['artifacts'] and 'overview.png' not in failed['artifacts']
+    dynamic_draft = root / 'dynamic-draft'; session.start(dynamic_draft, source=book_path)
+    dynamic = session.edit_grid(dynamic_draft, 0, 'Sheet', 'B1', [{'cell':'B1','value':'=SEQUENCE(3)'}])
+    dynamic_review = review_bundle.create(dynamic['file'], root / 'dynamic-review', failed_render)
+    assert 'dynamic_array_metadata_present' in dynamic_review['flags'], dynamic_review
     invalid = Document(); paragraph = invalid.add_paragraph('Invalid'); paragraph._p.append(OxmlElement('w:ins')); invalid_path = root / 'invalid.docx'; invalid.save(invalid_path)
     invalid_result = review_bundle.create(invalid_path, root / 'invalid-review', open_office_use.render)
     assert 'schema_validation_failed' in invalid_result['flags'], invalid_result

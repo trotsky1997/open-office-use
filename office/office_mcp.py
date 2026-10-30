@@ -357,14 +357,14 @@ def session_inspect_slide_layout(directory: str, revision: int) -> dict[str, Any
 
 
 @server.tool()
-def session_recalculate(directory: str, base_revision: int) -> dict[str, Any]:
-    """Recalculate a saved XLSX revision with LibreOffice and publish a new revision."""
-    return session.recalculate(directory, base_revision)
+def session_recalculate(directory: str, base_revision: int, allow_dynamic_arrays: bool = False) -> dict[str, Any]:
+    """Recalculate an XLSX with LibreOffice; dynamic-array metadata requires explicit allow_dynamic_arrays because spill results may be incomplete."""
+    return session.recalculate(directory, base_revision, allow_dynamic_arrays)
 
 
 @server.tool()
 def session_scan_formulas(directory: str, base_revision: int) -> dict[str, Any]:
-    """Scan saved formulas and error caches in the latest XLSX revision."""
+    """Scan saved formulas, error caches and dynamic-array metadata in the latest XLSX revision."""
     return session.scan_formulas(directory, base_revision)
 
 
@@ -457,14 +457,14 @@ def read_cells(file: str, sheet: str, cell_range: str) -> dict[str, Any]:
 
 @server.tool()
 def scan_formulas(file: str) -> dict[str, Any]:
-    """Scan stored formulas and error values across a saved XLSX; cache freshness is unknown."""
+    """Scan stored formulas, error values and dynamic-array metadata across a saved XLSX; cache freshness is unknown."""
     return spreadsheet.scan_formulas(file)
 
 
 @server.tool()
-def recalculate_workbook(file: str, output: str) -> dict[str, str]:
-    """Recalculate an XLSX with LibreOffice and write a new file; conversion may affect fidelity."""
-    return {'output': spreadsheet.recalculate(file, output)}
+def recalculate_workbook(file: str, output: str, allow_dynamic_arrays: bool = False) -> dict[str, Any]:
+    """Recalculate with LibreOffice; dynamic metadata requires explicit allow_dynamic_arrays and spill results may be incomplete."""
+    return {'output': spreadsheet.recalculate(file, output, allow_dynamic_arrays), 'dynamic_array_override': allow_dynamic_arrays}
 
 
 @server.tool()

@@ -1,5 +1,8 @@
 """Exercise dynamic formula metadata and protected spreadsheet edits."""
 import tempfile
+import subprocess
+import sys
+import json
 import zipfile
 from pathlib import Path
 from lxml import etree
@@ -7,6 +10,7 @@ from openpyxl import Workbook, load_workbook
 import grid_values
 import officecli_backend
 import session
+import spreadsheet
 
 X = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
 with tempfile.TemporaryDirectory() as tmp:
@@ -45,6 +49,30 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Dynamic array anchor was editable')
     assert session.info(draft)['latest_revision'] == 3
+    scan = session.scan_formulas(draft, 3); assert scan['dynamic_array_metadata'] is True and scan['dynamic_array_metadata_issue'] is None
+    try: session.recalculate(draft, 3)
+    except ValueError as error: assert 'Dynamic-array metadata detected' in str(error)
+    else: raise AssertionError('Dynamic array converted without explicit override')
+    assert session.info(draft)['latest_revision'] == 3
+    cli = Path(__file__).with_name('open_office_use.py')
+    denied = subprocess.run([sys.executable, str(cli), 'session', 'recalculate', str(draft), '--base', '3'], capture_output=True, text=True)
+    assert denied.returncode != 0 and 'Dynamic-array metadata' in denied.stderr and session.info(draft)['latest_revision'] == 3
+    allowed = subprocess.run([sys.executable, str(cli), 'session', 'recalculate', str(draft), '--base', '3', '--allow-dynamic-arrays'], capture_output=True, text=True, check=True)
+    explicit = json.loads(allowed.stdout); assert explicit['revision'] == 4 and explicit['dynamic_array_override'] and session.info(draft)['latest_revision'] == 4
+    ambiguous = root / 'ambiguous.xlsx'
+    with zipfile.ZipFile(result['file']) as before, zipfile.ZipFile(ambiguous, 'w') as after:
+        for entry in before.infolist():
+            data = before.read(entry)
+            if entry.filename == '[Content_Types].xml':
+                tree = etree.fromstring(data); ct_ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+                metadata = next(item for item in tree if item.get('ContentType') == grid_values.META_TYPE)
+                etree.SubElement(tree, ct_ns + 'Override', PartName=metadata.get('PartName'), ContentType=grid_values.META_TYPE); data = etree.tostring(tree)
+            after.writestr(entry, data)
+    scan = spreadsheet.scan_formulas(ambiguous); assert scan['dynamic_array_metadata'] is None and scan['dynamic_array_metadata_issue']
+    try: spreadsheet.recalculate(ambiguous, root / 'ambiguous-out.xlsx')
+    except ValueError as error: assert 'Cannot inspect dynamic-array metadata' in str(error)
+    else: raise AssertionError('Ambiguous metadata converted without explicit override')
+    assert not (root / 'ambiguous-out.xlsx').exists()
     unsupported = root / 'unsupported.xlsx'
     with zipfile.ZipFile(result['file']) as before, zipfile.ZipFile(unsupported, 'w') as after:
         for entry in before.infolist():
@@ -72,6 +100,7 @@ with tempfile.TemporaryDirectory() as tmp:
     with zipfile.ZipFile(chain_edit['file']) as archive:
         assert 'xl/calcChain.xml' not in archive.namelist() and grid_values.metadata_part(archive) == 'xl/office-use-metadata.xml'
     assert officecli_backend.audit(chain_edit['file'])['validation']['exit_code'] == 0
+    assert spreadsheet.scan_formulas(source)['dynamic_array_metadata'] is False
     assert not grid_values.dynamic_formula_matches('SEQUENCE(A1)', '_xlfn.SEQUENCE(_xlpm.A1)')
     assert not grid_values.dynamic_formula_matches('LET(x,x,x)', '_xlfn.LET(_xlpm.x,_xlpm.x,_xlpm.x)')
     assert not grid_values.dynamic_formula_matches('SUM(A1)', '_xlfn.SUM(A1)')

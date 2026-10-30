@@ -63,6 +63,8 @@ def create(source, destination, render, revision=None):
             formulas = check('formula_scan', lambda: spreadsheet.scan_formulas(snapshot))
             if formulas is not None:
                 if not formulas['complete']: flags.append('formula_scan_incomplete')
+                if formulas['dynamic_array_metadata']: flags.append('dynamic_array_metadata_present')
+                if formulas['dynamic_array_metadata'] is None: flags.append('dynamic_array_metadata_unknown')
                 if formulas['formula_errors'] or formulas['literal_errors']: flags.append('formula_or_cell_errors')
                 if formulas['empty_or_missing_cache']: flags.append('formula_cache_missing')
                 if formulas['recalculation_requests']: flags.append('sheet_recalculation_requested')
