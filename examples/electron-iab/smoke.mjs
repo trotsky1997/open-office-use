@@ -72,6 +72,13 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#editable-test').readOnly=true;document.querySelector('#editable-custom').setAttribute('aria-readonly','true');document.querySelector('#editable-select').disabled=true");
   for (const locator of [nativeEditable,cssEditable,customEditable,sdkTab.playwright.locator('#editable-select')]) assert.equal(await locator.isEditable(),false);
   await assert.rejects(cssFirst.isEditable(),/does not support editable state/);
+  await evaluate(a.id,`(()=>{const host=document.createElement('div');host.id='editable-shadow-host';document.querySelector('#bulk-text-test').append(host);host.attachShadow({mode:'open'}).innerHTML='<fieldset disabled><input aria-label="Shadow disabled"></fieldset>'})()`);
+  assert.equal(await sdkTab.playwright.locator('#editable-shadow-host').locator('input').isEditable(),false);
+  assert.equal(await sdkTab.playwright.getByRole('textbox',{name:'Shadow disabled'}).isEditable(),false);
+  await evaluate(a.id,"(()=>{Object.defineProperty(HTMLInputElement.prototype,'hasAttribute',{configurable:true,value:()=>false});return true})()");
+  try {assert.equal(await cssEditable.isEditable(),false);assert.equal(await nativeEditable.isEditable(),false);}
+  finally {await evaluate(a.id,'delete HTMLInputElement.prototype.hasAttribute');}
+
   await evaluate(a.id,"document.querySelector('#bulk-text-test').replaceChildren()");
   assert.deepEqual(await cssBulk.allInnerTexts(),[]);assert.deepEqual(await roleBulk.allInnerTexts(),[]);
   for (const locator of [cssFirst,roleFirst]) { await locator.waitFor({state:'hidden',timeoutMs:1000});assert.equal(await locator.isHidden(),true); }
@@ -146,6 +153,11 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   const localPoint=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{const r=document.querySelector('button').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`,returnByValue:true},{sessionId:crossSession});
   const feedbackPoint=await evaluate(a.id,`(()=>{const f=document.querySelector('#cross-frame'),r=f.getBoundingClientRect(),p=document.querySelector('#obu-iab-visual-feedback');return {x:Number(p.dataset.x),y:Number(p.dataset.y),left:r.left+f.clientLeft,top:r.top+f.clientTop}})()`);
   assert.ok(Math.abs(feedbackPoint.x-feedbackPoint.left-localPoint.result.value.x)<1 && Math.abs(feedbackPoint.y-feedbackPoint.top-localPoint.result.value.y)<1);
+  const frameInput=sdkTab.playwright.frameLocator('#cross-frame').getByRole('textbox',{name:'Cross-frame text'}),frameCss=sdkTab.playwright.frameLocator('#cross-frame').locator('input[aria-label="Cross-frame text"]');
+  assert.equal(await frameInput.isEditable(),true);assert.equal(await frameCss.isEditable(),true);
+  await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:"document.querySelector('[aria-label=\"Cross-frame text\"]').readOnly=true",returnByValue:true},{sessionId:crossSession});
+  assert.equal(await frameInput.isEditable(),false);assert.equal(await frameCss.isEditable(),false);
+  await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:"document.querySelector('[aria-label=\"Cross-frame text\"]').readOnly=false",returnByValue:true},{sessionId:crossSession});
   const crossTextState=await sdkTab.observe({includeFrames:true});const crossText=crossTextState.nodes.find(node=>node.name==='Cross-frame text');assert.ok(crossText);
   await sdkTab.typeText(crossText.index,crossTextState.snapshotId,'hello');await new Promise(resolve=>setTimeout(resolve,100));
   assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-text',value:'hello',trusted:true});

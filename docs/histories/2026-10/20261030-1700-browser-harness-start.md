@@ -445,3 +445,5 @@ frameLocator 匹配宿主时刷新其布局，修复 Linux Chromium 中替换跨
 隔离 Linux ARM64 Electron / Xvfb 补充实验：未呈现标签的 CDP 布局与视觉 viewport 均为 800×600；设置设备视口仿真后首次输入截图仍超时，启动 Page.startScreencast 后也仍超时。两种实验未修改正式实现；隐藏窗口和未呈现标签仍需进一步处理。
 
 CSS 与语义定位器新增 isEditable：检查原生表单、contenteditable 与支持 aria-readonly 的角色，结合禁用及只读状态；不支持的目标报错。CSS 作用域的非原生 ARIA 控件需要显式 role，状态检查不保证所有输入方法支持该控件。SDK 92 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展实测通过；Windows 未测。
+
+macOS Electron 44.7 完整 smoke 扩展 isEditable 实页验证：开放 Shadow DOM 内的禁用 fieldset、页面篡改输入元素原型后的只读检查，以及跨站跨进程 frame 中 CSS/语义定位器的可编辑与只读状态均通过。Shadow DOM 中使用链式定位器跨越宿主。Linux 和 Windows 本轮未测。
