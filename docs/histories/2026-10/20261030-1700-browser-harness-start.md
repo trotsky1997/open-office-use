@@ -391,3 +391,5 @@ CSS 与语义 locator 的 check/uncheck/setChecked 校验 force 和未知参数�
 CSS 与语义 locator 的 click、dblclick、check、uncheck、setChecked 支持 force:true：跳过命中检查，保留目标、位置、稳定性和禁用检查；从主页面坐标派发可信鼠标事件，遮挡物可收到事件，勾选后仍复核状态。SDK 86 项通过；Linux ARM64 Chromium 验证遮挡层、跨进程 frame 和勾选失败；macOS Electron 44.7 socket smoke 验证跨进程 frame 的遮挡层接收事件。Windows 未测。
 
 waitForURL 支持 waitUntil:commit，匹配当前主文档 URL 后无需等待 DOM 或加载完成；保留 load、domcontentloaded 与单次检查行为。SDK 87 项通过；隔离 Linux ARM64 Chromium 对分段加载页面验证 loading 阶段可返回且 load 阶段继续等待。Electron、Windows 与 networkidle 本轮未覆盖。
+
+networkidle 实测：隔离 Linux ARM64 Chromium 在已加载页面发起 4 秒 fetch 后再启用 Network 与生命周期事件，浏览器重放旧 networkIdle，未重放进行中请求的 requestWillBeSent，随后仅出现 loadingFinished。因此单独使用 lifecycle 或延迟启用 Network 会提前判定空闲；SDK 继续拒绝该状态，错误和文档明确说明。后续实现需从可确认的基线持续跟踪请求、处理连接与 frame 生命周期，并对无法确定的既有请求保持明确状态。

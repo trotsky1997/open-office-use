@@ -402,6 +402,8 @@ test('waitForURL commit accepts a matching loading document',async()=>{
   state='interactive';await tab.playwright.waitForURL('https://example.test/done',{waitUntil:'domcontentloaded',timeoutMs:0});
   await assert.rejects(tab.waitForURL('https://example.test/other',{waitUntil:'commit',timeoutMs:0}),/Timed out/);
   await assert.rejects(tab.waitForURL(/done/,{waitUntil:'invalid'}),/Unsupported load state/);
+  await assert.rejects(tab.waitForURL(/done/,{waitUntil:'networkidle'}),/networkidle load state is not available/);
+  await assert.rejects(tab.waitForLoadState({state:'networkidle'}),/networkidle load state is not available/);
 });
 
 test('screenshot clips use viewport coordinates and reject invalid regions', async () => {

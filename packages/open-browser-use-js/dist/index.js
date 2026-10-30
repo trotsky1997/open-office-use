@@ -4704,6 +4704,8 @@ function tabIdFromValue(value, label) {
     throw new Error(`${label} did not include a numeric tab id`);
 }
 function assertSupportedLoadState(state) {
+    if (state === "networkidle")
+        throw new Error('The networkidle load state is not available; wait for a specific page condition instead');
     if (state !== "domcontentloaded" && state !== "load") {
         throw new Error(`Unsupported load state "${state}". Use "domcontentloaded" or "load".`);
     }

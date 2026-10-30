@@ -620,6 +620,11 @@ checks once. URLs are sampled roughly every 100 ms, so transient intermediate
 URLs can be missed. Positive timeouts bound each browser read; a read already
 issued can finish later. A zero-timeout single check waits for its browser read.
 
+`networkidle` is not currently supported by these waits. Wait for the URL,
+load state, or a specific page element instead. Chrome can replay an old
+network-idle lifecycle event while a later request remains in flight, so that
+event alone cannot establish the current network state.
+
 `waitForLoadState({state, timeoutMs})` includes setup and state reads in a
 positive timeout and removes its event listener on timeout. With `timeoutMs: 0`
 it checks the current state once and waits for that read to finish. A read

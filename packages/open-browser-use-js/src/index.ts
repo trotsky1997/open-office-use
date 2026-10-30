@@ -3831,6 +3831,7 @@ function tabIdFromValue(value: JsonValue, label: string): number {
 }
 
 function assertSupportedLoadState(state: string): asserts state is OpenBrowserUseLoadState {
+  if(state === "networkidle")throw new Error('The networkidle load state is not available; wait for a specific page condition instead');
   if (state !== "domcontentloaded" && state !== "load") {
     throw new Error(`Unsupported load state "${state}". Use "domcontentloaded" or "load".`);
   }
