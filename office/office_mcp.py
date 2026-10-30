@@ -126,6 +126,12 @@ def session_replace_text(directory: str, base_revision: int, path: str, find: st
 
 
 @server.tool()
+def session_add_comment(directory: str, base_revision: int, path: str, text: str, author: str) -> dict[str, Any]:
+    """Add a Word comment to a simple body paragraph and create a new revision."""
+    return session.add_comment(directory, base_revision, path, text, author)
+
+
+@server.tool()
 def session_replace_picture(directory: str, base_revision: int, path: str, image_file: str) -> dict[str, Any]:
     """Replace a PPTX picture with a local PNG or JPEG, preserving its geometry and crop."""
     image = Path(image_file).resolve(strict=True)

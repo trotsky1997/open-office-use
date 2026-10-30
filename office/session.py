@@ -280,6 +280,23 @@ def replace_text(directory, base_revision, path, find, replacement):
     return {'revision': base_revision + 1, 'file': str(output), 'path': path}
 
 
+def add_comment(directory, base_revision, path, text, author):
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if state['format'] != 'docx':
+        raise ValueError('Comments require a DOCX session')
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999:
+        raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
+    try:
+        result = word.add_comment(source, output, path, text, author)
+    except FileExistsError as exc:
+        raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'path': path, 'comment_id': result['comment_id']}
+
+
 def replace_picture(directory, base_revision, path, image_data):
     state = info(directory)
     source = revision_file(state, base_revision)
