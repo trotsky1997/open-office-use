@@ -421,3 +421,5 @@ Connected the workbook viewer to snapshot-bound single-cell hyperlink edits and 
 Added workbook-internal hyperlink authoring and session/viewer editing with target-sheet validation and safe relationship conversion.
 
 Added native shape-to-slide navigation and bounded shape-click action inspection, including forward references and source-deck slide positions.
+
+Added targeted CLI/MCP setting and removal of existing PowerPoint shape navigation, with shared-relationship and snapshot checks.

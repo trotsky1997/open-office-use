@@ -1,5 +1,6 @@
 """Conservative text replacement in a PowerPoint slide paragraph."""
 import re
+import posixpath
 import tempfile
 import snapshot as snapshots
 import zipfile
@@ -415,34 +416,91 @@ def replace_text(source, output, path, find, replacement):
     return ooxml.edit_xml(source, output, lambda file: slide_part(file, slide_index), edit)
 
 
+OBJECT_PATH = re.compile(r'/slide\[(' + INDEX + r')\](?:/group\[' + SELECTOR + r'\]){0,8}/(?:shape|picture|connector|chart|table)\[' + SELECTOR + r'\]\Z')
+OBJECT_TAGS = {'group': ('grpSp', 'nvGrpSpPr'), 'shape': ('sp', 'nvSpPr'), 'picture': ('pic', 'nvPicPr'), 'connector': ('cxnSp', 'nvCxnSpPr'), 'table': ('graphicFrame', 'nvGraphicFramePr'), 'chart': ('graphicFrame', 'nvGraphicFramePr')}
+
+
+def object_metadata(tree, path):
+    tags = OBJECT_TAGS
+    parent = tree.getroot().find(P + 'cSld/' + P + 'spTree')
+    if tree.getroot().tag != P + 'sld' or parent is None: raise ValueError('Invalid slide shape tree')
+    for kind, selector in re.findall(r'/(group|shape|picture|connector|chart|table)\[([^]]+)\]', path):
+        if parent.find(MC + 'AlternateContent') is not None: raise ValueError('Target container contains unsupported alternate content')
+        tag, nonvisual = tags[kind]; children = parent.findall(P + tag)
+        if kind in ('chart', 'table'):
+            uri = 'http://schemas.openxmlformats.org/drawingml/2006/' + kind
+            children = [child for child in children if any(node.get('uri') == uri for node in child.findall(A + 'graphic/' + A + 'graphicData'))]
+        if selector.startswith('@id='):
+            children = [child for child in children if child.find(P + nonvisual + '/' + P + 'cNvPr') is not None and child.find(P + nonvisual + '/' + P + 'cNvPr').get('id') == selector[4:]]
+            if len(children) != 1: raise ValueError('Object ID must identify exactly one object in its container')
+            parent = children[0]
+        else:
+            index = int(selector) - 1
+            if index >= len(children): raise ValueError('Slide object path does not exist')
+            parent = children[index]
+    metadata = parent.findall(P + tags[kind][1] + '/' + P + 'cNvPr')
+    if len(metadata) != 1: raise ValueError('Object has ambiguous nonvisual properties')
+    return metadata[0]
+
+
 def set_description(source, output, path, description, expected_sha256=None):
     """Set one slide object's alternative description while preserving other parts."""
-    pattern = re.compile(r'/slide\[(' + INDEX + r')\](?:/group\[' + SELECTOR + r'\]){0,8}/(?:shape|picture|connector|chart|table)\[' + SELECTOR + r'\]\Z')
-    match = pattern.fullmatch(path) if isinstance(path, str) and len(path) <= 512 else None
+    match = OBJECT_PATH.fullmatch(path) if isinstance(path, str) and len(path) <= 512 else None
     if not match or Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx': raise ValueError('Target must be a PPTX slide object path')
     if not isinstance(description, str) or len(description) > 1000: raise ValueError('Description must be text of at most 1,000 characters')
-    tags = {'group': ('grpSp', 'nvGrpSpPr'), 'shape': ('sp', 'nvSpPr'), 'picture': ('pic', 'nvPicPr'), 'connector': ('cxnSp', 'nvCxnSpPr'), 'table': ('graphicFrame', 'nvGraphicFramePr'), 'chart': ('graphicFrame', 'nvGraphicFramePr')}
-    def edit(tree, archive):
-        parent = tree.getroot().find(P + 'cSld/' + P + 'spTree')
-        if tree.getroot().tag != P + 'sld' or parent is None: raise ValueError('Invalid slide shape tree')
-        for kind, selector in re.findall(r'/(group|shape|picture|connector|chart|table)\[([^]]+)\]', path):
-            if parent.find(MC + 'AlternateContent') is not None: raise ValueError('Target container contains unsupported alternate content')
-            tag, nonvisual = tags[kind]; children = parent.findall(P + tag)
-            if kind in ('chart', 'table'):
-                uri = 'http://schemas.openxmlformats.org/drawingml/2006/' + kind
-                children = [child for child in children if any(node.get('uri') == uri for node in child.findall(A + 'graphic/' + A + 'graphicData'))]
-            if selector.startswith('@id='):
-                children = [child for child in children if child.find(P + nonvisual + '/' + P + 'cNvPr') is not None and child.find(P + nonvisual + '/' + P + 'cNvPr').get('id') == selector[4:]]
-                if len(children) != 1: raise ValueError('Object ID must identify exactly one object in its container')
-                parent = children[0]
-            else:
-                index = int(selector) - 1
-                if index >= len(children): raise ValueError('Slide object path does not exist')
-                parent = children[index]
-        metadata = parent.findall(P + tags[kind][1] + '/' + P + 'cNvPr')
-        if len(metadata) != 1: raise ValueError('Object has ambiguous nonvisual properties')
-        metadata[0].set('descr', description)
+    def edit(tree, archive): object_metadata(tree, path).set('descr', description)
     return ooxml.edit_xml(source, output, lambda file: slide_part(file, int(match.group(1)) - 1), edit, expected_sha256=expected_sha256)
+
+
+def set_navigation(source, output, path, target_slide, expected_sha256=None):
+    """Set or remove a simple shape-to-slide action without rewriting other parts."""
+    match = OBJECT_PATH.fullmatch(path) if isinstance(path, str) and len(path) <= 512 else None
+    if not match or Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx': raise ValueError('Target must be a PPTX slide object path')
+    if target_slide is not None and (isinstance(target_slide, bool) or not isinstance(target_slide, int) or not 1 <= target_slide <= 1000000): raise ValueError('Target slide must be a positive one-based slide number or null')
+    selected = {}
+    def select(file):
+        selected['part'] = slide_part(file, int(match.group(1)) - 1)
+        if target_slide is not None: selected['target'] = slide_part(file, target_slide - 1)
+        return selected['part']
+    def edit(tree, archive):
+        metadata = object_metadata(tree, path); links = metadata.findall(A + 'hlinkClick')
+        if len(links) > 1: raise ValueError('Shape has ambiguous click actions')
+        link = links[0] if links else None
+        if link is not None:
+            if set(link.attrib) - {'action', R + 'id', 'tooltip'} or len(link) or link.get('action') != 'ppaction://hlinksldjump' or not link.get(R + 'id'): raise ValueError('Existing click action is not a supported slide jump')
+        if target_slide is None and link is None: raise ValueError('Shape has no slide jump')
+        rel_ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+        part = selected['part']; rel_path = posixpath.join(posixpath.dirname(part), '_rels', posixpath.basename(part) + '.rels')
+        raw = archive.read(rel_path) if rel_path in archive.namelist() else None
+        if raw is None:
+            if link is not None: raise ValueError('Slide jump relationship is missing')
+            ct_ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'; ct = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
+            defaults = [item for item in ct.findall(ct_ns + 'Default') if item.get('Extension', '').lower() == 'rels']
+            if len(defaults) != 1 or defaults[0].get('ContentType') != 'application/vnd.openxmlformats-package.relationships+xml': raise ValueError('Relationship content type is unavailable')
+            rel_tree = etree.ElementTree(etree.Element(rel_ns + 'Relationships', nsmap={None:rel_ns[1:-1]}))
+        else:
+            rel_tree = ooxml.parse_xml(raw)
+            if rel_tree.getroot().tag != rel_ns + 'Relationships': raise ValueError('Invalid slide relationships')
+        rel_root = rel_tree.getroot(); entries = list(rel_root); ids = [item.get('Id') for item in entries]
+        if len(entries) > 10000 or any(item.tag != rel_ns + 'Relationship' or not item.get('Id') for item in entries) or len(ids) != len(set(ids)): raise ValueError('Ambiguous slide relationships')
+        old_id = link.get(R + 'id') if link is not None else None
+        if old_id:
+            previous = [item for item in rel_root if item.get('Id') == old_id]
+            if len(previous) != 1 or previous[0].get('Type') != RELATIONSHIP_TYPE.SLIDE or previous[0].get('TargetMode', 'Internal') != 'Internal': raise ValueError('Unsupported existing slide jump relationship')
+        if target_slide is None: metadata.remove(link)
+        else:
+            if link is None:
+                if any(child.tag not in (A + 'hlinkHover', A + 'extLst') for child in metadata): raise ValueError('Unsupported nonvisual click-action structure')
+                link = etree.Element(A + 'hlinkClick'); metadata.insert(0, link)
+            used = {item.get('Id') for item in rel_root}; number = 1
+            while f'rId{number}' in used: number += 1
+            identity = f'rId{number}'; link.set('action', 'ppaction://hlinksldjump'); link.set(R + 'id', identity)
+            relative = posixpath.relpath(selected['target'], posixpath.dirname(part))
+            etree.SubElement(rel_root, rel_ns + 'Relationship', Id=identity, Type=RELATIONSHIP_TYPE.SLIDE, Target=relative)
+        if old_id and not any(old_id in node.attrib.values() for node in tree.getroot().iter()): rel_root.remove(previous[0])
+        data = ooxml.serialize_xml(rel_tree, raw) if raw is not None else etree.tostring(rel_tree, encoding='UTF-8', xml_declaration=True)
+        return {rel_path:data}
+    return ooxml.edit_xml(source, output, select, edit, allow_new=True, expected_sha256=expected_sha256)
 
 
 def replace_picture(source, output, path, image_data, expected_sha256=None):

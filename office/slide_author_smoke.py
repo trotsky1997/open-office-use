@@ -65,6 +65,37 @@ with tempfile.TemporaryDirectory() as tmp:
     external_file = root/'external-navigation.pptx'; with_external = Presentation(nav_file)
     external_shape = with_external.slides[1].shapes.add_textbox(Inches(5),Inches(1),Inches(3),Inches(1)); external_shape.text = 'External'; external_shape.click_action.hyperlink.address = 'https://example.com/report'; with_external.save(external_file)
     ext_nav = slides.inspect_navigation(external_file); assert ext_nav['complete'] and ext_nav['actions'][-1]['status'] == 'external' and ext_nav['actions'][-1]['target_url'] == 'https://example.com/report', ext_nav
+    shared_nav = root/'shared-navigation.pptx'
+    links = [{'type':'textbox','x':1,'y':y,'width':3,'height':1,'text':label,'target_slide':2} for y,label in ((1,'First'),(2,'Second'))]
+    open_office_use.author({'slides':[{'layout':'blank','elements':links},{'title':'Destination'}]},shared_nav)
+    before = Presentation(shared_nav); click_ns = '{http://schemas.openxmlformats.org/drawingml/2006/main}'; relationship_ns = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+    old_ids = [shape._element.nvSpPr.cNvPr.find(click_ns+'hlinkClick').get(relationship_ns+'id') for shape in before.slides[0].shapes]
+    assert old_ids[0] == old_ids[1]
+    shared_draft = root/'shared-navigation-draft'; session.start(shared_draft,source=shared_nav)
+    shared_inventory = session.inspect_slide_navigation(shared_draft,0); first_path = shared_inventory['actions'][0]['path']
+    try: session.set_slide_navigation(shared_draft,0,first_path,1,expected_sha256='0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale navigation snapshot accepted')
+    changed = session.set_slide_navigation(shared_draft,0,first_path,1,expected_sha256=shared_inventory['snapshot_sha256'])
+    changed_nav = session.inspect_slide_navigation(shared_draft,1)
+    assert [action['target_slide'] for action in changed_nav['actions']] == [1,2], changed_nav
+    with zipfile.ZipFile(shared_nav) as old, zipfile.ZipFile(changed['file']) as new:
+        assert all(old.read(name) == new.read(name) for name in old.namelist() if name not in ('ppt/slides/slide1.xml','ppt/slides/_rels/slide1.xml.rels'))
+    code, validation, _ = officecli_backend.invoke('validate',changed['file']); assert code == 0 and validation['success'], validation
+    cli = Path(__file__).with_name('open_office_use.py'); removed = subprocess.run([sys.executable,str(cli),'session','set-slide-navigation',str(shared_draft),'--base','1','--path',first_path,'--remove'],capture_output=True,text=True,check=True)
+    assert json.loads(removed.stdout)['revision'] == 2 and [action['target_slide'] for action in session.inspect_slide_navigation(shared_draft,2)['actions']] == [2]
+    try: session.set_slide_navigation(shared_draft,2,first_path,99)
+    except ValueError: pass
+    else: raise AssertionError('Missing slide target accepted')
+    assert session.info(shared_draft)['latest_revision'] == 2
+    restored = session.set_slide_navigation(shared_draft,2,first_path,2)
+    assert [action['target_slide'] for action in session.inspect_slide_navigation(shared_draft,3)['actions']] == [2,2]
+    code, validation, _ = officecli_backend.invoke('validate',restored['file']); assert code == 0 and validation['success'],validation
+    external_draft = root/'external-navigation-draft'; session.start(external_draft,source=external_file)
+    try: session.set_slide_navigation(external_draft,0,ext_nav['actions'][-1]['path'],1)
+    except ValueError: pass
+    else: raise AssertionError('External click action silently replaced')
+    assert session.info(external_draft)['latest_revision'] == 0
     nav_draft = root/'navigation-draft'; session.start(nav_draft,source=nav_file)
     reordered = session.reorder_slides(nav_draft,0,[2,1],expected_sha256=nav['snapshot_sha256'])
     after_nav = session.inspect_slide_navigation(nav_draft,1)

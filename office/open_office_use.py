@@ -1428,6 +1428,7 @@ def main():
     reply = sub.add_parser('reply-comment'); reply.add_argument('directory'); reply.add_argument('--base', type=int, required=True); reply.add_argument('--parent-id', required=True); reply.add_argument('--text', required=True); reply.add_argument('--author', required=True)
     resolve = sub.add_parser('resolve-comment'); resolve.add_argument('directory'); resolve.add_argument('--base', type=int, required=True); resolve.add_argument('--id', required=True); resolve.add_argument('--resolved', choices=['true', 'false'], required=True)
     comment = sub.add_parser('add-comment'); comment.add_argument('directory'); comment.add_argument('--base', type=int, required=True); comment.add_argument('--path', required=True); comment.add_argument('--text', required=True); comment.add_argument('--author', required=True); comment.add_argument('--anchor')
+    navigation = sub.add_parser('set-slide-navigation'); navigation.add_argument('directory'); navigation.add_argument('--base', type=int, required=True); navigation.add_argument('--path', required=True); nav_mode = navigation.add_mutually_exclusive_group(required=True); nav_mode.add_argument('--target-slide', type=int); nav_mode.add_argument('--remove', action='store_true'); navigation.add_argument('--expected-sha256')
     description = sub.add_parser('set-slide-description'); description.add_argument('directory'); description.add_argument('--base', type=int, required=True); description.add_argument('--path', required=True); description.add_argument('--description', required=True); description.add_argument('--expected-sha256')
     picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True); picture.add_argument('--expected-sha256')
     session_review = sub.add_parser('review'); session_review.add_argument('directory'); session_review.add_argument('--revision', type=int, required=True); session_review.add_argument('--out-dir', required=True)
@@ -1534,6 +1535,8 @@ def main():
                 result = session.resolve_comment(args.directory, args.base, args.id, args.resolved == 'true')
             elif args.action == 'add-comment':
                 result = session.add_comment(args.directory, args.base, args.path, args.text, args.author, args.anchor)
+            elif args.action == 'set-slide-navigation':
+                result = session.set_slide_navigation(args.directory, args.base, args.path, args.target_slide, args.expected_sha256)
             elif args.action == 'set-slide-description':
                 result = session.set_slide_description(args.directory, args.base, args.path, args.description, args.expected_sha256)
             elif args.action == 'replace-picture':
