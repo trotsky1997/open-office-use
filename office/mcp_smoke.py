@@ -65,8 +65,9 @@ async def main():
                 sheet_chart_check = await session.call_tool('session_scan_chart_caches', {'directory':str(sheet_table_draft),'revision':1})
                 assert not sheet_chart_check.isError and sheet_chart_check.structuredContent['mismatch_references'] >= 1, sheet_chart_check
                 date_chart_file=root/'mcp-date-chart.xlsx'
-                date_chart_spec={'ranges':{'Data':[{'start':'A1','values':[['Date','Revenue'],[{'type':'date','value':'2026-10-31'},100],[{'type':'date','value':'2026-11-01'},120]]}]},'sheet_options':{'Data':{'charts':[{'type':'line','data':'B1:B3','categories':'A2:A3','anchor':'D1'}]}}}
+                date_chart_spec={'ranges':{'Data':[{'start':'A1','values':[['Date','Revenue'],[{'type':'date','value':'2026-10-31'},100],[{'type':'date','value':'2026-11-01'},120]]}]},'sheet_options':{'Data':{'charts':[{'type':'line','data':'B1:B3','categories':'A2:A3','anchor':'D1','date_format':'mmm d'}]}}}
                 date_chart_author=await session.call_tool('author_file',{'spec':date_chart_spec,'output':str(date_chart_file)});assert not date_chart_author.isError,date_chart_author
+                assert load_workbook(date_chart_file)['Data']._charts[0].x_axis.numFmt.formatCode=='mmm d'
                 date_chart_report=await session.call_tool('scan_chart_caches',{'file':str(date_chart_file)});assert not date_chart_report.isError and date_chart_report.structuredContent['complete'],date_chart_report
                 date_chart_draft=root/'mcp-date-chart-draft';assert not (await session.call_tool('start_session',{'directory':str(date_chart_draft),'source':str(date_chart_file)})).isError
                 date_edit=await session.call_tool('session_edit_grid',{'directory':str(date_chart_draft),'base_revision':0,'sheet':'Data','cell_range':'A2','changes':[{'cell':'A2','value':'2026-11-02'}]});assert not date_edit.isError,date_edit

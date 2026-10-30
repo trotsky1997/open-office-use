@@ -27,6 +27,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart.axis import DateAxis
 from openpyxl.drawing.image import Image as WorkbookImage
 from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing, _check_anchor
 from openpyxl.chart.data_source import AxDataSource, StrRef, StrData, StrVal, NumData, NumVal
@@ -875,7 +876,7 @@ def format_workbook(workbook, options):
         charts = setting.get('charts', [])
         if not isinstance(charts, list) or len(charts) > 20: raise ValueError('Charts must be a list of at most 20 entries')
         for chart_spec in charts:
-            allowed = {'type', 'data', 'categories', 'anchor', 'title', 'x_axis_title', 'y_axis_title', 'titles_from_data', 'category_type', 'width', 'height'}
+            allowed = {'type', 'data', 'categories', 'anchor', 'title', 'x_axis_title', 'y_axis_title', 'titles_from_data', 'category_type', 'date_format', 'width', 'height'}
             if not isinstance(chart_spec, dict) or set(chart_spec) - allowed or chart_spec.get('type') not in ('column', 'line'): raise ValueError('Invalid chart specification')
             a, b, c, d = bounds(chart_spec.get('data'), 10000)
             headings = chart_spec.get('titles_from_data', True)
@@ -884,8 +885,8 @@ def format_workbook(workbook, options):
             if not isinstance(anchor, str) or not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', anchor): raise ValueError('Chart anchor must be a single cell')
             bounds(anchor, 1)
             category_type = chart_spec.get('category_type', 'auto')
-            if category_type not in ('auto', 'text', 'number') or category_type != 'auto' and 'categories' not in chart_spec: raise ValueError('Category type requires categories and must be auto, text or number')
-            labels = None; text_categories = False
+            if category_type not in ('auto', 'text', 'number', 'date') or category_type != 'auto' and 'categories' not in chart_spec: raise ValueError('Category type requires categories and must be auto, text, number or date')
+            labels = None; text_categories = False; date_categories = False
             if 'categories' in chart_spec:
                 ca, cb, cc, cd = bounds(chart_spec['categories'], 10000)
                 if ca != cc or cd - cb + 1 != d - b + 1 - int(headings): raise ValueError('Chart categories must be one column matching the data rows')
@@ -903,16 +904,34 @@ def format_workbook(workbook, options):
                     text_categories = 'text' in kinds
                 else:
                     text_categories = category_type == 'text'
+                dated = [cell.value for cell in category_cells if cell.value is not None]
+                date_categories = category_type == 'date' or (category_type == 'auto' and bool(dated) and all(isinstance(value, date) and (not isinstance(value, datetime) or value.time().isoformat() == '00:00:00') for value in dated))
+                if date_categories:
+                    for cell in category_cells:
+                        value = cell.value
+                        if value is None or cell.data_type == 'f': continue
+                        if isinstance(value, datetime):
+                            if value.tzinfo is not None or value.time().isoformat() != '00:00:00': raise ValueError('Date-axis categories require whole days')
+                            value = to_excel(value, workbook.epoch)
+                        elif isinstance(value, date): value = to_excel(value, workbook.epoch)
+                        if not isinstance(value, (int,float)) or isinstance(value, bool) or not 1 <= value <= to_excel(date.max, workbook.epoch) or not math.isfinite(value) or value != int(value): raise ValueError('Date-axis categories require valid whole-day serials, dates, formulas or blank cells')
+            if 'date_format' in chart_spec:
+                value = chart_spec['date_format']
+                if not date_categories or not isinstance(value, str) or not value or re.search(r'[\x00-\x1f\ud800-\udfff\ufffe\uffff]', value) or len(value.encode('utf-16-le')) // 2 > 255: raise ValueError('Date format requires a date axis and valid format code')
             for key in ('title', 'x_axis_title', 'y_axis_title'):
                 if key in chart_spec and (not isinstance(chart_spec[key], str) or len(chart_spec[key]) > 255): raise ValueError('Chart titles must be text of at most 255 characters')
             chart = BarChart() if chart_spec['type'] == 'column' else LineChart()
             if chart_spec['type'] == 'column': chart.type = 'col'
+            if date_categories:
+                if chart_spec['type'] == 'line': chart.smooth = False
+                chart.x_axis = DateAxis(axId=chart.x_axis.axId, crossAx=chart.y_axis.axId, axPos='b', baseTimeUnit='days', numFmt=chart_spec.get('date_format', 'yyyy-mm-dd'))
             chart.add_data(Reference(sheet, min_col=a, min_row=b, max_col=c, max_row=d), titles_from_data=headings)
             if labels is not None:
                 if text_categories:
                     for series in chart.series: series.cat = AxDataSource(strRef=StrRef(f=str(labels)))
                 else: chart.set_categories(labels)
             for index, series in enumerate(chart.series):
+                if date_categories and chart_spec['type'] == 'line': series.smooth = False
                 if headings and series.tx and series.tx.strRef:
                     series.tx.strRef.strCache = chart_cache([sheet.cell(row=b, column=a + index)], True)
                 values = [sheet.cell(row=row, column=a + index) for row in range(b + int(headings), d + 1)]

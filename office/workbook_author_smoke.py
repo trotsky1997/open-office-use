@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
+from openpyxl.chart.axis import DateAxis, TextAxis
 from openpyxl import load_workbook
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
@@ -238,6 +239,38 @@ with tempfile.TemporaryDirectory() as tmp:
         assert cat['status']=='mismatch' and cat['unverified_points']==0 and cat['mismatch_count']==1,mismatch
         repaired=session.sync_chart_cache(draft,1,mismatch['charts'][0]['part'],cat['index']);assert repaired['updated_points']==1
         final=session.scan_chart_caches(draft,2);assert final['complete'] and final['mismatch_references']==0,final
+    axis_file=root/'date-axis.xlsx'
+    axis_values=[['Date','Revenue'],[{'type':'date','value':'2026-10-01'},100],[{'type':'date','value':'2026-10-02'},120],[{'type':'date','value':'2026-10-10'},150]]
+    axis_spec={'ranges':{'Data':[{'start':'A1','values':axis_values}]},'sheet_options':{'Data':{'fit_to_page':True,'column_widths':{'A':20},'charts':[{'type':'line','data':'B1:B4','categories':'A2:A4','anchor':'D1','date_format':'yyyy-mm-dd'}, {'type':'column','data':'B1:B4','categories':'A2:A4','category_type':'date','anchor':'D20','date_format':'mmm d'}]}}}
+    axis_json=root/'date-axis.json';axis_json.write_text(json.dumps(axis_spec))
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(axis_json),'--out',str(axis_file)],capture_output=True,text=True,check=True)
+    axis_charts=load_workbook(axis_file)['Data']._charts;assert len(axis_charts)==2 and all(isinstance(chart.x_axis,DateAxis) for chart in axis_charts)
+    assert axis_charts[0].x_axis.numFmt.formatCode=='yyyy-mm-dd' and axis_charts[1].x_axis.numFmt.formatCode=='mmm d' and axis_charts[0].smooth is False and axis_charts[0].series[0].smooth is False
+    assert all(chart.x_axis.crossAx==chart.y_axis.axId and chart.y_axis.crossAx==chart.x_axis.axId and chart.x_axis.axPos=='b' for chart in axis_charts)
+    axis_report=chart_cache.scan(axis_file);assert axis_report['complete'] and axis_report['mismatch_references']==0,axis_report
+    code,validation,_=officecli_backend.invoke('validate',axis_file);assert code==0 and validation['success'],validation
+    mac_axis=root/'date-axis-1904.xlsx';open_office_use.author(axis_spec,mac_axis,mac_source)
+    mac_axis_book=load_workbook(mac_axis);assert mac_axis_book.epoch==CALENDAR_MAC_1904 and isinstance(mac_axis_book['Data']._charts[0].x_axis,DateAxis) and chart_cache.scan(mac_axis)['complete']
+    axis_pdf=open_office_use.render(axis_file,root/'date-axis-render');axis_text=subprocess.run(['pdftotext',axis_pdf,'-'],capture_output=True,text=True,check=True).stdout
+    assert '2026-10-01' in axis_text and '2026-10-10' in axis_text,axis_text
+    numeric_axis=root/'numeric-axis.xlsx'
+    numeric_spec={'ranges':{'Data':[{'start':'A1','values':[['x','y'],[1,2],[10,3]]}]},'sheet_options':{'Data':{'charts':[{'type':'line','data':'B1:B3','categories':'A2:A3'}]}}}
+    open_office_use.author(numeric_spec,numeric_axis);assert isinstance(load_workbook(numeric_axis)['Data']._charts[0].x_axis,TextAxis)
+    for index,chart in enumerate([{'type':'line','data':'B1:B4','category_type':'date'}, {'type':'line','data':'B1:B4','categories':'A2:A4','category_type':'number','date_format':'yyyy-mm-dd'}, {'type':'line','data':'B1:B4','categories':'A2:A4','date_format':'bad\x00format'}]):
+        bad=root/f'bad-date-axis-{index}.xlsx'
+        try: open_office_use.author({'ranges':{'Data':[{'start':'A1','values':axis_values}]},'sheet_options':{'Data':{'charts':[chart]}}},bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid date-axis chart accepted')
+        assert not bad.exists()
+    formula_axis=root/'formula-date-axis.xlsx'
+    formula_spec={'ranges':{'Data':[{'start':'A1','values':[['Date','Value'],['=DATE(2026,10,1)',1]]}]},'sheet_options':{'Data':{'charts':[{'type':'line','data':'B1:B2','categories':'A2:A2','category_type':'date'}]}}}
+    open_office_use.author(formula_spec,formula_axis);assert isinstance(load_workbook(formula_axis)['Data']._charts[0].x_axis,DateAxis)
+    formula_scan=chart_cache.scan(formula_axis);assert not formula_scan['complete'] and formula_scan['missing_caches']>=1
+    bad_time=root/'bad-date-axis-time.xlsx';bad_values=[['Date','Value'],[{'type':'datetime','value':'2026-10-01T12:00:00'},1]]
+    try: open_office_use.author({'ranges':{'Data':[{'start':'A1','values':bad_values}]},'sheet_options':{'Data':{'charts':[{'type':'line','data':'B1:B2','categories':'A2:A2','category_type':'date'}]}}},bad_time)
+    except ValueError: pass
+    else: raise AssertionError('Sub-day date axis accepted')
+    assert not bad_time.exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))

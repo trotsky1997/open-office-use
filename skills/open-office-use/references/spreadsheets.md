@@ -38,3 +38,5 @@ For native spreadsheet dates, use typed values such as `{"type":"date","value":"
 For date-formatted cells, ISO date and millisecond date-time grid edits verify the resulting value against the workbook epoch and retain the existing date format. Use explicit text mode when the input should be literal text.
 
 Chart authoring caches literal date sources using the workbook epoch. Cache scanning and sync use exact stored numeric date values when worksheet XML is inspectable; ISO-date XML storage and ambiguous or oversized worksheets remain unverified.
+
+Daily chart categories use a native date axis when date values are detected; `category_type: "date"` enables it for whole-day serials or formula sources, and `date_format` controls axis labels. Sub-day timelines require another chart approach.

@@ -242,3 +242,5 @@ Speaker-note paragraph edits can update text within one hyperlink region while p
 PowerPoint speaker-note search paths support target inspection and atomic batches combining note and slide paragraph replacements.
 
 Chart cache creation, inspection and synchronization now cover verifiable numeric date sources using their saved serial values and workbook epochs.
+
+Line and column workbook charts can use daily date axes with custom label formats; sub-day timelines and formula-date calculation remain separate.
