@@ -87,11 +87,34 @@ with tempfile.TemporaryDirectory() as tmp:
         reference.remove(cache); cache.tag=C+'numLit'; parent.replace(reference,cache)
     static_source=rewrite('static-values.xlsx',literal_values); static_scan=chart_cache.scan(static_source)
     static_ref=next(item for item in static_scan['charts'][0]['references'] if item['kind']=='numLit')
-    assert static_scan['complete'] and static_scan['literal_sources']==1 and static_ref['status']=='literal' and static_ref['reason']=='no_worksheet_reference', static_scan
+    assert static_scan['complete'] and static_scan['literal_sources']==1 and static_ref['status']=='literal' and static_ref['reason']=='no_worksheet_reference' and static_ref['examples'][0]['value']=='10', static_scan
     static_draft=root/'static-draft'; session.start(static_draft,source=static_source)
     session.edit_grid(static_draft,0,'Sales Data','B2',[{'cell':'B2','value':'99'}])
     after_static=session.scan_chart_caches(static_draft,1)
     assert after_static['literal_sources']==1 and after_static['mismatch_references']==0
+    literal_draft=root/'static-point-draft'; session.start(literal_draft,source=static_source)
+    for point,value in ((0,20),(3,20),(1,True),(1,float('inf'))):
+        try: session.set_chart_literal_value(literal_draft,0,static_scan['charts'][0]['part'],static_ref['index'],point,value)
+        except ValueError: pass
+        else: raise AssertionError('Invalid static chart value accepted')
+    try: session.set_chart_literal_value(literal_draft,0,static_scan['charts'][0]['part'],static_ref['index'],1,30,'0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale static chart snapshot accepted')
+    assert session.info(literal_draft)['latest_revision']==0
+    changed_literal=session.set_chart_literal_value(literal_draft,0,static_scan['charts'][0]['part'],static_ref['index'],1,30,static_scan['snapshot_sha256'])
+    assert changed_literal['old_value']==10
+    with zipfile.ZipFile(static_source) as before,zipfile.ZipFile(changed_literal['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=static_scan['charts'][0]['part'])
+        tree=etree.fromstring(after.read(static_scan['charts'][0]['part'])); assert tree.find('.//'+C+'val/'+C+'numLit/'+C+'pt/'+C+'v').text=='30'
+    assert load_workbook(changed_literal['output'])['Sales Data']['B2'].value==10
+    code,validation,_=officecli_backend.invoke('validate',changed_literal['output']); assert code==0 and validation['success'],validation
+    command=[sys.executable,str(cli),'session','set-chart-literal-value',str(literal_draft),'--base','1','--part',static_scan['charts'][0]['part'],'--reference',str(static_ref['index']),'--point','2','--value','35']
+    assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2
+    referenced_draft=root/'referenced-point-draft';session.start(referenced_draft,source=source)
+    ref=next(item for item in baseline['charts'][0]['references'] if item['role']=='val')
+    try: session.set_chart_literal_value(referenced_draft,0,baseline['charts'][0]['part'],ref['index'],1,30)
+    except ValueError: pass
+    else: raise AssertionError('Referenced cache edited as literal')
     try: session.sync_chart_cache(static_draft,1,static_scan['charts'][0]['part'],static_ref['index'])
     except ValueError: pass
     else: raise AssertionError('Literal chart data accepted for cache sync')

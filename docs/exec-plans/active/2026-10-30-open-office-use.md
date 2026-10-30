@@ -352,3 +352,5 @@ Direct literal series names and categories can be edited via snapshot-bound CLI/
 Slide charts support explicit text color during authoring and snapshot-bound session edits. The OfficeCLI budget-review reference showed readable white chart labels on a dark background in LibreOffice; only its chart part changed and pre-existing validation warnings were unchanged. Native PowerPoint remains unverified.
 
 Workbook chart scans distinguish valid literal data from unverified references and flag fixed chart sources in review bundles. The OfficeCLI sales-dashboard reference contains ten literal sources; a cell edit leaves them unchanged.
+
+Existing fixed numeric workbook chart data supports snapshot-bound one-point CLI/MCP edits, with bounded scan examples. The OfficeCLI sales-dashboard reference changed only its chart part, passed OfficeCLI validation and showed the updated bar in LibreOffice. Native Excel remains unverified.

@@ -116,18 +116,19 @@ def scan(file):
                                 counts = node.findall(C+'ptCount'); count_text = counts[0].get('val') if len(counts) == 1 else None
                                 if count_text is None or not count_text.isdecimal() or len(count_text) > 8 or int(count_text) > 2000:
                                     item['reason'] = 'invalid_or_oversized_literal'; complete = False; continue
-                                count = int(count_text); seen = set(); invalid = False
+                                count = int(count_text); seen = set(); invalid = False; examples = []
                                 for point in node.findall(C+'pt'):
                                     index = point.get('idx'); values = point.findall(C+'v')
                                     if index is None or not index.isdecimal() or len(index) > 8 or int(index) >= count or int(index) in seen or len(values) != 1 or len(values[0]) or values[0].text is None or len(values[0].text) > 10000:
                                         invalid = True; break
                                     seen.add(int(index))
+                                    if len(examples) < 20: examples.append({'point': int(index)+1, 'value': values[0].text[:500], 'value_truncated': len(values[0].text)>500})
                                     if node.tag == C+'numLit':
                                         try:
                                             if not math.isfinite(float(values[0].text)): raise ValueError()
                                         except (ValueError, OverflowError): invalid = True; break
                                 if invalid: item['reason'] = 'invalid_literal_points'; complete = False; continue
-                                item.update({'status': 'literal', 'reason': 'no_worksheet_reference', 'points': count, 'stored_points': len(seen)})
+                                item.update({'status': 'literal', 'reason': 'no_worksheet_reference', 'points': count, 'stored_points': len(seen), 'examples': examples, 'examples_truncated': len(seen)>len(examples)})
                                 continue
                             if node.tag not in (C+'numRef', C+'strRef'):
                                 item['reason'] = 'unsupported_source'; complete = False; continue
@@ -222,6 +223,37 @@ def scan(file):
                 finally: workbook.close()
         except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
             raise ValueError(f'Invalid workbook package: {exc}') from exc
+
+
+def set_literal_value(source, output, part, reference, point, value, expected_sha256=None):
+    """Edit one existing numeric literal chart value without rewriting worksheets."""
+    if Path(source).suffix.lower() != '.xlsx' or Path(output).suffix.lower() != '.xlsx': raise ValueError('Chart literal editing requires XLSX input and output')
+    if not isinstance(part, str) or any(isinstance(item, bool) or not isinstance(item, int) or item < 1 for item in (reference, point)): raise ValueError('Provide a chart part and positive one-based reference and point')
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value): raise ValueError('Chart value must be a finite number within ±1e100')
+    selected = {}
+    def select(file):
+        result = scan(file); charts = [item for item in result['charts'] if item['part'] == part]
+        if len(charts) != 1 or charts[0]['status'] != 'scanned' or charts[0]['external_data'] or charts[0]['extensions_present']: raise ValueError('Chart is unavailable or contains unsupported extensions')
+        refs = [item for item in charts[0]['references'] if item['index'] == reference]
+        if len(refs) != 1 or refs[0]['status'] != 'literal' or refs[0]['kind'] != 'numLit' or refs[0]['role'] != 'val' or point > refs[0]['points']: raise ValueError('Target must be a numeric literal series value from chart inspection')
+        return part
+    def edit(tree, _archive):
+        nodes = [node for node in tree.getroot().iter() if node.tag in REF_TYPES]
+        if reference > len(nodes): raise ValueError('Chart reference changed')
+        node = nodes[reference - 1]
+        if node.tag != C+'numLit' or node.getparent().tag != C+'val': raise ValueError('Chart literal source changed')
+        points = [item for item in node.findall(C+'pt') if item.get('idx') == str(point - 1)]
+        if len(points) != 1: raise ValueError('Chart point is missing or ambiguous')
+        values = points[0].findall(C+'v')
+        if len(values) != 1 or len(values[0]) or values[0].attrib: raise ValueError('Chart value has unsupported structure')
+        parent = node.getparent().getparent(); plot = parent.getparent() if parent is not None else None
+        if parent is None or parent.tag != C+'ser' or plot is None or plot.tag not in (C+'barChart', C+'lineChart', C+'pieChart', C+'doughnutChart'): raise ValueError('Unsupported chart series or plot')
+        if plot.tag in (C+'pieChart', C+'doughnutChart'):
+            if value < 0: raise ValueError('Pie chart values must be nonnegative')
+            if value == 0 and not any(float(item.find(C+'v').text) > 0 for item in node.findall(C+'pt') if item is not points[0]): raise ValueError('Pie chart requires a positive value')
+        selected['old_value'] = float(values[0].text); values[0].text = str(value)
+    ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+    return {'output': str(output), 'chart_part': part, 'reference': reference, 'point': point, 'old_value': selected['old_value'], 'value': value}
 
 
 def sync(source, output, part, reference, allow_formula_caches=False, expected_sha256=None):

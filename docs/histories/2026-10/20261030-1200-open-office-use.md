@@ -453,3 +453,5 @@ Added direct literal chart series-name and shared-category editing, and fixed in
 Added simple slide-chart text color authoring and targeted revision edits after a reference deck exposed low-contrast axis, title and legend text.
 
 Distinguished fixed workbook chart data from worksheet-linked caches, with bounded literal validation and review warnings.
+
+Added bounded literal chart point samples and targeted numeric literal edits for workbook charts.
