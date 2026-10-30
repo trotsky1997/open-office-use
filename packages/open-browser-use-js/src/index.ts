@@ -112,31 +112,28 @@ type CssSnapshot = { frameId?:string; step:CssStep; scopes:readonly CssStep[]; s
 type CssGuard = {snapshot:CssSnapshot; scopeId:number};
 type RoleGuard = {locator:OpenBrowserUseRoleLocator; expected:Array<{backendNodeId:number; frameId:string}>};
 type LocatorMatch = {node:InteractiveNode; path:number[]; filters:FilterGuard[]; css?:CssGuard};
-type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
+type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; axOrder?:number; frameChain?: FrameInfo[] };
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 type TextFilter = { visible?:boolean; hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator; hasNot?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator };
 type LogCapture = {generation: number; entries: OpenBrowserUseLogEntry[]; sessions: Map<string,Promise<void>>; ready?: Promise<void>};
 type FilterGuard = { index: number; filters: TextFilter[] };
-type UnindexedText = { backendNodeId?: number; frameId?: string; frameChain?: FrameInfo[] };
+type UnindexedText = { backendNodeId?: number; ancestors:number[]; name:string; axOrder:number; frameId?: string; frameChain?: FrameInfo[] };
 type Observation = { id: string; documentId: number; nodes: ObservedNode[]; unindexedText: UnindexedText[]; frames?:FrameInfo[]; guards: Map<number,{scopes:number[]; filters:FilterGuard[]; framePath?:string[]; css?:CssGuard; role?:RoleGuard}> };
 class RetryablePreflightError extends Error {}
-function unindexedTextAncestors(tree: JsonValue): Array<number | undefined> {
+function unindexedTextAncestors(tree: JsonValue): UnindexedText[] {
   if (!isObject(tree) || !Array.isArray(tree.nodes)) return [];
   const nodes = tree.nodes.filter(isObject);
   const byId = new Map(nodes.filter(node => typeof node.nodeId === "string").map(node => [node.nodeId,node]));
-  return nodes.filter(node => node.ignored !== true && isObject(node.role) && node.role.value === "StaticText" &&
-    isObject(node.name) && typeof node.name.value === "string" && node.name.value.length > 0 && typeof node.backendDOMNodeId !== "number").map(node => {
-      const seen = new Set<string>();
-      let parent = node.parentId;
-      while (typeof parent === "string" && !seen.has(parent)) {
-        seen.add(parent);
-        const ancestor = byId.get(parent);
-        if (!ancestor) break;
-        if (typeof ancestor.backendDOMNodeId === "number") return ancestor.backendDOMNodeId;
-        parent = ancestor.parentId;
-      }
-      return undefined;
-    });
+  return tree.nodes.flatMap((node,axOrder) => {
+    if (!isObject(node) || node.ignored === true || !isObject(node.role) || node.role.value !== "StaticText" || !isObject(node.name) || typeof node.name.value !== "string" || !node.name.value || typeof node.backendDOMNodeId === "number") return [];
+    const seen = new Set<string>(), ancestors:number[]=[];let parent = node.parentId;
+    while (typeof parent === "string" && !seen.has(parent)) {
+      seen.add(parent);const ancestor = byId.get(parent);if (!ancestor) break;
+      if (typeof ancestor.backendDOMNodeId === "number") ancestors.push(ancestor.backendDOMNodeId);
+      parent = ancestor.parentId;
+    }
+    return [{...(ancestors.length ? {backendNodeId:ancestors[0]} : {}),ancestors,name:node.name.value,axOrder}];
+  });
 }
 function matchesTextFilters(text: string, filters: TextFilter[]): boolean {
   const matches = (value: TextMatcher) => typeof value === "string" ? text.toLowerCase().includes(value.replace(/\s+/g," ").trim().toLowerCase()) : new RegExp(value.source,value.flags).test(text);
@@ -826,7 +823,7 @@ export class OpenBrowserUseTab {
     const documentId = await this.documentId();
     const tree = await this.getAXState();
     const nodes: ObservedNode[] = interactiveNodes(tree, 0, options.includeText);
-    const unindexedText: UnindexedText[] = options.includeText ? unindexedTextAncestors(tree).map(backendNodeId=>({backendNodeId})) : [];
+    const unindexedText: UnindexedText[] = options.includeText ? unindexedTextAncestors(tree) : [];
     const valueBudget = { remaining: 8_000, truncated: false };
     if (options.includeValues) await this.readAXValues(tree, nodes, valueBudget);
     let full = options.includeFrames ? {text:"",truncated:false} : renderAXState(tree, nodes);
@@ -842,7 +839,7 @@ export class OpenBrowserUseTab {
       for (const frame of frames.slice(1)) {
         try {
           const childTree = await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: frame.id }, { sessionId: frame.sessionId });
-          if (options.includeText) unindexedText.push(...unindexedTextAncestors(childTree).map(backendNodeId=>({backendNodeId,frameId:frame.id,frameChain:frameAncestry(frame,frames)})));
+          if (options.includeText) unindexedText.push(...unindexedTextAncestors(childTree).map(item=>({...item,frameId:frame.id,frameChain:frameAncestry(frame,frames)})));
           const childNodes = interactiveNodes(childTree, nodes.length, options.includeText).map(node => ({ ...node, frameId: frame.id, frameChain: frameAncestry(frame, frames) }));
           if (options.includeValues) await this.readAXValues(childTree, childNodes, valueBudget, frame.sessionId);
           nodes.push(...childNodes);
@@ -1515,16 +1512,22 @@ export class OpenBrowserUseTab {
   async scopeText(observation: Observation, index: number): Promise<string> {
     const scope = observation.nodes.find(node => node.index === index);
     if (!scope) throw new RetryablePreflightError("Scope changed; observe again");
-    const seen = new Set<string>();
+    const membership=new Map<string,boolean>(), extra:UnindexedText[]=[];
     for (const item of observation.unindexedText) {
       if (item.backendNodeId === undefined) throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
       const key = `${item.frameId ?? "root"}:${item.backendNodeId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (scope.frameId === item.frameId && scope.backendNodeId === item.backendNodeId) throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
-      const probe: ObservedNode = {index:-1,role:"",name:"",stateKey:"",backendNodeId:item.backendNodeId,frameId:item.frameId,frameChain:item.frameChain};
-      const withProbe = {...observation,nodes:[...observation.nodes,probe]};
-      if (await this.scopeContains(withProbe,index,-1) || await this.scopeContains(withProbe,-1,index)) throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
+      let inside=membership.get(key);
+      if(inside===undefined) {
+        if (scope.frameId === item.frameId && item.ancestors.includes(scope.backendNodeId)) inside=true;
+        else {
+          const probe: ObservedNode = {index:-1,role:"",name:"",stateKey:"",backendNodeId:item.backendNodeId,frameId:item.frameId,frameChain:item.frameChain};
+          const withProbe = {...observation,nodes:[...observation.nodes,probe]};
+          inside=await this.scopeContains(withProbe,index,-1);
+          if(!inside && await this.scopeContains(withProbe,-1,index))throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
+        }
+        membership.set(key,inside);
+      }
+      if(inside)extra.push(item);
     }
     const textNodes = observation.nodes.filter(node => node.name && node.role === "StaticText");
     const included = new Set<number>();
@@ -1573,15 +1576,11 @@ export class OpenBrowserUseTab {
       if (!frameMembership.has(key)) frameMembership.set(key,await this.scopeContains(observation,index,node.index));
       if (frameMembership.get(key)) included.add(node.index);
     }
-    const parts: string[] = [];
-    let length = 0;
-    for (const node of textNodes) {
-      if (!included.has(node.index)) continue;
-      length += node.name.length + 1;
-      if (length > 30_000) throw new Error("Locator text exceeds the 30000 character limit");
-      parts.push(node.name);
-    }
-    return parts.join(" ").replace(/\s+/g," ").trim();
+    const parts=[...textNodes.filter(node=>included.has(node.index)).map(node=>({name:node.name,frameId:node.frameId,axOrder:node.axOrder ?? 0})),...extra];
+    const order=(frameId?:string)=>frameId ? Math.max(0,observation.frames?.findIndex(frame=>frame.id===frameId) ?? 0) : 0;
+    parts.sort((a,b)=>order(a.frameId)-order(b.frameId) || a.axOrder-b.axOrder);
+    if(parts.reduce((sum,item)=>sum+item.name.length+1,0)>30_000)throw new Error("Locator text exceeds the 30000 character limit");
+    return parts.map(item=>item.name).join(" ").replace(/\s+/g," ").trim();
   }
 
   /** @internal */
@@ -1590,11 +1589,11 @@ export class OpenBrowserUseTab {
     await this.browser.cdp.enableFrameSessions(this.id);
     const frames = await this.frameTree();
     const tree = await this.getAXState();
-    const unindexedText: UnindexedText[] = unindexedTextAncestors(tree).map(backendNodeId=>({backendNodeId}));
+    const unindexedText: UnindexedText[] = unindexedTextAncestors(tree);
     const nodes: ObservedNode[] = interactiveNodes(tree,0,true);
     for (const frame of frames.slice(1)) {
       const tree = await this.browser.cdp.call(this.id,"Accessibility.getFullAXTree",{frameId:frame.id},{sessionId:frame.sessionId});
-      unindexedText.push(...unindexedTextAncestors(tree).map(backendNodeId=>({backendNodeId,frameId:frame.id,frameChain:frameAncestry(frame,frames)})));
+      unindexedText.push(...unindexedTextAncestors(tree).map(item=>({...item,frameId:frame.id,frameChain:frameAncestry(frame,frames)})));
       nodes.push(...interactiveNodes(tree,nodes.length,true).map(node => ({...node,frameId:frame.id,frameChain:frameAncestry(frame,frames)})));
     }
     if (documentId !== await this.documentId() || JSON.stringify(frames) !== JSON.stringify(await this.frameTree())) throw new RetryablePreflightError("Page changed; observe again");
@@ -3500,10 +3499,10 @@ function frameAncestry(frame: FrameInfo, frames: FrameInfo[]): FrameInfo[] {
   return chain;
 }
 
-function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Array<InteractiveNode & { backendNodeId: number; stateKey: string }> {
+function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Array<InteractiveNode & { backendNodeId: number; stateKey: string; axOrder:number }> {
   if (!isObject(tree) || !Array.isArray(tree.nodes)) throw new Error("Invalid accessibility tree");
   const roles = new Set(["button", "link", "checkbox", "radio", "switch", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "option", "combobox", "listbox", "textbox", "searchbox", "slider", "spinbutton", "Date", "DateTime", "InputTime", ...(includeText ? supplementalRoles : [])]);
-  const nodes: Array<InteractiveNode & { backendNodeId: number; stateKey: string }> = [];
+  const nodes: Array<InteractiveNode & { backendNodeId: number; stateKey: string; axOrder:number }> = [];
   const byId = new Map(tree.nodes.filter(isObject).filter(node => typeof node.nodeId === "string").map(node => [node.nodeId, node]));
   const temporalAncestor = (node: {[key:string]:JsonValue}): boolean => {
     const seen = new Set<string>();
@@ -3517,7 +3516,7 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     }
     return false;
   };
-  for (const node of tree.nodes) {
+  for (const [axOrder,node] of tree.nodes.entries()) {
     if (!isObject(node) || node.ignored === true || typeof node.backendDOMNodeId !== "number" || !isObject(node.role)) continue;
     const role = node.role.value;
     if (typeof role !== "string" || !roles.has(role) || temporalAncestor(node)) continue;
@@ -3546,7 +3545,7 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     const states = axProperties(node);
     if (placeholder !== undefined) states.push(`placeholder=${JSON.stringify(placeholder)}${placeholderTruncated ? createHash("sha256").update(rawPlaceholder as string).digest("hex") : ""}`);
     if (altText !== undefined) states.push(`alt=${JSON.stringify(altText)}${altTextTruncated ? createHash("sha256").update(rawAlt as string).digest("hex") : ""}`);
-    nodes.push({ index: offset + nodes.length + 1, role, name, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(level !== undefined ? {level} : {}), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
+    nodes.push({ index: offset + nodes.length + 1, role, name, axOrder, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(level !== undefined ? {level} : {}), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
   }
   return nodes;
 }

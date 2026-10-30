@@ -366,8 +366,9 @@ visibility and nonzero element and frame bounds; it does not test occlusion.
 `filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
 locator by its accessible static-text descendants. Matching is a case-insensitive
 substring after whitespace normalization; text fragments are joined with spaces.
-This includes readable child frames and shadow roots. The filter uses indexed
-accessibility text, so `aria-label` alone does not count as descendant text. Semantic locators also
+This includes readable child frames, shadow roots, and generated text whose
+accessible ancestry identifies its scope. `aria-label` alone does not count as
+descendant text. Semantic locators also
 support `filter({has: inner})` and `filter({hasNot: inner})` with semantic or
 CSS locators from the same tab and frame. Each inner locator is evaluated relative
 to the candidate, including its position and nested filters; descendant frame
@@ -375,10 +376,11 @@ documents are outside that inner match. Inner semantic locators rooted in CSS
 scopes and inner CSS locators rooted in semantic scopes are not supported. Filter
 nesting is limited to eight levels. Semantic `filter({visible: true/false})`
 checks candidate and frame bounds; the accessibility tree may omit hidden elements.
-The operation rejects a candidate when unindexed text may belong to it or
-the text relationship cannot be determined, when frames are inaccessible, or
-when the candidate contains more than 30,000 characters. Text is checked again before input and after focus; pages with many
-text nodes can require many browser requests. Only string filters are supported.
+The operation rejects a candidate when the text relationship cannot be
+determined, when frames are inaccessible, or when the candidate contains more
+than 30,000 characters. Text is checked again before input and after focus; pages
+with many text nodes can require many browser requests. String and regular
+expression filters are supported.
 
 `getByText` matches individual accessible static-text nodes after collapsing
 whitespace; text split across multiple elements is matched separately. Text

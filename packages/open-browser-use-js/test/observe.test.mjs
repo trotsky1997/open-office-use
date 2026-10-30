@@ -1283,7 +1283,7 @@ test('text filters select unnamed containers and recheck changing text before in
   apple='Apples'; changeOnFocus=false; unindexed='unrelated';
   assert.equal(await items.filter({hasText:'Apples'}).count(),1);
   unindexed='related';
-  await assert.rejects(items.filter({hasNotText:'unindexed'}).count(),/cannot be indexed/);
+  assert.equal(await items.filter({hasNotText:'unindexed'}).count(),2);assert.equal(await items.filter({hasText:'unindexed'}).count(),1);
   unindexed='unknown';
   await assert.rejects(items.filter({hasNotText:'unindexed'}).count(),/cannot be indexed/);
   unindexed=false; apple='x'.repeat(30001);
