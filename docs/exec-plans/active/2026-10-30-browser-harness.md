@@ -156,3 +156,4 @@
 - [x] Chrome 后台滚轮超时错误明确提示重新呈现后可能迟到执行，要求呈现后再检查。Linux ARM64 Chromium 153 原生消息实测隐藏时滚轮超时，呈现后触发可信事件及滚动；背景截图成功，screencast 未解决滚轮。
 - [x] JavaScript 对话框等待的正数超时覆盖监听准备及事件等待，超时取消尚未派发的准备；Linux ARM64 Chromium 原生消息验证超时后继续处理 confirm。
 - [x] JavaScript 对话框监听准备绑定标签生命周期及连接代际；移组、关闭、调试器断开或 Page.disable 后，迟到准备无法恢复旧状态。Linux ARM64 Chromium 原生消息双会话验证移组后新会话可处理 confirm。
+- [x] 弹窗绑定的子调试会话或其祖先会话脱离时失效；合成 CDP 事件覆盖不同会话的隔离，真实 frame 弹窗事件归属仍需更多平台验证。

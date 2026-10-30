@@ -646,6 +646,15 @@ test('JavaScript dialogs are observed, scoped and decided only once', async () =
   await assert.rejects(tab.waitForDialog({timeoutMs:0}),/Timed out/);
 });
 
+test('detaching a dialog frame invalidates only that frame dialog',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};client.request=async()=>({});
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);await tab.watchDialogs();
+  const emit=(method,params,source)=>{for(const handler of handlers)handler({method:'onCDPEvent',params:{source,method,params}});};
+  emit('Page.javascriptDialogOpening',{type:'confirm',message:'Frame',url:'https://example.test'},{tabId:1,sessionId:'frame'});const dialog=tab.currentDialog();
+  emit('Target.detachedFromTarget',{sessionId:'other'},{tabId:1});assert.equal(tab.currentDialog().info.id,dialog.info.id);
+  emit('Target.detachedFromTarget',{sessionId:'frame'},{tabId:1});assert.equal(tab.currentDialog(),null);await assert.rejects(dialog.dismiss(),/no longer open/);
+});
+
 test('dialog wait includes listener preparation in its timeout',async()=>{
   const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
   let release,signal;tab.watchDialogs=value=>{signal=value;return new Promise(resolve=>{release=resolve;});};

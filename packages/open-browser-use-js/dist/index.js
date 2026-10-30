@@ -4885,19 +4885,21 @@ export class OpenBrowserUseCdp {
                 if (dialog && (dialog.sessionId === source.sessionId || typeof source.sessionId !== "string"))
                     this.#dialogs.delete(source.tabId);
             }
-            const frames = this.#frames.get(source.tabId);
-            if (!frames)
-                return;
+            const detachedTabId = source.tabId, frames = this.#frames.get(detachedTabId);
             if (method === "Target.detachedFromTarget" && typeof params.sessionId === "string") {
                 const remove = (id) => {
-                    frames.delete(id);
+                    if (this.#dialogs.get(detachedTabId)?.sessionId === id)
+                        this.#dialogs.delete(detachedTabId);
+                    frames?.delete(id);
                     capture?.sessions.delete(id);
-                    for (const child of frames.values())
+                    for (const child of frames?.values() ?? [])
                         if (child.parentSessionId === id)
                             remove(child.sessionId);
                 };
                 remove(params.sessionId);
             }
+            if (!frames)
+                return;
             if (method !== "Target.attachedToTarget" || typeof params.sessionId !== "string" || !isObject(params.targetInfo))
                 return;
             const info = params.targetInfo;
