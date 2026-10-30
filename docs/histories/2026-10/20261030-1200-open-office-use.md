@@ -155,3 +155,7 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 ### Grid data-validation visibility
 
 Added bounded standard XLSX data-validation metadata to grid reads and the viewer, and an unevaluated-rule advisory to grid edit results. Checked non-contiguous ranges, rule preservation and incomplete metadata detection with the grid smoke suite. Extension rules and rule evaluation remain future work.
+
+### Fixed validation list choices
+
+Added viewer choices for unambiguous fixed Excel validation lists; selected values use literal text mode and stale/protected grids disable the control. Checked a real browser save with leading zeros, validation preservation, incomplete coverage, and existing grid/paste smoke tests. Formula and range references remain unresolved.

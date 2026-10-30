@@ -110,7 +110,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
-<div id="grid-output" class="grid-scroll"></div><details><summary>Data validation rules for this range</summary><pre id="grid-validation"></pre></details><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
+<div id="grid-output" class="grid-scroll"></div><details><summary>Data validation rules for this range</summary><p>Fixed list values can be selected in the grid. Rules are retained but are not evaluated when saving.</p><pre id="grid-validation"></pre></details><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
 <fieldset id="grid-format-fields"><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
@@ -307,7 +307,7 @@ function gridDirty() {
  return [...document.querySelectorAll('#grid-output textarea')].some(gridChanged);
 }
 function lockGridInputs(inputs, locked) {
- inputs.forEach(input=>{input.readOnly=locked || input.dataset.editable!=='true'; input.parentElement.querySelector('select').disabled=input.readOnly;});
+ inputs.forEach(input=>{input.readOnly=locked || input.dataset.editable!=='true'; input.parentElement.querySelectorAll('select').forEach(select=>{select.disabled=input.readOnly;});});
 }
 function elementDirty() {
  return editBaseline !== null && (document.getElementById('edit-value').value !== editBaseline.value || document.getElementById('edit-mode').value !== editBaseline.mode);
@@ -361,6 +361,16 @@ document.getElementById('grid-sheets').addEventListener('click', async () => {
  } catch(error) { document.getElementById('grid-status').textContent=`Sheet error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
 });
+function validationList(validation, cell) {
+ if (!validation.complete) return null;
+ const rules=validation.rules.filter(rule=>rule.cells.includes(cell));
+ if (rules.length!==1 || rules[0].attributes.type!=='list') return null;
+ const formula=rules[0].formula1;
+ // shortcut: fixed literal lists only; resolve worksheet and named references when supported.
+ if (typeof formula!=='string' || !/^"[^"\\r\\n]*"$/.test(formula)) return null;
+ const choices=formula.slice(1,-1).split(',');
+ return choices.length && choices.every(choice=>choice.length>0) ? choices : null;
+}
 async function loadGrid(target=null) {
  if (gridBusy || pinned!==null || target && (target.revision!==current || displayed!==current)) return;
  if (gridDirty() && !window.confirm('Discard unsaved cell edits and load another range?')) return;
@@ -409,7 +419,16 @@ async function loadGrid(target=null) {
     else if (cell.merged_anchor) input.title+=`; merged region anchor ${cell.merged_anchor}`;
     const mode=document.createElement('select'); mode.setAttribute('aria-label', `${sheet} ${cell.cell} input type`);
     for (const [value,label] of [['default','Default'],['auto','Automatic'],['text','Literal text']]) { const option=document.createElement('option'); option.value=value; option.textContent=label; mode.appendChild(option); }
-    mode.disabled=!cell.editable; td.append(input,mode); tr.appendChild(td);
+    mode.disabled=!cell.editable; td.append(input,mode);
+    const choices=validationList(data.data_validation,cell.cell);
+    if (choices) {
+     const list=document.createElement('select'); list.setAttribute('aria-label', `${sheet} ${cell.cell} suggested list values`);
+     const placeholder=document.createElement('option'); placeholder.value=''; placeholder.textContent='Choose a suggested value'; list.appendChild(placeholder);
+     for (const choice of choices) { const option=document.createElement('option'); option.value=choice; option.textContent=choice; list.appendChild(option); }
+     list.disabled=!cell.editable; list.addEventListener('change',()=>{if (!list.value) return; input.value=list.value; mode.value='text'; input.dispatchEvent(new Event('input',{bubbles:true})); list.value='';});
+     td.appendChild(list);
+    }
+    tr.appendChild(td);
    }
    body.appendChild(tr);
   }
