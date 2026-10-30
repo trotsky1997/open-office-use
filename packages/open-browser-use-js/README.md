@@ -769,6 +769,10 @@ the browser before retrying. Restart the MCP process if it never settles. A
 synchronous infinite loop blocks the Node event loop and cannot be interrupted
 by this timer.
 
+For `notifications/cancelled` on a `js` request, the server stops waiting and
+suppresses its response. JavaScript already running is not interrupted and may
+still have side effects; the session stays busy until execution settles.
+
 Protocol requests can complete independently while asynchronous JavaScript is
 running. `ping` remains responsive; additional `js` and `js_reset` calls report
 that the session is busy. Synchronous JavaScript still blocks the event loop.

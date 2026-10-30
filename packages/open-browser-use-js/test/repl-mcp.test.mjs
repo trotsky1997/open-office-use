@@ -122,6 +122,14 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     assert.equal(replies.find(r=>r.id===resetId).result.isError,true);
     assert.equal(replies.find(r=>r.id===busyId).result.isError,true);
     assert.equal(replies.find(r=>r.id===workId).result.content[0].text,'done');
+    const cancelId=++id,cancelPingId=++id,cancelBusyId=++id;
+    child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:cancelId,method:'tools/call',params:{name:'js',arguments:{code:'await new Promise(resolve => setTimeout(resolve, 200)); nodeRepl.write("late cancelled output")'}}})+'\n');
+    child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId:cancelId}})+'\n');
+    child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:cancelPingId,method:'ping'})+'\n');
+    child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:cancelBusyId,method:'tools/call',params:{name:'js_reset',arguments:{}}})+'\n');
+    const cancelledReplies=[JSON.parse((await lines.next()).value),JSON.parse((await lines.next()).value)];
+    assert.deepEqual(cancelledReplies.find(r=>r.id===cancelPingId).result,{});assert.equal(cancelledReplies.find(r=>r.id===cancelBusyId).result.isError,true);
+    await new Promise(resolve=>setTimeout(resolve,250));assert.equal((await js('nodeRepl.write("after cancellation")')).content[0].text,'after cancellation');
     const reset=await call('tools/call',{name:'js_reset',arguments:{}});assert.equal(reset.isError,undefined);assert.equal((await js("typeof tab")).content[0].text,"'undefined'");
     assert.equal((await js("nodeRepl.write((await agent.browsers.get('extension')).browserId)")).content[0].text,socketPath);
     assert.equal((await js("nodeRepl.write((await getBrowserState()).sessions.some(s => s.tabs?.some(t => t.id === 42)))")).content[0].text,'true');

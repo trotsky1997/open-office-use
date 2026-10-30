@@ -184,7 +184,7 @@ function evaluate(code: string): Promise<unknown> {
   });
 }
 
-async function handle(request: any): Promise<unknown> {
+async function handle(request: any, signal?: AbortSignal): Promise<unknown> {
   switch (request.method) {
     case "initialize":
       return { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "open-browser-use-repl", version: "0.1.0" } };
@@ -202,6 +202,7 @@ async function handle(request: any): Promise<unknown> {
       if (request.params?.name !== "js" || typeof request.params?.arguments?.code !== "string") throw new Error("Expected js with a string code argument");
       const content: Array<Record<string, string>> = [];
       let timer:ReturnType<typeof setTimeout> | undefined;
+      let onCancel: (()=>void) | undefined;
       try {
         const timeoutMs=request.params.arguments.timeout_ms ?? 30_000;
         if(!Number.isSafeInteger(timeoutMs) || timeoutMs<1 || timeoutMs>600_000)throw new Error("Invalid JavaScript timeout");
@@ -210,12 +211,13 @@ async function handle(request: any): Promise<unknown> {
         const evaluation=outputs.run(content, () => evaluate(request.params.arguments.code));
         activeEvaluation=evaluation;
         void evaluation.then(()=>{if(activeEvaluation===evaluation)activeEvaluation=undefined;},()=>{if(activeEvaluation===evaluation)activeEvaluation=undefined;});
-        const result=await Promise.race([evaluation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("JavaScript execution timed out; it may still be running and can have side effects")),timeoutMs);})]);
+        const cancelled=new Promise<never>((_,reject)=>{onCancel=()=>reject(new Error("JavaScript cancellation requested; it may still be running and can have side effects"));if(signal?.aborted)onCancel();else signal?.addEventListener("abort",onCancel,{once:true});});
+        const result=await Promise.race([evaluation,cancelled,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("JavaScript execution timed out; it may still be running and can have side effects")),timeoutMs);})]);
         if (result !== undefined) content.push({ type: "text", text: inspect(result, { depth: 5 }) });
         return { content: content.length ? content : [{ type: "text", text: "" }] };
       } catch (error) {
         return { content: [...content, { type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
-      } finally {if(timer)clearTimeout(timer);}
+      } finally {if(timer)clearTimeout(timer);if(onCancel)signal?.removeEventListener("abort",onCancel);}
     }
     default: throw new Error(`Unknown method: ${request.method}`);
   }
@@ -224,14 +226,24 @@ async function handle(request: any): Promise<unknown> {
 async function main(): Promise<void> {
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const pending=new Set<Promise<void>>();
+  const cancellations=new Map<string | number,AbortController>();
   const processLine=async (line:string):Promise<void> => {
     let request: any;
     try {
       request = JSON.parse(line);
       if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string") throw new Error("Invalid JSON-RPC request");
-      if (request.id === undefined) return;
-      const result = await handle(request);
-      process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
+      if (request.id === undefined) {
+        if (request.method === "notifications/cancelled" && (typeof request.params?.requestId === "string" || typeof request.params?.requestId === "number")) cancellations.get(request.params.requestId)?.abort();
+        return;
+      }
+      const cancellable=request.method === "tools/call" && request.params?.name === "js" && (typeof request.id === "string" || typeof request.id === "number");
+      if (cancellable && cancellations.has(request.id)) throw new Error("Duplicate in-flight request ID");
+      const controller=cancellable ? new AbortController() : undefined;
+      if (controller) cancellations.set(request.id,controller);
+      try {
+        const result = await handle(request,controller?.signal);
+        if (!controller?.signal.aborted) process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
+      } finally { if (controller && cancellations.get(request.id) === controller) cancellations.delete(request.id); }
     } catch (error) {
       process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: request?.id ?? null, error: { code: -32600, message: error instanceof Error ? error.message : String(error) } })}\n`);
     }
