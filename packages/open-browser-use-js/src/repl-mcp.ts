@@ -9,6 +9,7 @@ import { start } from "node:repl";
 import { PassThrough } from "node:stream";
 import { inspect } from "node:util";
 import { types } from "node:util";
+import { parse } from "acorn";
 import { connectOpenBrowserUse, OpenBrowserUseClient, type JsonValue, type OpenBrowserUseBrowser, type OpenBrowserUseClientOptions } from "./index.js";
 
 // This is a local code execution tool for trusted MCP clients, not a sandbox.
@@ -151,7 +152,21 @@ Object.assign(repl.context, {
 }
 installContext();
 
+function redeclarableSource(code:string):string {
+  let program:ReturnType<typeof parse>;
+  try {program=parse(code,{ecmaVersion:"latest",sourceType:"script",allowAwaitOutsideFunction:true});}
+  catch {return code;}
+  const edits:Array<{start:number;end:number;text:string}>=[];
+  for(const node of program.body) {
+    if(node.type==="VariableDeclaration" && (node.kind==="let" || node.kind==="const")) edits.push({start:node.start,end:node.start+node.kind.length,text:"var"});
+    if(node.type==="ClassDeclaration" && node.id) edits.push({start:node.start,end:node.start,text:`var ${node.id.name} = `});
+  }
+  for(const edit of edits.reverse())code=code.slice(0,edit.start)+edit.text+code.slice(edit.end);
+  return code;
+}
+
 function evaluate(code: string): Promise<unknown> {
+  code=redeclarableSource(code);
   return new Promise((resolve, reject) => {
     const domain = createDomain();
     const finish = (error?: unknown, result?: unknown) => {

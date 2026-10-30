@@ -733,6 +733,12 @@ nodeRepl.write(await tab.getAXState());
 nodeRepl.emitImage(await tab.getScreenshot());
 ```
 
+Top-level `const`, `let`, and named `class` declarations can be redeclared in
+later calls. Top-level variable declarations are stored as mutable `var`
+bindings; block-scoped declarations keep their JavaScript scope. The server
+uses a JavaScript parser for this transformation and falls back to Node's REPL
+for syntax it cannot parse.
+
 The `js` tool accepts `timeout_ms` (1–600,000 ms; default 30,000) and an
 optional `title`. A timed-out asynchronous execution can continue and have
 side effects. Further JavaScript calls are rejected until it settles; inspect

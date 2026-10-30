@@ -399,3 +399,5 @@ URL 与加载状态检查改用主 frame 的隔离 world，避免页面脚本篡
 持久 JavaScript MCP 的 js 工具支持 timeout_ms（默认 30 秒、上限 10 分钟）和 title；异步执行超时后提示可能仍有副作用，在其完成前拒绝新执行，完成后保留会话并隔离迟到输出。SDK 88 项通过；隔离 Linux ARM64 Chromium 原生扩展通过真实浏览器连接、超时、忙碌保护及恢复操作。同步无限循环阻塞 Node 事件循环，需要重启进程；Electron 与 Windows 本轮未测。
 
 持久 JavaScript MCP 新增 js_reset，清空绑定并恢复浏览器帮助对象，已连接的浏览器会话与标签保留；执行仍活跃时拒绝重置。SDK 88 项通过；隔离 Linux ARM64 Chromium 原生扩展通过绑定清除、重新发现同一标签及继续操作。后台任务不会被取消，同步阻塞仍需重启 MCP；Electron 与 Windows 本轮未测。
+
+持久 JavaScript MCP 用 Acorn 识别顶层 const/let 与具名 class 声明并转为可重复声明的绑定；块级作用域保持原样，同一段代码中的重复声明仍报错。顶层变量可被重新赋值，解析失败时交由原 Node REPL 处理。SDK 88 项通过；隔离 Linux ARM64 Chromium 验证重复绑定后复用浏览器标签，打包并在独立 npm 目录验证运行时依赖导入。Electron 与 Windows 本轮未测。
