@@ -1,5 +1,9 @@
 """Conservative text replacement in a PowerPoint slide paragraph."""
 import re
+import hashlib
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 
 from pptx import Presentation
@@ -19,6 +23,97 @@ SEGMENT = re.compile(r'/(group|shape|table|tr|tc)\[([^]]+)\]')
 
 def paragraph_path(path):
     return isinstance(path, str) and len(path) <= 512 and PATH.fullmatch(path) is not None
+
+
+def search_text(source, query, slide=None, offset=0, snapshot_sha256=None):
+    """Search slide shape and table paragraphs using editable path candidates."""
+    if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
+        raise ValueError('Search text must contain 1 to 200 characters without control characters')
+    if isinstance(slide, bool) or slide is not None and (not isinstance(slide, int) or slide < 1): raise ValueError('Slide must be a positive integer')
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0: raise ValueError('Offset must be a nonnegative integer')
+    if offset and snapshot_sha256 is None: raise ValueError('Continuing a search requires the prior snapshot SHA-256')
+    if snapshot_sha256 is not None and (not isinstance(snapshot_sha256, str) or not re.fullmatch(r'[0-9a-f]{64}', snapshot_sha256)):
+        raise ValueError('Invalid snapshot SHA-256')
+    source = Path(source).resolve(strict=True)
+    if source.suffix.lower() != '.pptx': raise ValueError('Slide search requires a PPTX file')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Presentation exceeds the 128 MiB size limit')
+    with tempfile.TemporaryDirectory(prefix='office-slide-search-') as tmp:
+        snapshot = Path(tmp) / 'presentation.pptx'; shutil.copyfile(source, snapshot)
+        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Presentation exceeds the 128 MiB size limit')
+        digest = hashlib.sha256()
+        with snapshot.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
+        digest = digest.hexdigest()
+        if snapshot_sha256 is not None and digest != snapshot_sha256: raise ValueError('Presentation snapshot changed; restart the search')
+        try:
+            with zipfile.ZipFile(snapshot) as archive:
+                entries = archive.infolist(); names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Presentation exceeds package limits or contains duplicate parts')
+            presentation = Presentation(snapshot)
+            if slide is not None and slide > len(presentation.slides): raise ValueError('Slide does not exist')
+            unsupported = set()
+            def events(shapes, prefix, slide_number, hidden, depth):
+                if depth > 8:
+                    unsupported.add('group_depth'); return
+                if shapes._spTree.find(MC + 'AlternateContent') is not None: unsupported.add('alternate_content')
+                allowed = {P + name for name in ('nvGrpSpPr', 'grpSpPr', 'sp', 'grpSp', 'graphicFrame', 'pic', 'cxnSp', 'extLst')}
+                if any(child.tag not in allowed and child.tag != MC + 'AlternateContent' for child in shapes._spTree): unsupported.add('shape_tree_structure')
+                counts = {'shape': 0, 'group': 0, 'table': 0}
+                for shape in shapes:
+                    yield None
+                    tag = shape._element.tag
+                    if tag == P + 'grpSp':
+                        counts['group'] += 1
+                        yield from events(shape.shapes, f"{prefix}/group[{counts['group']}]", slide_number, hidden, depth + 1)
+                    elif tag == P + 'sp':
+                        counts['shape'] += 1
+                        if shape.has_text_frame:
+                            for index, paragraph in enumerate(shape.text_frame.paragraphs, 1):
+                                yield (f"{prefix}/shape[{counts['shape']}]/paragraph[{index}]", paragraph._p, slide_number, hidden)
+                    elif tag == P + 'graphicFrame' and shape.has_table:
+                        counts['table'] += 1
+                        for row_index, row in enumerate(shape.table.rows, 1):
+                            for col_index, cell in enumerate(row.cells, 1):
+                                if cell.is_spanned: continue
+                                for index, paragraph in enumerate(cell.text_frame.paragraphs, 1):
+                                    yield (f"{prefix}/table[{counts['table']}]/tr[{row_index}]/tc[{col_index}]/paragraph[{index}]", paragraph._p, slide_number, hidden)
+                    elif tag == MC + 'AlternateContent':
+                        unsupported.add('alternate_content')
+            def all_events():
+                for number, item in enumerate(presentation.slides, 1):
+                    if slide is not None and slide != number: continue
+                    visibility = item._element.get('show')
+                    hidden = visibility in ('0', 'false') if visibility in (None, '0', 'false', '1', 'true') else None
+                    yield from events(item.shapes, f'/slide[{number}]', number, hidden, 0)
+            matches, scanned, skipped, uncertain = [], 0, 0, 0
+            scan_complete = True; stop_reason = None
+            for event in all_events():
+                if skipped < offset: skipped += 1; continue
+                if scanned >= 10000 or len(matches) >= 100:
+                    scan_complete = False; stop_reason = 'match_limit' if len(matches) >= 100 else 'item_limit'; break
+                scanned += 1
+                if event is None: continue
+                path, paragraph, number, hidden = event
+                text = ''.join(node.text or '' for node in paragraph.iter(A + 't'))
+                text_complete = all(child.tag in (A + 'pPr', A + 'r', A + 'endParaRPr') and (child.tag != A + 'r' or all(item.tag in (A + 'rPr', A + 't') for item in child)) for child in paragraph)
+                if not text_complete: uncertain += 1
+                if query in text:
+                    index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
+                    matches.append({'slide': number, 'hidden': hidden, 'path': path, 'excerpt': text[start:end], 'excerpt_start': start,
+                                    'text_length': len(text), 'occurrences': sum(1 for _ in re.finditer('(?=' + re.escape(query) + ')', text)),
+                                    'text_complete': text_complete, 'replace_text_path_supported': paragraph_path(path)})
+            if skipped < offset: raise ValueError('Search offset exceeds the selected slide content')
+            return {'query': query, 'slide': slide, 'total_slides': len(presentation.slides), 'snapshot_sha256': digest,
+                    'offset': offset, 'next_offset': offset + scanned if not scan_complete else None, 'stop_reason': stop_reason,
+                    'items_scanned': scanned, 'matches': matches, 'unverified_paragraphs': uncertain,
+                    'unsupported_structure': sorted(unsupported), 'scan_complete': scan_complete,
+                    'complete': offset == 0 and scan_complete and not uncertain and not unsupported,
+                    'limits': {'items': 10000, 'matches': 100},
+                    'notes': ['Search covers slide shape and table paragraphs, including hidden slides; masters, notes, charts and SmartArt are excluded.',
+                              'Paths are candidates; inspect structure and validate targeted edits before applying them.']}
+        except zipfile.BadZipFile as exc:
+            raise ValueError(f'Invalid presentation package: {exc}') from exc
 
 
 def slide_part(file, index):

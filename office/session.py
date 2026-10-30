@@ -162,6 +162,11 @@ def inspect_layout(directory, revision):
     return {'revision': revision, **layout.inspect(source)}
 
 
+def search_slides(directory, revision, query, slide=None, offset=0, snapshot_sha256=None):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **slides.search_text(source, query, slide, offset, snapshot_sha256)}
+
+
 def recalculate(directory, base_revision):
     state = info(directory)
     source = revision_file(state, base_revision)

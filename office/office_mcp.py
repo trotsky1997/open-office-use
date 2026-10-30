@@ -17,6 +17,7 @@ import review_bundle
 import session
 import selection_text
 import selection_candidates
+import slides
 from open_office_use import doctor, inspect, preview, render
 
 server = FastMCP(
@@ -349,6 +350,18 @@ def audit_file(file: str) -> dict[str, Any]:
 def inspect_slide_layout(file: str) -> dict[str, Any]:
     """Report off-slide and overlapping-text geometric candidates in a saved PPTX."""
     return layout.inspect(file)
+
+
+@server.tool()
+def search_slide_text(file: str, query: str, slide: int | None = None, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search shape and table paragraphs; continue with next_offset and snapshot_sha256 using the same query and slide."""
+    return slides.search_text(file, query, slide, offset, snapshot_sha256)
+
+
+@server.tool()
+def session_search_slide_text(directory: str, revision: int, query: str, slide: int | None = None, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search slide text in an exact revision; inspect candidate paths before editing."""
+    return session.search_slides(directory, revision, query, slide, offset, snapshot_sha256)
 
 
 @server.tool()
