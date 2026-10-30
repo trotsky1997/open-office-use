@@ -789,7 +789,7 @@ export class OpenBrowserUseTab {
         return parent.id;
     }
     /** @internal */
-    async queryCss(selector, framePath) {
+    async queryCss(selector, framePath, scopes = []) {
         if (typeof selector !== "string" || !selector.trim() || selector.length > 4096)
             throw new Error("Invalid CSS selector");
         const documentId = await this.documentId();
@@ -801,7 +801,7 @@ export class OpenBrowserUseTab {
         if (!frameId) {
             if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames))
                 throw new RetryablePreflightError("Frame tree changed; observe again");
-            return { selector, framePath, frame: null, frames, documentId, ids: [] };
+            return { selector, scopes, scopeIds: [], framePath, frame: null, frames, documentId, ids: [] };
         }
         const frame = frames.find(item => item.id === frameId);
         if (!frame)
@@ -811,7 +811,19 @@ export class OpenBrowserUseTab {
         const contextId = isObject(world) ? world.executionContextId : undefined;
         if (typeof contextId !== "number" || !Number.isSafeInteger(contextId))
             throw new RetryablePreflightError("Selector context is unavailable; observe again");
-        const expression = `(() => { const selector=${JSON.stringify(selector)}, result=[]; const walk=root=>{const matched=new Set(root.querySelectorAll(selector)); for(const element of root.querySelectorAll('*')) {if(matched.has(element)){result.push(element);if(result.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);} }; walk(document);return result; })()`;
+        const expression = `(() => {
+      const steps=${JSON.stringify([...scopes, { selector }])}, output=[]; let roots=[document], total=0;
+      for (let i=0;i<steps.length;i++) {
+        const {selector,position}=steps[i], found=[], seen=new Set();
+        document.createDocumentFragment().querySelector(selector);
+        const walk=root=>{const matched=new Set(root.querySelectorAll(selector));for(const element of root.querySelectorAll('*')) {if(matched.has(element) && !seen.has(element)){seen.add(element);found.push(element);if(found.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);}};
+        for(const root of roots) { walk(root); if(root instanceof Element && root.shadowRoot)walk(root.shadowRoot); }
+        const selected=position===undefined ? found : position===-1 ? found.slice(-1) : found.slice(position,position+1);
+        total+=selected.length;if(total>1000)throw new Error('Selector matched more than 1000 elements');
+        output.push(i,...selected);roots=selected;
+      }
+      return output;
+    })()`;
         const evaluated = await this.browser.cdp.call(this.id, "Runtime.evaluate", { expression, contextId, returnByValue: false }, { sessionId });
         if (isObject(evaluated) && evaluated.exceptionDetails) {
             const details = isObject(evaluated.exceptionDetails) && isObject(evaluated.exceptionDetails.exception) ? evaluated.exceptionDetails.exception.description : undefined;
@@ -827,22 +839,31 @@ export class OpenBrowserUseTab {
             const properties = await this.browser.cdp.call(this.id, "Runtime.getProperties", { objectId: arrayId, ownProperties: true }, { sessionId });
             if (!isObject(properties) || !Array.isArray(properties.result))
                 throw new RetryablePreflightError("Selector result is unavailable; observe again");
-            const entries = properties.result.filter(isObject).filter(item => typeof item.name === "string" && /^(0|[1-9][0-9]*)$/.test(item.name) && isObject(item.value) && typeof item.value.objectId === "string").sort((a, b) => Number(a.name) - Number(b.name));
-            if (entries.length > 1000)
-                throw new Error("Selector matched more than 1000 elements");
+            const entries = properties.result.filter(isObject).filter(item => typeof item.name === "string" && /^(0|[1-9][0-9]*)$/.test(item.name)).sort((a, b) => Number(a.name) - Number(b.name));
             for (const item of entries)
-                objectIds.push(item.value.objectId);
-            const ids = [];
-            for (const objectId of objectIds) {
-                const result = await this.browser.cdp.call(this.id, "DOM.describeNode", { objectId }, { sessionId });
+                if (isObject(item.value) && typeof item.value.objectId === "string")
+                    objectIds.push(item.value.objectId);
+            if (objectIds.length > 1000)
+                throw new Error("Selector matched more than 1000 elements");
+            const stages = [];
+            for (const item of entries) {
+                if (!isObject(item.value))
+                    throw new RetryablePreflightError("Selector result is unavailable; observe again");
+                if (typeof item.value.value === "number" && item.value.value === stages.length && stages.length <= scopes.length) {
+                    stages.push([]);
+                    continue;
+                }
+                if (typeof item.value.objectId !== "string" || !stages.length)
+                    throw new RetryablePreflightError("Selector result is unavailable; observe again");
+                const result = await this.browser.cdp.call(this.id, "DOM.describeNode", { objectId: item.value.objectId }, { sessionId });
                 const node = isObject(result) && isObject(result.node) ? result.node : undefined;
                 if (!node || typeof node.backendNodeId !== "number")
                     throw new RetryablePreflightError("Selector target changed; observe again");
-                ids.push(node.backendNodeId);
+                stages[stages.length - 1].push(node.backendNodeId);
             }
-            if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames))
+            if (stages.length !== scopes.length + 1 || await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames))
                 throw new RetryablePreflightError("Frame tree changed; observe again");
-            return { selector, framePath, frame, frames, documentId, ids };
+            return { selector, scopes, scopeIds: stages.slice(0, -1), framePath, frame, frames, documentId, ids: stages[stages.length - 1] };
         }
         finally {
             for (const objectId of objectIds)
@@ -871,8 +892,8 @@ export class OpenBrowserUseTab {
                 throw new RetryablePreflightError("Selector target is unavailable; observe again");
             if (typeof payload.value === "string" && payload.value.length > 30_000)
                 throw new Error("Locator value exceeds the 30000 character limit");
-            const fresh = await this.queryCss(snapshot.selector, snapshot.framePath);
-            if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
+            const fresh = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+            if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
                 throw new RetryablePreflightError("Selector target changed; observe again");
             return payload.value;
         }
@@ -931,8 +952,8 @@ export class OpenBrowserUseTab {
             const moving = (a, b) => Math.abs(a - b) > 0.25;
             if (moving(first.geometry.x, second.geometry.x) || moving(first.geometry.y, second.geometry.y) || moving(first.geometry.width, second.geometry.width) || moving(first.geometry.height, second.geometry.height) || moving(first.point.x, second.point.x) || moving(first.point.y, second.point.y))
                 throw new RetryablePreflightError("Target is moving; observe again");
-            const fresh = await this.queryCss(snapshot.selector, snapshot.framePath);
-            if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
+            const fresh = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+            if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
                 throw new RetryablePreflightError("Selector target changed; observe again");
             if (text !== undefined) {
                 const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) {
@@ -944,8 +965,8 @@ export class OpenBrowserUseTab {
                 if (status === 'invalid')
                     throw new Error("Invalid date or time value");
                 if (status === 'temporal') {
-                    const latest = await this.queryCss(snapshot.selector, snapshot.framePath);
-                    if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids))
+                    const latest = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+                    if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids))
                         throw new RetryablePreflightError("Selector target changed; observe again");
                     this.#observation = undefined;
                     inputIssued = true;
@@ -963,8 +984,8 @@ export class OpenBrowserUseTab {
             if (key !== undefined || text !== undefined) {
                 await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId });
                 const verifyFocus = async () => {
-                    const afterFocus = await this.queryCss(snapshot.selector, snapshot.framePath);
-                    if (afterFocus.documentId !== snapshot.documentId || JSON.stringify(afterFocus.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.ids) !== JSON.stringify(snapshot.ids))
+                    const afterFocus = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
+                    if (afterFocus.documentId !== snapshot.documentId || JSON.stringify(afterFocus.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(afterFocus.ids) !== JSON.stringify(snapshot.ids))
                         throw new Error("Selector target changed after focus; observe again");
                     if ((await this.focusedInputFrame()).id !== frame.id)
                         throw new Error("Target frame lost focus; observe again");
@@ -2251,23 +2272,30 @@ export class OpenBrowserUseCssLocator {
     selector;
     framePath;
     position;
-    constructor(tab, selector, framePath, position) {
+    scopes;
+    constructor(tab, selector, framePath, position, scopes = []) {
         this.tab = tab;
         this.selector = selector;
         this.framePath = framePath;
         this.position = position;
+        this.scopes = scopes;
         if (typeof selector !== "string" || !selector.trim() || selector.length > 4096)
             throw new Error("Invalid CSS selector");
     }
     nth(index) {
         if (!Number.isSafeInteger(index) || index < 0)
             throw new Error("Locator index must be a non-negative integer");
-        return new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER);
+        return new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER, this.scopes);
     }
     first() { return this.nth(0); }
-    last() { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, -1) : this; }
+    last() { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, -1, this.scopes) : this; }
+    locator(selector) {
+        if (this.scopes.length >= 31)
+            throw new Error("CSS locator nesting exceeds 32 levels");
+        return new OpenBrowserUseCssLocator(this.tab, selector, this.framePath, undefined, [...this.scopes, { selector: this.selector, ...(this.position !== undefined ? { position: this.position } : {}) }]);
+    }
     select(ids) { return this.position === undefined ? ids : this.position === -1 ? ids.slice(-1) : ids.slice(this.position, this.position + 1); }
-    async count() { return this.select((await this.tab.queryCss(this.selector, this.framePath)).ids).length; }
+    async count() { return this.select((await this.tab.queryCss(this.selector, this.framePath, this.scopes)).ids).length; }
     async all() { return Array.from({ length: await this.count() }, (_, i) => this.nth(i)); }
     async perform(action, timeoutMs = 5000) {
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
@@ -2275,7 +2303,7 @@ export class OpenBrowserUseCssLocator {
         const deadline = performance.now() + timeoutMs;
         while (true) {
             try {
-                const snapshot = await this.tab.queryCss(this.selector, this.framePath);
+                const snapshot = await this.tab.queryCss(this.selector, this.framePath, this.scopes);
                 const ids = this.select(snapshot.ids);
                 if (ids.length > 1)
                     throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);

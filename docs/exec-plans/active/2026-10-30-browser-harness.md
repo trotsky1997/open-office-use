@@ -95,4 +95,4 @@
 - [ ] 完整的可交互状态、更丰富的定位器及更多 backend 的统一路由。
 - [ ] Windows 原生消息注册和端到端传输验收；macOS 实际安装路径验证。
 
-- [ ] 完成通用 CSS locator 的链式作用域和完整 API；已实现有界 CSS 查询、读取、可信点击、悬停、按键及文本填写，覆盖开放 shadow root 和 frame。
+- [ ] 完成通用 CSS locator 的完整 API；已实现有界链式作用域、查询、读取、可信点击、悬停、按键及文本填写，覆盖开放 shadow root 和 frame。

@@ -85,6 +85,7 @@ app.whenReady().then(async()=>{
     await crossFrame.locator('input[type=date]').fill('2026-12-24');assert.equal(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('input[type=date]').value`,returnByValue:true},{sessionId:session}).then(r=>r.result.value),'2026-12-24');
     await crossFrame.locator('input[placeholder]').first().press('Enter');assert.deepEqual(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.cssKey',returnByValue:true},{sessionId:session}).then(r=>r.result.value),{key:'Enter',trusted:true});
     await crossFrame.locator('button').first().click();assert.equal(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.crossTrusted',returnByValue:true},{sessionId:session}).then(r=>r.result.value),true);
+    assert.equal(await crossFrame.locator('body').locator('h3').textContent(),'Child heading');
     assert.equal(await crossFrame.locator('h3').textContent(),'Child heading');assert.equal(await crossFrame.frameLocator('iframe#nested').locator('button').innerText(),'Nested target');
     await sdk.evaluate(`(()=>{Element.prototype.matches=window.savedMatches})()`);
     window.hide();

@@ -261,6 +261,7 @@ Native CSS element queries are available for reading DOM content:
 ```js
 const items = tab.playwright.locator("[data-item]");
 console.log(await items.count(), await items.first().textContent());
+await tab.playwright.locator(".product").first().locator("button.buy").click();
 console.log(await payment.locator("input[name=card]").getAttribute("name"));
 ```
 
@@ -276,7 +277,10 @@ visibility, hit testing and stable geometry before issuing trusted mouse input.
 and native date, time, month, week and datetime-local inputs. Text input rechecks
 focus and selection before inserting. Date and time values are validated using
 the native input parser; their `input` and `change` events are synthetic
-(`isTrusted` is false). CSS locator chaining is not yet implemented.
+(`isTrusted` is false). `locator()` chains descendant queries, and `first`,
+`last` and `nth` can select an intermediate scope. Each chain is limited to
+32 selectors and 1,000 matched elements in total; the identity of each selected
+scope is rechecked along with the final matches before reads and input.
 
 `filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
 locator by its accessible static-text descendants. Matching is a case-insensitive

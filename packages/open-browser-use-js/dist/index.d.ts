@@ -100,6 +100,10 @@ export type InteractiveState = {
     unavailableFrames?: string[];
     valuesTruncated?: boolean;
 };
+type CssStep = {
+    selector: string;
+    position?: number;
+};
 type TextFilter = {
     hasText?: TextMatcher;
     hasNotText?: TextMatcher;
@@ -410,10 +414,12 @@ export declare class OpenBrowserUseCssLocator {
     private selector;
     private framePath?;
     private position?;
-    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined);
+    private scopes;
+    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined, scopes?: readonly CssStep[]);
     nth(index: number): OpenBrowserUseCssLocator;
     first(): OpenBrowserUseCssLocator;
     last(): OpenBrowserUseCssLocator;
+    locator(selector: string): OpenBrowserUseCssLocator;
     private select;
     count(): Promise<number>;
     all(): Promise<OpenBrowserUseCssLocator[]>;
