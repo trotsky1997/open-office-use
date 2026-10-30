@@ -457,3 +457,5 @@ CSS 与语义定位器新增 clear，复用 fill 空字符串的焦点、目标�
 持久 JavaScript MCP 支持 notifications/cancelled：取消 js 请求后停止等待并抑制响应，仍在执行的 JavaScript 不被中断，完成前阻止新执行和重置；未知 ID 忽略。SDK 93 项测试、Linux ARM64 Chromium 原生扩展/REPL 取消与恢复实测、macOS Electron 44.7 完整 smoke 通过。同步阻塞与后台副作用仍可能持续；Windows 未测。
 
 REPL 输入关闭并完成已接收请求后，内置浏览器连接与发现帮助方法拒绝新建连接；关闭过程中迟到的连接结果会被关闭。SDK 94 项测试覆盖取消后延迟连接、发现和正常请求在 EOF 后完成；macOS Electron 44.7 完整 smoke 通过。已运行的任意 JavaScript 仍可通过其他方式产生副作用；Linux 和 Windows 本轮未测。
+
+browser.tabs.getByUrl 按精确 URL 绑定当前会话中唯一标签，缺失或多个匹配明确报错，不接管用户标签。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展实测通过；Linux 验证了重复 URL 后拒绝以及关闭重复标签后恢复。Windows 未测。

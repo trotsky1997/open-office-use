@@ -36,6 +36,9 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   sdkClient.request = (method, params = {}) => scope.call(method, params);
   sdkClient.onNotification = handler => runtime.subscribe(event => { if (event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
   const sdkTab = new OpenBrowserUseBrowser({ client:sdkClient }).tab(a.id);
+  assert.equal((await sdkTab.browser.tabs.getByUrl(`${fixture.url}/login`)).id,a.id);
+  await assert.rejects(sdkTab.browser.tabs.getByUrl(`${fixture.url}/absent`),/No session tab/);
+
   assert.equal(await sdkTab.playwright.getByRole('heading',{name:'login',exact:true}).count(),1);
   await evaluate(a.id,`(()=>{const root=document.createElement('div');root.id='bulk-text-test';root.innerHTML='<button title="  Helpful   Action  " aria-label="Bulk first">Alpha<span title="Nested Tip"></span><span hidden> concealed</span></button><button title="Another Action" aria-label="Bulk second">Beta</button>';document.body.append(root)})()`);
   const cssBulk=sdkTab.playwright.locator('#bulk-text-test button'),roleBulk=sdkTab.playwright.getByRole('button',{name:/^Bulk /});

@@ -784,6 +784,10 @@ helpers while retaining connected browser sessions and their tabs. Reacquire a
 browser with `agent.browsers.get(...)` after reset. Reset is rejected while an
 execution remains active; previously scheduled background work is not cancelled.
 
+After selecting a browser, `await browser.tabs.getByUrl(url)` binds the single
+session-owned tab with an exactly matching URL. Missing or duplicate matches
+raise an error; the method does not claim user tabs outside the session.
+
 `agent.browsers.list()` reports available browser IDs, types and capabilities.
 `agent.browsers.get(id)` selects a listed ID or the unique `extension` / `iab`
 type and reuses the REPL session connection. Ambiguous or unresponsive matches
@@ -808,7 +812,7 @@ to select one explicitly. Use `obu profiles --connected --json` to map sockets
 to installed browser profiles. Set `OBU_SOCKET_DIR` when the host uses a
 different socket directory. `nodeRepl.write`
 emits text, and `nodeRepl.emitImage(bytes, mimeType)` emits PNG (the default),
-JPEG or WebP bytes. Tool calls run sequentially. Closing MCP stdin closes the
+JPEG or WebP bytes. JavaScript evaluations run one at a time. Closing MCP stdin closes the
 SDK connections while preserving browser tabs; use the existing session
 finalization APIs when tabs should be cleaned up.
 

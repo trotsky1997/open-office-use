@@ -572,6 +572,12 @@ export class OpenBrowserUseTabs {
     if(!tabs.some(tab=>tab.id===String(tabId)))throw new Error('Tab is outside this browser session');
     return this.browser.tab(tabId);
   }
+  async getByUrl(url:string):Promise<OpenBrowserUseTab> {
+    if(typeof url!=="string" || !url || url.length>8192)throw new Error("Invalid tab URL");
+    const matches=(await this.list()).filter(tab=>tab.url===url);
+    if(matches.length!==1)throw new Error(matches.length ? "Multiple session tabs match the URL" : "No session tab matches the URL");
+    return this.browser.tab(browserTabId(matches[0].id));
+  }
   new():Promise<OpenBrowserUseTab> { return this.browser.newTab(); }
   async selected():Promise<OpenBrowserUseTab | undefined> {
     const selected=(await this.list()).filter(tab=>tab.active===true);

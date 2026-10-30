@@ -504,6 +504,14 @@ export class OpenBrowserUseTabs {
             throw new Error('Tab is outside this browser session');
         return this.browser.tab(tabId);
     }
+    async getByUrl(url) {
+        if (typeof url !== "string" || !url || url.length > 8192)
+            throw new Error("Invalid tab URL");
+        const matches = (await this.list()).filter(tab => tab.url === url);
+        if (matches.length !== 1)
+            throw new Error(matches.length ? "Multiple session tabs match the URL" : "No session tab matches the URL");
+        return this.browser.tab(browserTabId(matches[0].id));
+    }
     new() { return this.browser.newTab(); }
     async selected() {
         const selected = (await this.list()).filter(tab => tab.active === true);

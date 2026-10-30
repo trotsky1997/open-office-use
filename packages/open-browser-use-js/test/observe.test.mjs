@@ -1637,3 +1637,12 @@ test('locator state queries bound stalled browser reads',async()=>{
   tab.queryCss=async()=>({ids:[1]});tab.readCss=()=>new Promise(()=>{});await assert.rejects(css.isEditable({timeoutMs:20}),/Timed out/);
   const role=tab.playwright.getByRole('button');role.find=()=>new Promise(()=>{});await assert.rejects(role.isVisible({timeoutMs:20}),/Timed out/);
 });
+
+test('session tabs can be selected by exact URL without ambiguous matches',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})});
+  let tabs=[{id:1,url:'https://example.test/a'},{id:2,url:'https://example.test/b'}];browser.getTabs=async()=>tabs;
+  assert.equal((await browser.tabs.getByUrl('https://example.test/a')).id,1);
+  await assert.rejects(browser.tabs.getByUrl('https://example.test/'),/No session tab/);
+  tabs.push({id:3,url:'https://example.test/a'});await assert.rejects(browser.tabs.getByUrl('https://example.test/a'),/Multiple session tabs/);
+  await assert.rejects(browser.tabs.getByUrl(''),/Invalid tab URL/);
+});

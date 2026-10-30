@@ -245,6 +245,7 @@ export declare class OpenBrowserUseTabs {
     constructor(browser: OpenBrowserUseBrowser);
     list(): Promise<BrowserTabInfo[]>;
     get(id: string | number): Promise<OpenBrowserUseTab>;
+    getByUrl(url: string): Promise<OpenBrowserUseTab>;
     new(): Promise<OpenBrowserUseTab>;
     selected(): Promise<OpenBrowserUseTab | undefined>;
     finalize(options?: {
