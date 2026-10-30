@@ -205,6 +205,7 @@ export declare class OpenBrowserUseTab {
             width: number;
             height: number;
         };
+        fullPage?: boolean;
     }): Promise<Buffer>;
     evaluate(expression: string, options?: {
         awaitPromise?: boolean;

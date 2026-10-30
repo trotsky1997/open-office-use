@@ -1251,9 +1251,19 @@ export class OpenBrowserUseTab {
     } finally { await this.browser.cdp.call(this.id, "Runtime.releaseObject", {objectId}, {sessionId}).catch(() => {}); }
   }
 
-  async getScreenshot(options: {clip?: {x: number; y: number; width: number; height: number}} = {}): Promise<Buffer> {
+  async getScreenshot(options: {clip?: {x: number; y: number; width: number; height: number}; fullPage?: boolean} = {}): Promise<Buffer> {
+    if (options.fullPage !== undefined && typeof options.fullPage !== "boolean") throw new Error("Invalid fullPage option");
+    const fullPage = options.fullPage === true;
+    if (fullPage && options.clip !== undefined) throw new Error("Full-page screenshot cannot use a clip");
     let clip: {x: number; y: number; width: number; height: number; scale: number} | undefined;
-    if (options.clip !== undefined) {
+    if (fullPage) {
+      const metrics = await this.browser.cdp.call(this.id, "Page.getLayoutMetrics");
+      const content = isObject(metrics) ? metrics.cssContentSize : null;
+      if (!isObject(content) || ![content.x,content.y,content.width,content.height].every(value => typeof value === "number" && Number.isFinite(value))) throw new Error("Page dimensions are unavailable");
+      const {x,y,width,height} = content as {x:number; y:number; width:number; height:number};
+      if (width <= 0 || height <= 0 || width > 32767 || height > 32767 || width * height > 32_000_000) throw new Error("Page is too large for a full-page screenshot");
+      clip = {x,y,width,height,scale:1};
+    } else if (options.clip !== undefined) {
       const rect = {...options.clip};
       if (![rect.x,rect.y,rect.width,rect.height].every(Number.isFinite) || rect.x < 0 || rect.y < 0 || rect.width <= 0 || rect.height <= 0) throw new Error("Invalid screenshot clip");
       const metrics = await this.browser.cdp.call(this.id, "Page.getLayoutMetrics");
@@ -1263,7 +1273,7 @@ export class OpenBrowserUseTab {
       if (rect.x + rect.width > clientWidth || rect.y + rect.height > clientHeight) throw new Error("Screenshot clip is outside the viewport");
       clip = {x:pageX+rect.x,y:pageY+rect.y,width:rect.width,height:rect.height,scale:1};
     }
-    const result = await this.browser.cdp.call(this.id, "Page.captureScreenshot", { format: "png", ...(clip ? {clip,captureBeyondViewport:false} : {}) });
+    const result = await this.browser.cdp.call(this.id, "Page.captureScreenshot", { format: "png", ...(clip ? {clip,captureBeyondViewport:fullPage} : {}) });
     if (!isObject(result) || typeof result.data !== "string" || !result.data) {
       throw new Error("Browser returned an invalid screenshot");
     }

@@ -186,6 +186,23 @@ test('screenshot clips use viewport coordinates and reject invalid regions', asy
   assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
 });
 
+test('full-page screenshots use content dimensions and enforce size limits', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];let height=3000;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    calls.push(params);
+    if(params.method==='Page.getLayoutMetrics')return {cssContentSize:{x:0,y:0,width:800,height}};
+    return {data:Buffer.from('png').toString('base64')};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1),options={fullPage:true};
+  const screenshot=tab.getScreenshot(options);options.fullPage=false;
+  assert.equal((await screenshot).toString(),'png');
+  assert.deepEqual(calls.at(-1).commandParams,{format:'png',clip:{x:0,y:0,width:800,height:3000,scale:1},captureBeyondViewport:true});
+  height=40001;await assert.rejects(tab.getScreenshot({fullPage:true}),/too large/);
+  await assert.rejects(tab.getScreenshot({fullPage:true,clip:{x:0,y:0,width:1,height:1}}),/cannot use a clip/);
+  assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
+});
+
 test('dialog waits fail promptly on tab detach or client close, without crossing tabs', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set();
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};

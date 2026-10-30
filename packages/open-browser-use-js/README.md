@@ -271,7 +271,13 @@ CSS viewport coordinates. The region must fit inside the viewport. Its PNG
 pixel dimensions depend on the display scale. To click a point in the cropped
 image, scale it by the clip dimensions and add the clip's x/y origin. If the
 page scrolls or resizes
-while the screenshot is being captured, capture it again. Electron requires the target tab to be
+while the screenshot is being captured, capture it again. Use
+`await tab.getScreenshot({fullPage:true})` to capture the document beyond the
+viewport. Full-page capture and `clip` cannot be combined. The CSS content area
+is limited to 32 million square pixels and each dimension to 32767 CSS pixels;
+larger pages return an error. Electron also rejects screenshot results near its
+8 MiB encoded transport limit. Offscreen lazy content may need to be loaded
+before capture. Electron requires the target tab to be
 presented in a host window for wheel gestures; detached tabs return
 `IAB_SCROLL_REQUIRES_PRESENTED_SURFACE`. Hidden or minimized windows temporarily
 disable background throttling while dispatching a trusted wheel event.

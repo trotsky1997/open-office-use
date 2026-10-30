@@ -137,3 +137,5 @@ getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察�
 修复 goto 超时后把旧的已加载页面视为成功的问题。CDP 不返回 loaderId 时，只有当前 URL 与目标一致且文档达到加载状态才结束同文档导航；已发生的调试器断开仍会返回错误。测试覆盖旧页面超时、同文档片段跳转和断开竞态；macOS Electron、macOS/Linux Chromium 实页验证片段跳转。Linux 使用隔离浏览器与 --no-sandbox。
 
 SDK 增加标签页 back、forward、reload。历史边界直接返回，导航动作不自动重试；reload 等待主页面 load 事件并在失败时清理监听。后退和前进返回时命令已发送，调用方核验目的地。macOS Electron、macOS/Linux Chromium 实页验证 history API 路由往返与重新加载；Linux 使用隔离浏览器与 --no-sandbox。
+
+新增 fullPage 截图，使用 CSS 内容尺寸捕获视口外区域，与局部裁剪互斥；限制单边 32767 CSS 像素及 3200 万 CSS 平方像素。Electron 对接近 8 MiB 传输上限的截图直接报错，保留连接和页面队列。macOS Electron、macOS/Linux Chromium 实页验证视口外像素；未滚动触发的懒加载内容可能尚未出现。Linux 使用隔离浏览器与 --no-sandbox。

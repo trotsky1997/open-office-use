@@ -48,7 +48,9 @@ input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clic
 screenshot pixels to CSS viewport coordinates. For a closer view use
 `tab.getScreenshot({clip:{x,y,width,height}})` with a rectangle inside the CSS
 viewport; convert cropped image pixels using the clip dimensions and add its
-x/y origin before clicking.
+x/y origin before clicking. `tab.getScreenshot({fullPage:true})` captures the
+whole document subject to the SDK size limit; offscreen lazy content may need
+loading first.
 Use `locator.press("Enter")` to focus a matched target and send a key, or `tab.pressKey("Enter")` and `tab.pressKey("ControlOrMeta+A")` for already focused
 page keyboard actions. Printable ASCII keys use US keyboard mappings; use `tab.typeText()` for arbitrary text.
 Use `tab.back()`, `tab.forward()` and `tab.reload()` for tab history actions.

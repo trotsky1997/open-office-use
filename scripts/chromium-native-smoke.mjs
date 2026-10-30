@@ -67,6 +67,12 @@ try {
  assert.ok(crop.readUInt32BE(16)>=30 && crop.readUInt32BE(20)>=20);
  const pixel=await tab.evaluate(`(async()=>{const img=new Image();img.src='data:image/png;base64,${crop.toString('base64')}';await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);return Array.from(ctx.getImageData(Math.floor(img.width/2),Math.floor(img.height/2),1,1).data)})()`,{awaitPromise:true});
  assert.deepEqual(pixel,[255,0,0,255]);
+
+ await tab.evaluate(`(()=>{const box=document.createElement('div');box.id='full-page-fixture';Object.assign(box.style,{position:'absolute',left:'20px',top:'1900px',width:'100px',height:'80px',background:'rgb(0, 255, 0)',zIndex:'999999'});document.body.append(box)})()`);
+ const fullDimensions=(await browser.cdp.call(tab.id,'Page.getLayoutMetrics')).cssContentSize;
+ const full=await tab.getScreenshot({fullPage:true});assert.ok(full.readUInt32BE(20)>1900);
+ const fullPixel=await tab.evaluate(`(async()=>{const img=new Image();img.src='data:image/png;base64,${full.toString('base64')}';await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);return Array.from(ctx.getImageData(Math.floor(50*img.width/${fullDimensions.width}),Math.floor(1930*img.height/${fullDimensions.height}),1,1).data)})()`,{awaitPromise:true});
+ assert.ok(fullPixel[0]<=2 && fullPixel[1]>=253 && fullPixel[2]<=2 && fullPixel[3]===255);await tab.evaluate("document.querySelector('#full-page-fixture').remove()");
  await tab.evaluate("document.querySelector('#screenshot-fixture').remove();window.scrollTo(0,0)");
 
  const state=await tab.observe();const button=state.nodes.find(n=>n.role==='button'&&n.name==='Save');assert.ok(button);await tab.click(button.index,state.snapshotId);

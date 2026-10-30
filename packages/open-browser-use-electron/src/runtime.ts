@@ -270,7 +270,10 @@ export class IabRuntime implements Backend {
         check();
         if (!painted) throw new Error(timeoutError);
       }
-      if (method === 'Page.captureScreenshot') tab.mouseReady = true;
+      if (method === 'Page.captureScreenshot') {
+        if (typeof result?.data === 'string' && Buffer.byteLength(result.data) > 8 * 1024 * 1024 - 1024) throw new Error('IAB_SCREENSHOT_TOO_LARGE');
+        tab.mouseReady = true;
+      }
       if (['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry'].includes(method)) tab.mouseReady = false;
       return result;
     };

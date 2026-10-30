@@ -51,6 +51,12 @@ app.whenReady().then(async () => {
     assert.ok(size.width>=30 && size.height>=20);assert.deepEqual([...pixels.subarray(offset,offset+4)],[0,0,255,255]);
     await assert.rejects(sdkTab.getScreenshot({clip:{x:-1,y:0,width:1,height:1}}),/Invalid screenshot clip/);
     await assert.rejects(sdkTab.getScreenshot({clip:{x:799,y:0,width:5,height:1}}),/outside the viewport/);
+    await evaluate(`(()=>{const box=document.createElement('div');box.id='full-page-fixture';Object.assign(box.style,{position:'absolute',left:'20px',top:'1900px',width:'100px',height:'80px',background:'rgb(0, 255, 0)',zIndex:'999999'});document.body.append(box)})()`);
+    const dimensions=(await call('Page.getLayoutMetrics')).cssContentSize;
+    const full=nativeImage.createFromBuffer(await sdkTab.getScreenshot({fullPage:true}));
+    const fullSize=full.getSize(), fullPixels=full.toBitmap(), x=Math.floor(50*fullSize.width/dimensions.width), y=Math.floor(1930*fullSize.height/dimensions.height);
+    assert.ok(fullSize.height>size.height);const green=fullPixels.subarray((y*fullSize.width+x)*4,(y*fullSize.width+x)*4+4);assert.ok(green[0]<=2 && green[1]>=253 && green[2]<=2 && green[3]===255);
+    await evaluate("document.querySelector('#full-page-fixture').remove()");
     await evaluate("document.querySelector('#screenshot-fixture').remove();window.scrollTo(0,0)");
 
     await evaluate(`document.querySelector('#increment').addEventListener('mouseenter',e=>window.hoverTrusted=e.isTrusted)`);

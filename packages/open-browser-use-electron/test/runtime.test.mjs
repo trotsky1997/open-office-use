@@ -195,6 +195,12 @@ test('revocation during hidden view rendering prevents the pending mouse input',
   allowed = false; release(); await denied;
   assert.deepEqual(commands, ['Page.captureScreenshot']);
 });
+test('oversized screenshots fail without closing the page queue', async t => {
+  const { adapter, a } = setup(t), tab = await a.tabs.create();
+  adapter.views[0].webContents.debugger.sendCommand = async method => method === 'Page.captureScreenshot' ? {data:'x'.repeat(8 * 1024 * 1024)} : {};
+  await assert.rejects(a.call('executeCdp',{target:{tabId:tab.id},method:'Page.captureScreenshot'}),/IAB_SCREENSHOT_TOO_LARGE/);
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});
+});
 test('stalled mouse preparation times out without issuing late input', async t => {
   const { runtime, adapter, a } = setup(t), tab = await a.tabs.create();
   const debuggerApi = adapter.views[0].webContents.debugger, commands = [];

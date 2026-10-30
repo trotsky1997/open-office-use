@@ -339,6 +339,8 @@ enables/disables both effects during manual steps or automatic playback.
   the previous setting. This can temporarily change page visibility and affects
   frame scheduling in the host window. An `IAB_BACKGROUND_SCROLL_TIMEOUT`
   leaves the input outcome unknown; the caller should observe before retrying.
+- Screenshot responses that exceed the encoded transport size limit fail without
+  closing the client connection; use a smaller viewport clip when needed.
 - A surface is a native view, not a DOM element. Position it with integer DIP
   bounds and handle resizing in the host. The sample validates IPC sender,
   main frame, local UI URL and allowed actions before using main-only APIs.
