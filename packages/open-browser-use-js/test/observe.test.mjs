@@ -38,6 +38,16 @@ test('popup expectation matches a new owned child and never repeats the action',
   await assert.rejects(tab.playwright.expectPopup(async()=>{tabs=[...tabs,{id:7,openerTabId:1}];await new Promise(r=>setTimeout(r,120));tabs=tabs.filter(item=>item.id!==7)},{timeoutMs:500}),/changed or closed/);
 });
 
+test('popup deadline includes preparation and does not issue a late action',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let actions=0;
+  client.request=async method=>{if(method==='getTabs'){await new Promise(resolve=>setTimeout(resolve,80));return [{id:1}];}throw new Error('unexpected request');};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await assert.rejects(tab.playwright.expectPopup(async()=>{actions++},{timeoutMs:10}),/preparation timed out before action/);
+  await new Promise(resolve=>setTimeout(resolve,100));assert.equal(actions,0);
+  let generation=1;Object.defineProperty(client,'connectionGeneration',{get:()=>generation});client.request=async()=>{generation++;return [{id:1}];};
+  await assert.rejects(tab.playwright.expectPopup(async()=>{actions++},{timeoutMs:500}),/Connection changed during popup preparation before action/);assert.equal(actions,0);
+});
+
 test('DOM CUA is shared by tab handles in one browser',()=>{
   const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})});
   assert.equal(browser.tab(1).dom_cua,browser.tab(1).dom_cua);

@@ -3168,12 +3168,25 @@ export class OpenBrowserUseTabPlaywright {
         const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid popup timeout");
-        const release = this.tab.browser.beginPopupWait(this.tab.id);
+        const release = this.tab.browser.beginPopupWait(this.tab.id), deadline = performance.now() + timeoutMs, generation = this.tab.browser.client.connectionGeneration;
         try {
-            const baseline = await this.tab.browser.tabs.list(), generation = this.tab.browser.client.connectionGeneration;
+            let preflightTimer;
+            let baseline;
+            try {
+                baseline = await Promise.race([this.tab.browser.tabs.list(), new Promise((_, reject) => { preflightTimer = setTimeout(() => reject(new Error("Popup preparation timed out before action")), Math.max(0, deadline - performance.now())); })]);
+            }
+            finally {
+                if (preflightTimer)
+                    clearTimeout(preflightTimer);
+            }
+            if (generation !== this.tab.browser.client.connectionGeneration)
+                throw new Error("Connection changed during popup preparation before action");
             if (!baseline.some(item => item.id === String(this.tab.id)))
                 throw new Error("Opener is outside this browser session");
-            const existing = new Set(baseline.map(item => item.id)), deadline = performance.now() + timeoutMs;
+            const remaining = deadline - performance.now();
+            if (remaining <= 0)
+                throw new Error("Popup preparation timed out before action");
+            const existing = new Set(baseline.map(item => item.id));
             let done = false, timer;
             try {
                 const watch = async () => {
@@ -3208,7 +3221,7 @@ export class OpenBrowserUseTabPlaywright {
                         throw new Error("Popup changed or closed; inspect the session before continuing");
                     return popup;
                 });
-                return await Promise.race([work, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Popup outcome unknown after timeout; inspect the session before retrying")), timeoutMs); })]);
+                return await Promise.race([work, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Popup outcome unknown after timeout; inspect the session before retrying")), remaining); })]);
             }
             finally {
                 done = true;

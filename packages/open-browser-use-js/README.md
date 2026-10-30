@@ -92,8 +92,10 @@ await popup.playwright.waitForURL(/\/details(?:[?#]|$)/, {timeoutMs: 15000});
 same session and the backend knows the opener.
 It polls owned tabs, so a popup closed before observation or without an opener
 can time out. Concurrent matching popups are rejected as ambiguous, and only one popup
-expectation per opener can run in a browser instance. On timeout, the action
-may still be running; inspect the session before retrying. Chrome popups with
+expectation per opener can run in a browser instance. The timeout includes
+tab-list preparation. If preparation times out, the action is not issued;
+a timeout after the action starts means it may still be running, so inspect
+the session before retrying. Chrome popups with
 no recorded session origin are released rather than closed by finalization;
 close a popup explicitly when appropriate. Electron finalization closes unkept
 popups when they have no pending operation.
