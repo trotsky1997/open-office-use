@@ -680,6 +680,7 @@ export declare class OpenBrowserUseCssLocator {
     private read;
     isEnabled(): Promise<boolean>;
     isChecked(): Promise<boolean>;
+    isEditable(): Promise<boolean>;
     boundingBox(options?: {
         timeoutMs?: number;
     }): Promise<{
@@ -803,6 +804,7 @@ export declare class OpenBrowserUseRoleLocator {
     }): Promise<string | null>;
     isEnabled(): Promise<boolean>;
     isChecked(): Promise<boolean>;
+    isEditable(): Promise<boolean>;
     boundingBox(options?: {
         timeoutMs?: number;
     }): Promise<{

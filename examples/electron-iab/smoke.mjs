@@ -66,6 +66,12 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   for (const locator of [cssFirst,roleFirst]) { await locator.waitFor({state:'visible',timeoutMs:1000});assert.equal(await locator.isHidden(),false);assert.equal(await locator.isDisabled(),false); }
   await evaluate(a.id,"document.querySelector('#bulk-text-test button').disabled=true");
   for (const locator of [cssFirst,roleFirst]) assert.equal(await locator.isDisabled(),true);
+  await evaluate(a.id,`document.querySelector('#bulk-text-test').insertAdjacentHTML('beforeend','<input id="editable-test" aria-label="Native editable"><select id="editable-select"><option>One</option></select><div id="editable-custom" role="textbox" aria-label="Custom editable" contenteditable="true"></div>')`);
+  const nativeEditable=sdkTab.playwright.getByRole('textbox',{name:'Native editable'}),cssEditable=sdkTab.playwright.locator('#editable-test'),customEditable=sdkTab.playwright.getByRole('textbox',{name:'Custom editable'});
+  for (const locator of [nativeEditable,cssEditable,customEditable,sdkTab.playwright.locator('#editable-select')]) assert.equal(await locator.isEditable(),true);
+  await evaluate(a.id,"document.querySelector('#editable-test').readOnly=true;document.querySelector('#editable-custom').setAttribute('aria-readonly','true');document.querySelector('#editable-select').disabled=true");
+  for (const locator of [nativeEditable,cssEditable,customEditable,sdkTab.playwright.locator('#editable-select')]) assert.equal(await locator.isEditable(),false);
+  await assert.rejects(cssFirst.isEditable(),/does not support editable state/);
   await evaluate(a.id,"document.querySelector('#bulk-text-test').replaceChildren()");
   assert.deepEqual(await cssBulk.allInnerTexts(),[]);assert.deepEqual(await roleBulk.allInnerTexts(),[]);
   for (const locator of [cssFirst,roleFirst]) { await locator.waitFor({state:'hidden',timeoutMs:1000});assert.equal(await locator.isHidden(),true); }

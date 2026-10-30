@@ -261,6 +261,10 @@ positive deadline for target lookup and reading. A timed-out read may finish lat
 Locator action timeouts bound the initial target query; a timed-out query cannot
 issue a late action. Later action preparation and issued input may take longer.
 `waitFor()` bounds browser reads when `timeoutMs` is positive. Timed-out reads may finish later; `timeoutMs: 0` performs one read.
+`isEditable()` checks enabled and readonly states for native inputs, textarea,
+select, contenteditable elements, and supported explicit ARIA roles. Other
+elements raise an error. This state check does not guarantee that every input
+method supports the target control.
 `isHidden()` returns the inverse of `isVisible()`, including for an absent match;
 `isDisabled()` returns the inverse of `isEnabled()` and waits for a match.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and
@@ -352,7 +356,7 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
 `textContent`, `allTextContents`, `allInnerTexts`, `getAttribute`, `isVisible`, `isHidden`, `isEnabled`, `isDisabled`,
-`isChecked`, `inputValue`, `boundingBox`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
+`isChecked`, `isEditable`, `inputValue`, `boundingBox`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
 `uncheck`, `setChecked` and `selectOption`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a
 `frameLocator` is selected. Matches are limited to 1,000 elements and single

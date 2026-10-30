@@ -56,6 +56,17 @@ function locatorClickOptions(options) {
     return { button, buttons: masks[button], modifiers: cuaModifiers(options.modifiers), ...(options.force ? { force: true } : {}) };
 }
 const inputValueFunction = `function(){if(this instanceof HTMLInputElement && this.type==='password')return {error:'redacted'};if(!(this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement || this instanceof HTMLSelectElement))return {error:'unsupported'};return {value:this.value.slice(0,30001)}}`;
+const editableFunction = `function(role){
+  if(!(this instanceof Element) || !this.isConnected)return null;
+  const native=this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement || this instanceof HTMLSelectElement;
+  const supported=['checkbox','combobox','grid','gridcell','listbox','radiogroup','slider','spinbutton','textbox','columnheader','rowheader','searchbox','switch','treegrid'];
+  const ariaRole=(role || this.getAttribute('role') || '').trim().split(/\\s+/)[0];
+  const aria=supported.includes(ariaRole);
+  if(!native && !aria && !this.isContentEditable)return {error:'not-editable'};
+  for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null))if(el.matches(':disabled') || el.getAttribute('aria-disabled')?.toLowerCase()==='true')return {value:false};
+  const readonly=native ? this.hasAttribute('readonly') : aria && this.getAttribute('aria-readonly')?.toLowerCase()==='true';
+  return {value:!readonly};
+}`;
 const domIdentityFunction = `function(){
   if(!this.isConnected)return null;
   const root=this.getRootNode(),references=(this.getAttribute('aria-labelledby') || '').trim().split(/\\s+/).filter(Boolean).map(id=>root.getElementById?.(id)?.textContent || '').join(' ').trim();
@@ -1439,15 +1450,17 @@ export class OpenBrowserUseTab {
         if (typeof objectId !== "string")
             throw new RetryablePreflightError("Selector target is unavailable; observe again");
         try {
-            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; if(mode==='inputValue')return (${inputValueFunction}).call(this); if(mode==='visible'){const r=this.getBoundingClientRect();return {value:getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0};} if(mode==='checked'){if(this instanceof HTMLInputElement && ['checkbox','radio'].includes(this.type))return {value:this.indeterminate ? null : this.checked};const role=(this.getAttribute('role') || '').trim().split(/\\s+/)[0], checked=this.getAttribute('aria-checked');if(['checkbox','radio','switch','menuitemcheckbox','menuitemradio'].includes(role) && ['true','false'].includes(checked))return {value:checked==='true'};return {value:null};} if(mode==='enabled'){for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return {value:false};return {value:true};} const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; if(mode==='inputValue')return (${inputValueFunction}).call(this); if(mode==='editable')return (${editableFunction}).call(this,''); if(mode==='visible'){const r=this.getBoundingClientRect();return {value:getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0};} if(mode==='checked'){if(this instanceof HTMLInputElement && ['checkbox','radio'].includes(this.type))return {value:this.indeterminate ? null : this.checked};const role=(this.getAttribute('role') || '').trim().split(/\\s+/)[0], checked=this.getAttribute('aria-checked');if(['checkbox','radio','switch','menuitemcheckbox','menuitemradio'].includes(role) && ['true','false'].includes(checked))return {value:checked==='true'};return {value:null};} if(mode==='enabled'){for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return {value:false};return {value:true};} const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (isObject(payload) && payload.error === "not-editable")
+                throw new Error("Target does not support editable state");
             if (isObject(payload) && payload.error === "redacted")
                 throw new Error("Password values are redacted");
             if (isObject(payload) && payload.error === "unsupported")
                 throw new Error("Target is not an input, textarea or select");
             if (isObject(payload) && mode === "checked" && payload.value === null)
                 throw new Error("Target does not have a binary checked state");
-            if (!isObject(payload) || (["visible", "enabled", "checked"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
+            if (!isObject(payload) || (["visible", "enabled", "checked", "editable"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
                 throw new RetryablePreflightError("Selector target is unavailable; observe again");
             if (typeof payload.value === "string" && payload.value.length > 30_000)
                 throw new Error("Locator value exceeds the 30000 character limit");
@@ -1769,7 +1782,7 @@ export class OpenBrowserUseTab {
             return fresh.checked;
         }
         let executionContextId;
-        if (mode === "inputValue") {
+        if (mode === "inputValue" || mode === "editable") {
             const frameId = target.frameId ?? observation.frames?.[0]?.id;
             if (!frameId)
                 throw new RetryablePreflightError("Target frame is unavailable; observe again");
@@ -1784,15 +1797,17 @@ export class OpenBrowserUseTab {
             throw new RetryablePreflightError("Target is unavailable; observe again");
         try {
             const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
-                objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }],
-                functionDeclaration: `function(mode, name) { if (!this.isConnected) return null; if (mode === 'inputValue') return (${inputValueFunction}).call(this); if (mode === 'enabled' || mode === 'visible') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; if (mode === 'visible') { const r = this.nodeType === 3 ? (() => {const range=document.createRange();range.selectNode(this);return range.getBoundingClientRect();})() : element.getBoundingClientRect(); return {value:getComputedStyle(element).visibility === 'visible' && r.width > 0 && r.height > 0}; } for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
+                objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }, { value: fresh.role }],
+                functionDeclaration: `function(mode, name, role) { if (!this.isConnected) return null; if (mode === 'inputValue') return (${inputValueFunction}).call(this); if (mode === 'editable') return (${editableFunction}).call(this,role); if (mode === 'enabled' || mode === 'visible') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; if (mode === 'visible') { const r = this.nodeType === 3 ? (() => {const range=document.createRange();range.selectNode(this);return range.getBoundingClientRect();})() : element.getBoundingClientRect(); return {value:getComputedStyle(element).visibility === 'visible' && r.width > 0 && r.height > 0}; } for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
             }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (isObject(payload) && payload.error === "not-editable")
+                throw new Error("Target does not support editable state");
             if (isObject(payload) && payload.error === "redacted")
                 throw new Error("Password values are redacted");
             if (isObject(payload) && payload.error === "unsupported")
                 throw new Error("Target is not an input, textarea or select");
-            if (!isObject(payload) || (["enabled", "visible"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
+            if (!isObject(payload) || (["enabled", "visible", "editable"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
                 throw new RetryablePreflightError("Target value is unavailable; observe again");
             const value = payload.value;
             if (value === null && mode === "innerText")
@@ -3608,6 +3623,7 @@ export class OpenBrowserUseCssLocator {
     }
     isEnabled() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "enabled"), undefined, true); }
     isChecked() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "checked"), undefined, true); }
+    isEditable() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "editable"), undefined, true); }
     boundingBox(options = {}) { return this.perform(async (snapshot, id) => { if (!snapshot.frame)
         throw new RetryablePreflightError("Frame unavailable; observe again"); if (!await this.tab.readCss(snapshot, id, "visible"))
         return null; const box = await this.tab.nodeBoundingBox(snapshot.frame, snapshot.frames, id); if (!box || !await this.tab.readCss(snapshot, id, "visible"))
@@ -3999,6 +4015,7 @@ export class OpenBrowserUseRoleLocator {
     async textContent(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "textContent")), options.timeoutMs, true); }
     async isEnabled() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "enabled")), undefined, true); }
     async isChecked() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "checked")), undefined, true); }
+    async isEditable() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "editable")), undefined, true); }
     boundingBox(options = {}) { return this.perform(async (node, id) => { if (!await this.tab.locatorRead(id, node.index, "visible"))
         return null; const observation = this.tab.currentObservation(id), target = observation.nodes.find(item => item.index === node.index), frame = observation.frames?.find(item => item.id === (target?.frameId ?? observation.frames?.[0]?.id)); if (!target || !frame || !observation.frames)
         throw new RetryablePreflightError("Target frame unavailable; observe again"); const box = await this.tab.nodeBoundingBox(frame, observation.frames, target.backendNodeId); if (!box || !await this.tab.locatorRead(id, node.index, "visible"))
