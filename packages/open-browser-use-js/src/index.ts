@@ -535,13 +535,18 @@ export class OpenBrowserUseTab {
       if (event.method === "Page.navigatedWithinDocument") return event.params.frameId === root;
       return event.method === "Page.frameNavigated" && isObject(event.params.frame) && event.params.frame.id === root && !event.params.frame.parentId;
     },{timeoutMs,signal:controller.signal,timeoutMessage:`Timed out waiting for navigation after ${timeoutMs} ms`});
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const [result] = await Promise.all([Promise.resolve().then(action),navigation]);
-      const remaining = Math.max(0, deadline - performance.now());
-      if (options.url !== undefined) await this.waitForURL(options.url,{waitUntil,timeoutMs:remaining});
-      else await this.waitForLoadState({state:waitUntil,timeoutMs:remaining});
-      return result;
-    } finally { controller.abort(); }
+      const work = (async () => {
+        const [result] = await Promise.all([Promise.resolve().then(action),navigation]);
+        if (controller.signal.aborted) throw new Error("Navigation wait cancelled");
+        const remaining = Math.max(0, deadline - performance.now());
+        if (options.url !== undefined) await this.waitForURL(options.url,{waitUntil,timeoutMs:remaining});
+        else await this.waitForLoadState({state:waitUntil,timeoutMs:remaining});
+        return result;
+      })();
+      return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error(`Timed out waiting for navigation after ${timeoutMs} ms`)),timeoutMs);})]);
+    } finally { if (timer) clearTimeout(timer); controller.abort(); }
   }
 
   async waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {

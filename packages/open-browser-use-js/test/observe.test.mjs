@@ -141,6 +141,9 @@ test('expectNavigation arms before the action and ignores child-frame navigation
   await assert.rejects(tab.expectNavigation(async()=>{emit('Page.frameNavigated',{frame:{id:'child',parentId:'root'}});},{timeoutMs:10}),/Timed out waiting for navigation/);
   await assert.rejects(tab.expectNavigation(async()=>{throw new Error('action failed');},{timeoutMs:500}),/action failed/);
   assert.equal(handlers.size,1);
+  let release;href='https://example.test/slow';
+  await assert.rejects(tab.expectNavigation(()=>{emit('Page.navigatedWithinDocument',{frameId:'root'});return new Promise(resolve=>{release=resolve;});},{timeoutMs:10}),/Timed out waiting for navigation/);
+  assert.equal(handlers.size,1);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(handlers.size,1);
 });
 
 test('goto does not treat a loaded previous document as a completed navigation', async () => {

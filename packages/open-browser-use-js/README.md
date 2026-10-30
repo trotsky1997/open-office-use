@@ -355,7 +355,8 @@ await tab.playwright.expectNavigation(
 
 This watches main-frame document and same-document navigation, then waits for
 the requested URL and load state. A timeout or action error can occur after
-the action has taken effect; inspect the page before retrying.
+the action has taken effect; inspect the page before retrying. The timeout also
+bounds a pending action callback; it cannot cancel a command already issued.
 
 ## JavaScript dialogs
 
