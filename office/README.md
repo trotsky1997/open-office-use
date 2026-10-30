@@ -180,7 +180,9 @@ For visual review, `office-use compare-pages original.pptx revised.pptx --before
 
 `compare-cells` compares one worksheet rectangle in saved XLSX files. It reports changed formula text, values, types and direct cell formatting, with before/after details for the first 500 changed cells and a total count. Formatting includes font, fill, border, alignment and protection as resolved Open XML component fragments, plus the number format; component IDs are resolved within each workbook before comparison. The range is limited to 10,000 cells. For formula cells, `value` is the stored cached result and its freshness is unknown. The comparison does not evaluate conditional formatting, workbook theme changes, inherited row or column formatting, charts, comments or worksheet structure; use the broader comparison and visual review alongside it.
 
-These merged-cell and worksheet-protection checks apply to the session grid, single-cell editing and text replacement. `session_read_grid` returns `sheet_protected`, `locked`, `merged_anchor` and `read_only_reason` for review. Unstyled empty cells are treated as locked when the sheet is protected; row or column style inheritance is not resolved. The lower-level `session_apply` and `apply_batch` pass explicit OfficeCLI operations through and do not enforce these editor checks. Inspect the saved workbook and its intended permissions after editing.
+These merged-cell and worksheet-protection checks apply to the session grid, single-cell editing and text replacement. `session_read_grid` returns `sheet_protected`, `locked`, `merged_anchor` and `read_only_reason` for review. Text or formulas exceeding 4,000 UTF-16 code units are displayed read-only in the grid and cannot be formatted there. For supported text cells, use targeted `session_replace_text` for a small edit. Unstyled empty cells are treated as locked when the sheet is protected; row or column style inheritance is not resolved. The lower-level `session_apply` and `apply_batch` pass explicit OfficeCLI operations through and do not enforce these editor checks. Inspect the saved workbook and its intended permissions after editing.
+
+Range reads copy the saved workbook once so formula and cached-value views use the same snapshot. They reject packages above 5,000 parts or 128 MiB uncompressed, as well as responses exceeding 1,000,000 estimated serialized cell-data characters. Request a smaller range when that limit is reached; the operation returns an error and no partial grid. The same limits apply to cell comparisons and grid reads. Save and close external editing sessions before reading.
 
 ## Spreadsheet calculation
 
@@ -236,6 +238,7 @@ python3 office/watch_smoke.py       # requires OfficeCLI, LibreOffice and Popple
 python3 office/grid_constraints_smoke.py # merged and protected cells
 python3 office/string_cell_smoke.py  # grid-to-text replacement and formula guard
 python3 office/workbook_inspect_smoke.py # sparse, bounded workbook inspection
+python3 office/range_safety_smoke.py # range snapshot, response limit and long-cell safety
 python3 office/grid_smoke.py        # requires OfficeCLI
 python3 office/paste_smoke.py       # requires Node.js
 python3 office/stories_smoke.py      # Word headers and footers

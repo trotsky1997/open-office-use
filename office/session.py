@@ -448,6 +448,9 @@ def read_grid(directory, base_revision, sheet, cell_range):
         for col_index, cell in enumerate(row):
             col, row_number = min_col + col_index, min_row + row_index
             reason, origin = spreadsheet.cell_constraint(constraints, col, row_number, cell['locked'], isinstance(cell.get('formula'), dict))
+            display = cell.get('formula') if isinstance(cell.get('formula'), str) else cell.get('value')
+            if reason is None and isinstance(display, str) and len(display.encode('utf-16-le')) // 2 > 4000:
+                reason = 'value_too_long'
             cells.append({'cell': f'{get_column_letter(col)}{row_number}', **cell,
                           'editable': reason is None, 'read_only_reason': reason, 'merged_anchor': origin})
         rows.append(cells)
@@ -477,7 +480,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
         if not (min_col <= col <= max_col and min_row <= row <= max_row) or address in seen:
             raise ValueError('Cell is outside the range or repeated')
         if not original[address]['editable']:
-            raise ValueError(f"Array, data-table or shared formula ranges, merged placeholders and locked cells cannot be edited: {address} ({original[address]['read_only_reason']})")
+            raise ValueError(f"Cell cannot be edited: {address} ({original[address]['read_only_reason']}); Array, data-table and shared formula ranges are protected")
         if not isinstance(value, str) or len(value) > 4000:
             raise ValueError('Cell values must be text of at most 4,000 characters')
         if value.lstrip().startswith('=') and not value.startswith('='):
@@ -520,7 +523,7 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
             col, number = column_index_from_string(match.group(1)), int(match.group(2))
             if sc1 <= col <= sc2 and sr1 <= number <= sr2:
                 if not cell['editable']:
-                    raise ValueError('Array, data-table or shared formula ranges and merged placeholders are not supported by grid formatting')
+                    raise ValueError(f"Cell cannot be formatted in the grid: {cell['cell']} ({cell['read_only_reason']})")
                 operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': props})
     return apply(directory, base_revision, operations)
 

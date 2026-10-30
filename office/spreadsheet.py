@@ -1,6 +1,7 @@
 """Bounded worksheet inspection and explicit LibreOffice recalculation."""
 import os
 import re
+import json
 import shutil
 import subprocess
 import tempfile
@@ -91,8 +92,24 @@ def inspect_workbook(file):
 
 
 def read_range(file, sheet, cell_range, include_style=False):
-    if Path(file).suffix.lower() != '.xlsx':
+    source = Path(file).resolve(strict=True)
+    if source.suffix.lower() != '.xlsx':
         raise ValueError('Worksheet reading requires an .xlsx file')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+    with tempfile.TemporaryDirectory(prefix='office-cell-read-') as tmp:
+        snapshot = Path(tmp) / 'workbook.xlsx'; shutil.copyfile(source, snapshot)
+        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+        try:
+            with zipfile.ZipFile(snapshot) as archive:
+                entries = archive.infolist(); names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+            return _read_range(snapshot, sheet, cell_range, include_style)
+        except zipfile.BadZipFile as exc:
+            raise ValueError('Invalid workbook package') from exc
+
+
+def _read_range(file, sheet, cell_range, include_style=False):
     try:
         min_col, min_row, max_col, max_row = range_boundaries(cell_range)
         if min_col is None or min_row is None or max_col is None or max_row is None:
@@ -111,7 +128,7 @@ def read_range(file, sheet, cell_range, include_style=False):
             raise ValueError(f'Worksheet not found: {sheet}')
         f_rows = formulas[sheet].iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col)
         v_rows = values[sheet].iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col)
-        rows = []
+        rows = []; size = 0
         for _ in range(max_row - min_row + 1):
             f_row = next(f_rows, ())
             v_row = next(v_rows, ())
@@ -126,6 +143,8 @@ def read_range(file, sheet, cell_range, include_style=False):
                     row.append({'formula': formula, 'value': v.value if v else None, 'type': v.data_type if v else 'n'})
                 else:
                     row.append({'value': f.value if f else None, 'type': f.data_type if f else 'n'})
+                size += len(json.dumps(row[-1], ensure_ascii=False, default=str))
+                if size > 1000000: raise ValueError('Cell data exceeds the 1,000,000-character response limit; request a smaller range')
             if include_style:
                 for index, cell in enumerate(row):
                     f = f_row[index] if index < len(f_row) else None
@@ -151,6 +170,8 @@ def read_range(file, sheet, cell_range, include_style=False):
                                          'fill_rgb': rgb[-6:] if isinstance(rgb, str) else None,
                                          'number_format': getattr(f, 'number_format', 'General')}
                         cell['locked'] = getattr(getattr(f, 'protection', None), 'locked', True) is not False
+                    size += len(json.dumps(cell.get('format', cell.get('style')), ensure_ascii=False, default=str))
+                    if size > 1000000: raise ValueError('Cell data exceeds the 1,000,000-character response limit; request a smaller range')
             rows.append(row)
         return {'sheet': sheet, 'range': cell_range, 'rows': rows, 'cache_freshness': 'unknown'}
     finally:

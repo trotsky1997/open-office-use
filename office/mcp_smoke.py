@@ -254,6 +254,15 @@ async def main():
                 assert not guarded_grid.isError and guarded_grid.structuredContent['sheet_protected'] and guarded_grid.structuredContent['rows'][0][1]['read_only_reason'] == 'merged_placeholder' and guarded_grid.structuredContent['rows'][0][2]['editable'], guarded_grid
                 guarded_edit = await session.call_tool('session_edit_grid', {'directory': str(guarded_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:C1', 'changes': [{'cell': 'B1', 'value': 'hidden'}]})
                 assert guarded_edit.isError, guarded_edit
+                long_source = root / 'long-grid.xlsx'; long_book = Workbook()
+                for row in range(1, 102): long_book.active.cell(row, 1, 'x' * 10000)
+                long_book.save(long_source); long_draft = root / 'long-grid-draft'
+                long_start = await session.call_tool('start_session', {'directory': str(long_draft), 'source': str(long_source)})
+                assert not long_start.isError, long_start
+                long_grid = await session.call_tool('session_read_grid', {'directory': str(long_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1'})
+                assert not long_grid.isError and long_grid.structuredContent['rows'][0][0]['read_only_reason'] == 'value_too_long', long_grid
+                oversized = await session.call_tool('read_cells', {'file': str(long_source), 'sheet': 'Sheet', 'cell_range': 'A1:A101'})
+                assert oversized.isError, oversized
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
                 assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1, saved_grid
                 styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True}})

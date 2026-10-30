@@ -275,7 +275,7 @@ document.getElementById('grid-load').addEventListener('click', async () => {
     }
     input.title=`Number format: ${cell.style.number_format}`;
     if (typeof formula==='string') input.title+=`; cached result: ${cell.value == null ? 'unknown' : cell.value}`;
-    if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : 'Protected formula range';
+    if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : cell.read_only_reason==='value_too_long' ? 'Cell content exceeds the 4,000 UTF-16-unit editing limit' : 'Protected formula range';
     else if (cell.merged_anchor) input.title+=`; merged region anchor ${cell.merged_anchor}`;
     td.appendChild(input); tr.appendChild(td);
    }
