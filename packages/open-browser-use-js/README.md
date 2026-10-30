@@ -248,7 +248,8 @@ also bounds each browser read; timed-out reads may finish later.
 `focus()` focuses the matched element without dispatching mouse or keyboard
 input. It rechecks the match and focus chain; focus handlers can change the page,
 and a changed target causes an error without repeating the focus. Target and frame
-focus checks use an isolated world so page scripts cannot replace those DOM methods.
+focus checks use an isolated world so page scripts cannot replace those DOM methods. Semantic input target
+checks also run in an isolated world; unavailable contexts fail before input.
 `clear()` fills the matched editable control with an empty string, using the
 same focus, validation and timeout behavior as `fill()`.
 Editable text inputs exposed as `combobox` support `fill()` and `type()`;

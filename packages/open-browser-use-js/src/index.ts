@@ -2137,10 +2137,20 @@ export class OpenBrowserUseTab {
     if (!current || current.role !== node.role || current.name !== node.name || current.stateKey !== node.stateKey) throw new RetryablePreflightError("Target changed; observe again");
     if (current.disabled && !hover) throw new RetryablePreflightError("Target is disabled; observe again");
     await this.verifyLocatorScope(observation,node);
+    let frameId=node.frameId ?? observation.frames?.[0]?.id;
+    if(!frameId){
+      const tree=await this.browser.cdp.call(this.id,"Page.getFrameTree");
+      const root=isObject(tree) && isObject(tree.frameTree) && isObject(tree.frameTree.frame) ? tree.frameTree.frame.id : undefined;
+      if(typeof root!=="string")throw new RetryablePreflightError("Target frame is unavailable; observe again");
+      frameId=root;
+    }
+    const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId,worldName:"open-browser-use-selector"},{sessionId:targetSession});
+    if(!isObject(world) || typeof world.executionContextId!=="number" || await this.documentId()!==observation.documentId)throw new RetryablePreflightError("Target context is unavailable; observe again");
+    const executionContextId=world.executionContextId;
     if (checked !== undefined) {
       if (!["checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio"].includes(node.role) || typeof current.checked !== "boolean") throw new Error("Target does not have a binary checked state");
       if (current.checked === checked) {
-        const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:node.backendNodeId},{sessionId:targetSession});
+        const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:node.backendNodeId,executionContextId},{sessionId:targetSession});
         const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
         if (typeof objectId !== "string") throw new RetryablePreflightError("Target is unavailable; observe again");
         try {
@@ -2161,15 +2171,7 @@ export class OpenBrowserUseTab {
       }
       if (!checked && ["radio", "menuitemradio"].includes(node.role)) throw new Error("A selected radio cannot be unchecked directly");
     }
-    let focusContext:number | undefined;
-    if(focusOnly){
-      const frameId=node.frameId ?? observation.frames?.[0]?.id;
-      if(!frameId)throw new RetryablePreflightError("Target frame is unavailable; observe again");
-      const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId,worldName:"open-browser-use-selector"},{sessionId:targetSession});
-      if(!isObject(world) || typeof world.executionContextId!=="number")throw new RetryablePreflightError("Target focus context is unavailable; observe again");
-      focusContext=world.executionContextId;
-    }
-    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: node.backendNodeId,...(focusContext===undefined ? {} : {executionContextId:focusContext}) }, { sessionId: targetSession });
+    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: node.backendNodeId, executionContextId }, { sessionId: targetSession });
     const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
     if (typeof objectId !== "string") throw new RetryablePreflightError("Target is unavailable; observe again");
     let inputIssued = false;

@@ -93,6 +93,8 @@ test("observation indexes resolve to current, uncovered controls and expire afte
   let documentId = 1, name = "Save", point = { x: 10, y: 20, width: 10, height: 10 };
   const events = [];
   client.request = async (method, params) => {
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
+    if(method==='executeCdp' && params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
     if (method === "attach") return {};
     const command = params.method;
     if (command === "DOM.getDocument") return { root: { backendNodeId: documentId } };
@@ -129,6 +131,7 @@ test("hover sends one mouse move after target validation", async () => {
   const client = new OpenBrowserUseClient({socketPath:"unused"}), events=[];
   let point = {x:10,y:20,width:10,height:10}, fail = false;
   client.request = async (method, params) => {
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if (method === "attach") return {};
     if (params.method === "Page.getFrameTree") return {frameTree:{frame:{id:"root",loaderId:"v1",url:"https://example.test"}}};
     if (params.method === "DOM.getDocument") return {root:{backendNodeId:1}};
@@ -169,6 +172,7 @@ test("observation renders accessible parents before descendants", async () => {
 test('double click stops after the first click if the target moves',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let move=false,failRelease=false;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
@@ -720,6 +724,7 @@ test("same-process frame targets translate coordinates and reject frame navigati
   let loader = "v1", covered = false;
   const events = [];
   client.request = async (method, params) => {
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if (method === "attach") return {};
     const command = params.method, args = params.commandParams;
     if (command === "DOM.getDocument") return {root:{backendNodeId:1}};
@@ -902,6 +907,8 @@ test("text input requires an editable focused observed textbox", async () => {
   let focused = true, selected = true;
   const calls = [];
   client.request = async (method, params) => {
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
+    if(method==='executeCdp' && params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
     if (method === "attach") return {};
     calls.push(params.method);
     if (params.method === "DOM.getDocument") return { root: { backendNodeId: 1 } };
@@ -1080,6 +1087,7 @@ test('locator waits for visible and hidden states without accepting ambiguous ma
 test("locator retries a covered target before input, and stops at an unknown input result", async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let covered=true, mouse=0, failMouse=false;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1100,6 +1108,7 @@ test("locator retries a covered target before input, and stops at an unknown inp
 test("locator does not repeat a click when a frame changes after input", async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let loader='v1',mouse=0,inserted=0;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1121,6 +1130,7 @@ test('role locators filter supported states and reject invalid options', async (
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let checked=false, pressed='true', changeOnMeasure=false, mouse=0;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
@@ -1186,6 +1196,7 @@ test('disabled controls remain observable and never receive input', async () => 
 test('disabled controls may be hovered without being clicked', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), events=[];
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
@@ -1204,6 +1215,7 @@ test('disabled controls may be hovered without being clicked', async () => {
 test('label locator checks and unchecks once, validates state and refuses mixed or radio clearing', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let checked='false',role='checkbox',mouse=0,domDisabled=false;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1245,6 +1257,7 @@ test('force option reaches CSS and semantic mouse actions',async()=>{
 test('select locator waits for options and never repeats an uncertain mutation', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let preflights=0,mutations=0,failMutation=false;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1313,6 +1326,7 @@ test('optional field values share one output budget', async () => {
 test('text and heading locators observe semantic nodes and match normalized text', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let mouse=0,headingLevel=2;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1353,6 +1367,7 @@ test('scoped locators disambiguate descendants and recheck the scope before inpu
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let moved=false, moveOnMeasure=false, moveOnFocus=false, renameOnMeasure=false, scopeName='Alpha', mouse=0, keys=0;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method, args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1395,6 +1410,7 @@ test('text filters select unnamed containers and recheck changing text before in
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let apple='Apples', changeOnMeasure=false, changeOnFocus=false, unindexed=false, mouse=0, keys=0;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1495,6 +1511,7 @@ test('truncated alt text rejects locator matching and invalidates stale observat
 test('locator waits for stable target geometry without sending input while moving', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let moving=true,reads=0,mouse=0;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1513,6 +1530,8 @@ test('locator waits for stable target geometry without sending input while movin
 test('target semantics are rechecked after the geometry stability interval', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let name='Save',mouse=0;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
+    if(method==='executeCdp' && params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(params.method==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:7,role:{value:'button'},name:{value:name}}]};
@@ -1529,6 +1548,7 @@ test('target semantics are rechecked after the geometry stability interval', asy
 test('placeholder locators retain superseded hints and reject stale or truncated hints', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let placeholder='Enter email',mouse=0;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
@@ -1549,6 +1569,7 @@ test('placeholder locators retain superseded hints and reject stale or truncated
 test('date and numeric fills validate before mutation and never repeat uncertain changes', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let status='invalid',mutations=0,mouse=0,fail=false;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};

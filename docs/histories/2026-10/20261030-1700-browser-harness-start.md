@@ -471,3 +471,5 @@ CSS 定位器的 isEditable 接入浏览器可访问性角色，支持浏览器�
 CSS 与语义定位器新增 focus：聚焦前后复核目标、frame 和焦点链，输入已发出后目标变化不会重试；直接聚焦不派发鼠标或按键。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展通过，覆盖跨进程 frame、iframe 宿主和聚焦回调改变目标。动作后续阶段仍可能超过 timeoutMs；Windows 未测。
 
 语义定位器 focus 的目标解析和焦点链路的 iframe 宿主检查改用隔离 world；后者也供当前焦点按键及文本路由使用。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展实测通过，覆盖页面篡改 isConnected 和 iframe getRootNode；Windows 未测。
+
+语义及观察索引交互的目标 DOM 解析和检查统一使用隔离 world，包含勾选幂等检查；无 frame 快照时先读取主 frame，创建上下文后复核文档。SDK 95 项测试、macOS Electron 44.7 完整 smoke 和 Linux ARM64 Chromium 150 原生扩展通过；实页覆盖页面篡改 Node.isConnected 后的可信点击和填写。frame 宿主命中检查仍需独立审查，Windows 未测。

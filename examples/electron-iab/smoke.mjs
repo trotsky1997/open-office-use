@@ -103,6 +103,14 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.equal(changedState.textMode,'diff');
   assert.match(changedState.text, /\+ .*"2"/);
   check('SDK observation: indexed trusted click and stale snapshot rejection');
+  await evaluate(a.id,`(()=>{window.semanticIsolationClicks=0;const button=document.createElement('button');button.id='semantic-isolation-button';button.textContent='Isolation action';button.onclick=e=>{if(e.isTrusted)window.semanticIsolationClicks++};const input=document.createElement('input');input.id='semantic-isolation-input';input.setAttribute('aria-label','Isolation field');document.body.append(button,input);window.savedSemanticConnected=Object.getOwnPropertyDescriptor(Node.prototype,'isConnected');Object.defineProperty(Node.prototype,'isConnected',{configurable:true,get:()=>false});return true})()`);
+  try {
+    const isolatedState=await sdkTab.observe(),isolatedButton=isolatedState.nodes.find(node=>node.name==='Isolation action');assert.ok(isolatedButton);await sdkTab.click(isolatedButton.index,isolatedState.snapshotId);
+    await sdkTab.playwright.getByRole('textbox',{name:'Isolation field',exact:true}).fill('safe');
+    assert.equal(await evaluate(a.id,'window.semanticIsolationClicks'),1);assert.equal(await evaluate(a.id,"document.querySelector('#semantic-isolation-input').value"),'safe');
+  } finally {await evaluate(a.id,`(()=>{Object.defineProperty(Node.prototype,'isConnected',window.savedSemanticConnected);document.querySelector('#semantic-isolation-button').remove();document.querySelector('#semantic-isolation-input').remove();return true})()`);}
+  check('SDK semantic input: isolated from page DOM prototype changes');
+
   await evaluate(a.id,'document.querySelector("#message").value = ""');
   const textState = await sdkTab.observe();
   const message = textState.nodes.find(node => node.role === 'textbox' && node.name === '消息');
