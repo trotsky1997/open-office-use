@@ -115,6 +115,13 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
 <div id="grid-output" class="grid-scroll"></div><details><summary>Data validation rules for this range</summary><p>Fixed list values and resolved text ranges from the loaded revision can be selected in the grid. Rules are retained but are not evaluated when saving.</p><pre id="grid-validation"></pre></details><details><summary>Conditional formatting for this range</summary><p>The grid shows direct formatting only. Rules are not evaluated; inspect the rendered workbook for effective appearance.</p><pre id="grid-conditional-formatting"></pre></details><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
+<fieldset><legend>Cell hyperlink</legend>
+<label>Cell <input id="grid-link-cell" maxlength="10" placeholder="A1"></label>
+<label>New URL <input id="grid-link-url" maxlength="2048" placeholder="https://example.com"></label>
+<button type="button" id="grid-link-set" disabled>Set link</button>
+<button type="button" id="grid-link-remove" disabled>Remove link</button>
+<p id="grid-link-info">Load a range to inspect and edit a link.</p>
+<p>Save pending cell edits first. The cell value and formatting stay unchanged.</p></fieldset>
 <fieldset id="grid-format-fields"><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
@@ -348,8 +355,8 @@ document.getElementById('formula-recalculate').addEventListener('click', async (
  finally { calcBusy=false; button.disabled=pinned!==null; document.getElementById('formula-scan').disabled=pinned!==null || scanBusy; }
 });
 function invalidateGrid(message) {
- gridLoaded=null; document.getElementById('grid-merge').disabled=true; document.getElementById('grid-unmerge').disabled=true; document.getElementById('grid-freeze').disabled=true; document.getElementById('grid-unfreeze').disabled=true; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true;
- lockGridInputs([...document.querySelectorAll('#grid-output textarea')], true);
+ gridLoaded=null; document.getElementById('grid-merge').disabled=true; document.getElementById('grid-unmerge').disabled=true; document.getElementById('grid-freeze').disabled=true; document.getElementById('grid-unfreeze').disabled=true; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-link-set').disabled=true; document.getElementById('grid-link-remove').disabled=true;
+ lockGridInputs([...document.querySelectorAll('#grid-output textarea')], true); document.getElementById('grid-link-info').textContent='Load a range to inspect and edit a link.';
  if (message) document.getElementById('grid-status').textContent=message;
 }
 for (const id of ['grid-sheet','grid-range']) document.getElementById(id).addEventListener('change', () => invalidateGrid('Reload the range before saving.'));
@@ -442,7 +449,8 @@ async function loadGrid(target=null) {
    }
    body.appendChild(tr);
   }
-  table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range,snapshot_sha256:data.snapshot_sha256,sheet_protected:data.sheet_protected};
+  table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range,snapshot_sha256:data.snapshot_sha256,sheet_protected:data.sheet_protected,hyperlink_inspection:data.hyperlink_inspection,cells:Object.fromEntries(data.rows.flat().map(cell=>[cell.cell,cell]))};
+  document.getElementById('grid-link-cell').value=data.rows[0][0].cell; updateGridLinkControls();
   document.getElementById('grid-merge').disabled=data.sheet_protected; document.getElementById('grid-unmerge').disabled=data.sheet_protected; document.getElementById('grid-merge-range').value=cell_range;
   const pane=data.worksheet_view.pane;
   document.getElementById('grid-freeze').disabled=false; document.getElementById('grid-unfreeze').disabled=false;
@@ -552,6 +560,40 @@ document.getElementById('grid-format').addEventListener('click', async () => {
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false; }
  } finally { fields.disabled=false; gridBusy=false; }
 });
+function updateGridLinkControls() {
+ const loaded=gridLoaded, address=document.getElementById('grid-link-cell').value.trim().toUpperCase();
+ const cell=loaded?.cells[address], valid=!!cell && cell.editable && loaded.hyperlink_inspection.complete && current===loaded.revision && pinned===null;
+ document.getElementById('grid-link-set').disabled=!valid || (cell.value == null && !cell.formula);
+ document.getElementById('grid-link-remove').disabled=!valid || !cell.hyperlink;
+ const info=document.getElementById('grid-link-info');
+ if (!loaded) info.textContent='Load a range to inspect and edit a link.';
+ else if (!loaded.hyperlink_inspection.complete) info.textContent='Hyperlink inspection is incomplete; review the workbook before editing links.';
+ else if (!cell) info.textContent='Choose a cell in the loaded range.';
+ else if (!cell.editable) info.textContent=`Cell is read-only: ${cell.read_only_reason}.`;
+ else if (cell.value == null && !cell.formula && !cell.hyperlink) info.textContent='Enter and save a cell value before adding a link.';
+ else if (cell.hyperlink) info.textContent=`Current link (${cell.hyperlink.status}): ${[cell.hyperlink.target,cell.hyperlink.location].filter(Boolean).join(' · ') || 'unresolved'}`;
+ else info.textContent='This cell has no hyperlink.';
+}
+document.getElementById('grid-link-cell').addEventListener('input',updateGridLinkControls);
+async function changeGridLink(remove) {
+ if (gridBusy) return;
+ if (!gridLoaded || gridLoaded.revision!==current || pinned!==null) { invalidateGrid('Version changed; reload the range.'); return; }
+ const loaded=gridLoaded, cell=document.getElementById('grid-link-cell').value.trim().toUpperCase(), entry=loaded.cells[cell];
+ if (!entry || !entry.editable || !loaded.hyperlink_inspection.complete) { document.getElementById('grid-status').textContent='Choose an editable cell with complete hyperlink inspection.'; return; }
+ if (gridDirty()) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before changing a link.'; return; }
+ const inputs=[...document.querySelectorAll('#grid-output textarea')], buttons=['grid-link-set','grid-link-remove','grid-merge','grid-unmerge','grid-freeze','grid-unfreeze','grid-save','grid-format','grid-resize'];
+ gridBusy=true; for (const name of buttons) document.getElementById(name).disabled=true; lockGridInputs(inputs,true);
+ try {
+  const response=await fetch('grid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell,url:remove ? null : document.getElementById('grid-link-url').value,snapshot_sha256:loaded.snapshot_sha256})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Link edit failed');
+  invalidateGrid(`Link ${remove ? 'removed' : 'saved'} for ${cell} as revision ${result.revision}. Reload the range.`); await refresh();
+ } catch(error) {
+  document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
+  if (gridLoaded===loaded && current===loaded.revision && pinned===null) { for (const name of buttons) document.getElementById(name).disabled=loaded.sheet_protected && !['grid-freeze','grid-unfreeze','grid-save','grid-link-set','grid-link-remove'].includes(name); lockGridInputs(inputs,false); updateGridLinkControls(); }
+ } finally { gridBusy=false; }
+}
+document.getElementById('grid-link-set').addEventListener('click',()=>changeGridLink(false));
+document.getElementById('grid-link-remove').addEventListener('click',()=>changeGridLink(true));
 async function mergeGrid(merge) {
  if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
@@ -1419,7 +1461,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/grid-link', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1619,6 +1661,9 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range'}:
                                 raise ValueError('Grid requires base_revision, sheet and cell_range')
                             saved = session.read_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'])
+                        elif route.endswith('/grid-link'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell', 'url', 'snapshot_sha256'} or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Link edit requires revision, sheet, cell, URL and a valid snapshot')
+                            saved = session.set_grid_hyperlink(directory, payload['base_revision'], payload['sheet'], payload['cell'], payload['url'], expected_sha256=payload['snapshot_sha256'])
                         elif route.endswith('/grid-merge'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell_range', 'merge'}, {'base_revision', 'sheet', 'cell_range', 'merge', 'snapshot_sha256'}): raise ValueError('Merge requires revision, sheet, range and operation')
                             saved = session.merge_cells(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['merge'], expected_sha256=payload.get('snapshot_sha256'))

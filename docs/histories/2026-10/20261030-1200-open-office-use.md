@@ -415,3 +415,5 @@ Added worksheet hyperlink target mapping and coverage to session grids and viewe
 Verified workbook hyperlink display and label editing in an in-app browser; added an inline reminder that value edits retain the link.
 
 Added targeted, atomic workbook hyperlink updates and removal with revision, snapshot, protection and shared-relationship checks.
+
+Connected the workbook viewer to snapshot-bound single-cell hyperlink edits and verified pending-edit protection, setting and removal in a browser.

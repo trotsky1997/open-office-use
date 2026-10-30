@@ -312,3 +312,5 @@ Workbook grid reads and viewer expose bounded cell hyperlink targets and locatio
 The workbook viewer was exercised in a real in-app browser: link targets appeared, a label edit created a revision, and the target remained visible on reload. The grid now explicitly states that value edits retain the link.
 
 Session grids support snapshot-bound single-cell external hyperlink creation, replacement and removal while preserving cell data and shared relationships. Multi-cell links and internal-link creation remain outside this operation.
+
+The workbook viewer can set and remove a link on an editable loaded cell, requiring complete hyperlink inspection, a displayed snapshot and no pending grid edits. Browser tests covered updating and removing a link.

@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from pathlib import Path
 
 from docx import Document
+from openpyxl import Workbook, load_workbook
 
 cli = Path(__file__).with_name('open_office_use.py')
 def run(*args):
@@ -245,4 +246,30 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         server.send_signal(signal.SIGINT)
         server.wait(timeout=10)
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp); source = root/'links.xlsx'; directory = root/'draft'
+    book = Workbook(); book.active['A1'] = 'Source'; book.active['A1'].hyperlink = 'https://example.com/old'; book.save(source)
+    run('session','start',directory,'--source',source)
+    server = subprocess.Popen([sys.executable,str(cli),'watch',str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        url = json.loads(server.stdout.readline())['url']; origin = f'http://{urlsplit(url).netloc}'
+        def post(route, payload):
+            request = urllib.request.Request(url+route,data=json.dumps(payload).encode(),headers={'Origin':origin,'Content-Type':'application/json'})
+            return json.loads(urllib.request.urlopen(request,timeout=60).read())
+        grid = post('grid',{'base_revision':0,'sheet':'Sheet','cell_range':'A1'})
+        payload = {'base_revision':0,'sheet':'Sheet','cell':'A1','url':'https://example.org/new','snapshot_sha256':'0'*64}
+        try: post('grid-link',payload)
+        except urllib.error.HTTPError as error: assert error.code == 400
+        else: raise AssertionError('Stale link snapshot accepted')
+        payload['snapshot_sha256'] = None
+        try: post('grid-link',payload)
+        except urllib.error.HTTPError as error: assert error.code == 400
+        else: raise AssertionError('Missing link snapshot accepted')
+        payload['snapshot_sha256'] = grid['snapshot_sha256']; saved = post('grid-link',payload)
+        assert saved['revision'] == 1 and load_workbook(saved['file']).active['A1'].hyperlink.target == 'https://example.org/new'
+        updated = post('grid',{'base_revision':1,'sheet':'Sheet','cell_range':'A1'})
+        removed = post('grid-link',{'base_revision':1,'sheet':'Sheet','cell':'A1','url':None,'snapshot_sha256':updated['snapshot_sha256']})
+        assert removed['revision'] == 2 and load_workbook(removed['file']).active['A1'].value == 'Source' and load_workbook(removed['file']).active['A1'].hyperlink is None
+    finally:
+        server.send_signal(signal.SIGINT); server.wait(timeout=20)
 print('Watch smoke passed: revision updates, page PNG, token path and host restriction')
