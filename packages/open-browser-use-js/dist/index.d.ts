@@ -128,6 +128,8 @@ type CssStep = {
 type TextFilter = {
     hasText?: TextMatcher;
     hasNotText?: TextMatcher;
+    has?: OpenBrowserUseRoleLocator;
+    hasNot?: OpenBrowserUseRoleLocator;
 };
 export declare class OpenBrowserUseClient {
     #private;
@@ -575,6 +577,8 @@ export declare class OpenBrowserUseRoleLocator {
     filter(options: {
         hasText?: TextMatcher;
         hasNotText?: TextMatcher;
+        has?: OpenBrowserUseRoleLocator;
+        hasNot?: OpenBrowserUseRoleLocator;
     }): OpenBrowserUseRoleLocator;
     private needsText;
     private matches;

@@ -91,7 +91,7 @@ type RoleGuard = {locator:OpenBrowserUseRoleLocator; expected:Array<{backendNode
 type LocatorMatch = {node:InteractiveNode; path:number[]; filters:FilterGuard[]; css?:CssGuard};
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
-type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher };
+type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator; hasNot?:OpenBrowserUseRoleLocator };
 type LogCapture = {generation: number; entries: OpenBrowserUseLogEntry[]; sessions: Map<string,Promise<void>>; ready?: Promise<void>};
 type FilterGuard = { index: number; filters: TextFilter[] };
 type UnindexedText = { backendNodeId?: number; frameId?: string; frameChain?: FrameInfo[] };
@@ -1352,7 +1352,8 @@ export class OpenBrowserUseTab {
         const original = observation.nodes.find(node => node.index === item.index);
         const current = original && fresh.nodes.find(node => node.backendNodeId === original.backendNodeId && node.frameId === original.frameId && node.role === original.role);
         if (!original || !current || current.name !== original.name || current.stateKey !== original.stateKey) throw new RetryablePreflightError("Filtered target changed; observe again");
-        if (!matchesTextFilters(await this.scopeText(fresh,current.index),item.filters)) throw new RetryablePreflightError("Locator text changed; observe again");
+        const textFilters=item.filters.filter(filter=>filter.hasText !== undefined || filter.hasNotText !== undefined);
+        if (textFilters.length && !matchesTextFilters(await this.scopeText(fresh,current.index),textFilters)) throw new RetryablePreflightError("Locator text changed; observe again");
       }
     }
     if (guard?.role) await guard.role.locator.verifyMatches(observation,guard.role.expected);
@@ -2383,12 +2384,21 @@ export class OpenBrowserUseRoleLocator {
   getByAltText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByAltText(text,options)); }
   getByPlaceholder(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByPlaceholder(text,options)); }
 
-  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher}): OpenBrowserUseRoleLocator {
-    if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText","hasNotText"].includes(key)) ||
-        (options.hasText === undefined && options.hasNotText === undefined) ||
+  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator; hasNot?:OpenBrowserUseRoleLocator}): OpenBrowserUseRoleLocator {
+    if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText","hasNotText","has","hasNot"].includes(key)) ||
+        (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined) ||
         (options.hasText !== undefined && (typeof options.hasText === "string" ? options.hasText.length > 30_000 : !types.isRegExp(options.hasText))) ||
-        (options.hasNotText !== undefined && (typeof options.hasNotText === "string" ? options.hasNotText.length > 30_000 : !types.isRegExp(options.hasNotText)))) throw new Error("Invalid text filter");
-    const filter = {...(options.hasText !== undefined ? {hasText:copyMatcher(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:copyMatcher(options.hasNotText)} : {})};
+        (options.hasNotText !== undefined && (typeof options.hasNotText === "string" ? options.hasNotText.length > 30_000 : !types.isRegExp(options.hasNotText)))) throw new Error("Invalid locator filter");
+    const check=(locator:OpenBrowserUseRoleLocator,level:number):void=>{
+      if (!(locator instanceof OpenBrowserUseRoleLocator) || locator.tab.browser!==this.tab.browser || locator.tab.id!==this.tab.id || JSON.stringify(locator.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Filter locator must belong to the same tab and frame");
+      if (level>8) throw new Error("Locator filter nesting exceeds 8 levels");
+      if (locator.cssScope) throw new Error("Semantic filter locator cannot use a CSS scope yet");
+      if(locator.scope) check(locator.scope,level);
+      for(const filter of [...locator.filtersBefore,...locator.filtersAfter]) {if(filter.has)check(filter.has,level+1);if(filter.hasNot)check(filter.hasNot,level+1);}
+    };
+    if(options.has !== undefined)check(options.has,2);
+    if(options.hasNot !== undefined)check(options.hasNot,2);
+    const filter:TextFilter={...(options.hasText !== undefined ? {hasText:copyMatcher(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:copyMatcher(options.hasNotText)} : {}),...(options.has !== undefined ? {has:options.has} : {}),...(options.hasNot !== undefined ? {hasNot:options.hasNot} : {})};
     return new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,this.position,this.textMatch,this.field,this.scope,
       this.position === undefined ? [...this.filtersBefore,filter] : this.filtersBefore,
       this.position === undefined ? this.filtersAfter : [...this.filtersAfter,filter],this.framePath,this.cssScope);
@@ -2398,10 +2408,12 @@ export class OpenBrowserUseRoleLocator {
     return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText();
   }
 
-  private async matches(observation: Observation): Promise<LocatorMatch[]> {
+  private async matches(observation: Observation, baseIndex?: number): Promise<LocatorMatch[]> {
     const frameId = this.framePath ? await this.tab.resolveFramePath(this.framePath,undefined,observation.frames) : undefined;
     if (this.framePath && !frameId) return [];
-    const inFrame = (node:InteractiveNode) => !this.framePath || node.frameId === frameId;
+    const base=baseIndex === undefined ? undefined : observation.nodes.find(node=>node.index===baseIndex);
+    if (baseIndex !== undefined && !base) throw new RetryablePreflightError("Filter scope changed; observe again");
+    const inFrame = (node:InteractiveNode) => (!this.framePath || node.frameId === frameId) && (!base || node.frameId === base.frameId);
     if (this.field === "placeholder" && observation.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.placeholderTruncated)) throw new Error("Some placeholders were truncated; locator results are incomplete");
     if (this.field === "altText" && observation.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.altTextTruncated)) throw new Error("Some alt text was truncated; locator results are incomplete");
     const normalize = (value: string) => this.textMatch ? value.replace(/\s+/g," ").trim() : value;
@@ -2422,9 +2434,10 @@ export class OpenBrowserUseRoleLocator {
       for (const node of candidates) for (const scopeId of snapshot.ids) {
         if (await this.tab.cssScopeContains(observation,snapshot,scopeId,node.index)) {matches.push({node,path:[],filters:[],css:{snapshot,scopeId}});break;}
       }
-    } else if (!this.scope) for (const node of candidates) matches.push({node,path:[],filters:[]});
-    else {
-      const scopes = await this.scope.matches(observation);
+    } else if (!this.scope) {
+      for (const node of candidates) if (!base || await this.tab.scopeContains(observation,base.index,node.index)) matches.push({node,path:[],filters:[]});
+    } else {
+      const scopes = await this.scope.matches(observation,baseIndex);
       for (const node of candidates) for (const scope of scopes) {
         if (await this.tab.scopeContains(observation,scope.node.index,node.index)) {
           matches.push({node,path:[...scope.path,scope.node.index],filters:[...scope.filters],...(scope.css ? {css:scope.css} : {})}); break;
@@ -2435,7 +2448,14 @@ export class OpenBrowserUseRoleLocator {
       if (!filters.length) return items;
       const accepted: typeof matches = [];
       for (const item of items) {
-        if (matchesTextFilters(await this.tab.scopeText(observation,item.node.index),filters)) accepted.push({...item,filters:[...item.filters,{index:item.node.index,filters}]});
+        const textFilters=filters.filter(filter=>filter.hasText !== undefined || filter.hasNotText !== undefined);
+        if (textFilters.length && !matchesTextFilters(await this.tab.scopeText(observation,item.node.index),textFilters)) continue;
+        let matched=true;
+        for(const filter of filters) {
+          if(filter.has && !(await filter.has.matches(observation,item.node.index)).length) {matched=false;break;}
+          if(filter.hasNot && (await filter.hasNot.matches(observation,item.node.index)).length) {matched=false;break;}
+        }
+        if(matched) accepted.push({...item,filters:[...item.filters,{index:item.node.index,filters}]});
       }
       return accepted;
     };
