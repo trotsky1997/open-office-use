@@ -403,6 +403,7 @@ export declare class OpenBrowserUseTab {
     }): Promise<OpenBrowserUseDialog>;
     click(index: number, snapshotId: string, mouse?: MouseClick, markClick?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     dblclick(index: number, snapshotId: string, mouse?: MouseClick, markClick?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
+    scroll(index: number, snapshotId: string, direction: "up" | "down" | "left" | "right" | "u" | "d" | "l" | "r", pages?: number): Promise<void>;
     hover(index: number, snapshotId: string, mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     selectText(index: number, snapshotId: string, text: string, options?: {
         prefix?: string;

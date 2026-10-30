@@ -2392,6 +2392,18 @@ export class OpenBrowserUseTab {
     async dblclick(index, snapshotId, mouse, markClick = () => undefined, signal, check) {
         await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true, mouse, false, undefined, markClick, signal, check);
     }
+    async scroll(index, snapshotId, direction, pages = 1) {
+        const directions = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0], u: [0, -1], d: [0, 1], l: [-1, 0], r: [1, 0] };
+        if (typeof direction !== "string" || !Object.hasOwn(directions, direction) || !Number.isFinite(pages) || pages < 0 || pages > 100)
+            throw new Error("Invalid scroll direction or page count");
+        const observation = this.currentObservation(snapshotId);
+        if (!observation.nodes.some(node => node.index === index))
+            throw new RetryablePreflightError("Observation is stale or index is invalid; observe again");
+        if (pages === 0)
+            return;
+        const generation = this.browser.client.connectionGeneration, viewport = await this.getViewport(), [dx, dy] = directions[direction];
+        await this.act(index, snapshotId, undefined, false, undefined, undefined, true, undefined, false, undefined, false, undefined, undefined, undefined, undefined, false, undefined, undefined, undefined, { deltaX: dx * viewport.width * 0.8 * pages, deltaY: dy * viewport.height * 0.8 * pages, generation });
+    }
     async hover(index, snapshotId, mark = () => undefined, signal, check) {
         await this.act(index, snapshotId, undefined, false, undefined, undefined, true, undefined, false, undefined, false, undefined, mark, signal, check);
     }
@@ -2783,7 +2795,7 @@ export class OpenBrowserUseTab {
             throw new Error("Invalid selected options result");
         return result;
     }
-    async act(index, snapshotId, text, replace = false, checked, selection, hover = false, key, doubleClick = false, mouse = { button: "left", buttons: 1, modifiers: 0 }, focusOnly = false, markFocus = () => undefined, markClick = () => undefined, clickSignal, checkClick = () => { }, sequential = false, sequenceMark = () => undefined, sequenceCheck = () => { }, sequenceSignal) {
+    async act(index, snapshotId, text, replace = false, checked, selection, hover = false, key, doubleClick = false, mouse = { button: "left", buttons: 1, modifiers: 0 }, focusOnly = false, markFocus = () => undefined, markClick = () => undefined, clickSignal, checkClick = () => { }, sequential = false, sequenceMark = () => undefined, sequenceCheck = () => { }, sequenceSignal, scroll) {
         const observation = this.#observation;
         this.#observation = undefined;
         const node = observation?.nodes.find((item) => item.index === index);
@@ -3071,6 +3083,11 @@ export class OpenBrowserUseTab {
             if (mouse.force)
                 inputPoint = point;
             inputIssued = true;
+            if (scroll) {
+                const frame = targetSession ? { sessionId: targetSession, contextId: executionContextId, inputPoint: { x: inputPoint.x, y: inputPoint.y } } : undefined;
+                await this.scrollAt(point.x, point.y, scroll.deltaX, scroll.deltaY, 0, scroll.generation, frame);
+                return;
+            }
             if (hover) {
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, { ...inputOptions, signal: markClick() });
                 return;

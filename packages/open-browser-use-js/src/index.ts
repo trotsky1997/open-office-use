@@ -1966,6 +1966,16 @@ export class OpenBrowserUseTab {
     await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true, mouse, false, undefined, markClick,signal,check);
   }
 
+  async scroll(index:number,snapshotId:string,direction:"up" | "down" | "left" | "right" | "u" | "d" | "l" | "r",pages=1):Promise<void> {
+    const directions={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0],u:[0,-1],d:[0,1],l:[-1,0],r:[1,0]} as const;
+    if(typeof direction!=="string" || !Object.hasOwn(directions,direction) || !Number.isFinite(pages) || pages<0 || pages>100)throw new Error("Invalid scroll direction or page count");
+    const observation=this.currentObservation(snapshotId);
+    if(!observation.nodes.some(node=>node.index===index))throw new RetryablePreflightError("Observation is stale or index is invalid; observe again");
+    if(pages===0)return;
+    const generation=this.browser.client.connectionGeneration,viewport=await this.getViewport(),[dx,dy]=directions[direction];
+    await this.act(index,snapshotId,undefined,false,undefined,undefined,true,undefined,false,undefined,false,undefined,undefined,undefined,undefined,false,undefined,undefined,undefined,{deltaX:dx*viewport.width*0.8*pages,deltaY:dy*viewport.height*0.8*pages,generation});
+  }
+
   async hover(index: number, snapshotId: string, mark:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
     await this.act(index, snapshotId, undefined, false, undefined, undefined, true, undefined, false, undefined, false, undefined, mark, signal, check);
   }
@@ -2286,7 +2296,7 @@ export class OpenBrowserUseTab {
     return result as string[];
   }
 
-  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}, sequential = false, sequenceMark:()=>AbortSignal | undefined = ()=>undefined, sequenceCheck:()=>void = ()=>{}, sequenceSignal?:AbortSignal): Promise<void | string[]> {
+  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}, sequential = false, sequenceMark:()=>AbortSignal | undefined = ()=>undefined, sequenceCheck:()=>void = ()=>{}, sequenceSignal?:AbortSignal, scroll?:{deltaX:number;deltaY:number;generation:number}): Promise<void | string[]> {
     const observation = this.#observation;
     this.#observation = undefined;
     const node = observation?.nodes.find((item) => item.index === index);
@@ -2515,6 +2525,10 @@ export class OpenBrowserUseTab {
       const inputOptions = mouse.force ? {} : {sessionId: targetSession, ...(targetSession ? {visualPoint: {x: point.x as number, y: point.y as number}} : {})};
       if(mouse.force)inputPoint=point;
       inputIssued = true;
+      if (scroll) {
+        const frame=targetSession ? {sessionId:targetSession,contextId:executionContextId,inputPoint:{x:inputPoint.x as number,y:inputPoint.y as number}} : undefined;
+        await this.scrollAt(point.x as number,point.y as number,scroll.deltaX,scroll.deltaY,0,scroll.generation,frame);return;
+      }
       if (hover) {
         await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, {...inputOptions,signal:markClick()});
         return;

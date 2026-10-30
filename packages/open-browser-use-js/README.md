@@ -159,6 +159,15 @@ sequence, then rejects the result if navigation, the frame tree, the connection,
 or the active observation changed during capture. Frame-tree checking applies
 when frames are included. Dynamic content can still change between the two captures.
 
+To scroll at an observed target, call `tab.scroll(index, snapshotId, direction,
+pages)`. Directions are `up`, `down`, `left`, and `right` (or their initial
+letters); one page is 80% of the corresponding viewport dimension. Fractional
+page counts are supported. The SDK checks target identity, visibility and frame
+routing, and can scroll the target into view during preparation. The wheel may
+scroll an ancestor. After an uncertain result, observe before retrying. Use
+`includeText:true` when the scrollable region has a supplemental accessible
+role such as `group` or `region`.
+
 For indexed interaction, call `observe` immediately before choosing a target:
 
 ```js

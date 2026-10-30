@@ -492,3 +492,5 @@ macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展对 fo
 后续补齐定位器点击、双击、悬停和逐字符输入的准备期限与未知结果处理；新增观察索引文本选择、只读页面及定位器求值、单 frame 批量求值，以及状态和截图的组合观察。macOS Electron 和隔离 Linux ARM64 Chromium 原生消息链路覆盖主要实页路径；SDK 100 项检查通过。跨多个 frame 的批量元素数组、Windows 和 Linux 常规桌面后台滚动仍待验证或实现。
 
 同步分发给 agent 的 skill：修正页面求值权限说明，并补充组合观察、文本选择、逐字符输入和定位器求值的边界。skill 校验和打包通过。
+
+观察索引新增方向和页数滚动，复用目标、frame 与连接校验；macOS Electron 和隔离 Linux ARM64 Chromium 的主文档及跨进程 frame 验证可信滚轮和旧快照拒绝。Electron 仍要求宿主呈现 surface；后台 Chromium、Windows 尚未验收。

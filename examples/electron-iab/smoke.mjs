@@ -104,6 +104,7 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.match(changedState.text, /\+ .*"2"/);
   check('SDK observation: indexed trusted click and stale snapshot rejection');
 
+
   const combined=await sdkTab.getAXStateAndScreenshot();assert.match(combined.state,/加 1/);assert.ok(combined.screenshot instanceof Uint8Array);assert.deepEqual([...combined.screenshot.slice(0,8)],[137,80,78,71,13,10,26,10]);assert.ok(sdkTab.currentObservation(combined.observation.snapshotId));
   const originalScreenshot=sdkTab.getScreenshot.bind(sdkTab);let unblockCombined,startedCombined;const combinedStarted=new Promise(resolve=>{startedCombined=resolve});
   sdkTab.getScreenshot=async (...args)=>{await new Promise(resolve=>{unblockCombined=resolve;startedCombined();});return originalScreenshot(...args);};
@@ -353,6 +354,12 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   try {const values=await sdkTab.observe({includeFrames:true,includeValues:true});const password=values.nodes.find(node=>node.name==='Frame password');assert.ok(password);assert.equal(password.valueRedacted,true);assert.doesNotMatch(JSON.stringify(values),/frame-private-value/);}
   finally {await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{Object.defineProperty(HTMLInputElement.prototype,'type',window.savedType);document.querySelector('#frame-password').remove();return true})()`,returnByValue:true},{sessionId:crossSession});}
   const frameInput=sdkTab.playwright.frameLocator('#cross-frame').getByRole('textbox',{name:'Cross-frame text'}),frameCss=sdkTab.playwright.frameLocator('#cross-frame').locator('input[aria-label="Cross-frame text"]');
+  present(a.id);
+  await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{window.indexedFrameWheel=[];const e=document.createElement('div');e.id='frame-scroller';e.setAttribute('role','group');e.setAttribute('aria-label','Frame scroller');Object.assign(e.style,{position:'fixed',top:'5px',left:'5px',width:'120px',height:'80px',overflow:'auto',zIndex:'9999'});e.innerHTML='<div style="height:700px">frame content</div>';e.addEventListener('wheel',event=>window.indexedFrameWheel.push(event.isTrusted));document.body.append(e)})()`,returnByValue:true},{sessionId:crossSession});
+  const indexedFrameState=await sdkTab.observe({includeFrames:true,includeText:true}),indexedFrameNode=indexedFrameState.nodes.find(node=>node.name==='Frame scroller');assert.ok(indexedFrameNode);
+  await sdkTab.scroll(indexedFrameNode.index,indexedFrameState.snapshotId,'down',0.3);
+  const indexedFrameResult=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`[document.querySelector('#frame-scroller').scrollTop,window.indexedFrameWheel]`,returnByValue:true},{sessionId:crossSession});assert.ok(indexedFrameResult.result.value[0]>0);assert.ok(indexedFrameResult.result.value[1].length>0 && indexedFrameResult.result.value[1].every(Boolean));
+  await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:"document.querySelector('#frame-scroller').remove()",returnByValue:true},{sessionId:crossSession});
   assert.equal(await frameInput.isEditable(),true);assert.equal(await frameCss.isEditable(),true);
   for(const locator of [frameCss,frameInput]){assert.equal(await locator.evaluate(el=>el.getAttribute('aria-label')),'Cross-frame text');await assert.rejects(locator.evaluate(el=>{el.value='unsafe'}),/side.effect/i);}
   for(const locator of [frameCss,frameInput])assert.deepEqual(await locator.evaluateAll(els=>els.map(el=>el.getAttribute('aria-label'))),['Cross-frame text']);
@@ -423,6 +430,12 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,'document.querySelector("#drag-test").remove()');
   check('SDK visual input: trusted drag');
   present(a.id);
+  await evaluate(a.id,`(()=>{window.indexWheel=[];const panel=document.createElement('div');panel.id='indexed-scroll';panel.setAttribute('role','group');panel.setAttribute('aria-label','Indexed scroller');Object.assign(panel.style,{position:'fixed',left:'20px',top:'20px',width:'160px',height:'120px',overflow:'auto',zIndex:'99999'});panel.innerHTML='<div style="height:1000px;width:100%">scroll content</div>';panel.addEventListener('wheel',e=>window.indexWheel.push(e.isTrusted));document.body.append(panel)})()`);
+  const scrollState=await sdkTab.observe({includeFrames:true,includeText:true}),scrollNode=scrollState.nodes.find(node=>node.name==='Indexed scroller');assert.ok(scrollNode);
+  await sdkTab.scroll(scrollNode.index,scrollState.snapshotId,'down',0);assert.equal(await evaluate(a.id,"document.querySelector('#indexed-scroll').scrollTop"),0);
+  await sdkTab.scroll(scrollNode.index,scrollState.snapshotId,'down',0.3);assert.ok(await evaluate(a.id,"document.querySelector('#indexed-scroll').scrollTop")>0);assert.ok((await evaluate(a.id,'window.indexWheel')).length>0);assert.ok((await evaluate(a.id,'window.indexWheel')).every(Boolean));
+  await assert.rejects(sdkTab.scroll(scrollNode.index,scrollState.snapshotId,'down'),/stale/i);await evaluate(a.id,"document.querySelector('#indexed-scroll').remove()");
+  check('SDK indexed scroll: trusted wheel and stale observation');
   const visualPoint = await evaluate(a.id,'(()=>{const r=document.querySelector("#increment").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()');
   await sdkTab.clickAt(visualPoint.x,visualPoint.y);
   const visualDeadline = Date.now()+2000;

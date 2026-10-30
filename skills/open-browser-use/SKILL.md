@@ -32,8 +32,12 @@ more than one backend or profile is available. `tab.playwright.domSnapshot()` re
 roles, names, states and readable frame content, indented by accessibility
 parent-child relationships. Frames with unknown placement are marked; heed truncation and unavailable
 frame markers. It replaces any previous observation. Call `await tab.observe()` after page changes;
-use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
-to replace a text field's contents. For semantic selection, use
+use its snapshot id and index with `tab.click` or `tab.typeText`. Use
+`tab.scroll(index, snapshotId, "down", pages)` to send a wheel at an observed
+target; set `includeText:true` to expose named groups and regions. One page is
+80% of the viewport dimension, the wheel can scroll an ancestor, and an
+uncertain outcome requires a fresh observation. Use `tab.fill` to replace a
+text field's contents. For semantic selection, use
 `tab.playwright.getByRole(role, {name, exact:true}).click()`, `.dblclick()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.inputValue()`, `.boundingBox()` or `.fill(text)`;
 use `.waitFor({state:"visible"})` or `.waitFor({state:"hidden"})` for semantic visibility changes. CSS locators additionally support `attached` and `detached`.
 `tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
