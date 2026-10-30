@@ -15,6 +15,22 @@ function selectSpecs(values) {
         return { ...value, either: false };
     });
 }
+async function locatorReadBeforeDeadline(read, timeoutMs, deadline, state) {
+    if (timeoutMs === 0)
+        return await read;
+    let timer;
+    const timeout = () => new Error(`Timed out waiting for locator to become ${state}`);
+    try {
+        const result = await Promise.race([read, new Promise((_, reject) => { timer = setTimeout(() => reject(timeout()), Math.max(0, deadline - performance.now())); })]);
+        if (performance.now() >= deadline)
+            throw timeout();
+        return result;
+    }
+    finally {
+        if (timer)
+            clearTimeout(timer);
+    }
+}
 function testIdSelector(testId) {
     if (typeof testId !== "string" || testId.length > 500 || /[\u0000\ud800-\udfff]/u.test(testId))
         throw new Error("Invalid test id");
@@ -3602,10 +3618,10 @@ export class OpenBrowserUseCssLocator {
         const deadline = performance.now() + timeoutMs;
         while (true) {
             try {
-                const snapshot = await this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope), ids = snapshot.ids;
+                const snapshot = await locatorReadBeforeDeadline(this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope), timeoutMs, deadline, options.state), ids = snapshot.ids;
                 if (ids.length > 1)
                     throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
-                const matched = options.state === 'attached' || options.state === 'detached' ? ids.length > 0 : ids.length > 0 && await this.tab.readCss(snapshot, ids[0], "visible") === true;
+                const matched = options.state === 'attached' || options.state === 'detached' ? ids.length > 0 : ids.length > 0 && await locatorReadBeforeDeadline(this.tab.readCss(snapshot, ids[0], "visible"), timeoutMs, deadline, options.state) === true;
                 if (matched === (options.state === 'attached' || options.state === 'visible'))
                     return;
             }
@@ -3994,7 +4010,7 @@ export class OpenBrowserUseRoleLocator {
         const deadline = performance.now() + timeoutMs;
         while (true) {
             try {
-                if (await this.isVisible() === (options.state === "visible"))
+                if (await locatorReadBeforeDeadline(this.isVisible(), timeoutMs, deadline, options.state) === (options.state === "visible"))
                     return;
             }
             catch (error) {

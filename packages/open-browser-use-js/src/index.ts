@@ -73,6 +73,16 @@ function selectSpecs(values: SelectOption | SelectOption[]): SelectSpec[] {
     return {...value,either:false};
   });
 }
+async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number, deadline: number, state: string): Promise<T> {
+  if (timeoutMs === 0) return await read;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout=()=>new Error(`Timed out waiting for locator to become ${state}`);
+  try {
+    const result=await Promise.race([read,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(timeout()),Math.max(0,deadline-performance.now()));})]);
+    if (performance.now()>=deadline) throw timeout();
+    return result;
+  } finally { if (timer) clearTimeout(timer); }
+}
 function testIdSelector(testId: string): string {
   if (typeof testId !== "string" || testId.length > 500 || /[\u0000\ud800-\udfff]/u.test(testId)) throw new Error("Invalid test id");
   return `[data-testid="${Array.from(testId,char=>`\\${char.codePointAt(0)!.toString(16)} `).join("")}"]`;
@@ -2922,9 +2932,9 @@ export class OpenBrowserUseCssLocator {
     const deadline=performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), ids=snapshot.ids;
+        const snapshot=await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,options.state), ids=snapshot.ids;
         if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
-        const matched=options.state==='attached' || options.state==='detached' ? ids.length>0 : ids.length>0 && await this.tab.readCss(snapshot,ids[0],"visible")===true;
+        const matched=options.state==='attached' || options.state==='detached' ? ids.length>0 : ids.length>0 && await locatorReadBeforeDeadline(this.tab.readCss(snapshot,ids[0],"visible"),timeoutMs,deadline,options.state)===true;
         if (matched === (options.state==='attached' || options.state==='visible')) return;
       } catch(error) { if (!(error instanceof RetryablePreflightError)) throw error; }
       const remaining=deadline-performance.now();
@@ -3218,7 +3228,7 @@ export class OpenBrowserUseRoleLocator {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now() + timeoutMs;
     while (true) {
-      try { if (await this.isVisible() === (options.state === "visible")) return; }
+      try { if (await locatorReadBeforeDeadline(this.isVisible(),timeoutMs,deadline,options.state) === (options.state === "visible")) return; }
       catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error(`Timed out waiting for locator to become ${options.state}`);

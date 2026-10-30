@@ -1586,3 +1586,14 @@ test('date component internals are not exposed as separate targets', async () =>
   const state=await new OpenBrowserUseBrowser({client}).tab(1).observe({includeText:true});
   assert.deepEqual(state.nodes.map(node=>node.name),['Day','Amount']);
 });
+
+test('locator wait deadline bounds stalled browser reads',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  tab.queryCss=()=>new Promise(()=>{});
+  const css=tab.playwright.locator('button');
+  await assert.rejects(css.waitFor({state:'attached',timeoutMs:20}),/Timed out/);
+  tab.queryCss=async()=>({ids:[1]});tab.readCss=()=>new Promise(()=>{});
+  await assert.rejects(css.waitFor({state:'visible',timeoutMs:20}),/Timed out/);
+  const role=tab.playwright.getByRole('button');role.isVisible=()=>new Promise(()=>{});
+  await assert.rejects(role.waitFor({state:'visible',timeoutMs:20}),/Timed out/);
+});
