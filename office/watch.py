@@ -44,6 +44,10 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <details id="candidate-panel"><summary>Find selected elements</summary>
 <p>Matches use text and, when available for PowerPoint, visible shape geometry. Results may be incomplete or ambiguous. Verify the target before editing.</p>
 <button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul><div id="picture-panel" hidden><p id="picture-target"></p><label>Replacement image <input id="picture-file" type="file" accept="image/png,image/jpeg"></label> <button type="button" id="picture-replace">Replace picture</button><p>PNG or JPEG, up to 10 MiB. Existing crop and shape size remain; review the new revision.</p><p id="picture-status" role="status"></p></div></details>
+<details id="search-panel"><summary>Search document text</summary>
+<p>Search the displayed saved revision. Results are candidates; inspect their context before editing. Coverage can be incomplete for complex content.</p>
+<form id="text-search-form"><label>Find <input id="text-search-query" maxlength="200" required></label> <button type="submit" id="text-search-start">Search</button> <button type="button" id="text-search-next" disabled>Next results</button></form>
+<p id="text-search-status" role="status"></p><ul id="text-search-results"></ul></details>
 <details id="edit-panel"><summary>Edit an element</summary><form id="edit-form">
 <label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
 <button type="button" id="edit-load">Load element</button>
@@ -142,6 +146,49 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
+let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
+function clearTextSearch() {
+ textSearchEpoch++; textSearchState=null; document.getElementById('text-search-next').disabled=true;
+ document.getElementById('text-search-results').replaceChildren(); document.getElementById('text-search-status').textContent='';
+}
+document.getElementById('text-search-query').addEventListener('input', clearTextSearch);
+async function textSearch(next) {
+ if (textSearchBusy || displayed<0) return;
+ const query=document.getElementById('text-search-query').value, revision=displayed;
+ if (!query) return;
+ if (next && (!textSearchState || textSearchState.revision!==revision || textSearchState.query!==query || textSearchState.next===null)) return;
+ if (!next) clearTextSearch();
+ const epoch=++textSearchEpoch, previous=next ? textSearchState : null;
+ const status=document.getElementById('text-search-status'), results=document.getElementById('text-search-results');
+ textSearchBusy=true; document.getElementById('text-search-start').disabled=true; document.getElementById('text-search-next').disabled=true; status.textContent=`Searching revision ${revision}…`;
+ try {
+  const response=await fetch('text-search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,query,offset:previous ? previous.next : 0,snapshot_sha256:previous ? previous.hash : null})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Search failed');
+  if (epoch!==textSearchEpoch || displayed!==revision || document.getElementById('text-search-query').value!==query) return;
+  if (!next) results.replaceChildren();
+  for (const item of result.matches) {
+   const row=document.createElement('li'), label=document.createElement('span');
+   const location=result.format==='xlsx' ? `${item.sheet} · ${item.cell || 'address unavailable'}` : item.path;
+   label.textContent=`${location}${item.hidden ? ' · hidden slide' : ''}: ${item.excerpt}${item.text_complete ? '' : ' (text may be incomplete)'}`; row.appendChild(label);
+   if (result.format!=='xlsx' && item.replace_text_path_supported) {
+    const use=document.createElement('button'); use.type='button'; use.textContent='Load target'; use.disabled=pinned!==null || current!==revision;
+    use.addEventListener('click', async () => {
+     if (displayed!==revision || current!==revision || pinned!==null || !textSearchState || textSearchState.revision!==revision || textSearchState.query!==query) return;
+     const old=loaded; document.getElementById('edit-panel').open=true; await loadElement(item.path);
+     if (loaded && loaded!==old && loaded.revision===revision && current===revision && pinned===null && item.occurrences===1 && !document.getElementById('word-replace-panel').hidden) document.getElementById('word-find').value=query;
+    });
+    row.append(document.createTextNode(' '),use);
+   }
+   results.appendChild(row);
+  }
+  textSearchState={revision,query,next:result.next_offset,hash:result.snapshot_sha256};
+  const uncertain=result.unverified_paragraphs ?? result.unverified_text_cells ?? 0;
+  status.textContent=`Revision ${revision}: ${result.matches.length} match(es) in this batch. ${result.scan_complete ? 'End of search scope.' : 'More content remains.'} ${uncertain ? uncertain+' text item(s) need review. ' : ''}${result.unsupported_structure?.length ? 'Some structures were omitted. ' : ''}Coverage is limited to supported content.`;
+ } catch(error) { if (epoch===textSearchEpoch) status.textContent=`Search error: ${error.message}`; }
+ finally { textSearchBusy=false; document.getElementById('text-search-start').disabled=false; document.getElementById('text-search-next').disabled=!(textSearchState && textSearchState.revision===displayed && textSearchState.next!==null); }
+}
+document.getElementById('text-search-form').addEventListener('submit', event=>{event.preventDefault(); textSearch(false);});
+document.getElementById('text-search-next').addEventListener('click', ()=>textSearch(true));
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -780,6 +827,8 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
  } finally { notesBusy=false; }
 });
 function display(state, live) {
+ if (textSearchState && textSearchState.revision!==state.revision) clearTextSearch();
+ document.querySelectorAll('#text-search-results button').forEach(button=>button.disabled=!live);
  clearChartCacheFor(state.revision);
  if (!live) document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
  clearWorkbookFor(state.revision);
@@ -1002,7 +1051,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1010,6 +1059,15 @@ def serve(directory, preview, port=0, render=None):
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/text-search'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision', 'query', 'offset', 'snapshot_sha256'}:
+                            raise ValueError('Search requires revision, query, offset and snapshot SHA-256')
+                        state = session.info(directory)
+                        args = (directory, payload['revision'], payload['query'])
+                        options = {'offset': payload['offset'], 'snapshot_sha256': payload['snapshot_sha256']}
+                        search = {'docx': session.search_body, 'xlsx': session.search_cells, 'pptx': session.search_slides}[state['format']]
+                        saved = {'format': state['format'], **search(*args, **options)}
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/chart-cache-scan'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Chart cache scan requires a revision')
                         saved = session.scan_chart_caches(directory, payload['revision'])

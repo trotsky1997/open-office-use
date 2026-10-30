@@ -41,6 +41,13 @@ with tempfile.TemporaryDirectory() as tmp:
 
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
         origin = f"http://{urlsplit(url).netloc}"
+        search = {'revision': 0, 'query': 'First', 'offset': 0, 'snapshot_sha256': None}
+        request = urllib.request.Request(url + 'text-search', data=json.dumps(search).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        found = json.loads(urllib.request.urlopen(request).read())
+        assert found['format'] == 'docx' and found['matches'][0]['path'] == '/body/p[1]'
+        request = urllib.request.Request(url + 'text-search', data=json.dumps(search).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
+        try: urllib.request.urlopen(request); raise AssertionError('Cross-origin search accepted')
+        except urllib.error.HTTPError as error: assert error.code == 403
         selection = {'revision': 0, 'page': 1, 'box': [0, 0, 1, 1]}
         for request_origin, expected in [('http://evil.test', 403), (origin, 400)]:
             request = urllib.request.Request(url + 'layout-scan', data=json.dumps({'revision': 0}).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})
