@@ -599,6 +599,12 @@ export class IabRuntime implements Backend {
     }
     need('page.control');
     const tab = this.tab(scopeId, params.tabId ?? params.target?.tabId);
+    if (method === 'getTabPresentation') {
+      const surface = [...this.surfaceStates.values()].find(item=>item.tabId === tab.id);
+      const window = surface?.window;
+      const visible = window && typeof window.isVisible === 'function' && typeof window.isMinimized === 'function' ? window.isVisible() && !window.isMinimized() : null;
+      return {backend:'electron',selected:!!surface,visible:surface ? visible : false,windowFocused:window && typeof window.isFocused === 'function' ? window.isFocused() : null};
+    }
     if (typeof params.turn_id === 'string') tab.touched.add(params.turn_id);
     if (['readClipboardText','readClipboard','writeClipboardText','writeClipboard'].includes(method)) {
       need(method.startsWith('read') ? 'clipboard.read' : 'clipboard.write');

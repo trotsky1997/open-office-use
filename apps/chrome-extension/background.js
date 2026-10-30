@@ -370,6 +370,20 @@ class BrowserBackend {
     return await this.withLogicalActive(session.sessionId, tabs.map(toBrowserTab));
   }
 
+  async getTabPresentation(params) {
+    await this.requireSessionTab(params, "getTabPresentation");
+    const tab = await chrome.tabs.get(requireTabId(params, "getTabPresentation"));
+    if (typeof tab.active !== "boolean") throw new Error("Tab presentation is unavailable");
+    let visible = tab.active ? null : false, windowFocused = null;
+    try {
+      const window = await chrome.windows.get(tab.windowId);
+      if (window.state === "minimized") visible = false;
+      if (typeof window.focused === "boolean") windowFocused = window.focused;
+    } catch { /* Window visibility can be unavailable. */ }
+    await this.requireSessionTab(params, "getTabPresentation");
+    return {backend:"chrome",selected:tab.active === true,visible,windowFocused};
+  }
+
   async getUserTabs(params) {
     await this.requireSession(params);
     const tabs = (await chrome.tabs.query({}))

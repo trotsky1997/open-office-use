@@ -57,6 +57,7 @@ export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" |
 export type OpenBrowserUseLogEntry = {level: "debug" | "info" | "log" | "warn" | "error"; message: string; timestamp: string; url?: string};
 export type OpenBrowserUseClipboardEntry = {mimeType: string; text?: string; base64?: string};
 export type OpenBrowserUseClipboardItem = {entries: OpenBrowserUseClipboardEntry[]; presentationStyle?: "unspecified" | "inline" | "attachment"};
+export type OpenBrowserUseTabPresentation = {backend:"chrome" | "electron"; selected:boolean; visible:boolean | null; windowFocused:boolean | null};
 export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {name?: TextMatcher; exact?: boolean; level?: number; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
@@ -518,6 +519,11 @@ export class OpenBrowserUseTab {
   async bringToFront(): Promise<void> {
     this.#observation = undefined;
     await this.browser.cdp.call(this.id,"Page.bringToFront");
+  }
+  async getPresentation(): Promise<OpenBrowserUseTabPresentation> {
+    const result = await this.browser.client.request("getTabPresentation",{tabId:this.id});
+    if (!isObject(result) || !["chrome","electron"].includes(String(result.backend)) || typeof result.selected !== "boolean" || (result.visible !== null && typeof result.visible !== "boolean") || (result.windowFocused !== null && typeof result.windowFocused !== "boolean")) throw new Error("Invalid tab presentation response");
+    return result as OpenBrowserUseTabPresentation;
   }
 
   private async moveHistory(direction: -1 | 1): Promise<void> {

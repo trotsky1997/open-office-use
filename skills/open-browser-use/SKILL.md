@@ -59,6 +59,9 @@ interface provides `.get_visible_screenshot()`, `.click({x,y})`, `.double_click(
 to `nodeRepl.emitImage`. Chrome task tabs start in the background; when visual
 input needs an active tab, `await tab.bringToFront()` explicitly activates it and
 changes the user's visible browser. Electron hosts present their own surfaces.
+Use `await tab.getPresentation()` to inspect the owned tab's actual selection
+and available window state; `visible:null` means visibility is unknown, and
+these values can change before the next operation.
 Coordinates are CSS viewport pixels. Convert
 screenshot pixels to CSS viewport coordinates. For a closer view use
 `tab.getScreenshot({clip:{x,y,width,height}})` with a rectangle inside the CSS

@@ -20,6 +20,7 @@ app.whenReady().then(async()=>{
     const grant=runtime.connections.grant(scope.id,'socket',{ttlMs:120000,operations:['page.control','files.upload','files.download',...(process.env.OBU_IAB_TEST_CLIPBOARD==='1'?['clipboard.read','clipboard.write']:[])]},process.pid);
     const client=await connectSocketIab(grant);
     const sdk=client.browser().tab(tab.id);
+    assert.deepEqual((({backend,selected,visible})=>({backend,selected,visible}))(await sdk.getPresentation()),{backend:'electron',selected:true,visible:true});
     await sdk.evaluate(`(()=>{window.cuaEvents=[];const b=document.createElement('div');b.id='cua-box';Object.assign(b.style,{position:'fixed',left:'200px',top:'40px',width:'100px',height:'80px',zIndex:'9999',background:'red'});for(const type of ['mousemove','mousedown','dblclick','wheel','contextmenu'])b.addEventListener(type,e=>{cuaEvents.push({type,button:e.button,shift:e.shiftKey,alt:e.altKey,x:e.clientX,y:e.clientY,trusted:e.isTrusted});if(type==='contextmenu'||type==='wheel')e.preventDefault()});document.body.append(b)})()`);
     await sdk.cua.move({x:210,y:50,keys:['Shift']});
     await sdk.cua.double_click({x:220,y:60,keypress:['Shift']});await sdk.cua.click({x:220,y:60,button:3});await sdk.cua.scroll({x:220,y:60,scrollX:0,scrollY:20,keypress:['Shift']});
@@ -77,6 +78,7 @@ app.whenReady().then(async()=>{
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Child heading';document.body.append(h);document.querySelector('button').ondblclick=e=>window.childDouble={trusted:e.isTrusted,detail:e.detail}})()`},{sessionId:session});
     assert.equal(await sdk.playwright.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
     window.hide();
+    assert.deepEqual((({backend,selected,visible})=>({backend,selected,visible}))(await sdk.getPresentation()),{backend:'electron',selected:true,visible:false});
     const crossButton=sdk.playwright.getByRole('button',{name:/^cross-frame action$/i});
     assert.equal(await crossButton.isVisible(),true);assert.equal(await crossButton.innerText(),'Cross-frame action');
     assert.deepEqual((await sdk.playwright.getByRole('button',{name:/^(Batch one|Cross-frame action)$/i}).allTextContents()).sort(),['Batch one hidden','Cross-frame action']);

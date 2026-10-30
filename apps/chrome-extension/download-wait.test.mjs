@@ -11,6 +11,19 @@ const commands=[];
 const chrome={debugger:{onDetach:{addListener(){}},async sendCommand(target,method,params){commands.push({target,method,params});}},storage:{local:{async get(){return {};},async set(){}}}};
 const Backend=vm.runInNewContext(`${source.slice(0,end)}\nBrowserBackend;`,{chrome,crypto:webcrypto,Date,setTimeout,clearTimeout,AbortController});
 
+test('tab presentation reports physical selection only for owned tabs',async()=>{
+  const backend=new Backend();await backend.store.ready;let active=false,gets=0,state='normal';
+  backend.requireSessionTab=async params=>{if(params.tabId!==1)throw new Error('not owned');};
+  const oldTabs=chrome.tabs,oldWindows=chrome.windows;
+  chrome.tabs={async get(){gets++;return {active,windowId:4};}};chrome.windows={async get(){return {state,focused:true};}};
+  try {
+    assert.deepEqual(JSON.parse(JSON.stringify(await backend.getTabPresentation({tabId:1}))),{backend:'chrome',selected:false,visible:false,windowFocused:true});
+    active=true;assert.deepEqual(JSON.parse(JSON.stringify(await backend.getTabPresentation({tabId:1}))),{backend:'chrome',selected:true,visible:null,windowFocused:true});
+    state='minimized';assert.equal((await backend.getTabPresentation({tabId:1})).visible,false);
+    await assert.rejects(backend.getTabPresentation({tabId:2}),/not owned/);assert.equal(gets,3);
+  } finally {chrome.tabs=oldTabs;chrome.windows=oldWindows;}
+});
+
 test('download wait observes the next start while paths retain completed results',async()=>{
   const backend=new Backend();await backend.store.ready;
   backend.requireSessionTab=async()=>({});backend.requireSession=async()=>({});

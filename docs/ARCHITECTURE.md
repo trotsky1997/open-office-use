@@ -195,12 +195,15 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   `active.json` 快速路径；`active.json` 缺失或失效时，CLI 会扫描 socket 目录并
   修复 registry，因此不需要重装扩展。
 - MV3 extension core handlers：`getInfo`、`createTab`、`getTabs`、
-  `getUserTabs`、`getUserHistory`、`claimUserTab`、`finalizeTabs`、
+  `getUserTabs`、`getTabPresentation`、`getUserHistory`、`claimUserTab`、`finalizeTabs`、
   `nameSession`、`attach`、`detach`、`executeCdp`、`moveMouse`、
   `webmcp_list_tools`、`webmcp_invoke_tool`、
   `waitForFileChooser`、`setFileChooserFiles`、`waitForDownload`、
   `downloadPath`、`readClipboardText`、`writeClipboardText`、
   `readClipboard`、`writeClipboard`、`turnEnded`。
+- `getTabPresentation` 在所属 session 内读取 Chrome 标签的物理选中状态，
+  与 `getTabs` 的逻辑活动标签分开；窗口可见性未知时返回 null。Electron
+  对应方法读取所属 scope 的 surface 和宿主窗口状态，需 `page.control`。
 - WebMCP 使用两层 content script：MAIN world 优先使用浏览器原生
   `document.modelContext`；如果浏览器没有提供该 API，则在页面代码运行前安装
   一个最小 page-facing shim，覆盖 `registerTool`、`getTools`、`executeTool`、

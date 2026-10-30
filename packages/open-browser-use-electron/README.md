@@ -417,6 +417,10 @@ enables/disables both effects during manual steps or automatic playback.
   uploads and downloads require explicit scope authorization and their respective
   grants. Clipboard access requires explicit read or write grants. Browser
   permission requests are denied by default.
+- `tab.getPresentation()` requires `page.control` and reports whether an owned
+  tab is selected in a host surface, whether its window reports visible and
+  non-minimized, and the window focus state when available. It is a momentary
+  status; window occlusion is not measured.
 - Navigation accepts http, https and about:blank. The host UI's preload is
   never loaded in remote guest pages; guests enforce sandbox, context isolation,
   disabled Node integration and enabled web security.

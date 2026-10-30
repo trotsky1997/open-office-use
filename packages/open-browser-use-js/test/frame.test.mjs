@@ -126,6 +126,8 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
         let result = {};
         if (request.method === "createTab") {
           result = { id: 123 };
+        } else if (request.method === "getTabPresentation") {
+          result = {backend:"chrome",selected:false,visible:false,windowFocused:true};
         } else if (request.method === "executeCdp" && request.params.method === "Page.navigate") {
           socket.write(
             encodeFrame({
@@ -170,6 +172,7 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
   const browser = await connectOpenBrowserUse({ socketPath });
   try {
     const tab = await browser.newTab();
+    assert.deepEqual(await tab.getPresentation(),{backend:"chrome",selected:false,visible:false,windowFocused:true});
     await tab.goto("https://example.test/issues", { waitUntil: "domcontentloaded", timeoutMs: 1000 });
     await tab.playwright.waitForLoadState({ state: "domcontentloaded", timeoutMs: 1000 });
     assert.equal(await tab.playwright.domSnapshot(), 'group "Form"\n  button "Submit"\n  frame "https://child.test/"\n    button "Frame action"\n    frame "https://nested.test/"\n      button "Nested action"');

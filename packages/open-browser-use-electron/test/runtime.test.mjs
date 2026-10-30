@@ -238,7 +238,7 @@ test('surface selection and hiding do not redirect automation or close tabs', as
   window.emit('closed'); assert.equal(a.tabs.list().length, 2);
 });
 test('background scroll uses wheel input and restores throttling', async t => {
-  const { runtime, adapter, a } = setup(t);
+  const { runtime, adapter, a, b } = setup(t);
   const tab = await a.tabs.create(), wc = adapter.views[0].webContents;
   let visible = false, minimized = false;
   const window = Object.assign(new EventEmitter(), {
@@ -246,11 +246,14 @@ test('background scroll uses wheel input and restores throttling', async t => {
     contentView: { addChildView() {}, removeChildView() {} }
   });
   const surface = runtime.surfaces.register({ id:'panel', window, owner:wc });
+  assert.deepEqual(await a.call('getTabPresentation',{tabId:tab.id}),{backend:'electron',selected:false,visible:false,windowFocused:null});
+  await assert.rejects(b.call('getTabPresentation',{tabId:tab.id}),/NOT_OWNED/);
   const params = {x:100,y:100,xDistance:0,yDistance:-250,gestureSourceType:'mouse',preventFling:true};
   const send = (method, commandParams = {}) => a.call('executeCdp', { target:{tabId:tab.id}, method, commandParams });
   await assert.rejects(send('Input.synthesizeScrollGesture', params), /IAB_SCROLL_REQUIRES_PRESENTED_SURFACE/);
   await send('Runtime.evaluate');
   surface.present(tab.id);
+  assert.deepEqual(await a.call('getTabPresentation',{tabId:tab.id}),{backend:'electron',selected:true,visible:false,windowFocused:null});
   await send('Input.synthesizeScrollGesture', params);
   assert.deepEqual(wc.debugger.commands.at(-1).params, {type:'mouseWheel',x:100,y:100,deltaX:-0,deltaY:250});
   assert.equal(wc.backgroundThrottling, true);
@@ -260,6 +263,7 @@ test('background scroll uses wheel input and restores throttling', async t => {
   await send('Input.synthesizeScrollGesture', params);
   assert.equal(wc.debugger.commands.at(-1).method, 'Input.dispatchMouseEvent');
   minimized = false;
+  assert.equal((await a.call('getTabPresentation',{tabId:tab.id})).visible,true);
   await send('Input.synthesizeScrollGesture', params);
   assert.equal(wc.debugger.commands.at(-1).method, 'Input.synthesizeScrollGesture');
 });

@@ -462,6 +462,12 @@ export class OpenBrowserUseTab {
         this.#observation = undefined;
         await this.browser.cdp.call(this.id, "Page.bringToFront");
     }
+    async getPresentation() {
+        const result = await this.browser.client.request("getTabPresentation", { tabId: this.id });
+        if (!isObject(result) || !["chrome", "electron"].includes(String(result.backend)) || typeof result.selected !== "boolean" || (result.visible !== null && typeof result.visible !== "boolean") || (result.windowFocused !== null && typeof result.windowFocused !== "boolean"))
+            throw new Error("Invalid tab presentation response");
+        return result;
+    }
     async moveHistory(direction) {
         const history = await this.browser.cdp.call(this.id, "Page.getNavigationHistory");
         if (!isObject(history) || !Number.isInteger(history.currentIndex) || !Array.isArray(history.entries))

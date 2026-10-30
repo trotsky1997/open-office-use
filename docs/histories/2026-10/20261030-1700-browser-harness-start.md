@@ -217,3 +217,5 @@ pressKey 根据当前焦点逐层检查 iframe 宿主并选择对应调试会话
 新增 tab.cua，提供坐标移动、1–5 鼠标按钮、双击、带修饰键滚动、路径拖拽、焦点按键/文本及带 toBase64 的截图；拖拽失败尝试释放按钮，wheel 超时报告结果未知。SDK 63 项通过，包括 REPL 图片输出；Linux ARM64 Electron 44/Xvfb 实测修饰键移动、双击、右键、滚轮、拖拽、PNG 和跨进程文本输入。隔离 Chromium 150 的原生消息常规链路验证 CUA 按键和文本；该环境中直接带修饰键 wheel 超时，固定嵌套容器的滚动手势返回但未滚动且后续截图超时，单独测试入口需显式启用。正常 Chromium 桌面、macOS 和 Windows 尚未验证。
 
 定位 Chromium 滚轮问题与后台标签呈现状态有关：新增显式 tab.bringToFront，调用方自行决定是否激活标签。Linux ARM64 隔离 Chromium 150 的 headless 原生消息完整 smoke 和 Xvfb 前台短测均验证标签从 hidden 变 visible、固定嵌套容器实际滚动、带 Shift 的可信 wheel 及后续 PNG 截图；SDK 63 项通过。后台标签仍可能失败，Electron 的窗口呈现由宿主控制，macOS/Windows 和普通桌面尚未覆盖。
+
+新增所属标签 getPresentation：Chrome 读取浏览器真实标签选中及窗口状态，Electron 读取所属 surface 和宿主窗口状态，未知可见性显式返回 null。Chrome 在宿主查询前后校验 session，Electron 要求 page.control；SDK 63 项、Electron 47 项和扩展相关测试 13 项通过。Linux ARM64 隔离 Chromium 原生消息与 Xvfb 实测后台、前台和焦点模拟伪装，Electron 44/Xvfb socket 实测呈现与隐藏窗口。焦点模拟、禁用后台节流、screencast 和设备视口模拟均未恢复该 Chromium 环境的后台嵌套滚动；后台限制继续保留。

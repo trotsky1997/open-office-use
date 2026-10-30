@@ -73,6 +73,12 @@ export type OpenBrowserUseClipboardItem = {
     entries: OpenBrowserUseClipboardEntry[];
     presentationStyle?: "unspecified" | "inline" | "attachment";
 };
+export type OpenBrowserUseTabPresentation = {
+    backend: "chrome" | "electron";
+    selected: boolean;
+    visible: boolean | null;
+    windowFocused: boolean | null;
+};
 export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {
     name?: TextMatcher;
@@ -200,6 +206,7 @@ export declare class OpenBrowserUseTab {
     back(): Promise<void>;
     forward(): Promise<void>;
     bringToFront(): Promise<void>;
+    getPresentation(): Promise<OpenBrowserUseTabPresentation>;
     private moveHistory;
     reload(): Promise<void>;
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;

@@ -366,7 +366,21 @@ requires a presented surface. Chrome task tabs start in the background. When
 visual rendering or scrolling requires an active tab, explicitly call
 `await tab.bringToFront()`; this activates the tab and can change the user's
 visible browser. Electron surfaces are presented by the host and do not expose
-this method through their page grant. In isolated Linux ARM64 Chromium 150,
+this method through their page grant. `await tab.getPresentation()` reports
+the owned tab's physical selection and host-window state:
+
+```js
+const {backend, selected, visible, windowFocused} = await tab.getPresentation();
+```
+
+For Chrome, `selected` is the browser's selected tab in its window, independent
+of the session's logical active tab. `visible` is `false` for an unselected tab
+or minimized window and `null` when actual visibility is unknown. For Electron,
+`selected` means a host surface presents the tab; `visible` reflects whether
+that host window reports visible and non-minimized. These values do not detect
+occlusion or guarantee rendering, and can change immediately after the call.
+`windowFocused` reports host-window focus when available and can be `null`.
+In isolated Linux ARM64 Chromium 150,
 background wheel input timed out or failed to move a fixed nested scroller;
 activating the task tab allowed ordinary and modified wheel input and a
 subsequent screenshot. An input timeout can have an unknown outcome; inspect
