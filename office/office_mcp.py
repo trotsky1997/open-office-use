@@ -1,10 +1,6 @@
 """MCP access to the local office authoring workbench."""
 from pathlib import Path
-from io import BytesIO
-import math
-import tempfile
 
-from PIL import Image as PILImage
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP, Image
@@ -73,7 +69,7 @@ def session_selection_text(directory: str) -> dict[str, Any]:
 
 @server.tool()
 def session_selection_candidates(directory: str) -> dict[str, Any]:
-    """Find textual candidate element paths for the visual selection; verify each target before editing."""
+    """Find text and, when available, PowerPoint geometric candidates for a visual selection; verify each target."""
     return selection_candidates.candidates(directory, render)
 
 
@@ -83,20 +79,7 @@ def session_selection_image(directory: str) -> Image:
     selection = session.get_selection(directory)
     state = session.info(directory)
     source = session.revision_file(state, selection['revision'])
-    with tempfile.TemporaryDirectory(prefix='office-selection-') as tmp:
-        pages = preview(source, Path(tmp) / 'pages')
-        page = selection['page']
-        if page > len(pages):
-            raise ValueError('Selected page does not exist in this revision')
-        with PILImage.open(pages[page - 1]) as image:
-            x1, y1, x2, y2 = selection['box']
-            box = (math.floor(x1 * image.width), math.floor(y1 * image.height),
-                   math.ceil(x2 * image.width), math.ceil(y2 * image.height))
-            result = BytesIO()
-            image.crop(box).save(result, format='PNG')
-    data = result.getvalue()
-    if len(data) > 10 * 1024 * 1024:
-        raise ValueError('Selected image exceeds 10 MiB')
+    data, _ = visual.page_image(source, selection['page'], render, selection['box'])
     return Image(data=data, format='png')
 
 
@@ -239,6 +222,22 @@ def render_pdf(file: str, output_dir: str) -> dict[str, str]:
 def preview_pages(file: str, output_dir: str) -> dict[str, list[str]]:
     """Render page PNGs into a new directory using LibreOffice and Poppler."""
     return {'pages': preview(file, output_dir)}
+
+
+@server.tool()
+def view_document_page(file: str, page: int, box: list[float] | None = None) -> Image:
+    """View one rendered PDF page, optionally cropped to normalized [left, top, right, bottom]."""
+    data, _ = visual.page_image(file, page, render, box)
+    return Image(data=data, format='png')
+
+
+@server.tool()
+def session_view_page(directory: str, revision: int, page: int, box: list[float] | None = None) -> Image:
+    """View one page of an exact session revision, optionally cropped to normalized page coordinates."""
+    state = session.info(directory)
+    source = session.revision_file(state, revision)
+    data, _ = visual.page_image(source, page, render, box)
+    return Image(data=data, format='png')
 
 
 @server.tool()

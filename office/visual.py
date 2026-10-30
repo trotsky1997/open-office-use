@@ -1,5 +1,6 @@
 """Bounded, page-numbered visual overviews for Office documents."""
 import io
+import math
 import os
 import re
 import shutil
@@ -10,22 +11,63 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 
+def pdf_page_count(pdf):
+    info = shutil.which('pdfinfo')
+    if not info:
+        raise RuntimeError('Poppler pdfinfo is required for page rendering')
+    result = subprocess.run([info, str(pdf)], capture_output=True, text=True, timeout=120, check=False,
+                            env={**os.environ, 'LC_ALL': 'C'})
+    match = re.search(r'^Pages:\s*(\d+)\s*$', result.stdout, re.MULTILINE)
+    if result.returncode or not match:
+        raise RuntimeError('Could not determine rendered PDF page count')
+    return int(match.group(1))
+
+
+def page_image(source, page, render, box=None):
+    if isinstance(page, bool) or not isinstance(page, int) or not 1 <= page <= 1_000_000:
+        raise ValueError('Page must be an integer from 1 to 1,000,000')
+    if box is not None:
+        if (not isinstance(box, (list, tuple)) or len(box) != 4 or
+                any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in box) or
+                not (0 <= box[0] < box[2] <= 1 and 0 <= box[1] < box[3] <= 1)):
+            raise ValueError('Box must contain normalized left, top, right, bottom coordinates')
+    raster = shutil.which('pdftoppm')
+    if not raster:
+        raise RuntimeError('Poppler pdftoppm is required for page rendering')
+    with tempfile.TemporaryDirectory(prefix='office-page-') as tmp:
+        root = Path(tmp); pdf = render(source, root / 'pdf'); total = pdf_page_count(pdf)
+        if page > total:
+            raise ValueError(f'Page exceeds rendered page count ({total})')
+        result = subprocess.run([raster, '-f', str(page), '-l', str(page), '-singlefile', '-scale-to', '1800',
+                                 '-png', pdf, str(root / 'page')], capture_output=True, text=True, timeout=120, check=False)
+        png = root / 'page.png'
+        if result.returncode or not png.is_file():
+            raise RuntimeError(f'Page rendering failed: {result.stderr or result.stdout}')
+        with Image.open(png) as image:
+            page_size = [image.width, image.height]
+            if box is not None:
+                x1, y1, x2, y2 = box
+                image = image.crop((math.floor(x1 * image.width), math.floor(y1 * image.height),
+                                    math.ceil(x2 * image.width), math.ceil(y2 * image.height)))
+            image_size = [image.width, image.height]
+            output = io.BytesIO(); image.save(output, format='PNG')
+        data = output.getvalue()
+        if len(data) > 10 * 1024 * 1024:
+            raise ValueError('Rendered page exceeds 10 MiB')
+        return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box}
+
+
 def contact_sheet(source, start, count, render):
     if isinstance(start, bool) or not isinstance(start, int) or start < 1 or start > 1_000_000:
         raise ValueError('Start page must be an integer from 1 to 1,000,000')
     if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 12:
         raise ValueError('Page count must be an integer from 1 to 12')
-    info = shutil.which('pdfinfo'); raster = shutil.which('pdftoppm')
-    if not info or not raster:
-        raise RuntimeError('Poppler pdfinfo and pdftoppm are required for contact sheets')
+    raster = shutil.which('pdftoppm')
+    if not raster:
+        raise RuntimeError('Poppler pdftoppm is required for contact sheets')
     with tempfile.TemporaryDirectory(prefix='office-contact-sheet-') as tmp:
         root = Path(tmp); pdf = render(source, root / 'pdf')
-        result = subprocess.run([info, pdf], capture_output=True, text=True, timeout=120, check=False,
-                                env={**os.environ, 'LC_ALL': 'C'})
-        match = re.search(r'^Pages:\s*(\d+)\s*$', result.stdout, re.MULTILINE)
-        if result.returncode or not match:
-            raise RuntimeError('Could not determine rendered PDF page count')
-        total = int(match.group(1))
+        total = pdf_page_count(pdf)
         if start > total:
             raise ValueError(f'Start page exceeds rendered page count ({total})')
         end = min(total, start + count - 1)
@@ -54,15 +96,19 @@ def contact_sheet(source, start, count, render):
         return output.getvalue(), {'start_page': start, 'end_page': end, 'total_pages': total}
 
 
-def save_contact_sheet(source, output, start, count, render):
+def save_png(output, generate):
     output = Path(output).absolute()
     if output.suffix.lower() != '.png':
-        raise ValueError('Contact sheet output must be a PNG file')
+        raise ValueError('Image output must be a PNG file')
     if output.exists() or output.is_symlink():
         raise FileExistsError(f'Output already exists: {output}')
-    data, details = contact_sheet(source, start, count, render)
+    data, details = generate()
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-contact-sheet-') as tmp:
-        candidate = Path(tmp) / 'contact.png'; candidate.write_bytes(data)
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-image-') as tmp:
+        candidate = Path(tmp) / 'image.png'; candidate.write_bytes(data)
         os.link(candidate, output)
     return {'output': str(output), **details}
+
+
+def save_contact_sheet(source, output, start, count, render):
+    return save_png(output, lambda: contact_sheet(source, start, count, render))

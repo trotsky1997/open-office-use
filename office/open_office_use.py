@@ -146,6 +146,7 @@ def main():
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
     render_command = commands.add_parser('render'); render_command.add_argument('file'); render_command.add_argument('--out-dir', required=True)
     images = commands.add_parser('preview'); images.add_argument('file'); images.add_argument('--out-dir', required=True)
+    page = commands.add_parser('render-page'); page.add_argument('file'); page.add_argument('--out', required=True); page.add_argument('--page', type=int, required=True); page.add_argument('--box', type=float, nargs=4)
     contact = commands.add_parser('contact-sheet'); contact.add_argument('file'); contact.add_argument('--out', required=True); contact.add_argument('--start', type=int, default=1); contact.add_argument('--count', type=int, default=12)
     structured = commands.add_parser('structured'); structured.add_argument('file'); structured.add_argument('mode', choices=['outline', 'get', 'query']); structured.add_argument('target', nargs='?')
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
@@ -230,6 +231,8 @@ def main():
             result = {'pdf': render(args.file, args.out_dir)}
         elif args.command == 'preview':
             result = {'pages': preview(args.file, args.out_dir)}
+        elif args.command == 'render-page':
+            result = visual.save_png(args.out, lambda: visual.page_image(args.file, args.page, render, args.box))
         elif args.command == 'contact-sheet':
             result = visual.save_contact_sheet(args.file, args.out, args.start, args.count, render)
         elif args.command == 'audit':

@@ -26,7 +26,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -106,6 +106,8 @@ async def main():
                 assert not advanced.isError, advanced
                 stale_selection = await session.call_tool('session_selection', {'directory': str(directory)})
                 assert not stale_selection.isError and stale_selection.structuredContent['stale'] is True, stale_selection
+                stale_image = await session.call_tool('session_selection_image', {'directory': str(directory)})
+                assert not stale_image.isError and stale_image.content[0].data == cropped.content[0].data, stale_image
                 restored = await session.call_tool('session_restore', {'directory': str(directory), 'base_revision': 2, 'revision': 0})
                 assert not restored.isError and restored.structuredContent['revision'] == 3, restored
                 outdated_restore = await session.call_tool('session_restore', {'directory': str(directory), 'base_revision': 2, 'revision': 0})
@@ -125,6 +127,13 @@ async def main():
                 assert not images.isError, images
                 paths = images.structuredContent['pages']
                 assert paths and Path(paths[0]).read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+                page_view = await session.call_tool('view_document_page', {'file': str(output), 'page': 1, 'box': [0, 0, .5, .5]})
+                assert not page_view.isError and page_view.content[0].type == 'image', page_view
+                first_page = await session.call_tool('session_view_page', {'directory': str(directory), 'revision': 0, 'page': 1})
+                second_page = await session.call_tool('session_view_page', {'directory': str(directory), 'revision': 1, 'page': 1})
+                assert not first_page.isError and not second_page.isError and first_page.content[0].data != second_page.content[0].data
+                missing_page = await session.call_tool('session_view_page', {'directory': str(directory), 'revision': 0, 'page': 100})
+                assert missing_page.isError, missing_page
                 overview = await session.call_tool('view_contact_sheet', {'file': str(output), 'start_page': 1, 'count': 1})
                 assert not overview.isError and overview.content[0].type == 'image' and overview.content[0].mimeType == 'image/png', overview
                 history_overview = await session.call_tool('session_contact_sheet', {'directory': str(directory), 'revision': 0, 'count': 1})
