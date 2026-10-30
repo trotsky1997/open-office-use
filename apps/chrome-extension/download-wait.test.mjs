@@ -285,7 +285,7 @@ test('ownership loss stops cursor preparation and releases an arrival waiter',as
     const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};backend.store.state.sessions.b={chromeGroupId:2};backend.sessionByTabId.set(7,'a');
     backend.requireSession=async()=>({sessionId:'a'});backend.requireSessionTab=async()=>{};
     let release,injections=0,moves=0;const oldTabs=chrome.tabs,oldScripting=chrome.scripting;
-    chrome.tabs={sendMessage:async(_tab,msg)=>{if(msg.type==='OPEN_BROWSER_USE_PING'&&stage==='preparing')return await new Promise(resolve=>{release=resolve;});if(msg.type==='OPEN_BROWSER_USE_PING')return {ok:true};moves++;return {ok:true};}};
+    chrome.tabs={sendMessage:async(_tab,msg)=>{if(msg.type==='OPEN_BROWSER_USE_PING'&&stage==='preparing')return await new Promise(resolve=>{release=resolve;});if(msg.type==='OPEN_BROWSER_USE_PING')return {ok:true};if(msg.type==='OPEN_BROWSER_USE_CURSOR')moves++;return {ok:true};}};
     chrome.scripting={executeScript:async()=>{injections++;}};
     const sent=[],peer=new Peer({setMessageCallback(){},sendMessage(message){sent.push(message);}},backend);
     try {
@@ -295,4 +295,18 @@ test('ownership loss stops cursor preparation and releases an arrival waiter',as
       release?.({ok:false});await pending;assert.equal(injections,0);assert.equal(moves,stage==='preparing'?0:1);assert.equal(backend.cursorArrivalWaitersByKey.size,0);assert.equal(sent.length,1);
     } finally {chrome.tabs=oldTabs;chrome.scripting=oldScripting;}
   }
+});
+
+test('moving an active tab clears the old session cursor and persisted active tab',async()=>{
+  const backend=new Backend();await backend.store.ready;
+  backend.store.state.sessions.a={chromeGroupId:1,activeTabId:7};backend.store.state.sessions.b={chromeGroupId:2,activeTabId:null};
+  backend.sessionByTabId.set(7,'a');backend.activeTabsBySession.set('a',7);backend.cursorByTabId.set(7,{x:5,y:9,visible:true});
+  const oldTabs=chrome.tabs,sent=[];chrome.tabs={sendMessage:async(tab,message)=>{sent.push({tab,message});}};
+  try {
+    assert.equal(backend.readCursorOverlayState(7).sessionId,'a');backend.handleTabGroupChange(7,2);
+    assert.equal(backend.activeTabsBySession.has('a'),false);assert.equal(backend.store.state.sessions.a.activeTabId,null);
+    assert.equal(backend.cursorByTabId.has(7),false);assert.equal(backend.readCursorOverlayState(7).isVisible,false);
+    assert.equal(sent.length,1);assert.equal(sent[0].message.state.isVisible,false);
+    backend.activeTabsBySession.set('b',7);assert.equal(backend.readCursorOverlayState(7).sessionId,'b');
+  } finally {chrome.tabs=oldTabs;}
 });

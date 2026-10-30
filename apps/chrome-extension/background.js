@@ -374,6 +374,17 @@ class BrowserBackend {
     if (owner) this.sessionByTabId.set(tabId, owner); else this.sessionByTabId.delete(tabId);
     if (!previous || (previous === owner && !ungrouped)) return;
     this.debuggerSessionByTabId.delete(tabId);
+    const wasActive = this.activeTabsBySession.get(previous) === tabId;
+    if (wasActive) this.activeTabsBySession.delete(previous);
+    const previousSession = this.store.state.sessions[previous];
+    if (previousSession?.activeTabId === tabId) {
+      previousSession.activeTabId = null;
+      void this.store.save().catch(() => {});
+    }
+    const hadCursor = this.cursorByTabId.delete(tabId);
+    if (wasActive || hadCursor) {
+      void chrome.tabs.sendMessage(tabId, { type: "OPEN_BROWSER_USE_CURSOR_STATE", state: this.readCursorOverlayState(tabId) }).catch(() => {});
+    }
     if (this.downloadStartWait?.tabId === tabId) this.downloadStartWait.controller.abort();
     this.invalidateFileChoosers(tabId);
     this.fileChooserWaitersByTabId.get(tabId)?.reject(new Error("Tab ownership changed"));
@@ -1176,7 +1187,7 @@ class BrowserBackend {
 
   readCursorOverlayState(tabId) {
     for (const [sessionId, activeTabId] of this.activeTabsBySession) {
-      if (activeTabId === tabId) {
+      if (activeTabId === tabId && this.sessionByTabId.get(tabId) === sessionId) {
         return {
           cursor: this.cursorByTabId.get(tabId) ?? null,
           isVisible: true,
