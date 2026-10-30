@@ -263,3 +263,5 @@ CSS 作用域新增 getByRole/getByLabel/getByText/getByAltText/getByPlaceholder
 CSS locator 增加 and 交集，接受同一 browser/tab/frame 的 CSS 定位器，保留位置与筛选顺序，并支持在 has/hasNot 内相对候选元素求值；操作前重新计算交集。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证 shadow root、嵌套条件、位置顺序、跨 frame 拒绝和条件改变时停止点击，Electron 44/Xvfb socket 验证跨进程 frame。语义定位器参与交集、or 和语义作用域到 CSS 仍待实现；macOS/Windows 本轮未测。
 
 CSS locator 增加 or 并集，对同一 browser/tab/frame 的结果按文档及开放 shadow root 遍历顺序去重，支持后续位置选择、筛选和嵌套 has；输入前重新计算。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证顺序、去重、严格匹配、位置、嵌套、跨 frame 拒绝和目标改变时停止点击；Electron 44/Xvfb socket 验证跨进程 frame。语义定位器组合和语义作用域到 CSS 仍待实现；macOS/Windows 本轮未测。
+
+修复 CSS fill 对数字输入缺少预校验的问题：使用浏览器原生 number 解析器在聚焦前验证，并在聚焦及全选后重新核对类型和值，避免对非法数字执行文本替换。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证跨进程无效值保持原值且无 input 事件、有效数值可信输入、聚焦和全选回调改变类型；Electron 44/Xvfb socket 验证跨进程无效与有效数字。macOS/Windows 本轮未测。

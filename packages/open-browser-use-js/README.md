@@ -279,7 +279,9 @@ visibility, hit testing and stable geometry before issuing trusted mouse input.
 `press` checks the selected frame, target identity and focus again after focusing.
 `fill` supports text-like and number inputs, textareas, contenteditable elements,
 and native date, time, month, week and datetime-local inputs. Text input rechecks
-focus and selection before inserting. Double-click checks the target again after
+focus and selection before inserting. Number inputs are checked with the native
+number parser before focus and again after focus and selection; an invalid
+value is rejected before text insertion. Double-click checks the target again after
 the first click. Check operations support native checkbox and radio inputs and
 binary ARIA checkbox, radio, switch and menuitem variants; an already selected
 radio cannot be unchecked directly. `selectOption` supports native single and

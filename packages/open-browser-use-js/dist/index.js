@@ -1101,11 +1101,14 @@ export class OpenBrowserUseTab {
                 const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) {
           if (!this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly') === 'true') return 'unsupported';
           if (this instanceof HTMLInputElement && ['date','time','month','week','datetime-local'].includes(this.type)) { const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;return probe.value===value ? 'temporal' : 'invalid'; }
+          if (this instanceof HTMLInputElement && this.type==='number') {const probe=this.ownerDocument.createElement('input');probe.type='number';probe.value=value;if(probe.value!==value)return 'invalid-number';}
           return this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type)) ? 'text' : 'unsupported';
         }` }, { sessionId });
                 const status = isObject(editable) && isObject(editable.result) ? editable.result.value : undefined;
                 if (status === 'invalid')
                     throw new Error("Invalid date or time value");
+                if (status === 'invalid-number')
+                    throw new Error("Invalid number value");
                 if (status === 'temporal') {
                     const latest = await this.queryCss(snapshot.step, snapshot.framePath, snapshot.scopes);
                     if (latest.documentId !== snapshot.documentId || JSON.stringify(latest.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids) !== JSON.stringify(snapshot.ids))
@@ -1131,7 +1134,9 @@ export class OpenBrowserUseTab {
                         throw new Error("Selector target changed after focus; observe again");
                     if ((await this.focusedInputFrame()).id !== frame.id)
                         throw new Error("Target frame lost focus; observe again");
-                    const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text !== undefined }], functionDeclaration: `function(editable) { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; if (editable && (this.readOnly || this.getAttribute('aria-readonly') === 'true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))) return false; let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }` }, { sessionId });
+                    const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text !== undefined }, { value: text ?? '' }], functionDeclaration: `function(editable,value) { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; if (editable && (this.readOnly || this.getAttribute('aria-readonly') === 'true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))) return false; if(editable && this instanceof HTMLInputElement && this.type==='number'){const probe=this.ownerDocument.createElement('input');probe.type='number';probe.value=value;if(probe.value!==value)return 'invalid-number';} let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }` }, { sessionId });
+                    if (isObject(focused) && isObject(focused.result) && focused.result.value === 'invalid-number')
+                        throw new Error("Invalid number value");
                     if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true)
                         throw new Error("Target lost focus or is not editable; observe again");
                 };

@@ -241,6 +241,10 @@ try {
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const s=document.createElement('select');s.id='css-select';s.innerHTML='<option value="a">Alpha</option><option value="b">Beta</option>';r.append(s)})()`);
  assert.deepEqual(await tab.playwright.locator('#css-host').locator('#css-select').selectOption({label:'Beta'}),['b']);
  await tab.evaluate(`(()=>{const s=document.querySelector('#css-host').shadowRoot.querySelector('#css-select');s.add(new Option('Beta','b'))})()`);await assert.rejects(tab.playwright.locator('#css-select').selectOption('b',{timeoutMs:0}),/ambiguous/);
+ await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const e=document.createElement('input');e.id='css-number-focus';e.value='123';e.onfocus=()=>e.type='number';e.oninput=()=>window.cssNumberInput=(window.cssNumberInput||0)+1;r.append(e)})()`);
+ await assert.rejects(tab.playwright.locator('#css-number-focus').fill('not-a-number',{timeoutMs:0}),/Invalid number value/);assert.equal(await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('#css-number-focus').value`),'123');assert.equal(await tab.evaluate('window.cssNumberInput||0'),0);
+ await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const e=document.createElement('input');e.id='css-number-select';e.value='321';e.onkeydown=event=>{if(event.ctrlKey&&event.key==='a')e.type='number'};e.oninput=()=>window.cssNumberSelectInput=(window.cssNumberSelectInput||0)+1;r.append(e)})()`);
+ await assert.rejects(tab.playwright.locator('#css-number-select').fill('bad',{timeoutMs:0}),/Invalid number value/);assert.equal(await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('#css-number-select').value`),'321');assert.equal(await tab.evaluate('window.cssNumberSelectInput||0'),0);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const input=document.createElement('input');input.id='css-input';input.onkeydown=e=>window.cssKey={key:e.key,trusted:e.isTrusted};r.append(input)})()`);
  assert.throws(()=>tab.playwright.locator('#css-input').press(undefined),/Invalid key/);
  await tab.playwright.locator('#css-input').press('Enter');assert.deepEqual(await tab.evaluate('window.cssKey'),{key:'Enter',trusted:true});
@@ -261,7 +265,7 @@ try {
  await assert.rejects(tab.playwright.locator('#css-action').click({timeoutMs:0}),/target unavailable/i);assert.equal(await tab.evaluate('window.cssClick'),false);
  await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('#css-action').disabled=false`);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const group=r.querySelector('.css-group');group.append(r.querySelector('#css-action'));window.cssClick=false;setTimeout(()=>group.className='changed-group',30)})()`);
- await assert.rejects(tab.playwright.locator('.css-group').getByRole('button',{name:'Act',exact:true}).first().click({timeoutMs:0}),/scope changed|target changed/i);assert.equal(await tab.evaluate('window.cssClick'),false);
+ await assert.rejects(tab.playwright.locator('.css-group').getByRole('button',{name:'Act',exact:true}).first().click({timeoutMs:0}),/scope changed|target changed|matched 0/i);assert.equal(await tab.evaluate('window.cssClick'),false);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;r.querySelector('.changed-group').className='css-group';r.append(r.querySelector('#css-action'))})()`);
  await tab.evaluate(`(()=>{const b=document.querySelector('#css-host').shadowRoot.querySelector('#css-action');window.cssClick=false;setTimeout(()=>b.id='after-union',30)})()`);
  await assert.rejects(tab.playwright.locator('#css-action').or(tab.playwright.locator('#missing-union')).click({timeoutMs:0}),/target unavailable|target changed/i);assert.equal(await tab.evaluate('window.cssClick'),false);
@@ -459,6 +463,9 @@ try {
  const messageCount=await tab.evaluate('window.frameMessages.length');await updates.check();await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),messageCount);
  await updates.uncheck();await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-check',value:false,trusted:true});
+ const cssNumber=crossFrame.locator('input[type=number]'), beforeCssInvalid=await tab.evaluate('window.frameMessages.length');
+ await assert.rejects(cssNumber.fill('not-a-number',{timeoutMs:0}),/Invalid number value/);await new Promise(r=>setTimeout(r,40));assert.equal(await tab.evaluate('window.frameMessages.length'),beforeCssInvalid);assert.equal((await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('input[type=number]').value`,returnByValue:true},{sessionId:crossSession})).result.value,'42');
+ await cssNumber.fill('13.5');await new Promise(r=>setTimeout(r,40));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-number',value:'13.5',trusted:true});
  await tab.playwright.getByPlaceholder('Amount',{exact:true}).fill('137.5');await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-number',value:'137.5',trusted:true});
  const beforeInvalidNumber=await tab.evaluate('window.frameMessages.length');
@@ -469,7 +476,7 @@ try {
  for (const [type,value,kind] of [['date','2026-11-02','date-change'],['time','08:32','time-change'],['month','2026-12','month-change'],['week','2026-W48','week-change'],['datetime-local','2026-11-12T08:30','datetime-change']]) {
    await crossFrame.locator(`input[type="${type}"]`).fill(value);await new Promise(r=>setTimeout(r,30));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind,value,trusted:false});
  }
- const beforeCssInvalid=await tab.evaluate('window.frameMessages.length');await assert.rejects(crossFrame.locator('input[type="date"]').fill('2026-02-30',{timeoutMs:0}),/Invalid date or time/);assert.equal(await tab.evaluate('window.frameMessages.length'),beforeCssInvalid);
+ const beforeCssDateInvalid=await tab.evaluate('window.frameMessages.length');await assert.rejects(crossFrame.locator('input[type="date"]').fill('2026-02-30',{timeoutMs:0}),/Invalid date or time/);assert.equal(await tab.evaluate('window.frameMessages.length'),beforeCssDateInvalid);
  const date=tab.playwright.getByLabel('Cross date',{exact:true});await date.fill('2026-12-31');await new Promise(r=>setTimeout(r,100));
  assert.deepEqual((await tab.evaluate('window.frameMessages.slice(-2)')),[{kind:'date-input',value:'2026-12-31',trusted:false},{kind:'date-change',value:'2026-12-31',trusted:false}]);
  const priorDate=await tab.evaluate('window.frameMessages.length');await assert.rejects(date.fill('2026-02-30',{timeoutMs:0}),/Invalid date or time/);assert.equal(await tab.evaluate('window.frameMessages.length'),priorDate);
