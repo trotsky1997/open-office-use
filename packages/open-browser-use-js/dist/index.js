@@ -982,6 +982,46 @@ export class OpenBrowserUseTab {
     /** @internal */
     async domFrameInViewport(frame, frames) { return this.cssFrameVisible(frame, frames, true); }
     /** @internal */
+    async domFrameClip(frame, frames) {
+        const metrics = await this.browser.cdp.call(this.id, 'Page.getLayoutMetrics');
+        const viewport = isObject(metrics) && isObject(metrics.cssVisualViewport) ? metrics.cssVisualViewport : null;
+        if (!viewport || typeof viewport.clientWidth !== 'number' || typeof viewport.clientHeight !== 'number')
+            throw new RetryablePreflightError('Viewport unavailable; observe again');
+        let clip = { left: 0, top: 0, right: viewport.clientWidth, bottom: viewport.clientHeight };
+        const chain = frameAncestry(frame, frames);
+        for (let i = chain.length - 1; i >= 0; i--) {
+            const child = chain[i], sessionId = chain[i + 1]?.sessionId;
+            const owner = await this.browser.cdp.call(this.id, 'DOM.getFrameOwner', { frameId: child.id }, { sessionId });
+            if (!isObject(owner) || typeof owner.backendNodeId !== 'number')
+                throw new RetryablePreflightError('Frame owner unavailable; observe again');
+            const world = await this.browser.cdp.call(this.id, 'Page.createIsolatedWorld', { frameId: child.parentId, worldName: 'open-browser-use-selector' }, { sessionId });
+            if (!isObject(world) || typeof world.executionContextId !== 'number')
+                throw new RetryablePreflightError('Frame context unavailable; observe again');
+            const resolved = await this.browser.cdp.call(this.id, 'DOM.resolveNode', { backendNodeId: owner.backendNodeId, executionContextId: world.executionContextId }, { sessionId });
+            const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+            if (typeof objectId !== 'string')
+                throw new RetryablePreflightError('Frame owner unavailable; observe again');
+            try {
+                const result = await this.browser.cdp.call(this.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return null;for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)){const t=getComputedStyle(el).transform;if(t!=='none'){const m=new DOMMatrixReadOnly(t);if(!m.is2D || m.b!==0 || m.c!==0 || m.a<=0 || m.d<=0)return {unsupported:true}}}const r=this.getBoundingClientRect();if(!this.offsetWidth || !this.offsetHeight)return null;const sx=r.width/this.offsetWidth,sy=r.height/this.offsetHeight;return {x:r.left+this.clientLeft*sx,y:r.top+this.clientTop*sy,width:this.clientWidth,height:this.clientHeight,sx,sy}}` }, { sessionId });
+                const value = isObject(result) && isObject(result.result) ? result.result.value : null;
+                if (isObject(value) && value.unsupported === true)
+                    throw new Error('DOM snapshot cannot map a rotated or skewed frame');
+                if (!isObject(value) || !['x', 'y', 'width', 'height', 'sx', 'sy'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key])))
+                    throw new RetryablePreflightError('Frame geometry changed; observe again');
+                const { x, y, width, height, sx, sy } = value;
+                if (sx <= 0 || sy <= 0 || width <= 0 || height <= 0)
+                    return null;
+                clip = { left: Math.max(0, (clip.left - x) / sx), top: Math.max(0, (clip.top - y) / sy), right: Math.min(width, (clip.right - x) / sx), bottom: Math.min(height, (clip.bottom - y) / sy) };
+                if (clip.right <= clip.left || clip.bottom <= clip.top)
+                    return null;
+            }
+            finally {
+                await this.browser.cdp.call(this.id, 'Runtime.releaseObject', { objectId }, { sessionId }).catch(() => { });
+            }
+        }
+        return clip;
+    }
+    /** @internal */
     async domFramePoint(snapshot, point) {
         if (!snapshot.frame)
             throw new RetryablePreflightError("Frame is unavailable; observe again");
@@ -2527,11 +2567,13 @@ export class OpenBrowserUseTabDomCUA {
         const frames = await this.tab.domFrames(), connectionGeneration = this.tab.browser.client.connectionGeneration;
         const nodes = [];
         let total = 0;
-        const frameVisibility = new Map();
+        const frameVisibility = new Map(), frameClips = new Map();
         for (const frame of frames) {
             const inViewport = await this.tab.domFrameInViewport(frame, frames);
             frameVisibility.set(frame.id, inViewport);
-            if (!inViewport)
+            const clip = inViewport ? await this.tab.domFrameClip(frame, frames) : null;
+            frameClips.set(frame.id, clip);
+            if (!clip)
                 continue;
             const snapshot = await this.tab.queryCss(step, undefined, [], undefined, undefined, frame.id);
             if (JSON.stringify(snapshot.frames) !== JSON.stringify(frames))
@@ -2551,7 +2593,7 @@ export class OpenBrowserUseTabDomCUA {
                 if (typeof objectId !== 'string')
                     throw new RetryablePreflightError('DOM target changed; observe again');
                 try {
-                    const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return null;const r=this.getBoundingClientRect();if(r.right<=0 || r.bottom<=0 || r.left>=innerWidth || r.top>=innerHeight)return {outside:true};const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role'),name:name.trim().slice(0,500) || null}}` }, { sessionId });
+                    const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: clip }], functionDeclaration: `function(clip){if(!this.isConnected)return null;const r=this.getBoundingClientRect();if(r.right<=clip.left || r.bottom<=clip.top || r.left>=clip.right || r.top>=clip.bottom)return {outside:true};const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role'),name:name.trim().slice(0,500) || null}}` }, { sessionId });
                     const value = isObject(result) && isObject(result.result) ? result.result.value : null;
                     if (!isObject(value))
                         throw new RetryablePreflightError('DOM target changed; observe again');
@@ -2574,9 +2616,11 @@ export class OpenBrowserUseTabDomCUA {
         }
         if (JSON.stringify(await this.tab.domFrames()) !== JSON.stringify(frames))
             throw new RetryablePreflightError("Frame tree changed; observe again");
-        for (const frame of frames)
-            if (await this.tab.domFrameInViewport(frame, frames) !== frameVisibility.get(frame.id))
+        for (const frame of frames) {
+            const visible = await this.tab.domFrameInViewport(frame, frames);
+            if (visible !== frameVisibility.get(frame.id) || JSON.stringify(visible ? await this.tab.domFrameClip(frame, frames) : null) !== JSON.stringify(frameClips.get(frame.id)))
                 throw new RetryablePreflightError("Frame visibility changed; observe again");
+        }
         if (this.busy || this.generation !== generation || this.tab.browser.client.connectionGeneration !== connectionGeneration)
             throw new RetryablePreflightError('DOM snapshot superseded; observe again');
         this.ids = ids;

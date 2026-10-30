@@ -295,3 +295,5 @@ DOM CUA 可见快照检查每层 frame 宿主与父视口相交；快照期间 f
 DOM CUA 使用独立临时节点表和代次控制快照发布；同一实例的后续快照或输入使未完成观察失效，输入期间拒绝新的观察和输入，结束后清理节点。SDK 67 项通过，定向覆盖并发观察及观察与输入交错；Linux ARM64 Chromium 原生消息与 Electron 44/Xvfb 实页回归通过。该并发协调限定单个 DOM CUA 实例；macOS/Windows 本轮未测。
 
 同一 browser 内相同 tab ID 的句柄共享 DOM CUA 节点表和并发状态；快照绑定连接代次，重连后旧 ID 失效，鼠标和节点滚动派发使用相同代次检查。SDK 68 项通过；Linux ARM64 Chromium 原生消息验证多句柄共享、断线重连后拒绝旧节点；Electron 44/Xvfb 实页回归通过。不同 browser 实例之间的协调仍依赖调用方；macOS/Windows 本轮未测。
+
+DOM CUA 快照沿 frame 链逐层换算主视口与 frame 内容区域的交集，过滤 frame 部分露出时落在可见区域外的节点，并在输出前重查裁剪几何；旋转或倾斜 frame 显式报错。SDK 68 项通过；Linux ARM64 Chromium 原生消息与 Electron 44/Xvfb 验证部分露出的跨进程 frame，Electron 验证旋转拒绝。嵌套 frame 裁剪及普通 overflow 祖先裁剪仍需专项实测；macOS/Windows 本轮未测。
