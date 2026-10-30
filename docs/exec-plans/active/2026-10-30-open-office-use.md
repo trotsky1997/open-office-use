@@ -244,3 +244,5 @@ PowerPoint speaker-note search paths support target inspection and atomic batche
 Chart cache creation, inspection and synchronization now cover verifiable numeric date sources using their saved serial values and workbook epochs.
 
 Line and column workbook charts can use daily date axes with custom label formats; sub-day timelines and formula-date calculation remain separate.
+
+Workbook authoring supports scatter charts with numeric or sub-day datetime X values, multiple Y series and cached data. Formula-source caches require calculation and review.

@@ -39,4 +39,4 @@ For date-formatted cells, ISO date and millisecond date-time grid edits verify t
 
 Chart authoring caches literal date sources using the workbook epoch. Cache scanning and sync use exact stored numeric date values when worksheet XML is inspectable; ISO-date XML storage and ambiguous or oversized worksheets remain unverified.
 
-Daily chart categories use a native date axis when date values are detected; `category_type: "date"` enables it for whole-day serials or formula sources, and `date_format` controls axis labels. Sub-day timelines require another chart approach.
+Daily line and column chart categories use a native date axis when date values are detected; `category_type: "date"` enables it for whole-day serials or formula sources, and `date_format` controls axis labels. For sub-day timelines use `type: "scatter"` with datetime X values and an appropriate `date_format`; numerical scatter plots also use a numeric X axis.

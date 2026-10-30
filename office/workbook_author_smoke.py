@@ -8,7 +8,8 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
-from openpyxl.chart.axis import DateAxis, TextAxis
+from openpyxl.chart.axis import DateAxis, TextAxis, NumericAxis
+from openpyxl.chart import ScatterChart
 from openpyxl import load_workbook
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
@@ -271,6 +272,44 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Sub-day date axis accepted')
     assert not bad_time.exists()
+    scatter_values=[['Time','A','B'],[{'type':'datetime','value':'2026-10-31T08:00:00'},20,40],[{'type':'datetime','value':'2026-10-31T09:00:00'},30,50],[{'type':'datetime','value':'2026-10-31T15:00:00'},40,60]]
+    scatter_spec={'ranges':{'Data':[{'start':'A1','values':scatter_values}]},'sheet_options':{'Data':{'fit_to_page':True,'column_widths':{'A':24},'charts':[{'type':'scatter','data':'B1:C4','categories':'A2:A4','date_format':'hh:mm','anchor':'E1'}]}}}
+    for epoch in (None,CALENDAR_MAC_1904):
+        suffix='1904' if epoch else '1900';scatter_file=root/f'scatter-{suffix}.xlsx'
+        open_office_use.author(scatter_spec,scatter_file,mac_source if epoch else None)
+        scatter_chart=load_workbook(scatter_file)['Data']._charts[0]
+        assert isinstance(scatter_chart,ScatterChart) and isinstance(scatter_chart.x_axis,NumericAxis) and scatter_chart.x_axis.numFmt.formatCode=='hh:mm' and len(scatter_chart.series)==2
+        assert all(item.smooth is False and item.marker.symbol=='circle' for item in scatter_chart.series)
+        points=[point.v for point in scatter_chart.series[0].xVal.numRef.numCache.pt]
+        assert abs((points[2]-points[1])/(points[1]-points[0])-6)<1e-6,points
+        report=chart_cache.scan(scatter_file);assert report['complete'] and report['mismatch_references']==0,report
+        code,validation,_=officecli_backend.invoke('validate',scatter_file);assert code==0 and validation['success'],validation
+        draft=root/f'scatter-draft-{suffix}';session.start(draft,source=scatter_file)
+        session.edit_grid(draft,0,'Data','A2',[{'cell':'A2','value':'2026-10-31T08:30:00'}])
+        mismatch=session.scan_chart_caches(draft,1);xrefs=[item for item in mismatch['charts'][0]['references'] if item['role']=='xVal']
+        assert len(xrefs)==2 and all(item['status']=='mismatch' and item['unverified_points']==0 for item in xrefs),mismatch
+        for revision,item in enumerate(xrefs,1): session.sync_chart_cache(draft,revision,mismatch['charts'][0]['part'],item['index'])
+        assert session.scan_chart_caches(draft,3)['complete'] and session.scan_chart_caches(draft,3)['mismatch_references']==0
+        if not epoch:
+            scatter_pdf=open_office_use.render(scatter_file,root/'scatter-render');text=subprocess.run(['pdftotext',scatter_pdf,'-'],capture_output=True,text=True,check=True).stdout
+            assert '2026-10-31' in text
+    numeric_scatter=root/'numeric-scatter.xlsx'
+    numeric_scatter_spec={'ranges':{'Data':[{'start':'A1','values':[['X','Y'],[-2,10],[3,20]]}]},'sheet_options':{'Data':{'charts':[{'type':'scatter','data':'B1:B3','categories':'A2:A3'}]}}}
+    open_office_use.author(numeric_scatter_spec,numeric_scatter);assert chart_cache.scan(numeric_scatter)['complete']
+    formula_scatter=root/'formula-scatter.xlsx'
+    formula_scatter_spec={'ranges':{'Data':[{'start':'A1','values':[['X','Y'],['=DATE(2026,10,31)+TIME(9,0,0)',1]]}]},'sheet_options':{'Data':{'charts':[{'type':'scatter','data':'B1:B2','categories':'A2:A2','category_type':'datetime'}]}}}
+    open_office_use.author(formula_scatter_spec,formula_scatter);assert isinstance(load_workbook(formula_scatter)['Data']._charts[0],ScatterChart) and chart_cache.scan(formula_scatter)['missing_caches']>=1
+    invalid_scatter=root/'scatter-text-x.xlsx'
+    try: open_office_use.author({'ranges':{'Data':[{'start':'A1','values':[['X','Y'],['bad',1]]}]},'sheet_options':{'Data':{'charts':[{'type':'scatter','data':'B1:B2','categories':'A2:A2','category_type':'number'}]}}},invalid_scatter)
+    except ValueError: pass
+    else: raise AssertionError('Text scatter X values accepted')
+    assert not invalid_scatter.exists()
+    for index,chart in enumerate([{'type':'scatter','data':'B1:C4'}, {'type':'scatter','data':'B1:C4','categories':'A2:A4','category_type':'text'}, {'type':'line','data':'B1:C4','categories':'A2:A4','category_type':'datetime'}]):
+        bad=root/f'bad-scatter-{index}.xlsx'
+        try: open_office_use.author({'ranges':{'Data':[{'start':'A1','values':scatter_values}]},'sheet_options':{'Data':{'charts':[chart]}}},bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid scatter chart accepted')
+        assert not bad.exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))
