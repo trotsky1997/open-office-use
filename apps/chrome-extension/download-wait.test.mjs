@@ -25,3 +25,11 @@ test('download wait observes the next start while paths retain completed results
   await assert.rejects(backend.waitForDownload({tabId:1,timeoutMs:10}),/Timed out/);
   assert.equal(backend.downloadWaiters.size,0);
 });
+
+test('download readiness is emitted only after the waiter is installed',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});
+  let observed=false;backend.downloadReadyListeners.add(id=>{observed=true;assert.equal(id,'00000000-0000-0000-0000-000000000000');assert.equal(backend.downloadWaiters.size,1);});
+  const pending=backend.waitForDownload({tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(observed,true);
+  backend.emitDownloadChange({id:'ready',status:'started'});assert.equal((await pending).downloadId,'ready');
+});

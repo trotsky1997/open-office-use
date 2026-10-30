@@ -203,6 +203,26 @@ test('full-page screenshots use content dimensions and enforce size limits', asy
   assert.equal(calls.filter(call=>call.method==='Page.captureScreenshot').length,1);
 });
 
+test('prepared download waits for registration and retains the eventual result',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused',timeoutMs:100}),handlers=new Set();let complete, waitId, requestTimeout;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=(method,params,_generation,timeout)=>{
+    if(method==='waitForDownload'){waitId=params.waitId;requestTimeout=timeout;return new Promise(resolve=>{complete=resolve;});}
+    if(method==='downloadPath')return Promise.resolve({path:'/tmp/fixture'});
+    throw new Error('Unexpected request');
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  let prepared=false;const preparing=tab.prepareDownload({timeoutMs:20000}).then(value=>{prepared=true;return value;});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(prepared,false);assert.equal(requestTimeout,22000);
+  for(const handler of handlers)handler({method:'onDownloadWaitReady',params:{waitId:'wrong'}});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(prepared,false);
+  for(const handler of handlers)handler({method:'onDownloadWaitReady',params:{waitId}});
+  const wait=await preparing;assert.equal(handlers.size,1);
+  complete({downloadId:'123'});const download=await wait.wait();assert.equal(download.id,'123');assert.equal(await download.path(),'/tmp/fixture');
+  client.request=()=>{throw new Error('connection unavailable');};
+  await assert.rejects(tab.prepareDownload(),/connection unavailable/);assert.equal(handlers.size,1);
+});
+
 test('dialog waits fail promptly on tab detach or client close, without crossing tabs', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set();
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};

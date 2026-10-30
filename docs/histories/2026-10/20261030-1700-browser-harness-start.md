@@ -141,3 +141,5 @@ SDK 增加标签页 back、forward、reload。历史边界直接返回，导航�
 新增 fullPage 截图，使用 CSS 内容尺寸捕获视口外区域，与局部裁剪互斥；限制单边 32767 CSS 像素及 3200 万 CSS 平方像素。Electron 对接近 8 MiB 传输上限的截图直接报错，保留连接和页面队列。macOS Electron、macOS/Linux Chromium 实页验证视口外像素；未滚动触发的懒加载内容可能尚未出现。Linux 使用隔离浏览器与 --no-sandbox。
 
 修复 Chrome waitForDownload 返回历史缓存的问题：现在等待注册后的下一次 started 事件，downloadPath 仍可查询已完成下载。macOS/Linux Chromium 隔离 profile 连续两次真实下载、读取临时文件并验证旧下载不会提前结束新等待；Linux 使用 --no-sandbox。Chrome 下载事件目前没有可靠标签归属，且等待注册没有确认信号，并发下载与立即触发存在关联或时序限制；文档明确说明，后续需设计可靠的事件关联协议。
+
+Chrome 下载等待新增注册确认：`tab.prepareDownload()` 等扩展实际安装监听器后返回句柄，触发页面动作后可通过 `wait()` 和 `path()` 获取结果；长等待的客户端请求超时覆盖服务端等待。macOS/Linux Chromium 原生消息链路连续两次真实下载，确认后立即点击，无人为延时；Linux 使用 --no-sandbox。Chrome 下载事件仍缺少可靠标签归属，Electron 下载未开放。

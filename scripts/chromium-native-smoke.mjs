@@ -43,10 +43,10 @@ try {
  await tab.evaluate(`(()=>{const a=document.createElement('a');a.href='/download?run=1';a.textContent='Download fixture';a.id='download-fixture';document.body.append(a)})()`);
  for(let run=1;run<=2;run++){
    await tab.evaluate(`document.querySelector('#download-fixture').href='/download?run=${run}'`);
-   let resolved=false;const downloadWait=client.waitForDownload(tab.id,5000).then(value=>{resolved=true;return value;});void downloadWait.catch(()=>{});
-   await new Promise(resolve=>setTimeout(resolve,150));assert.equal(resolved,false);
+   const prepared=await tab.prepareDownload({timeoutMs:5000});
+   const waiting=prepared.wait();void waiting.catch(()=>{});
    await tab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click();
-   const {downloadId}=await downloadWait;const {path}=await client.downloadPath(downloadId,5000);
+   const download=await waiting;const path=await download.path(5000);
    assert.equal(await readFile(path,'utf8'),'fixture download');
  }
  await tab.evaluate("document.querySelector('#download-fixture').remove()");

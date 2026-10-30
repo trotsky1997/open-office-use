@@ -174,7 +174,7 @@ export class OpenBrowserUseClient {
     };
   }
 
-  async request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number): Promise<JsonValue> {
+  async request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number, requestTimeoutMs = this.timeoutMs): Promise<JsonValue> {
     await this.connect();
     if (expectedGeneration !== undefined && expectedGeneration !== this.#generation) throw new Error("Connection changed; observe again");
     const socket = this.#socket;
@@ -198,7 +198,7 @@ export class OpenBrowserUseClient {
       const timeout = setTimeout(() => {
         this.#pending.delete(id);
         reject(new Error(`Open Browser Use request timed out: ${method}`));
-      }, this.timeoutMs);
+      }, requestTimeoutMs);
       this.#pending.set(id, { resolve, reject, timeout });
     });
     socket.write(payload);
@@ -279,7 +279,7 @@ export class OpenBrowserUseClient {
     return this.request("downloadPath", {
       downloadId,
       ...(timeoutMs === undefined ? {} : { timeoutMs })
-    });
+    }, undefined, typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.max(this.timeoutMs, timeoutMs + 2000) : this.timeoutMs);
   }
 
   browserUserHistory(params: BrowserUseRequestParams = {}): Promise<JsonValue> {
@@ -421,6 +421,24 @@ export class OpenBrowserUseDialog {
   constructor(private cdp: OpenBrowserUseCdp, private tabId: number, readonly info: OpenBrowserUseDialogInfo) {}
   accept(promptText?: string): Promise<void> { return this.cdp.resolveDialog(this.tabId,this.info.id,true,promptText); }
   dismiss(): Promise<void> { return this.cdp.resolveDialog(this.tabId,this.info.id,false); }
+}
+
+export class OpenBrowserUseDownload {
+  constructor(private client: OpenBrowserUseClient, readonly id: string) {}
+  async path(timeoutMs?: number): Promise<string | null> {
+    const result = await this.client.downloadPath(this.id, timeoutMs);
+    if (!isObject(result) || (typeof result.path !== "string" && result.path !== null)) throw new Error("Browser returned an invalid download path");
+    return result.path;
+  }
+}
+
+export class OpenBrowserUseDownloadWait {
+  constructor(private client: OpenBrowserUseClient, private result: Promise<JsonValue>) {}
+  async wait(): Promise<OpenBrowserUseDownload> {
+    const result = await this.result;
+    if (!isObject(result) || typeof result.downloadId !== "string" || !result.downloadId) throw new Error("Browser returned an invalid download ID");
+    return new OpenBrowserUseDownload(this.client, result.downloadId);
+  }
 }
 
 export class OpenBrowserUseTab {
@@ -747,6 +765,24 @@ export class OpenBrowserUseTab {
         if (!matchesTextFilters(await this.scopeText(fresh,current.index),item.filters)) throw new RetryablePreflightError("Locator text changed; observe again");
       }
     }
+  }
+
+  async prepareDownload(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownloadWait> {
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) throw new Error("Invalid download timeout");
+    const waitId = randomUUID(), client = this.browser.client;
+    let remove = () => {};
+    const ready = new Promise<void>(resolve => {
+      remove = client.onNotification(event => {
+        if (event.method === "onDownloadWaitReady" && isObject(event.params) && event.params.waitId === waitId) resolve();
+      });
+    });
+    const result = Promise.resolve().then(() => client.request("waitForDownload", {tabId:this.id,timeoutMs,waitId}, undefined, Math.max(client.timeoutMs,timeoutMs + 2000)));
+    void result.catch(() => {});
+    try {
+      await Promise.race([ready, result.then(() => { throw new Error("Download wait ended before registration was confirmed"); })]);
+      return new OpenBrowserUseDownloadWait(client,result);
+    } finally { remove(); }
   }
 
   async watchDialogs(): Promise<void> { await this.browser.cdp.enableDialogs(this.id); }

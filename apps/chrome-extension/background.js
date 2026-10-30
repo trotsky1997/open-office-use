@@ -308,6 +308,7 @@ class BrowserBackend {
     this.downloadsById = new Map();
     this.downloadWaiters = new Set();
     this.downloadChangeListeners = new Set();
+    this.downloadReadyListeners = new Set();
     this.cursorArrivalWaitersByKey = new Map();
     this.fileChoosersById = new Map();
     this.fileChooserWaitersByTabId = new Map();
@@ -741,12 +742,15 @@ class BrowserBackend {
       typeof params.timeoutMs === "number" && params.timeoutMs > 0
         ? params.timeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
-    const download = await this.waitForDownloadChange(
+    if (params.waitId !== undefined && (typeof params.waitId !== "string" || !/^[0-9a-f-]{36}$/.test(params.waitId))) throw new Error("Invalid download wait ID");
+    const waiting = this.waitForDownloadChange(
       (change) => change.status === "started",
       timeoutMs,
       "Timed out waiting for download.",
       { includeExisting: false }
     );
+    if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId);
+    const download = await waiting;
     return { downloadId: download.id };
   }
 
@@ -1577,6 +1581,9 @@ chrome.debugger.onDetach.addListener((source) => {
 });
 backend.addDownloadChangeListener((change) => {
   safeSendNotification(peer, "onDownloadChange", change);
+});
+backend.downloadReadyListeners.add((waitId) => {
+  safeSendNotification(peer, "onDownloadWaitReady", { waitId });
 });
 chrome.downloads.onCreated.addListener((item) => {
   backend.handleDownloadCreated(item);

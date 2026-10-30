@@ -93,7 +93,7 @@ export declare class OpenBrowserUseClient {
     onDisconnect(handler: (error: Error) => void): () => void;
     protected emitDisconnect(error: Error): void;
     onNotification(handler: NotificationHandler): () => void;
-    request(method: string, params?: BrowserUseRequestParams, expectedGeneration?: number): Promise<JsonValue>;
+    request(method: string, params?: BrowserUseRequestParams, expectedGeneration?: number, requestTimeoutMs?: number): Promise<JsonValue>;
     getInfo(): Promise<JsonValue>;
     createTab(): Promise<JsonValue>;
     getTabs(): Promise<JsonValue>;
@@ -140,6 +140,18 @@ export declare class OpenBrowserUseDialog {
     accept(promptText?: string): Promise<void>;
     dismiss(): Promise<void>;
 }
+export declare class OpenBrowserUseDownload {
+    private client;
+    readonly id: string;
+    constructor(client: OpenBrowserUseClient, id: string);
+    path(timeoutMs?: number): Promise<string | null>;
+}
+export declare class OpenBrowserUseDownloadWait {
+    private client;
+    private result;
+    constructor(client: OpenBrowserUseClient, result: Promise<JsonValue>);
+    wait(): Promise<OpenBrowserUseDownload>;
+}
 export declare class OpenBrowserUseTab {
     #private;
     readonly browser: OpenBrowserUseBrowser;
@@ -169,6 +181,9 @@ export declare class OpenBrowserUseTab {
     private freshFilterObservation;
     private scopeContains;
     private verifyLocatorScope;
+    prepareDownload(options?: {
+        timeoutMs?: number;
+    }): Promise<OpenBrowserUseDownloadWait>;
     watchDialogs(): Promise<void>;
     currentDialog(): OpenBrowserUseDialog | null;
     waitForDialog(options?: {

@@ -530,6 +530,24 @@ await client.request("executeCdp", {
 });
 ```
 
+## Waiting for a download
+
+On the Chrome extension backend, register the listener before triggering the
+page action:
+
+```js
+const ready = await tab.prepareDownload({timeoutMs: 30000});
+await tab.playwright.getByRole("link", {name: "Download", exact: true}).click();
+const download = await ready.wait();
+const path = await download.path(30000); // null if the download failed or was cancelled
+```
+
+`prepareDownload` returns after the extension confirms registration. The
+result is the next Chrome download started after registration; the extension's
+download event currently has no reliable tab association, so another tab's
+concurrent download may satisfy the wait. Verify the download identity before
+using its path. The Electron backend does not expose downloads.
+
 ## Notifications
 
 The JS SDK can subscribe to JSON-RPC notifications from the native socket. This
@@ -560,8 +578,8 @@ unsubscribe();
   the next download started after the wait is registered. Chrome download events
   currently lack a reliable tab association here, so a concurrent download from
   another tab can satisfy the wait; verify the result before using its path.
-  The wait has no registration acknowledgement, so initiating an action
-  immediately on another connection can race with listener setup.
+  The low-level wait has no registration acknowledgement; use
+  `tab.prepareDownload()` when the page action follows immediately.
 - Clipboard: `readClipboardText`, `writeClipboardText`, `readClipboard`,
   `writeClipboard`
 
