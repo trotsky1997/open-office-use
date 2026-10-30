@@ -37,6 +37,17 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   sdkClient.onNotification = handler => runtime.subscribe(event => { if (event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
   const sdkTab = new OpenBrowserUseBrowser({ client:sdkClient }).tab(a.id);
   assert.equal(await sdkTab.playwright.getByRole('heading',{name:'login',exact:true}).count(),1);
+  await evaluate(a.id,`(()=>{const root=document.createElement('div');root.id='bulk-text-test';root.innerHTML='<button aria-label="Bulk first">Alpha<span hidden> concealed</span></button><button aria-label="Bulk second">Beta</button>';document.body.append(root)})()`);
+  const cssBulk=sdkTab.playwright.locator('#bulk-text-test button'),roleBulk=sdkTab.playwright.getByRole('button',{name:/^Bulk /});
+  for (const locator of [cssBulk,roleBulk]) {
+    assert.deepEqual(await locator.allInnerTexts(),['Alpha','Beta']);
+    assert.deepEqual(await locator.allTextContents(),['Alpha concealed','Beta']);
+  }
+  await evaluate(a.id,"document.querySelector('#bulk-text-test').replaceChildren()");
+  assert.deepEqual(await cssBulk.allInnerTexts(),[]);assert.deepEqual(await roleBulk.allInnerTexts(),[]);
+  await evaluate(a.id,"document.querySelector('#bulk-text-test').remove()");
+  check('SDK locators: bulk inner text, hidden descendants and empty matches');
+
   const observation = await sdkTab.observe();
   const increment = observation.nodes.find(node => node.role === 'button' && node.name === '加 1');
   assert.ok(increment);
