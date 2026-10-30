@@ -76,6 +76,7 @@ def create(source, destination, render, revision=None):
                 if chart_results['mismatch_references']: flags.append('chart_cache_mismatch')
                 if chart_results['missing_caches']: flags.append('chart_cache_missing')
                 if chart_results['literal_sources']: flags.append('chart_literal_data_present')
+                if any(chart.get('pie_category_percentages', {}).get('mismatch_candidate') for chart in chart_results['charts']): flags.append('chart_pie_label_percentage_candidates')
                 if any(chart.get('pie_point_appearance', {}).get('default_fill_candidate') for chart in chart_results['charts']): flags.append('chart_pie_default_fill_candidates')
         else:
             geometry = check('slide_layout', lambda: layout.inspect(snapshot))

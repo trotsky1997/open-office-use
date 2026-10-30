@@ -26,6 +26,12 @@ with tempfile.TemporaryDirectory() as tmp:
     baseline=chart_cache.scan(source); assert baseline['chart_parts_total']==1 and baseline['complete'] and baseline['mismatch_references']==0,baseline
     pie_source=root/'pie-colors.xlsx'; pie_book=xlsxwriter.Workbook(str(pie_source)); pie_sheet=pie_book.add_worksheet('Data')
     pie_sheet.write_column('A1',['A','B','C']);pie_sheet.write_column('B1',[45,30,25]);pie=pie_book.add_chart({'type':'pie'});pie.add_series({'categories':'=Data!$A$1:$A$3','values':'=Data!$B$1:$B$3','points':[{'border':{'color':'black'}},{},{}]});pie_sheet.insert_chart('D2',pie);pie_book.close()
+    plot=etree.Element(C+'pieChart'); etree.SubElement(plot,C+'ser')
+    def literal(role,kind,values): return {'role':role,'kind':kind,'status':'literal','points':len(values),'stored_points':len(values),'examples':[{'point':i,'value':value,'value_truncated':False} for i,value in enumerate(values,1)]}
+    labels=literal('cat','strLit',['Enterprise 45%','SMB 30%','Consumer 25%']); nums=literal('val','numLit',['45','30','25'])
+    assert not chart_cache.pie_category_percentages([plot],[labels,nums])['mismatch_candidate']
+    nums['examples'][0]['value']='50'; assert chart_cache.pie_category_percentages([plot],[labels,nums])['mismatch_points']==[1,2,3]
+    labels['examples'][0]['value']='Enterprise'; assert chart_cache.pie_category_percentages([plot],[labels,nums])['status']=='not_applicable'
     pie_report=chart_cache.scan(pie_source);pie_part=pie_report['charts'][0]['part'];pie_draft=root/'pie-colors-draft';session.start(pie_draft,source=pie_source)
     assert pie_report['charts'][0]['pie_point_appearance']['default_fill_candidate']
     for colors in ([],['FFFFFF'],['GGGGGG','FFFFFF','FFFFFF']):

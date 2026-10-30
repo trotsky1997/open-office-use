@@ -3,7 +3,7 @@ import math
 import re
 import tempfile
 import zipfile
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, InvalidOperation
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
@@ -99,6 +99,38 @@ def pie_point_appearance(plots, references):
         points.append(entry)
     inherited = sum(item['fill']=='inherited' for item in points)
     return {'status': 'inspected', 'point_count': count, 'points': points, 'series_has_fill': series_has_fill, 'inherited_points': inherited, 'default_fill_candidate': inherited > 0 and not series_has_fill}
+
+
+
+def pie_category_percentages(plots, references):
+    # shortcut: only fully sampled literal series up to 20 points; inspect larger or referenced data manually.
+    if len(plots) != 1 or plots[0].tag not in (C+'pieChart', C+'doughnutChart') or len(plots[0].findall(C+'ser')) != 1:
+        return {'status': 'not_applicable'}
+    categories = [ref for ref in references if ref['role'] == 'cat' and ref['kind'] == 'strLit']
+    values = [ref for ref in references if ref['role'] == 'val' and ref['kind'] == 'numLit']
+    if len(categories) != 1 or len(values) != 1: return {'status': 'unsupported', 'reason': 'requires_literal_categories_and_values'}
+    cat, val = categories[0], values[0]
+    count = cat.get('points', 0)
+    if cat['status'] != 'literal' or val['status'] != 'literal' or not 1 <= count <= 20 or val.get('points') != count or cat.get('stored_points') != count or val.get('stored_points') != count:
+        return {'status': 'unsupported', 'reason': 'incomplete_or_oversized_data'}
+    cats = {item['point']: item for item in cat['examples']}; nums = {item['point']: item for item in val['examples']}
+    if set(cats) != set(range(1,count+1)) or set(nums) != set(cats) or any(item['value_truncated'] for item in list(cats.values())+list(nums.values())):
+        return {'status': 'unsupported', 'reason': 'incomplete_samples'}
+    labels = [re.search(r'(?<![0-9.])([0-9]{1,3}(?:\.[0-9]{1,6})?)\s*%\s*$', cats[index]['value']) for index in range(1,count+1)]
+    if not all(labels): return {'status': 'not_applicable'}
+    try:
+        percentages = [Decimal(match.group(1)) for match in labels]
+        numbers = [Decimal(nums[index]['value']) for index in range(1,count+1)]
+        if any(number < 0 or not number.is_finite() for number in numbers) or any(value > 100 for value in percentages): return {'status': 'unsupported', 'reason': 'invalid_values'}
+        total = sum(numbers)
+        if not total: return {'status': 'unsupported', 'reason': 'zero_total'}
+        mismatches = []
+        for index, (number, label) in enumerate(zip(numbers, percentages), 1):
+            tolerance = Decimal(5).scaleb(label.as_tuple().exponent-1)
+            if abs(number / total * 100 - label) > tolerance: mismatches.append(index)
+        return {'status': 'checked', 'point_count': count, 'mismatch_points': mismatches, 'mismatch_candidate': bool(mismatches)}
+    except DecimalException:
+        return {'status': 'unsupported', 'reason': 'numeric_limits'}
 
 
 def scan(file):
@@ -259,7 +291,7 @@ def scan(file):
                                     elif len(refs) == 1 and len(names[0]) == 1: entry['name_status'] = 'reference'
                                     else: entry['name_status'] = 'unsupported'; series_complete = False
                                 series_items.append(entry)
-                        results.append({'part': part, 'status': 'scanned' if references else 'no_references_found', 'external_data': external_data, 'extensions_present': extensions, 'references': references, 'series': series_items, 'series_complete': series_complete, 'plot_count': len(plots), 'pie_point_appearance': pie_point_appearance(plots, references)})
+                        results.append({'part': part, 'status': 'scanned' if references else 'no_references_found', 'external_data': external_data, 'extensions_present': extensions, 'references': references, 'series': series_items, 'series_complete': series_complete, 'plot_count': len(plots), 'pie_point_appearance': pie_point_appearance(plots, references), 'pie_category_percentages': pie_category_percentages(plots, references)})
                         if limit_hit: break
                     if len(chart_parts) > 50: complete = False
                     refs = [ref for chart in results for ref in chart['references']]

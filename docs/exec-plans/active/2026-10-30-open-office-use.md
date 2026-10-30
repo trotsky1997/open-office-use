@@ -368,3 +368,5 @@ Workbook literal chart points support atomic multi-point edits in a single revis
 The reference workbook pie omitted visible slices in LibreOffice until explicit point fills were applied. Added snapshot-bound CLI/MCP pie and doughnut point-color edits; the repaired reference rendered visible slices, changed only its chart part and passed OfficeCLI validation. Native Excel remains unverified.
 
 Workbook chart inspection now reports pie point fills and flags inherited-default candidates for visual review. The viewer saves user-selected slice colors in snapshot-bound revisions. The OfficeCLI reference workbook was edited through the viewer; stale and cross-origin requests were rejected. Native Excel remains unverified.
+
+Workbook pie inspection compares fully sampled literal percentage-bearing categories with saved values, exposing review candidates through the viewer and review bundle. The OfficeCLI sales-dashboard reference had matching original labels; changing 45 to 50 flagged three points. Labels may express other quantities, and referenced or larger datasets are outside this check.

@@ -1083,6 +1083,8 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
   if (epoch!==chartCacheEpoch || displayed!==revision) return;
   if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; rescan chart caches');
   status.textContent=`Revision ${revision}: ${result.chart_parts_total} chart part(s), ${result.mismatch_references} mismatch candidate(s), ${result.missing_caches} missing cache(s), ${result.unverified_references} unverified reference(s), ${result.literal_sources} literal data source(s) without worksheet links. ${result.complete ? 'Supported checks completed.' : 'Coverage incomplete.'}`;
+  const labelCandidates=result.charts.filter(chart=>chart.pie_category_percentages?.mismatch_candidate);
+  if (labelCandidates.length) status.textContent+=` ${labelCandidates.length} pie chart(s) have category percentages that differ from their saved values; review the labels.`;
   document.getElementById('chart-cache-output').textContent=JSON.stringify(result, null, 2);
   const choices=[];
   for (const chart of result.charts) {
@@ -1102,6 +1104,7 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
   document.getElementById('pie-colors-value').value=''; document.getElementById('pie-colors-value').disabled=true; document.getElementById('pie-colors-save').disabled=true;
   document.getElementById('pie-colors-status').textContent=`${pieChoices.filter(chart=>chart.pie_point_appearance.default_fill_candidate).length} default-fill candidate(s); inspect the rendered chart.`;
   const list=document.getElementById('chart-cache-actions');
+  for (const chart of labelCandidates) { const row=document.createElement('li'); row.textContent=`${chart.part} · review literal percentage labels at point(s) ${chart.pie_category_percentages.mismatch_points.join(', ')}; labels may describe other quantities.`; list.appendChild(row); }
   for (const chart of result.charts) for (const ref of chart.references) {
    if (ref.status!=='mismatch' || ref.unverified_points || ref.mismatches_truncated || ref.mismatches.some(m=>!['value_differs','missing_point','extra_point'].includes(m.reason)) || chart.external_data || chart.extensions_present) continue;
    const row=document.createElement('li'); row.appendChild(document.createTextNode(`${chart.part} · reference ${ref.index} · ${ref.formula} · ${ref.mismatch_count} mismatch(es) `));

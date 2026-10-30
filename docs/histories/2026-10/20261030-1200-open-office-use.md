@@ -469,3 +469,5 @@ Added atomic batch editing for fixed workbook chart numeric points, with final p
 Added workbook pie/doughnut point-color edits after a reference chart rendered without visible slices in LibreOffice.
 
 Added pie fill inspection, review-bundle candidates and snapshot-bound viewer controls for slice colors.
+
+Added review candidates for fixed pie category percentage labels that differ from saved point shares.
