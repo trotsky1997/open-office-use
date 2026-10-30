@@ -210,6 +210,10 @@ stale targets are retried within the optional `timeoutMs`.
 `inputValue()` reads the current value of an input, textarea or select (up to
 30,000 characters); password values are redacted. Multiple-select values follow
 the browser’s single `value` property.
+`boundingBox()` on a CSS or semantic locator returns `{x,y,width,height}` in
+main-frame CSS viewport coordinates, or `null` for a hidden target. Offscreen
+coordinates can be negative; rotated or skewed ancestor frames are rejected.
+The locator and frame geometry are rechecked, but can change after the call.
 `isChecked()` reads a binary checked state from the accessibility tree and rejects
 mixed or unsupported states.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and
@@ -299,7 +303,7 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
 `textContent`, `allTextContents`, `getAttribute`, `isVisible`, `isEnabled`,
-`isChecked`, `inputValue`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
+`isChecked`, `inputValue`, `boundingBox`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
 `uncheck`, `setChecked` and `selectOption`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a
 `frameLocator` is selected. Matches are limited to 1,000 elements and single

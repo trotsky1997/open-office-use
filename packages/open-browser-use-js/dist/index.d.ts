@@ -354,6 +354,7 @@ export declare class OpenBrowserUseTab {
         includeText?: boolean;
     }): Promise<InteractiveState>;
     private readAXValues;
+    private frameGeometry;
     private cssFrameVisible;
     private verifyLocatorScope;
     private prepareBrowserEvent;
@@ -642,6 +643,14 @@ export declare class OpenBrowserUseCssLocator {
     private read;
     isEnabled(): Promise<boolean>;
     isChecked(): Promise<boolean>;
+    boundingBox(options?: {
+        timeoutMs?: number;
+    }): Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    } | null>;
     inputValue(options?: {
         timeoutMs?: number;
     }): Promise<string>;
@@ -746,6 +755,14 @@ export declare class OpenBrowserUseRoleLocator {
     }): Promise<string | null>;
     isEnabled(): Promise<boolean>;
     isChecked(): Promise<boolean>;
+    boundingBox(options?: {
+        timeoutMs?: number;
+    }): Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    } | null>;
     inputValue(options?: {
         timeoutMs?: number;
     }): Promise<string>;

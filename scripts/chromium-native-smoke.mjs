@@ -419,6 +419,13 @@ assert.equal((await tab.getPresentation()).selected,true);
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await tab.evaluate(`Object.assign(document.querySelector('#cross').style,{transformOrigin:'top left',transform:'scale(0.8)'})`);
+ const frameBox=await tab.evaluate(`(()=>{const f=document.querySelector('#cross'),r=f.getBoundingClientRect();return {x:r.left+f.clientLeft*r.width/f.offsetWidth,y:r.top+f.clientTop*r.height/f.offsetHeight,sx:r.width/f.offsetWidth,sy:r.height/f.offsetHeight}})()`);
+ const childBox=(await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const r=document.querySelector('button').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`,returnByValue:true},{sessionId:crossSession})).result.value;
+ const expectedBox={x:frameBox.x+childBox.x*frameBox.sx,y:frameBox.y+childBox.y*frameBox.sy,width:childBox.width*frameBox.sx,height:childBox.height*frameBox.sy};
+ for(const box of [await crossFrame.locator('button').first().boundingBox(),await crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).boundingBox()]) {assert.ok(box);for(const key of ['x','y','width','height'])assert.ok(Math.abs(box[key]-expectedBox[key])<0.1)}
+ await tab.evaluate(`document.querySelector('#cross').style.transform=''`);
+
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const b=document.createElement('div');b.id='frame-scroll-probe';b.tabIndex=0;b.setAttribute('aria-label','Frame scroll probe');Object.assign(b.style,{position:'fixed',left:'20px',top:'20px',width:'80px',height:'60px',overflow:'auto',zIndex:'99999'});b.innerHTML='<div style="height:600px"></div>';document.body.append(b);window.savedProbeRaf=window.requestAnimationFrame;window.probeRafCalls=0;window.requestAnimationFrame=()=>{window.probeRafCalls++}})()`},{sessionId:crossSession});
  const frameScrollProbe=(await tab.dom_cua.get_visible_dom()).nodes.find(node=>node.name==='Frame scroll probe');assert.ok(frameScrollProbe);await tab.dom_cua.scroll({node_id:frameScrollProbe.node_id,x:0,y:30});
  const frameScrollState=(await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`({top:document.querySelector('#frame-scroll-probe').scrollTop,calls:window.probeRafCalls})`,returnByValue:true},{sessionId:crossSession})).result.value;assert.ok(frameScrollState.top>0);assert.equal(frameScrollState.calls,0);

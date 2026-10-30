@@ -345,3 +345,5 @@ browser.newTab({url}) 在导航失败时关闭刚创建的标签；清理失败�
 调整随附 skill 的授权提示：已明确请求的浏览器交互遵循用户授权与宿主权限，需要用户亲自完成或范围不明确时再请求协助。skill 格式和打包检查通过；浏览器权限与运行时代码未更改。
 
 截图结果在输出前校验 Base64、PNG 签名、IHDR 尺寸和 IEND 结束标记；无效数据直接报错，测试桩改用真实 PNG。SDK 72 项通过，覆盖无效编码、错误格式和截断；macOS 与 Linux ARM64 Electron 44、Linux ARM64 Chromium 原生扩展实页截图及完整回归通过。该检查不完整解码图像或校验所有 chunk；Windows 未测。
+
+CSS 和语义定位器新增 boundingBox，返回主 frame CSS 视口坐标，跨 frame 逐层换算边框与缩放；读取前后重查目标与 frame 几何，隐藏目标返回 null，旋转或倾斜 frame 报错。复用 DOM 快照的 frame 几何逻辑。SDK 72 项通过；macOS 与 Linux ARM64 Electron 44 及 Linux ARM64 Chromium 原生扩展实页验证跨进程 frame 缩放，Linux Electron 额外验证嵌套 frame、隐藏目标与旋转拒绝。结果可能在返回后变化；Windows 未测。

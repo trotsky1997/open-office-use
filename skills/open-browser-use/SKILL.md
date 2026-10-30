@@ -34,7 +34,7 @@ parent-child relationships. Frames with unknown placement are marked; heed trunc
 frame markers. It replaces any previous observation. Call `await tab.observe()` after page changes;
 use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
 to replace a text field's contents. For semantic selection, use
-`tab.playwright.getByRole(role, {name, exact:true}).click()`, `.dblclick()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.inputValue()` or `.fill(text)`;
+`tab.playwright.getByRole(role, {name, exact:true}).click()`, `.dblclick()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.inputValue()`, `.boundingBox()` or `.fill(text)`;
 use `.waitFor({state:"visible"})` or `.waitFor({state:"hidden"})` for semantic visibility changes; attached and detached states are unavailable.
 `tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
 binary controls without toggling an already-correct state. `getByRole` accepts boolean `checked`, `disabled`, `pressed`, `selected` and `expanded` filters when the accessibility tree exposes those states. Disabled controls remain observable and can be hovered; actions that modify them require an enabled target. Actions require a
@@ -76,6 +76,7 @@ changes the user's visible browser. Electron hosts present their own surfaces.
 Use `await tab.getPresentation()` to inspect the owned tab's actual selection
 and available window state; `visible:null` means visibility is unknown, and
 these values can change before the next operation.
+`boundingBox()` returns main-frame CSS viewport coordinates and can extend outside the viewport; it rejects rotated or skewed ancestor frames. Reobserve if geometry changes.
 Coordinates are CSS viewport pixels. Convert
 screenshot pixels to CSS viewport coordinates. For a closer view use
 `tab.getScreenshot({clip:{x,y,width,height}})` with a rectangle inside the CSS

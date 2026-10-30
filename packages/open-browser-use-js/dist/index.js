@@ -1194,35 +1194,96 @@ export class OpenBrowserUseTab {
         const chain = frameAncestry(frame, frames);
         for (let i = chain.length - 1; i >= 0; i--) {
             const child = chain[i], sessionId = chain[i + 1]?.sessionId;
-            const owner = await this.browser.cdp.call(this.id, 'DOM.getFrameOwner', { frameId: child.id }, { sessionId });
-            if (!isObject(owner) || typeof owner.backendNodeId !== 'number')
-                throw new RetryablePreflightError('Frame owner unavailable; observe again');
-            const world = await this.browser.cdp.call(this.id, 'Page.createIsolatedWorld', { frameId: child.parentId, worldName: 'open-browser-use-selector' }, { sessionId });
-            if (!isObject(world) || typeof world.executionContextId !== 'number')
-                throw new RetryablePreflightError('Frame context unavailable; observe again');
-            const resolved = await this.browser.cdp.call(this.id, 'DOM.resolveNode', { backendNodeId: owner.backendNodeId, executionContextId: world.executionContextId }, { sessionId });
-            const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
-            if (typeof objectId !== 'string')
-                throw new RetryablePreflightError('Frame owner unavailable; observe again');
-            try {
-                const result = await this.browser.cdp.call(this.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return null;for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)){const t=getComputedStyle(el).transform;if(t!=='none'){const m=new DOMMatrixReadOnly(t);if(!m.is2D || m.b!==0 || m.c!==0 || m.a<=0 || m.d<=0)return {unsupported:true}}}const r=this.getBoundingClientRect();if(!this.offsetWidth || !this.offsetHeight)return null;const sx=r.width/this.offsetWidth,sy=r.height/this.offsetHeight;return {x:r.left+this.clientLeft*sx,y:r.top+this.clientTop*sy,width:this.clientWidth,height:this.clientHeight,sx,sy}}` }, { sessionId });
-                const value = isObject(result) && isObject(result.result) ? result.result.value : null;
-                if (isObject(value) && value.unsupported === true)
-                    throw new Error('DOM snapshot cannot map a rotated or skewed frame');
-                if (!isObject(value) || !['x', 'y', 'width', 'height', 'sx', 'sy'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key])))
-                    throw new RetryablePreflightError('Frame geometry changed; observe again');
-                const { x, y, width, height, sx, sy } = value;
-                if (sx <= 0 || sy <= 0 || width <= 0 || height <= 0)
-                    return null;
-                clip = { left: Math.max(0, (clip.left - x) / sx), top: Math.max(0, (clip.top - y) / sy), right: Math.min(width, (clip.right - x) / sx), bottom: Math.min(height, (clip.bottom - y) / sy) };
-                if (clip.right <= clip.left || clip.bottom <= clip.top)
-                    return null;
-            }
-            finally {
-                await this.browser.cdp.call(this.id, 'Runtime.releaseObject', { objectId }, { sessionId }).catch(() => { });
-            }
+            const geometry = await this.frameGeometry(child, sessionId);
+            if (!geometry)
+                return null;
+            const { x, y, width, height, sx, sy } = geometry;
+            clip = { left: Math.max(0, (clip.left - x) / sx), top: Math.max(0, (clip.top - y) / sy), right: Math.min(width, (clip.right - x) / sx), bottom: Math.min(height, (clip.bottom - y) / sy) };
+            if (clip.right <= clip.left || clip.bottom <= clip.top)
+                return null;
         }
         return clip;
+    }
+    async frameGeometry(child, sessionId) {
+        const owner = await this.browser.cdp.call(this.id, 'DOM.getFrameOwner', { frameId: child.id }, { sessionId });
+        if (!isObject(owner) || typeof owner.backendNodeId !== 'number')
+            throw new RetryablePreflightError('Frame owner unavailable; observe again');
+        const world = await this.browser.cdp.call(this.id, 'Page.createIsolatedWorld', { frameId: child.parentId, worldName: 'open-browser-use-selector' }, { sessionId });
+        if (!isObject(world) || typeof world.executionContextId !== 'number')
+            throw new RetryablePreflightError('Frame context unavailable; observe again');
+        const resolved = await this.browser.cdp.call(this.id, 'DOM.resolveNode', { backendNodeId: owner.backendNodeId, executionContextId: world.executionContextId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== 'string')
+            throw new RetryablePreflightError('Frame owner unavailable; observe again');
+        try {
+            const result = await this.browser.cdp.call(this.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return null;for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)){const t=getComputedStyle(el).transform;if(t!=='none'){const m=new DOMMatrixReadOnly(t);if(!m.is2D || m.b!==0 || m.c!==0 || m.a<=0 || m.d<=0)return {unsupported:true}}}const r=this.getBoundingClientRect();if(!this.offsetWidth || !this.offsetHeight)return null;const sx=r.width/this.offsetWidth,sy=r.height/this.offsetHeight;return {x:r.left+this.clientLeft*sx,y:r.top+this.clientTop*sy,width:this.clientWidth,height:this.clientHeight,sx,sy}}` }, { sessionId });
+            const value = isObject(result) && isObject(result.result) ? result.result.value : null;
+            if (isObject(value) && value.unsupported === true)
+                throw new Error('Cannot map a rotated or skewed frame');
+            if (!isObject(value) || !['x', 'y', 'width', 'height', 'sx', 'sy'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key])))
+                throw new RetryablePreflightError('Frame geometry changed; observe again');
+            const { x, y, width, height, sx, sy } = value;
+            if (sx <= 0 || sy <= 0 || width <= 0 || height <= 0)
+                return null;
+            return { x, y, width, height, sx, sy };
+        }
+        finally {
+            await this.browser.cdp.call(this.id, 'Runtime.releaseObject', { objectId }, { sessionId }).catch(() => { });
+        }
+    }
+    /** @internal */
+    async nodeBoundingBox(frame, frames, id) {
+        const sessionId = frame.sessionId, world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "open-browser-use-selector" }, { sessionId });
+        if (!isObject(world) || typeof world.executionContextId !== "number")
+            throw new RetryablePreflightError("Target context unavailable; observe again");
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: id, executionContextId: world.executionContextId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string")
+            throw new RetryablePreflightError("Target unavailable; observe again");
+        try {
+            const measure = async () => {
+                const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return null;const element=this.nodeType===3?this.parentElement:this;if(!(element instanceof Element))return null;const range=this.nodeType===3?this.ownerDocument.createRange():null;if(range)range.selectNodeContents(this);const r=range?range.getBoundingClientRect():element.getBoundingClientRect();if(getComputedStyle(element).visibility!=='visible' || !r.width || !r.height)return {hidden:true};return {x:r.left,y:r.top,width:r.width,height:r.height}}` }, { sessionId });
+                const value = isObject(result) && isObject(result.result) ? result.result.value : null;
+                if (isObject(value) && value.hidden === true)
+                    return null;
+                if (!isObject(value) || ![value.x, value.y, value.width, value.height].every(v => typeof v === "number" && Number.isFinite(v)))
+                    throw new RetryablePreflightError("Target geometry unavailable; observe again");
+                return value;
+            };
+            const box = await measure();
+            if (!box)
+                return null;
+            const chain = frameAncestry(frame, frames), geometry = [];
+            for (let i = 0; i < chain.length; i++) {
+                const current = await this.frameGeometry(chain[i], chain[i + 1]?.sessionId);
+                if (!current)
+                    return null;
+                geometry.push(current);
+                box.x = current.x + box.x * current.sx;
+                box.y = current.y + box.y * current.sy;
+                box.width *= current.sx;
+                box.height *= current.sy;
+            }
+            const again = await measure();
+            if (!again)
+                throw new RetryablePreflightError("Target geometry changed; observe again");
+            for (const current of geometry) {
+                again.x = current.x + again.x * current.sx;
+                again.y = current.y + again.y * current.sy;
+                again.width *= current.sx;
+                again.height *= current.sy;
+            }
+            if (JSON.stringify(again) !== JSON.stringify(box))
+                throw new RetryablePreflightError("Target geometry changed; observe again");
+            for (let i = 0; i < chain.length; i++)
+                if (JSON.stringify(await this.frameGeometry(chain[i], chain[i + 1]?.sessionId)) !== JSON.stringify(geometry[i]))
+                    throw new RetryablePreflightError("Frame geometry changed; observe again");
+            await this.validateFrames(chain);
+            return box;
+        }
+        finally {
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+        }
     }
     /** @internal */
     async domFramePoint(snapshot, point) {
@@ -3338,6 +3399,10 @@ export class OpenBrowserUseCssLocator {
     }
     isEnabled() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "enabled")); }
     isChecked() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "checked")); }
+    boundingBox(options = {}) { return this.perform(async (snapshot, id) => { if (!snapshot.frame)
+        throw new RetryablePreflightError("Frame unavailable; observe again"); if (!await this.tab.readCss(snapshot, id, "visible"))
+        return null; const box = await this.tab.nodeBoundingBox(snapshot.frame, snapshot.frames, id); if (!box || !await this.tab.readCss(snapshot, id, "visible"))
+        throw new RetryablePreflightError("Target geometry changed; observe again"); return box; }, options.timeoutMs); }
     inputValue(options = {}) { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "inputValue"), options.timeoutMs); }
     async isVisible() {
         const snapshot = await this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope), ids = snapshot.ids;
@@ -3670,6 +3735,10 @@ export class OpenBrowserUseRoleLocator {
     async textContent(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "textContent")), options.timeoutMs); }
     async isEnabled() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "enabled"))); }
     async isChecked() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "checked"))); }
+    boundingBox(options = {}) { return this.perform(async (node, id) => { if (!await this.tab.locatorRead(id, node.index, "visible"))
+        return null; const observation = this.tab.currentObservation(id), target = observation.nodes.find(item => item.index === node.index), frame = observation.frames?.find(item => item.id === (target?.frameId ?? observation.frames?.[0]?.id)); if (!target || !frame || !observation.frames)
+        throw new RetryablePreflightError("Target frame unavailable; observe again"); const box = await this.tab.nodeBoundingBox(frame, observation.frames, target.backendNodeId); if (!box || !await this.tab.locatorRead(id, node.index, "visible"))
+        throw new RetryablePreflightError("Target geometry changed; observe again"); return box; }, options.timeoutMs); }
     inputValue(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "inputValue")), options.timeoutMs); }
     async isVisible() {
         const { state, matches } = await this.find();
