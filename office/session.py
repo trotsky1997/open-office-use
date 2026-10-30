@@ -154,6 +154,11 @@ def list_comments(directory, revision):
     return {'revision': revision, **word.list_comments(source)}
 
 
+def tracked_changes(directory, revision):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **word.tracked_changes(source)}
+
+
 def inspect_layout(directory, revision):
     state = info(directory)
     source = revision_file(state, revision)

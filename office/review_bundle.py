@@ -54,6 +54,10 @@ def create(source, destination, render, revision=None):
             if comments is not None:
                 if comments['truncated']: flags.append('comments_truncated')
                 if not comments['anchor_scan_complete']: flags.append('comment_anchor_scan_incomplete')
+            changes = check('word_tracked_changes', lambda: word.tracked_changes(snapshot))
+            if changes is not None:
+                if changes['records_scanned']: flags.append('word_tracked_changes_present')
+                if changes['records_truncated'] or not changes['scan_complete']: flags.append('word_tracked_changes_incomplete')
         elif source.suffix.lower() == '.xlsx':
             formulas = check('formula_scan', lambda: spreadsheet.scan_formulas(snapshot))
             if formulas is not None:

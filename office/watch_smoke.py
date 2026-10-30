@@ -41,6 +41,12 @@ with tempfile.TemporaryDirectory() as tmp:
 
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
         origin = f"http://{urlsplit(url).netloc}"
+        for request_origin, expected in [('http://evil.test', 403), (origin, 200)]:
+            request = urllib.request.Request(url + 'tracked-read', data=json.dumps({'revision': 0}).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})
+            try:
+                response = urllib.request.urlopen(request)
+                assert expected == 200 and json.loads(response.read())['records_scanned'] == 0
+            except urllib.error.HTTPError as error: assert error.code == expected
         search = {'revision': 0, 'query': 'First', 'offset': 0, 'snapshot_sha256': None}
         request = urllib.request.Request(url + 'text-search', data=json.dumps(search).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         found = json.loads(urllib.request.urlopen(request).read())

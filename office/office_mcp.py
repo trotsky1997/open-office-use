@@ -233,6 +233,18 @@ def list_word_comments(file: str) -> dict[str, Any]:
 
 
 @server.tool()
+def list_word_tracked_changes(file: str) -> dict[str, Any]:
+    """Inspect bounded tracked-change XML records and coverage from a saved DOCX snapshot."""
+    return word.tracked_changes(file)
+
+
+@server.tool()
+def session_list_word_tracked_changes(directory: str, revision: int) -> dict[str, Any]:
+    """Inspect tracked-change XML records in an exact saved Word revision."""
+    return session.tracked_changes(directory, revision)
+
+
+@server.tool()
 def list_word_stories(file: str) -> dict[str, Any]:
     """List bounded header and footer paragraphs and explicit section references in a saved DOCX."""
     return word.list_stories(file)

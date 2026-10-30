@@ -185,6 +185,7 @@ def main():
     commands.add_parser('doctor', help='Probe local authoring and preview dependencies')
     read = commands.add_parser('inspect'); read.add_argument('file')
     comments = commands.add_parser('comments'); comments.add_argument('file')
+    changes = commands.add_parser('tracked-changes'); changes.add_argument('file')
     stories = commands.add_parser('stories'); stories.add_argument('file')
     word_search = commands.add_parser('search-word'); word_search.add_argument('file'); word_search.add_argument('--query', required=True); word_search.add_argument('--offset', type=int, default=0); word_search.add_argument('--snapshot-sha256')
     slide_search = commands.add_parser('search-slides'); slide_search.add_argument('file'); slide_search.add_argument('--query', required=True); slide_search.add_argument('--slide', type=int); slide_search.add_argument('--offset', type=int, default=0); slide_search.add_argument('--snapshot-sha256')
@@ -230,6 +231,7 @@ def main():
     picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True)
     session_review = sub.add_parser('review'); session_review.add_argument('directory'); session_review.add_argument('--revision', type=int, required=True); session_review.add_argument('--out-dir', required=True)
     session_comments = sub.add_parser('comments'); session_comments.add_argument('directory'); session_comments.add_argument('--revision', type=int, required=True)
+    session_changes = sub.add_parser('tracked-changes'); session_changes.add_argument('directory'); session_changes.add_argument('--revision', type=int, required=True)
     session_stories = sub.add_parser('stories'); session_stories.add_argument('directory'); session_stories.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
@@ -301,6 +303,8 @@ def main():
                 result = review_bundle.create(source, args.out_dir, render, args.revision)
             elif args.action == 'comments':
                 result = session.list_comments(args.directory, args.revision)
+            elif args.action == 'tracked-changes':
+                result = session.tracked_changes(args.directory, args.revision)
             elif args.action == 'stories':
                 result = session.list_stories(args.directory, args.revision)
             elif args.action == 'inspect-layout':
@@ -335,6 +339,8 @@ def main():
             result = inspect(args.file)
         elif args.command == 'comments':
             result = word.list_comments(args.file)
+        elif args.command == 'tracked-changes':
+            result = word.tracked_changes(args.file)
         elif args.command == 'stories':
             result = word.list_stories(args.file)
         elif args.command == 'search-word':

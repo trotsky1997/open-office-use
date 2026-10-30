@@ -29,6 +29,102 @@ def replacement_path(path):
     return paragraph_path(path) or isinstance(path, str) and len(path) <= 512 and STORY_PATH.fullmatch(path) is not None
 
 
+def tracked_changes(source):
+    """Inventory common tracked-change XML records in a saved Word snapshot."""
+    source = Path(source).resolve(strict=True)
+    if source.suffix.lower() != '.docx': raise ValueError('Tracked-change inspection requires a DOCX file')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
+    with tempfile.TemporaryDirectory(prefix='office-word-changes-') as tmp:
+        snapshot = Path(tmp) / 'document.docx'; shutil.copyfile(source, snapshot)
+        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
+        digest = hashlib.sha256()
+        with snapshot.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
+        try:
+            with zipfile.ZipFile(snapshot) as archive:
+                entries = archive.infolist(); names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Document exceeds package limits or contains duplicate parts')
+                if 'word/document.xml' not in names: raise ValueError('Document part is missing')
+                parts = {'word/document.xml': {'kind': 'body', 'relationship_ids': []}}
+                issues = set(); settings_part = None
+                rel_path = 'word/_rels/document.xml.rels'
+                if rel_path in names:
+                    relationships = ooxml.parse_xml(archive.read(rel_path)).getroot()
+                    if relationships.tag != REL + 'Relationships': raise ValueError('Invalid document relationships')
+                    relation_base = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+                    related = 0
+                    for rel in relationships.findall(REL + 'Relationship'):
+                        reltype = rel.get('Type', '')
+                        if not reltype.startswith(relation_base): continue
+                        kind = reltype[len(relation_base):]
+                        if kind not in ('header', 'footer', 'footnotes', 'endnotes', 'settings'): continue
+                        related += 1
+                        if related > 1000: issues.add('relationship_limit'); break
+                        target, rid = rel.get('Target', ''), rel.get('Id', '')
+                        path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+                        if rel.get('TargetMode') not in (None, 'Internal') or not target or len(target) > 512 or len(path) > 512 or not path.startswith('word/') or path not in names or not rid or len(rid) > 128:
+                            issues.add('unresolved_relationship'); continue
+                        if kind == 'settings':
+                            if settings_part is not None and settings_part != path: issues.add('ambiguous_settings')
+                            settings_part = path; continue
+                        if path in parts and parts[path]['kind'] != kind:
+                            issues.add('ambiguous_part_type'); continue
+                        parts.setdefault(path, {'kind': kind, 'relationship_ids': []})['relationship_ids'].append(rid)
+                tracking_enabled = None
+                if settings_part is not None and 'ambiguous_settings' not in issues:
+                    settings = ooxml.parse_xml(archive.read(settings_part)).getroot()
+                    if settings.tag != W + 'settings': issues.add('invalid_settings')
+                    else:
+                        markers = settings.findall(W + 'trackRevisions')
+                        if len(markers) > 1: issues.add('ambiguous_tracking_setting')
+                        elif not markers: tracking_enabled = False
+                        else:
+                            value = markers[0].get(W + 'val')
+                            if value in (None, '1', 'true', 'on'): tracking_enabled = True
+                            elif value in ('0', 'false', 'off'): tracking_enabled = False
+                            else: issues.add('invalid_tracking_setting')
+                kinds = {'ins', 'del', 'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+                         'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'tblGridChange', 'trPrChange', 'tcPrChange', 'numberingChange',
+                         'cellIns', 'cellDel', 'cellMerge', 'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd'}
+                records, counts, scanned_parts = [], {}, []
+                scanned, complete = 0, True
+                for part, info in list(parts.items())[:200]:
+                    tree = ooxml.parse_xml(archive.read(part)); root = tree.getroot()
+                    expected = {'body': 'document', 'header': 'hdr', 'footer': 'ftr', 'footnotes': 'footnotes', 'endnotes': 'endnotes'}[info['kind']]
+                    if root.tag != W + expected: issues.add('invalid_story_root'); continue
+                    for node in root.iter():
+                        if not isinstance(node.tag, str) or not node.tag.startswith(W) or node.tag[len(W):] not in kinds: continue
+                        if scanned >= 10000: complete = False; break
+                        scanned += 1; kind = node.tag[len(W):]; counts[kind] = counts.get(kind, 0) + 1
+                        if len(records) < 200:
+                            chunks, length, clipped = [], 0, False
+                            for item in node.iter():
+                                if item.tag not in (W + 't', W + 'delText', W + 'instrText', W + 'delInstrText'): continue
+                                value = item.text or ''; available = 2000 - length
+                                if len(value) > available: clipped = True
+                                if available > 0: chunks.append(value[:available]); length += min(len(value), available)
+                            parent = node.getparent(); location = tree.getpath(node)
+                            records.append({'part': part, 'story': info['kind'], 'kind': kind, 'id': (node.get(W + 'id') or '')[:100],
+                                            'author': (node.get(W + 'author') or '')[:200], 'date': (node.get(W + 'date') or '')[:100],
+                                            'parent': parent.tag[len(W):] if parent is not None and isinstance(parent.tag, str) and parent.tag.startswith(W) else None,
+                                            'xml_path': location[:512], 'path_truncated': len(location) > 512,
+                                            'text': ''.join(chunks), 'text_truncated': clipped})
+                    scanned_parts.append({'part': part, **info, 'complete': complete})
+                    if not complete: break
+                if len(parts) > 200: issues.add('part_limit')
+                return {'snapshot_sha256': digest.hexdigest(), 'tracking_enabled': tracking_enabled, 'records': records,
+                        'counts': counts, 'records_scanned': scanned, 'records_truncated': scanned > len(records),
+                        'parts': scanned_parts, 'total_parts': len(parts), 'issues': sorted(issues),
+                        'scan_complete': complete and not issues,
+                        'limits': {'relationships': 1000, 'parts': 200, 'records_scanned': 10000, 'records_returned': 200, 'text_characters': 2000},
+                        'notes': ['Records represent XML elements, not necessarily individual user-visible revisions.',
+                                  'Scope covers the main document and related headers, footers, footnotes and endnotes; comments and other parts are excluded.',
+                                  'Text can omit fields, formatting and complex content; XML paths are inspection hints, not edit paths.']}
+        except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
+            raise ValueError(f'Invalid Word document: {exc}') from exc
+
+
 def search_body(source, query, offset=0, snapshot_sha256=None):
     """Search body and table paragraphs, returning paths usable for targeted edits."""
     if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
