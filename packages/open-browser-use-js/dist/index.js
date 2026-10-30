@@ -1807,7 +1807,8 @@ export class OpenBrowserUseTab {
                         throw new RetryablePreflightError("Selector target changed; observe again");
                     this.#observation = undefined;
                     inputIssued = true;
-                    const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly')==='true') return false; for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return false; const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;if(probe.value!==value)return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)return false;setter.call(this,value);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return this.isConnected && this.value===value; }` }, { sessionId });
+                    const mutationSignal = markClick();
+                    const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly')==='true') return false; for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return false; const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;if(probe.value!==value)return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)return false;setter.call(this,value);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return this.isConnected && this.value===value; }` }, { sessionId, signal: mutationSignal });
                     if (!isObject(applied) || !isObject(applied.result) || applied.result.value !== true)
                         throw new Error("Date or time input did not retain the requested value");
                     return;
@@ -1830,7 +1831,7 @@ export class OpenBrowserUseTab {
             const options = { sessionId, ...(sessionId ? { visualPoint: second.point } : {}), ...(domConnectionGeneration !== undefined ? { expectedGeneration: domConnectionGeneration } : {}) };
             inputIssued = true;
             if (key !== undefined || text !== undefined) {
-                await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId, signal: sequential ? sequenceMark() : undefined });
+                await this.browser.cdp.call(this.id, "DOM.focus", { objectId }, { sessionId, signal: sequential ? sequenceMark() : markClick() });
                 const verifyFocus = async () => {
                     const afterFocus = await this.queryCss(snapshot.step, snapshot.framePath, snapshot.scopes, snapshot.semantic?.scope, undefined, snapshot.frameId);
                     if (afterFocus.documentId !== snapshot.documentId || JSON.stringify(afterFocus.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.semantic?.roots) !== JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(afterFocus.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(afterFocus.ids) !== JSON.stringify(snapshot.ids))
@@ -1857,19 +1858,22 @@ export class OpenBrowserUseTab {
                     return;
                 }
                 if (append) {
+                    checkClick();
                     if (text)
-                        await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId });
+                        await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId, signal: clickSignal });
                     return;
                 }
-                await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A", sessionId);
+                checkClick();
+                await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A", sessionId, clickSignal);
                 await verifyFocus();
                 const selected = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() { if (this.isContentEditable) { const selection=this.getRootNode().getSelection?.() ?? getSelection(); return !!selection && selection.toString()===this.innerText; } return this.selectionStart===null || (this.selectionStart===0 && this.selectionEnd===this.value.length); }` }, { sessionId });
                 if (!isObject(selected) || !isObject(selected.result) || selected.result.value !== true)
                     throw new Error("Could not select the text field contents");
+                checkClick();
                 if (text)
-                    await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId });
+                    await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId, signal: clickSignal });
                 else
-                    await this.sendKey("Backspace", sessionId);
+                    await this.sendKey("Backspace", sessionId, clickSignal);
                 const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) { return this.isConnected && (this.isContentEditable ? this.innerText===value || (value==='' && this.childNodes.length===1 && this.firstChild instanceof HTMLBRElement) : this.value===value); }` }, { sessionId });
                 if (!isObject(applied) || !isObject(applied.result) || applied.result.value !== true)
                     throw new Error("Text field did not retain the requested value");
@@ -2807,20 +2811,20 @@ export class OpenBrowserUseTab {
             throw new Error("Browser viewport is unavailable");
         return { width: viewport.clientWidth, height: viewport.clientHeight };
     }
-    async typeText(index, snapshotId, text) {
+    async typeText(index, snapshotId, text, mark = () => undefined, signal, check) {
         if (typeof text !== "string")
             throw new Error("Text must be a string");
-        await this.act(index, snapshotId, text);
+        await this.act(index, snapshotId, text, false, undefined, undefined, false, undefined, false, undefined, false, undefined, mark, signal, check);
     }
     /** @internal */
     async pressSequentially(index, snapshotId, text, mark = () => undefined, check = () => { }, signal) {
         validateSequentialText(text);
         await this.act(index, snapshotId, text, false, undefined, undefined, false, undefined, false, undefined, false, undefined, undefined, undefined, undefined, true, mark, check, signal);
     }
-    async fill(index, snapshotId, text) {
+    async fill(index, snapshotId, text, mark = () => undefined, signal, check) {
         if (typeof text !== "string")
             throw new Error("Text must be a string");
-        await this.act(index, snapshotId, text, true);
+        await this.act(index, snapshotId, text, true, undefined, undefined, false, undefined, false, undefined, false, undefined, mark, signal, check);
     }
     async setChecked(index, snapshotId, checked, force = false, mark = () => undefined, signal, check) {
         if (typeof checked !== "boolean")
@@ -3028,10 +3032,11 @@ export class OpenBrowserUseTab {
                     await this.validateFrames(node.frameChain);
                 await this.verifyLocatorScope(observation, node);
                 inputIssued = true;
+                const mutationSignal = markClick();
                 const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                     objectId, returnByValue: true, arguments: [{ value: text }],
                     functionDeclaration: `function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly) return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set; if (!setter) return false; setter.call(this,value); this.dispatchEvent(new Event('input',{bubbles:true,composed:true})); this.dispatchEvent(new Event('change',{bubbles:true})); return this.isConnected && this.value===value; }`
-                }, { sessionId: targetSession });
+                }, { sessionId: targetSession, signal: mutationSignal });
                 if (!isObject(applied) || !isObject(applied.result) || applied.result.value !== true)
                     throw new Error("Date or time input did not retain the requested value");
                 return;
@@ -3167,23 +3172,8 @@ export class OpenBrowserUseTab {
                 if (node.frameChain)
                     await this.validateFrames(node.frameChain);
                 if (replace) {
-                    const modifier = process.platform === "darwin" ? { key: "Meta", code: "MetaLeft", windowsVirtualKeyCode: 91, modifiers: 4 } : { key: "Control", code: "ControlLeft", windowsVirtualKeyCode: 17, modifiers: 2 };
-                    const key = { key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: modifier.modifiers };
-                    let modifierDown = false, keyDown = false;
-                    try {
-                        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...modifier, type: "rawKeyDown" }, { sessionId: targetSession });
-                        modifierDown = true;
-                        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...key, type: "rawKeyDown", commands: ["selectAll"] }, { sessionId: targetSession });
-                        keyDown = true;
-                        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...key, type: "keyUp" }, { sessionId: targetSession });
-                        keyDown = false;
-                    }
-                    finally {
-                        if (keyDown)
-                            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...key, type: "keyUp" }, { sessionId: targetSession }).catch(() => { });
-                        if (modifierDown)
-                            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...modifier, type: "keyUp", modifiers: 0 }, { sessionId: targetSession }).catch(() => { });
-                    }
+                    checkClick();
+                    await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A", targetSession, clickSignal);
                     const stillFocused = await checkFocus();
                     if (!isObject(stillFocused) || !isObject(stillFocused.result) || stillFocused.result.value !== true || await this.documentId() !== observation.documentId)
                         throw new Error("Text field changed during fill; observe again");
@@ -3196,19 +3186,11 @@ export class OpenBrowserUseTab {
                     if (!isObject(selected) || !isObject(selected.result) || selected.result.value !== true)
                         throw new Error("Could not select the text field contents");
                 }
+                checkClick();
                 if (text)
-                    await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId: targetSession });
-                else if (replace) {
-                    const key = { key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 };
-                    await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...key, type: "rawKeyDown" }, { sessionId: targetSession });
-                    try {
-                        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...key, type: "keyUp" }, { sessionId: targetSession });
-                    }
-                    catch (error) {
-                        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...key, type: "keyUp" }, { sessionId: targetSession }).catch(() => { });
-                        throw error;
-                    }
-                }
+                    await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId: targetSession, signal: clickSignal });
+                else if (replace)
+                    await this.sendKey("Backspace", targetSession, clickSignal);
                 if (replace) {
                     const check = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                         objectId, returnByValue: true, arguments: [{ value: text }],
@@ -4126,12 +4108,12 @@ export class OpenBrowserUseCssLocator {
     fill(text, options = {}) {
         if (typeof text !== "string")
             throw new Error("Text must be a string");
-        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, text); }, options.timeoutMs);
+        return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark, signal, check) => { await this.tab.actCss(snapshot, id, false, undefined, text, false, undefined, undefined, false, undefined, undefined, undefined, false, undefined, mark, signal, check); }, options.timeoutMs ?? 5000, deadline, "Fill"), options.timeoutMs);
     }
     type(text, options = {}) {
         if (typeof text !== "string")
             throw new Error("Text must be a string");
-        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, text, false, undefined, undefined, true); }, options.timeoutMs);
+        return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark, signal, check) => { await this.tab.actCss(snapshot, id, false, undefined, text, false, undefined, undefined, true, undefined, undefined, undefined, false, undefined, mark, signal, check); }, options.timeoutMs ?? 5000, deadline, "Type"), options.timeoutMs);
     }
     pressSequentially(text, options = {}) {
         validateSequentialText(text);
@@ -4618,8 +4600,8 @@ export class OpenBrowserUseRoleLocator {
     async focus(options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline(mark => this.tab.focus(node.index, id, mark), options.timeoutMs ?? 5000, deadline, "Focus"), options.timeoutMs); }
     async press(key, options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.press(node.index, id, key, undefined, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Press"), options.timeoutMs); }
     clear(options = {}) { return this.fill("", options); }
-    async fill(text, options = {}) { await this.perform((node, id) => this.tab.fill(node.index, id, text), options.timeoutMs); }
-    async type(text, options = {}) { await this.perform((node, id) => this.tab.typeText(node.index, id, text), options.timeoutMs); }
+    async fill(text, options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.fill(node.index, id, text, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Fill"), options.timeoutMs); }
+    async type(text, options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.typeText(node.index, id, text, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Type"), options.timeoutMs); }
     async pressSequentially(text, options = {}) {
         validateSequentialText(text);
         await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.pressSequentially(node.index, id, text, mark, check, signal), options.timeoutMs ?? 5000, deadline, "Sequential typing"), options.timeoutMs);

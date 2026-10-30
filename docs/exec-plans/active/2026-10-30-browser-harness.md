@@ -117,3 +117,4 @@
 - [x] Electron 文件选择等待响应取消并释放拦截；队列中尚未开始的等待取消时保留其他命令。macOS Electron 实页验证取消、重试与授权上传。
 - [x] CSS 和语义 locator 的 check/uncheck 正数期限覆盖点击准备；派发后提示结果未知。macOS Electron 实页验证超时后无迟到点击及正常恢复。
 - [x] CSS 和语义 locator 的 press 正数期限覆盖准备、聚焦与按键；超时停止后续按键并释放已按下按键。macOS Electron 实页验证延迟聚焦后无迟到输入。
+- [x] CSS 与语义 locator 的 fill、clear、type 正数期限覆盖准备与写入；已派发时报告结果未知。macOS Electron 实页验证全选延迟后无迟到文本。

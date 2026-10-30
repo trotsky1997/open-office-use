@@ -281,6 +281,17 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#press-deadline').remove()");
   check('SDK press deadline: no late key after delayed focus');
 
+  await evaluate(a.id,`(()=>{const el=document.createElement('input');el.id='fill-deadline';el.setAttribute('aria-label','Fill deadline');el.value='original';document.body.append(el)})()`);
+  for(const locator of [sdkTab.playwright.locator('#fill-deadline'),sdkTab.playwright.getByRole('textbox',{name:'Fill deadline',exact:true})]) {
+    await evaluate(a.id,"document.querySelector('#fill-deadline').value='original'");let unblockFill;
+    sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='Input.dispatchKeyEvent' && args[2].commands?.includes('selectAll')){const result=await originalCdpCall(...args);await new Promise(resolve=>{unblockFill=resolve});return result;}return originalCdpCall(...args);};
+    try {await assert.rejects(locator.fill('late',{timeoutMs:800}),/outcome is unknown/i);assert.ok(unblockFill);unblockFill();await new Promise(resolve=>setTimeout(resolve,200));assert.equal(await evaluate(a.id,"document.querySelector('#fill-deadline').value"),'original');}
+    finally {unblockFill?.();sdkTab.browser.cdp.call=originalCdpCall;}
+    await locator.fill('working');assert.equal(await evaluate(a.id,"document.querySelector('#fill-deadline').value"),'working');
+  }
+  await evaluate(a.id,"document.querySelector('#fill-deadline').remove()");
+  check('SDK fill deadline: no late text after delayed select all');
+
   await evaluate(a.id,`(()=>{window.doubleDeadlineClicks=0;const el=document.createElement('button');el.id='double-deadline';el.textContent='Double deadline';el.onclick=()=>window.doubleDeadlineClicks++;document.body.append(el)})()`);
   for (const locator of [sdkTab.playwright.locator('#double-deadline'),sdkTab.playwright.getByRole('button',{name:'Double deadline',exact:true})]) {
     let unblockFirstRelease,pressed=0;

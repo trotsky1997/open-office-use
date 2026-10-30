@@ -1774,3 +1774,15 @@ test('press deadline prevents late preparation and key dispatch',async()=>{
   let release,signal;tab.press=async(_index,_snapshot,_key,_generation,mark,_signal,check)=>{signal=mark();await new Promise(resolve=>{release=resolve});check();keys++;};
   await assert.rejects(role.press('Enter',{timeoutMs:20}),/Press timed out; outcome is unknown/);assert.equal(signal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(keys,0);
 });
+
+test('fill and type deadlines stop late input',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}),tab=browser.tab(1);
+  const frame={id:'root',loaderId:'v1',url:'https://example.test'},snapshot={frame,frames:[frame],ids:[7],documentId:1,scopeIds:[]};
+  tab.queryCss=async()=>snapshot;let releaseWorld,inputs=0;
+  browser.cdp.call=async(_id,method)=>{if(method==='Page.createIsolatedWorld')return await new Promise(resolve=>{releaseWorld=resolve});if(method==='DOM.resolveNode')return {object:{objectId:'target'}};if(method==='Input.insertText')inputs++;return {};};
+  await assert.rejects(tab.playwright.locator('input').fill('text',{timeoutMs:20}),/Fill preparation timed out/);
+  releaseWorld({executionContextId:1});await new Promise(resolve=>setImmediate(resolve));assert.equal(inputs,0);
+  const role=tab.playwright.getByRole('textbox');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};
+  let release,signal;tab.typeText=async(_index,_snapshot,_text,mark,_signal,check)=>{signal=mark();await new Promise(resolve=>{release=resolve});check();inputs++;};
+  await assert.rejects(role.type('text',{timeoutMs:20}),/Type timed out; outcome is unknown/);assert.equal(signal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(inputs,0);
+});

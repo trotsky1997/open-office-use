@@ -83,7 +83,7 @@ async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number,
     return result;
   } finally { if (timer) clearTimeout(timer); }
 }
-async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover" | "Sequential typing" | "Check" | "Press"):Promise<void> {
+async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover" | "Sequential typing" | "Check" | "Press" | "Fill" | "Type"):Promise<void> {
   if(timeoutMs===0)return action(()=>undefined);
   const controller=new AbortController();
   let expired=false,issued=false,timer:ReturnType<typeof setTimeout> | undefined;
@@ -1518,7 +1518,8 @@ export class OpenBrowserUseTab {
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
           this.#observation=undefined;
           inputIssued=true;
-          const applied=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text}],functionDeclaration:`function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly')==='true') return false; for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return false; const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;if(probe.value!==value)return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)return false;setter.call(this,value);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return this.isConnected && this.value===value; }`},{sessionId});
+          const mutationSignal=markClick();
+          const applied=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text}],functionDeclaration:`function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly')==='true') return false; for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return false; const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;if(probe.value!==value)return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)return false;setter.call(this,value);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return this.isConnected && this.value===value; }`},{sessionId,signal:mutationSignal});
           if (!isObject(applied) || !isObject(applied.result) || applied.result.value!==true) throw new Error("Date or time input did not retain the requested value");
           return;
         }
@@ -1536,7 +1537,7 @@ export class OpenBrowserUseTab {
       const options={sessionId,...(sessionId ? {visualPoint:second.point} : {}),...(domConnectionGeneration !== undefined ? {expectedGeneration:domConnectionGeneration} : {})};
       inputIssued=true;
       if (key !== undefined || text !== undefined) {
-        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId,signal:sequential ? sequenceMark() : undefined});
+        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId,signal:sequential ? sequenceMark() : markClick()});
         const verifyFocus = async () => {
           const afterFocus=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);
           if (afterFocus.documentId!==snapshot.documentId || JSON.stringify(afterFocus.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(afterFocus.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(afterFocus.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after focus; observe again");
@@ -1549,13 +1550,14 @@ export class OpenBrowserUseTab {
         if (key !== undefined) { if(sequential)sequenceCheck(); await this.sendKey(key,sessionId,sequential ? sequenceSignal : undefined); return; }
         if (text === undefined) throw new Error("Text is unavailable");
         if (sequential) { await this.sendSequentialText(text,sessionId,verifyFocus,sequenceCheck,sequenceSignal); return; }
-        if (append) { if(text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId}); return; }
-        await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A",sessionId);
+        if (append) { checkClick(); if(text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId,signal:clickSignal}); return; }
+        checkClick(); await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A",sessionId,clickSignal);
         await verifyFocus();
         const selected=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function() { if (this.isContentEditable) { const selection=this.getRootNode().getSelection?.() ?? getSelection(); return !!selection && selection.toString()===this.innerText; } return this.selectionStart===null || (this.selectionStart===0 && this.selectionEnd===this.value.length); }`},{sessionId});
         if (!isObject(selected) || !isObject(selected.result) || selected.result.value!==true) throw new Error("Could not select the text field contents");
-        if (text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId});
-        else await this.sendKey("Backspace",sessionId);
+        checkClick();
+        if (text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId,signal:clickSignal});
+        else await this.sendKey("Backspace",sessionId,clickSignal);
         const applied=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text}],functionDeclaration:`function(value) { return this.isConnected && (this.isContentEditable ? this.innerText===value || (value==='' && this.childNodes.length===1 && this.firstChild instanceof HTMLBRElement) : this.value===value); }`},{sessionId});
         if (!isObject(applied) || !isObject(applied.result) || applied.result.value!==true) throw new Error("Text field did not retain the requested value");
         return;
@@ -2290,9 +2292,9 @@ export class OpenBrowserUseTab {
     return { width: viewport.clientWidth, height: viewport.clientHeight };
   }
 
-  async typeText(index: number, snapshotId: string, text: string): Promise<void> {
+  async typeText(index: number, snapshotId: string, text: string, mark:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
     if (typeof text !== "string") throw new Error("Text must be a string");
-    await this.act(index, snapshotId, text);
+    await this.act(index, snapshotId, text, false, undefined, undefined, false, undefined, false, undefined, false, undefined, mark, signal, check);
   }
 
   /** @internal */
@@ -2301,9 +2303,9 @@ export class OpenBrowserUseTab {
     await this.act(index,snapshotId,text,false,undefined,undefined,false,undefined,false,undefined,false,undefined,undefined,undefined,undefined,true,mark,check,signal);
   }
 
-  async fill(index: number, snapshotId: string, text: string): Promise<void> {
+  async fill(index: number, snapshotId: string, text: string, mark:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
     if (typeof text !== "string") throw new Error("Text must be a string");
-    await this.act(index, snapshotId, text, true);
+    await this.act(index, snapshotId, text, true, undefined, undefined, false, undefined, false, undefined, false, undefined, mark, signal, check);
   }
 
   async setChecked(index: number, snapshotId: string, checked: boolean, force = false, mark:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
@@ -2468,10 +2470,11 @@ export class OpenBrowserUseTab {
         if (node.frameChain) await this.validateFrames(node.frameChain);
         await this.verifyLocatorScope(observation,node);
         inputIssued = true;
+        const mutationSignal=markClick();
         const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
           objectId, returnByValue:true, arguments:[{value:text}],
           functionDeclaration:`function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly) return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set; if (!setter) return false; setter.call(this,value); this.dispatchEvent(new Event('input',{bubbles:true,composed:true})); this.dispatchEvent(new Event('change',{bubbles:true})); return this.isConnected && this.value===value; }`
-        }, {sessionId:targetSession});
+        }, {sessionId:targetSession,signal:mutationSignal});
         if (!isObject(applied) || !isObject(applied.result) || applied.result.value !== true) throw new Error("Date or time input did not retain the requested value");
         return;
       }
@@ -2582,17 +2585,8 @@ export class OpenBrowserUseTab {
         if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true || await this.documentId() !== observation.documentId) throw new Error("Text field lost focus or is not editable; observe again");
         if (node.frameChain) await this.validateFrames(node.frameChain);
         if (replace) {
-          const modifier = process.platform === "darwin" ? {key:"Meta",code:"MetaLeft",windowsVirtualKeyCode:91,modifiers:4} : {key:"Control",code:"ControlLeft",windowsVirtualKeyCode:17,modifiers:2};
-          const key = {key:"a",code:"KeyA",windowsVirtualKeyCode:65,modifiers:modifier.modifiers};
-          let modifierDown = false, keyDown = false;
-          try {
-            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...modifier,type:"rawKeyDown"}, {sessionId:targetSession}); modifierDown = true;
-            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...key,type:"rawKeyDown",commands:["selectAll"]}, {sessionId:targetSession}); keyDown = true;
-            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...key,type:"keyUp"}, {sessionId:targetSession}); keyDown = false;
-          } finally {
-            if (keyDown) await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...key,type:"keyUp"}, {sessionId:targetSession}).catch(() => {});
-            if (modifierDown) await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...modifier,type:"keyUp",modifiers:0}, {sessionId:targetSession}).catch(() => {});
-          }
+          checkClick();
+          await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A",targetSession,clickSignal);
           const stillFocused = await checkFocus();
           if (!isObject(stillFocused) || !isObject(stillFocused.result) || stillFocused.result.value !== true || await this.documentId() !== observation.documentId) throw new Error("Text field changed during fill; observe again");
           if (node.frameChain) await this.validateFrames(node.frameChain);
@@ -2602,13 +2596,9 @@ export class OpenBrowserUseTab {
           }, {sessionId:targetSession});
           if (!isObject(selected) || !isObject(selected.result) || selected.result.value !== true) throw new Error("Could not select the text field contents");
         }
-        if (text) await this.browser.cdp.call(this.id, "Input.insertText", { text }, {sessionId: targetSession});
-        else if (replace) {
-          const key = {key:"Backspace",code:"Backspace",windowsVirtualKeyCode:8};
-          await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...key,type:"rawKeyDown"}, {sessionId:targetSession});
-          try { await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...key,type:"keyUp"}, {sessionId:targetSession}); }
-          catch (error) { await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", {...key,type:"keyUp"}, {sessionId:targetSession}).catch(() => {}); throw error; }
-        }
+        checkClick();
+        if (text) await this.browser.cdp.call(this.id, "Input.insertText", { text }, {sessionId: targetSession,signal:clickSignal});
+        else if (replace) await this.sendKey("Backspace",targetSession,clickSignal);
         if (replace) {
           const check = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
             objectId, returnByValue:true, arguments:[{value:text}],
@@ -3280,11 +3270,11 @@ export class OpenBrowserUseCssLocator {
   clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
   fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> {
     if (typeof text !== "string") throw new Error("Text must be a string");
-    return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,text);},options.timeoutMs);
+    return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,text,false,undefined,undefined,false,undefined,undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Fill"),options.timeoutMs);
   }
   type(text: string, options: {timeoutMs?: number} = {}): Promise<void> {
     if (typeof text !== "string") throw new Error("Text must be a string");
-    return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,text,false,undefined,undefined,true);},options.timeoutMs);
+    return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,text,false,undefined,undefined,true,undefined,undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Type"),options.timeoutMs);
   }
   pressSequentially(text:string, options:{timeoutMs?:number} = {}):Promise<void> {
     validateSequentialText(text);
@@ -3643,8 +3633,8 @@ export class OpenBrowserUseRoleLocator {
   async focus(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline(mark=>this.tab.focus(node.index,id,mark),options.timeoutMs ?? 5000,deadline,"Focus"),options.timeoutMs); }
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.press(node.index,id,key,undefined,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Press"), options.timeoutMs); }
   clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
-  async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }
-  async type(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.typeText(node.index,id,text), options.timeoutMs); }
+  async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.fill(node.index,id,text,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Fill"), options.timeoutMs); }
+  async type(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.typeText(node.index,id,text,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Type"), options.timeoutMs); }
   async pressSequentially(text:string,options:{timeoutMs?:number} = {}):Promise<void> {
     validateSequentialText(text);
     await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.pressSequentially(node.index,id,text,mark,check,signal),options.timeoutMs ?? 5000,deadline,"Sequential typing"),options.timeoutMs);
