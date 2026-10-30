@@ -187,3 +187,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 语义定位器的 role name、label、text、placeholder、alt 及 hasText/hasNotText 新增 RegExp 匹配；字符串保持原有规则，正则采用自身标志并为每次匹配独立处理游标。SDK 57 项通过，涵盖跨 realm 正则与全局标志；macOS 隔离 Chromium 原生链路和 Electron 44 验证跨进程 frame 的正则作用域与文本过滤。
 
 观察结果保留浏览器提供的 AX level，并允许 heading 定位器按正整数 level 筛选；level 纳入目标状态，变化后拒绝旧观察。SDK 57 项通过；macOS 隔离 Chromium 原生链路验证同名不同层级与跨进程 frame 标题，Electron 44 验证主页面标题。
+
+Linux ARM64 更新验证：隔离 Chromium 150 使用真实原生消息清单、临时 profile、Go host 和 no-sandbox 完整运行当前 chromium-native-smoke，包含近期导航、下载 URL、正则定位、标题层级、动态等待、双击及跨进程 frame。Electron 44.7 在临时 Xvfb、原生 socket、no-sandbox 和禁用 GPU 下验证主页面语义读取、等待、同文档导航及文件传输，并在已显示后隐藏的宿主中验证跨进程 frame 标题、可信双击与文件传输。从未显示的 Linux 宿主窗口输入问题仍待解决；实验不覆盖常规 Linux 桌面和 Windows。

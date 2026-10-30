@@ -59,6 +59,8 @@
 - [x] Chrome REPL 探测 socket；多连接或探测结果未知时要求显式选择，避免误用最近活跃 profile。
 - [x] 隔离 Chromium 中，真实扩展后台、Go relay 和 SDK/REPL 完成观察、可信点击、差异、截图及清理；扩展和 relay 间使用测试 CDP 桥。
 - [x] Linux ARM64 隔离 Chromium 150：真实原生消息清单、扩展和 Go host 启动链路，SDK/REPL 可信点击、差异、截图与清理通过。
+- [x] Linux ARM64 隔离 Chromium 150 完整原生消息 smoke：近期导航、下载 URL、正则定位、标题层级、动态等待、双击和跨进程 frame 检查通过。
+- [x] Linux ARM64 Electron 44.7：Xvfb 和原生 socket 验证语义读取、同文档导航、下载 URL，以及宿主显示后隐藏的跨进程 frame 标题、可信双击和文件传输。
 - [x] macOS ARM64 隔离 Chromium 141：临时 profile 原生清单和临时复制的 Go host 经 SDK/REPL 完成可信点击、差异、截图与清理。
 - [x] Chrome 与 Electron REPL 共用浏览器状态入口和基于浏览器 ID 的连接；Electron 仅暴露宿主授权 scope。
 - [x] 宿主显式启用时，同一 REPL 发现并按 ID 路由 Electron 和 Chrome；真实 Chrome 原生链路与 host 授权 fixture 验证独立撤销。

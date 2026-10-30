@@ -188,7 +188,8 @@ After building the Electron package and its native peer adapter, run
 on macOS or Linux. The smoke opens a visible window, uses a temporary profile
 and local fixture files, and checks the authorized socket client and file
 selection and downloads in the main page and, after hiding the initialized host
-window, a cross-process iframe. It does not submit the files to a server. A Linux virtual
+window, a cross-process iframe. It also checks semantic locator reads, heading
+levels, trusted double clicks and same-document navigation. It does not submit the files to a server. A Linux virtual
 display can be used for an isolated run.
 
 ## Hidden input probe
