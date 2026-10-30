@@ -209,3 +209,5 @@ domSnapshot 从页面正文文本改为有界可访问性快照，包含角色�
 可访问性观察改为按 AX parentId 深度优先排列并缩进，忽略节点的可见后代仍保留，缩进上限为 80 层；domSnapshot 去除操作索引时保留层级。SDK 61 项通过；Linux ARM64 隔离 Chromium 原生消息和 Electron 44/Xvfb socket 实测容器与按钮层级、跨 frame 和原有交互。frame 文档仍分节显示。
 
 可读取 frame 的内容通过 DOM.getFrameOwner 嵌入宿主可访问节点下，支持多层嵌套；宿主位置不可用时保留内容并明确标记。SDK 61 项通过，覆盖嵌套和位置回退；Linux ARM64 隔离 Chromium 原生消息验证跨进程容器及其嵌套 frame，Electron 44/Xvfb socket 验证跨进程 frame 位于宿主容器下。macOS 和 Windows 尚未实测此次变更。
+
+pressKey 根据当前焦点逐层检查 iframe 宿主并选择对应调试会话，发送前重核 frame 树和焦点；检查失败时不发出按键。SDK 62 项通过，覆盖焦点变化拒绝；Linux ARM64 隔离 Chromium 原生消息与 Electron 44/Xvfb socket 实测跨进程 frame 的可信键盘输入。最终检查后页面仍可能改变焦点，macOS 和 Windows 尚未实测此次变更。

@@ -348,7 +348,10 @@ key mappings. A focus or key event that has
 been issued is not retried after an error.
 
 `await tab.pressKey("Enter")` sends a key press to the currently focused
-element. Supported keys include Enter, Tab, Escape, Backspace, Delete, arrows,
+element. It checks the focused frame chain and routes to its debugger session;
+if frame ownership or focus cannot be checked, or changes before dispatch,
+it fails before sending the key. Focus can still change after the final check.
+Supported keys include Enter, Tab, Escape, Backspace, Delete, arrows,
 Home, End, PageUp, PageDown, Space, letters, digits and common ASCII punctuation.
 Prefix modifiers with `+`, for example `ControlOrMeta+A` selects all on the
 host platform. `+` is supported alone; use `Shift+=` with other modifiers.

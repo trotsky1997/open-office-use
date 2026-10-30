@@ -590,6 +590,8 @@ test("keyboard input validates keys and sends paired events with modifiers", asy
   let failDown = false;
   client.request = async (method, params) => {
     if (method === "attach") return {};
+    if (params.method === "DOM.getDocument") return {root:{backendNodeId:1}};
+    if (params.method === "Page.getFrameTree") return {frameTree:{frame:{id:"root",loaderId:"v1",url:"https://example.test"}}};
     if (params.method === "Input.dispatchKeyEvent") { events.push(params.commandParams); if (failDown && params.commandParams.type === "rawKeyDown" && params.commandParams.key === "a") throw new Error("unknown outcome"); }
     return {};
   };
@@ -617,7 +619,7 @@ test("keyboard input validates keys and sends paired events with modifiers", asy
 
 test("number and symbol keys use their physical code and shifted text", async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), events=[];
-  client.request=async(method,params)=>{if(method==='attach')return {}; if(params.method==='Input.dispatchKeyEvent')events.push(params.commandParams);return {};};
+  client.request=async(method,params)=>{if(method==='attach')return {}; if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};if(params.method==='Input.dispatchKeyEvent')events.push(params.commandParams);return {};};
   const tab=new OpenBrowserUseBrowser({client}).tab(1);
   await tab.pressKey('1'); await tab.pressKey('Shift+1'); await tab.pressKey('@'); await tab.pressKey('.'); await tab.pressKey('+');
   const keys=events.filter(event=>event.type==='keyDown');
@@ -625,6 +627,22 @@ test("number and symbol keys use their physical code and shifted text", async ()
   await tab.pressKey('Control+1');
   assert.equal(events.at(-2).type,'keyUp');
   assert.ok(events.some(event=>event.type==='rawKeyDown' && event.key==='1' && event.modifiers===2 && event.text===undefined));
+});
+
+test("focused frame changes prevent sending keyboard input", async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let checks=0,keys=0;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'},childFrames:[{frame:{id:'child',loaderId:'v2',url:'https://child.test'}}]}};
+    if(params.method==='DOM.getFrameOwner')return {backendNodeId:2};
+    if(params.method==='DOM.resolveNode')return {object:{objectId:'frame'}};
+    if(params.method==='Runtime.callFunctionOn')return {result:{value:++checks===1}};
+    if(params.method==='Input.dispatchKeyEvent')keys++;
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await assert.rejects(tab.pressKey('Enter'),/Frame focus changed/);assert.equal(keys,0);
 });
 
 test("text input requires an editable focused observed textbox", async () => {

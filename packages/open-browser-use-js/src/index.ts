@@ -1066,8 +1066,36 @@ export class OpenBrowserUseTab {
   }
 
   async pressKey(key: string): Promise<void> {
+    this.parseKey(key);
     this.#observation = undefined;
-    await this.sendKey(key);
+    const documentId = await this.documentId();
+    const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
+    const frames = await this.frameTree();
+    if (!crossProcess && frames.length > 1) throw new Error("Focused frame routing is unavailable");
+    const focusedFrame = async (): Promise<FrameInfo> => {
+      let current = frames[0];
+      while (true) {
+        let focused: FrameInfo | undefined;
+        for (const child of frames.filter(frame=>frame.parentId === current.id)) {
+          const owner = await this.browser.cdp.call(this.id,"DOM.getFrameOwner",{frameId:child.id},{sessionId:current.sessionId});
+          if (!isObject(owner) || typeof owner.backendNodeId !== "number") throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+          const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:owner.backendNodeId},{sessionId:current.sessionId});
+          const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+          if (typeof objectId !== "string") throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+          try {
+            const result = await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function() { if (!this.isConnected) return null; let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement !== element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }`},{sessionId:current.sessionId});
+            const value = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (typeof value !== "boolean") throw new RetryablePreflightError("Frame focus is unavailable; observe again");
+            if (value) { if (focused) throw new RetryablePreflightError("Frame focus changed; observe again"); focused = child; }
+          } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId:current.sessionId}).catch(()=>{}); }
+        }
+        if (!focused) return current;
+        current = focused;
+      }
+    };
+    const target = await focusedFrame();
+    if ((await focusedFrame()).id !== target.id || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames) || await this.documentId() !== documentId) throw new RetryablePreflightError("Frame focus changed; observe again");
+    await this.sendKey(key,target.sessionId);
   }
 
   private async sendKey(key: string, sessionId?: string): Promise<void> {
