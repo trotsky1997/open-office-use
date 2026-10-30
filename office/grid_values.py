@@ -99,6 +99,46 @@ def dynamic_formula_matches(requested, candidate):
     return True
 
 
+def dynamic_metadata_indices(raw):
+    root = ooxml.parse_xml(raw).getroot(); expected = ooxml.parse_xml(DYNAMIC_METADATA).getroot()
+    if root.tag != X + 'metadata' or root.attrib: raise ValueError('Unsupported sheet metadata structure')
+    types = root.findall(X + 'metadataTypes'); cells = root.findall(X + 'cellMetadata'); futures = root.findall(X + 'futureMetadata')
+    if len(types) != 1 or len(cells) > 1 or len(list(root.iter(X + 'metadataTypes'))) != 1 or len(list(root.iter(X + 'cellMetadata'))) != len(cells) or len(list(root.iter(X + 'futureMetadata'))) != len(futures): raise ValueError('Ambiguous sheet metadata')
+    def records(parent, tag):
+        count = parent.get('count', '')
+        if not re.fullmatch(r'[0-9]{1,8}', count) or int(count) != len(parent) or any(child.tag != X + tag for child in parent): raise ValueError('Invalid sheet metadata records')
+        return list(parent)
+    entries = records(types[0], 'metadataType'); names = [entry.get('name') for entry in entries]
+    if any(not name for name in names) or len(names) != len(set(names)): raise ValueError('Ambiguous sheet metadata types')
+    dynamic_future = [entry for entry in futures if entry.get('name') == 'XLDAPR']
+    if 'XLDAPR' not in names:
+        if dynamic_future: raise ValueError('Invalid dynamic metadata')
+        return set()
+    index = names.index('XLDAPR') + 1
+    if grid_styles.equivalent(entries[index - 1]) != grid_styles.equivalent(expected.find(X + 'metadataTypes')[0]) or len(dynamic_future) != 1 or len(cells) != 1: raise ValueError('Unsupported dynamic metadata')
+    future_records = records(dynamic_future[0], 'bk'); cell_records = records(cells[0], 'bk')
+    expected_record = expected.find(X + 'futureMetadata')[0]
+    valid_future = set()
+    for i, record in enumerate(future_records):
+        normalized = copy.deepcopy(record)
+        for node in normalized.iter():
+            if node.get('uri', '').lower() == '{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}': node.set('uri', node.get('uri').lower())
+            for key, value in (('fDynamic', '1'), ('fCollapsed', '0')):
+                if node.get(key) == ('true' if value == '1' else 'false'): node.set(key, value)
+        if grid_styles.equivalent(normalized) == grid_styles.equivalent(expected_record): valid_future.add(i)
+    result = set()
+    for i, record in enumerate(cell_records):
+        if record.attrib or len(record) != 1 or (record.text and record.text.strip()): continue
+        rc = record[0]
+        if rc.tag != X + 'rc' or len(rc) or (rc.text and rc.text.strip()) or set(rc.attrib) != {'t', 'v'}: continue
+        t, v = rc.get('t', ''), rc.get('v', '')
+        if re.fullmatch(r'[0-9]{1,8}', t) and re.fullmatch(r'[0-9]{1,8}', v) and int(t) == index and int(v) in valid_future: result.add(str(i + 1))
+    return result
+
+
+def valid_dynamic_index(value, indices):
+    return bool(value and re.fullmatch(r'[0-9]{1,10}', value) and str(int(value)) in indices)
+
 def metadata_part(archive):
     rels = ooxml.parse_xml(archive.read('xl/_rels/workbook.xml.rels')).getroot()
     manifest = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
@@ -114,15 +154,13 @@ def metadata_part(archive):
     if not path.startswith('xl/') or path not in archive.namelist() or overrides[0].get('PartName') != '/' + path: raise ValueError('Invalid sheet metadata part')
     if len([item for item in manifest.findall(CT + 'Override') if item.get('PartName') == '/' + path]) != 1: raise ValueError('Ambiguous sheet metadata content type')
     if posixpath.join(posixpath.dirname(path), '_rels', posixpath.basename(path) + '.rels') in archive.namelist(): raise ValueError('Sheet metadata has relationships')
-    root = ooxml.parse_xml(archive.read(path)).getroot()
-    expected = ooxml.parse_xml(DYNAMIC_METADATA).getroot()
-    if grid_styles.equivalent(root) != grid_styles.equivalent(expected): raise ValueError('Unsupported sheet metadata structure')
+    dynamic_metadata_indices(archive.read(path))
     return path
 
 
 
-def unexpanded_dynamic_cell(cell, address):
-    if cell.tag != X + 'c' or cell.get('r') != address or cell.get('cm') != '1' or any(key not in ('r', 's', 't', 'cm') for key in cell.attrib): return False
+def unexpanded_dynamic_cell(cell, address, indices):
+    if cell.tag != X + 'c' or cell.get('r') != address or not valid_dynamic_index(cell.get('cm'), indices) or any(key not in ('r', 's', 't', 'cm') for key in cell.attrib): return False
     if any(child.tag not in (X + 'f', X + 'v') for child in cell): return False
     formulas = cell.findall(X + 'f'); values = cell.findall(X + 'v')
     return len(formulas) == 1 and len(values) <= 1 and dict(formulas[0].attrib) == {'t': 'array', 'ref': address} and bool(formulas[0].text) and not len(formulas[0])
@@ -133,7 +171,9 @@ def unexpanded_dynamic_anchors(source, sheet, addresses):
     try:
         part = grid_styles.sheet_part(source, sheet)
         with zipfile.ZipFile(source) as archive:
-            if metadata_part(archive) is None: return set()
+            metadata = metadata_part(archive)
+            if metadata is None: return set()
+            indices = dynamic_metadata_indices(archive.read(metadata))
             root = ooxml.parse_xml(archive.read(part)).getroot()
             data = root.findall(X + 'sheetData')
             if root.tag != X + 'worksheet' or len(data) != 1 or len(list(root.iter(X + 'sheetData'))) != 1: return set()
@@ -142,7 +182,7 @@ def unexpanded_dynamic_anchors(source, sheet, addresses):
                 for cell in row.findall(X + 'c'):
                     address = cell.get('r')
                     if address in addresses: found.setdefault(address, []).append(cell)
-            return {address for address, cells in found.items() if len(cells) == 1 and unexpanded_dynamic_cell(cells[0], address)}
+            return {address for address, cells in found.items() if len(cells) == 1 and unexpanded_dynamic_cell(cells[0], address, indices)}
     except (ValueError, KeyError, etree.XMLSyntaxError):
         return set()
 
@@ -228,7 +268,9 @@ def apply(source, output, sheet, changes, operations):
                     values[address] = (None, None, None); continue
                 if any(key not in ('r', 's', 't', 'cm') for key in cell.attrib): raise ValueError('Candidate cell has unsupported metadata')
                 cm = cell.get('cm')
-                if cm is not None and (cm != '1' or (address not in old_dynamic and (address in literal or not requested.startswith('=')))): raise ValueError('Unsupported candidate cell metadata')
+                if cm is not None:
+                    metadata_path = metadata_part(archive)
+                    if metadata_path is None or not valid_dynamic_index(cm, dynamic_metadata_indices(archive.read(metadata_path))) or (address not in old_dynamic and (address in literal or not requested.startswith('='))): raise ValueError('Unsupported candidate cell metadata')
                 formula_node = cell.find(X + 'f')
                 is_dynamic = cm is not None and formula_node is not None and formula_node.get('t') == 'array'
                 if cm is not None and not is_dynamic and address not in old_dynamic: raise ValueError('Unsupported candidate cell metadata')
@@ -289,8 +331,14 @@ def apply(source, output, sheet, changes, operations):
             addresses = [address for address, value in targets.items() if value != '' or address in existing]
             cells = grid_styles.prepare_cells(root, addresses); cell_text.request_recalculation(root)
             formula_changed = False; string_count_uncertain = False
+            existing_metadata = metadata_part(archive) if dynamic or old_dynamic else None
+            indices = dynamic_metadata_indices(archive.read(existing_metadata)) if existing_metadata else set()
+            if dynamic and existing_metadata and not indices: raise ValueError('No reusable dynamic metadata record')
+            if dynamic and not existing_metadata:
+                if grid_styles.equivalent(ooxml.parse_xml(dynamic_metadata).getroot()) != grid_styles.equivalent(ooxml.parse_xml(DYNAMIC_METADATA).getroot()): raise ValueError('Unsupported new dynamic metadata')
+                indices = {'1'}
             for address, cell in cells.items():
-                old_is_dynamic = address in old_dynamic and unexpanded_dynamic_cell(cell, address) and metadata_part(archive) is not None
+                old_is_dynamic = address in old_dynamic and unexpanded_dynamic_cell(cell, address, indices)
                 if any(key not in (('r', 's', 't', 'cm') if old_is_dynamic else ('r', 's', 't')) for key in cell.attrib): raise ValueError('Target cell contains unsupported metadata')
                 if any(child.tag not in (X + 'f', X + 'v', X + 'is') for child in cell): raise ValueError('Target cell contains unsupported content')
                 if len(cell.findall(X + 'f')) > 1 or len(cell.findall(X + 'v')) > 1 or len(cell.findall(X + 'is')) > 1: raise ValueError('Target cell content is ambiguous')
@@ -317,7 +365,7 @@ def apply(source, output, sheet, changes, operations):
                             if xf.get(key) in ('0', 'false'): xf.attrib.pop(key)
                     if grid_styles.equivalent(before_xf) != grid_styles.equivalent(after_xf): raise ValueError('Candidate changed unrelated cell formatting')
                 if style is not None and int(style) != int(old_style): cell.set('s', style)
-                if address in dynamic: cell.set('cm', '1')
+                if address in dynamic: cell.set('cm', min(indices, key=int))
                 elif old_is_dynamic: cell.attrib.pop('cm', None)
                 if kind is None: cell.attrib.pop('t', None)
                 else: cell.set('t', kind)
@@ -332,7 +380,6 @@ def apply(source, output, sheet, changes, operations):
                 if source_part in chain_changes or style_name in chain_changes: raise ValueError('Calculation chain conflicts with workbook parts')
                 additional.update(chain_changes)
             if dynamic:
-                existing_metadata = metadata_part(archive)
                 if existing_metadata is None:
                     path = 'xl/office-use-metadata.xml'
                     if path in archive.namelist() or any(item.get('PartName') == '/' + path for item in manifest.findall(CT + 'Override')): raise ValueError('Sheet metadata destination already exists')
