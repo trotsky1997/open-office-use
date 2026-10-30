@@ -131,6 +131,36 @@ when the reported total or received bytes exceed it; allowed values range from
 partial files can remain after cancellation. Revoking a
 grant cancels downloads still in progress.
 
+## Explicit clipboard grants
+
+Electron 44 hosts can grant system clipboard access separately for reading and
+writing. These permissions are excluded from default grants:
+
+```ts
+const worker = await iab.launchClient({
+  scopeId: task.id,
+  command: '/absolute/path/to/node',
+  args: ['/absolute/path/to/worker.mjs'],
+  transport: 'private',
+  ttlMs: 60_000,
+  operations: ['tabs.read', 'page.control', 'clipboard.read', 'clipboard.write'],
+});
+```
+
+Clients use `tab.clipboard.readText()`, `writeText()`, `read()` and `write()`.
+Each operation requires an owned tab, `page.control` and its corresponding
+clipboard grant. The clipboard belongs to the host system and is shared across
+scopes and applications. A revoked read cannot return its result; a write
+already issued to Electron can still finish, so inspect before retrying.
+`getInfo` exposes `clipboardRead` and `clipboardWrite` for the grant. Electron
+versions without the modern `ClipboardItem` interface report clipboard as
+unavailable.
+
+Structured items support standard MIME types and `web` custom MIME types;
+Electron-specific native formats are omitted on read and rejected on write.
+Presentation style is `unspecified`. The per-call limit is 3 MiB of raw data
+and 4 MiB of encoded JSON, with at most 16 items and 64 formats per item.
+
 ## Private tool process
 
 Host main:
@@ -383,9 +413,10 @@ enables/disables both effects during manual steps or automatic playback.
   scope's control; revoke the client grant explicitly when handing control back.
 - CDP commands are limited to the owned page and its registered iframe
   sessions. The allowed Target operation attaches iframe sessions only;
-  browser-global operations, cookie-jar APIs, clipboard and WebMCP are
-  unavailable. File uploads and downloads require explicit scope authorization
-  and their respective grants. Browser permission requests are denied by default.
+  browser-global operations, cookie-jar APIs and WebMCP are unavailable. File
+  uploads and downloads require explicit scope authorization and their respective
+  grants. Clipboard access requires explicit read or write grants. Browser
+  permission requests are denied by default.
 - Navigation accepts http, https and about:blank. The host UI's preload is
   never loaded in remote guest pages; guests enforce sandbox, context isolation,
   disabled Node integration and enabled web security.

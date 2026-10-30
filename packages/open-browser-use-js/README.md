@@ -377,7 +377,7 @@ bounds a pending action callback; it cannot cancel a command already issued.
 
 ## Clipboard
 
-Chrome tabs expose the system clipboard through the page's Clipboard API:
+Tabs expose clipboard operations when their backend permits them:
 
 ```js
 await tab.clipboard.writeText("hello");
@@ -386,10 +386,11 @@ await tab.clipboard.write([{entries: [{mimeType: "text/plain", text: "hello"}]}]
 const items = await tab.clipboard.read(); // entries contain text or base64
 ```
 
-The page must satisfy the browser's secure-context, focus and permission
-requirements. These calls can read or replace the system clipboard; an error
-after a write may leave its outcome unknown. Electron scopes currently do not
-provide clipboard operations. For an isolated Chromium clipboard smoke, use
+Chrome pages must satisfy the browser's secure-context, focus and permission
+requirements. Electron 44 requires explicit host grants; see the
+[Electron guide](../open-browser-use-electron/README.md#explicit-clipboard-grants).
+These calls can read or replace the system clipboard; an error after a write may
+leave its outcome unknown. For an isolated Chromium clipboard smoke, use
 `OBU_TEST_CLIPBOARD=1` with `scripts/chromium-native-smoke.mjs`; the smoke grants
 clipboard permission only in its temporary test profile and writes fixture data
 to its clipboard. Run it where the clipboard is isolated from your desktop.

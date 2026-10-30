@@ -17,9 +17,16 @@ app.whenReady().then(async()=>{
     const tab=await scope.tabs.create({url:fixture.url});const surface=runtime.surfaces.register({id:'panel',window,owner:window.webContents});surface.setBounds({x:0,y:0,width:800,height:600});surface.present(tab.id);
     const file=join(root,'fixture.txt');writeFileSync(file,'fixture');await scope.files.authorize([file]);await scope.downloads.configure({directory:root,maxBytes:1024});
     await runtime.connections.openSocket();
-    const grant=runtime.connections.grant(scope.id,'socket',{ttlMs:120000,operations:['page.control','files.upload','files.download']},process.pid);
+    const grant=runtime.connections.grant(scope.id,'socket',{ttlMs:120000,operations:['page.control','files.upload','files.download',...(process.env.OBU_IAB_TEST_CLIPBOARD==='1'?['clipboard.read','clipboard.write']:[])]},process.pid);
     const client=await connectSocketIab(grant);
     const sdk=client.browser().tab(tab.id);
+    if(process.env.OBU_IAB_TEST_CLIPBOARD==='1'){
+      await sdk.clipboard.writeText('isolated fixture');assert.equal(await sdk.clipboard.readText(),'isolated fixture');
+      await sdk.clipboard.write([{entries:[{mimeType:'text/plain',text:'plain fixture'},{mimeType:'text/html',text:'<b>rich fixture</b>'}]}]);
+      const rich=await sdk.clipboard.read();assert.ok(rich.some(item=>item.entries.some(entry=>entry.mimeType==='text/plain' && entry.text==='plain fixture')));assert.ok(rich.some(item=>item.entries.some(entry=>entry.mimeType==='text/html' && entry.text.includes('rich fixture'))));
+      const png=(await sdk.getScreenshot()).toString('base64');await sdk.clipboard.write([{entries:[{mimeType:'image/png',base64:png}]}]);
+      const image=(await sdk.clipboard.read()).flatMap(item=>item.entries).find(entry=>entry.mimeType==='image/png');assert.ok(image?.base64);assert.equal(Buffer.from(image.base64,'base64').subarray(1,4).toString(),'PNG');
+    }
     await sdk.dev.watch();await sdk.evaluate(`console.error('socket-log-fixture')`);await new Promise(resolve=>setTimeout(resolve,50));
     assert.ok((await sdk.dev.logs({levels:['error'],filter:'socket-log-fixture'})).length);
     await sdk.evaluate(`(()=>{const img=document.createElement('img');img.src='/missing-log';document.body.append(img)})()`);await new Promise(resolve=>setTimeout(resolve,150));
@@ -72,6 +79,6 @@ app.whenReady().then(async()=>{
     const childDownloadReady=await sdk.prepareDownload({timeoutMs:20000});const childDownloading=childDownloadReady.wait();void childDownloading.catch(()=>{});
     await sdk.playwright.getByRole('link',{name:'Child download',exact:true}).click({timeoutMs:20000});
     const childDownload=await childDownloading,childPath=await childDownload.path(20000);assert.ok(childPath);assert.equal(readFileSync(childPath,'utf8'),'isolated download fixture');
-    console.log(JSON.stringify({passed:true,platform:process.platform,electron:process.versions.electron,scope:'socket-upload-download-and-hidden-cross-frame'}));
+    console.log(JSON.stringify({passed:true,platform:process.platform,electron:process.versions.electron,scope:'socket-upload-download-and-hidden-cross-frame',clipboard:process.env.OBU_IAB_TEST_CLIPBOARD==='1'}));
   }finally{await runtime.dispose();window.destroy();await fixture.close();rmSync(root,{recursive:true,force:true});}
 }).then(()=>app.exit(0),error=>{console.error(error);app.exit(1);});

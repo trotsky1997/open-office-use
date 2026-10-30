@@ -18,9 +18,10 @@ const publicErrors = new Set([
   'IAB_DOWNLOAD_NOT_CONFIGURED', 'IAB_DOWNLOAD_WAIT_PENDING', 'IAB_DOWNLOAD_UNAVAILABLE',
   'IAB_DOWNLOAD_SIZE_LIMIT', 'IAB_DOWNLOAD_LIMIT', 'IAB_DOWNLOAD_FAILED',
   'IAB_DOWNLOAD_TIMEOUT', 'IAB_DOWNLOAD_TAB_CLOSED',
+  'IAB_CLIPBOARD_UNAVAILABLE', 'IAB_CLIPBOARD_TOO_LARGE', 'IAB_CLIPBOARD_INVALID',
 ]);
 
-export type Operation = 'tabs.read' | 'tabs.create' | 'page.control' | 'files.upload' | 'files.download';
+export type Operation = 'tabs.read' | 'tabs.create' | 'page.control' | 'files.upload' | 'files.download' | 'clipboard.read' | 'clipboard.write';
 export type IabEvent = { scopeId: string; method: string; params: Record<string, any> };
 export interface Backend {
   readonly instanceId: string;
@@ -96,7 +97,7 @@ export class IabConnections {
     if (!Number.isFinite(options.ttlMs) || options.ttlMs <= 0 || options.ttlMs > 86_400_000) throw new Error('ttlMs must be between 1 and 86400000');
     if (this.grants.size >= 256) throw new Error('IAB_GRANT_LIMIT');
     const operations = options.operations ?? ['tabs.read', 'tabs.create', 'page.control'];
-    if (operations.some(op => !['tabs.read', 'tabs.create', 'page.control', 'files.upload', 'files.download'].includes(op))) throw new Error('Unsupported operation');
+    if (operations.some(op => !['tabs.read', 'tabs.create', 'page.control', 'files.upload', 'files.download', 'clipboard.read', 'clipboard.write'].includes(op))) throw new Error('Unsupported operation');
     const maxConnections = options.maxConnections ?? 1;
     if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 16) throw new Error('Invalid maxConnections');
     const peer = transport === 'socket' ? processIdentity(pid) : undefined;

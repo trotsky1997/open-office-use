@@ -69,6 +69,43 @@ test('authorized socket client can complete the file chooser handshake', {skip:!
   assert.equal(adapter.views[0].webContents.debugger.commands.at(-1).method,'DOM.setFileInputFiles');
 });
 
+test('clipboard requires independent scoped read and write grants',async t=>{
+  const {runtime,adapter,a,b}=setup(t),tab=await a.tabs.create(),other=await b.tabs.create();
+  const read=['page.control','clipboard.read'],write=['page.control','clipboard.write'];
+  assert.equal((await runtime.dispatch('a','getInfo',{},['page.control'])).capabilities.clipboard,false);
+  assert.equal((await runtime.dispatch('a','getInfo',{},read)).capabilities.clipboard,true);
+  assert.equal((await runtime.dispatch('a','getInfo',{},read)).capabilities.clipboardRead,true);
+  assert.equal((await runtime.dispatch('a','getInfo',{},read)).capabilities.clipboardWrite,false);
+  await assert.rejects(runtime.dispatch('a','writeClipboardText',{tabId:tab.id,text:'secret'},read),/DENIED/);
+  await assert.rejects(runtime.dispatch('a','readClipboardText',{tabId:tab.id},write),/DENIED/);
+  await assert.rejects(runtime.dispatch('b','readClipboardText',{tabId:tab.id},read),/tab/i);
+  await runtime.dispatch('a','writeClipboardText',{tabId:tab.id,text:'fixture'},write);
+  assert.equal((await runtime.dispatch('a','readClipboardText',{tabId:tab.id},read)).text,'fixture');
+  const items=[{entries:[{mime_type:'text/plain',text:'plain'},{mime_type:'image/png',base64:'AQID'}]}];
+  await runtime.dispatch('a','writeClipboard',{tabId:tab.id,items},write);
+  assert.deepEqual((await runtime.dispatch('a','readClipboard',{tabId:tab.id},read)).items,[{entries:items[0].entries,presentation_style:'unspecified'}]);
+  await assert.rejects(runtime.dispatch('a','writeClipboard',{tabId:tab.id,items:[{entries:[{mime_type:'image/png',base64:'invalid!'}]}]},write),/INVALID/);
+  assert.equal((await runtime.dispatch('a','readClipboardText',{tabId:tab.id},read)).text,'plain');
+  await assert.rejects(runtime.dispatch('a','writeClipboardText',{tabId:tab.id,text:'x'.repeat(3*1024*1024+1)},write),/TOO_LARGE/);
+  let release;adapter.clipboard.readText=()=>new Promise(resolve=>{release=resolve;});const controller=new AbortController();
+  const pending=runtime.dispatch('b','readClipboardText',{tabId:other.id},read,()=>!controller.signal.aborted,controller.signal);
+  controller.abort();release('private');await assert.rejects(pending,/REVOKED/);
+  let finishWrite;adapter.clipboard.writeText=()=>new Promise(resolve=>{finishWrite=resolve;});const writer=new AbortController();
+  const writing=runtime.dispatch('a','writeClipboardText',{tabId:tab.id,text:'issued'},write,()=>!writer.signal.aborted,writer.signal);
+  writer.abort();finishWrite();await assert.rejects(writing,/REVOKED/);
+  delete adapter.clipboard;assert.equal((await runtime.dispatch('a','getInfo',{},read)).capabilities.clipboard,false);
+  await assert.rejects(runtime.dispatch('a','readClipboardText',{tabId:tab.id},read),/UNAVAILABLE/);
+});
+
+test('clipboard socket grant supports SDK text and structured data', {skip:!['darwin','linux'].includes(process.platform)}, async t=>{
+  const {runtime,a}=setup(t),tab=await a.tabs.create();await runtime.connections.openSocket();
+  const grant=runtime.connections.grant('a','socket',{ttlMs:5000,operations:['page.control','clipboard.read','clipboard.write']},process.pid);
+  const client=await connectSocketIab(grant);t.after(()=>client.close());const clipboard=client.browser().tab(tab.id).clipboard;
+  await clipboard.writeText('socket fixture');assert.equal(await clipboard.readText(),'socket fixture');
+  await clipboard.write([{entries:[{mimeType:'text/plain',text:'text'},{mimeType:'image/png',base64:'AQID'}]}]);
+  assert.deepEqual((await clipboard.read())[0].entries,[{mimeType:'text/plain',text:'text'},{mimeType:'image/png',base64:'AQID'}]);
+});
+
 function fakeDownload(filename='fixture.txt',total=10) {
   const item=Object.assign(new EventEmitter(),{filename,total,received:0,cancelled:false,path:'',
     getFilename(){return this.filename;},getURL(){return 'https://example.test/fixture';},getTotalBytes(){return this.total;},getReceivedBytes(){return this.received;},

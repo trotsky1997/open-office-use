@@ -12,6 +12,12 @@ import { FeedbackController, type VisualFeedbackOptions } from './feedback.js';
 export type ElectronAdapter = {
   createView(session: Session, contents?: WebContents): WebContentsView;
   createSession(partition: string): Session;
+  clipboard?: {
+    readText(): Promise<string>;
+    writeText(text: string): Promise<void>;
+    read(): Promise<Array<{types: string[]; getType(type: string): Promise<unknown>}>>;
+    write(items: Array<Record<string,Blob>>): Promise<void>;
+  };
 };
 type Tab = {
   id: number; scopeId: string; view: WebContentsView; contents: WebContents; lifetime: 'temporary' | 'persistent';
@@ -398,6 +404,64 @@ export class IabRuntime implements Backend {
     } finally { if (timer) clearTimeout(timer); if (abort) signal?.removeEventListener('abort',abort); }
   }
 
+  private async clipboardCall(scope: ScopeState, tab: Tab, method: string, params: Record<string, any>, authorized: () => boolean, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const clipboard = this.adapter.clipboard;
+    if (!clipboard) throw new Error('IAB_CLIPBOARD_UNAVAILABLE');
+    const check = () => { if (!authorized() || signal?.aborted || this.states.get(scope.id) !== scope || scope.closing || this.tabsById.get(tab.id) !== tab) throw new Error('IAB_AUTH_REVOKED'); };
+    const maxBytes = 3 * 1024 * 1024;
+    const mime = (value: unknown): value is string => typeof value === 'string' && value.length <= 256 && /^(?:web )?[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(value);
+    const output = (value: Record<string, unknown>) => { if (Buffer.byteLength(JSON.stringify(value)) > 4 * 1024 * 1024) throw new Error('IAB_CLIPBOARD_TOO_LARGE'); return value; };
+    check();
+    if (method === 'readClipboardText') {
+      const text = await clipboard.readText(); check();
+      if (typeof text !== 'string' || Buffer.byteLength(text) > maxBytes) throw new Error('IAB_CLIPBOARD_TOO_LARGE');
+      return output({text});
+    }
+    if (method === 'writeClipboardText') {
+      if (typeof params.text !== 'string') throw new Error('IAB_CLIPBOARD_INVALID');
+      if (Buffer.byteLength(params.text) > maxBytes) throw new Error('IAB_CLIPBOARD_TOO_LARGE');
+      check(); await clipboard.writeText(params.text); check(); return {};
+    }
+    if (method === 'readClipboard') {
+      const items = await clipboard.read(); check();
+      if (!Array.isArray(items) || items.length > 16) throw new Error('IAB_CLIPBOARD_TOO_LARGE');
+      let total = 0;
+      const result: Array<{entries: Array<Record<string,string>>; presentation_style: string}> = [];
+      for (const item of items) {
+        if (!Array.isArray(item.types) || item.types.length > 64) throw new Error('IAB_CLIPBOARD_TOO_LARGE');
+        const entries: Array<Record<string,string>> = [];
+        for (const type of item.types) {
+          if (!mime(type)) continue;
+          const blob = await item.getType(type); check();
+          if (!(blob instanceof Blob)) throw new Error('IAB_CLIPBOARD_INVALID');
+          total += blob.size; if (total > maxBytes) throw new Error('IAB_CLIPBOARD_TOO_LARGE');
+          if (type.startsWith('text/')) entries.push({mime_type:type,text:await blob.text()});
+          else entries.push({mime_type:type,base64:Buffer.from(await blob.arrayBuffer()).toString('base64')});
+          check();
+        }
+        if (entries.length) result.push({entries,presentation_style:'unspecified'});
+      }
+      return output({items:result});
+    }
+    if (!Array.isArray(params.items) || params.items.length > 16) throw new Error('IAB_CLIPBOARD_INVALID');
+    if (Buffer.byteLength(JSON.stringify(params.items)) > 4 * 1024 * 1024) throw new Error('IAB_CLIPBOARD_TOO_LARGE');
+    let total = 0;
+    const items: Array<Record<string,Blob>> = [];
+    for (const item of params.items) {
+      if (!item || !Array.isArray(item.entries) || !item.entries.length || item.entries.length > 64 || (item.presentation_style !== undefined && item.presentation_style !== 'unspecified')) throw new Error('IAB_CLIPBOARD_INVALID');
+      const entries: Record<string,Blob> = Object.create(null);
+      for (const entry of item.entries) {
+        if (!entry || !mime(entry.mime_type) || Object.hasOwn(entries,entry.mime_type) || (typeof entry.text === 'string') === (typeof entry.base64 === 'string') || (entry.text !== undefined && typeof entry.text !== 'string') || (entry.base64 !== undefined && typeof entry.base64 !== 'string')) throw new Error('IAB_CLIPBOARD_INVALID');
+        if (typeof entry.base64 === 'string' && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(entry.base64)) throw new Error('IAB_CLIPBOARD_INVALID');
+        const bytes = typeof entry.text === 'string' ? Buffer.from(entry.text) : Buffer.from(entry.base64,'base64');
+        total += bytes.length; if (total > maxBytes) throw new Error('IAB_CLIPBOARD_TOO_LARGE');
+        entries[entry.mime_type] = new Blob([new Uint8Array(bytes)]);
+      }
+      items.push(entries);
+    }
+    check(); await clipboard.write(items); check(); return {};
+  }
+
   private invalidateChoosers(tabId: number): void {
     for (const [id, chooser] of this.choosers) if (chooser.tabId === tabId) this.choosers.delete(id);
   }
@@ -500,7 +564,7 @@ export class IabRuntime implements Backend {
     const need = (operation: Operation) => { if (!operations.includes(operation)) throw new Error('IAB_OPERATION_DENIED'); };
     switch (method) {
       case 'getInfo': return { name: 'Open Browser Use IAB', type: 'iab', version: '1.1.0', metadata: { instanceId: this.instanceId, scopeId },
-        capabilities: { multiTab: true, fileUploads: operations.includes('files.upload') && operations.includes('page.control') && scope.uploadFiles.size > 0, downloads: operations.includes('files.download') && operations.includes('page.control') && !!scope.download, clipboard: false, history: false, childTargets: false } };
+        capabilities: { multiTab: true, fileUploads: operations.includes('files.upload') && operations.includes('page.control') && scope.uploadFiles.size > 0, downloads: operations.includes('files.download') && operations.includes('page.control') && !!scope.download, clipboard: !!this.adapter.clipboard && operations.includes('page.control') && (operations.includes('clipboard.read') || operations.includes('clipboard.write')), clipboardRead: !!this.adapter.clipboard && operations.includes('page.control') && operations.includes('clipboard.read'), clipboardWrite: !!this.adapter.clipboard && operations.includes('page.control') && operations.includes('clipboard.write'), history: false, childTargets: false } };
       case 'ping': return 'pong';
       case 'setFileChooserFiles': need('page.control'); need('files.upload'); await this.setFileChooserFiles(scopeId,params,authorized); return {};
       case 'downloadPath': need('page.control'); need('files.download'); return this.downloadPath(scopeId,params,authorized,signal);
@@ -536,6 +600,11 @@ export class IabRuntime implements Backend {
     need('page.control');
     const tab = this.tab(scopeId, params.tabId ?? params.target?.tabId);
     if (typeof params.turn_id === 'string') tab.touched.add(params.turn_id);
+    if (['readClipboardText','readClipboard','writeClipboardText','writeClipboard'].includes(method)) {
+      need(method.startsWith('read') ? 'clipboard.read' : 'clipboard.write');
+      tab.pending++;
+      try { return await this.clipboardCall(scope,tab,method,params,authorized,signal); } finally { tab.pending--; }
+    }
     if (method === 'waitForFileChooser') { need('files.upload'); return this.waitForFileChooser(scopeId,tab,params,authorized); }
     if (method === 'waitForDownload') { need('files.download'); return this.waitForDownload(scopeId,tab,params,authorized,signal); }
     if (method === 'markTab') {
@@ -659,6 +728,6 @@ export class IabScope {
   };
   readonly files = { authorize: (paths: string[]) => this.runtime.authorizeUploadFiles(this.id, paths) };
   readonly downloads = { configure: (options: {directory: string; maxBytes: number} | null) => this.runtime.configureDownloads(this.id, options) };
-  call(method: string, params: Record<string, any> = {}): Promise<any> { return this.runtime.dispatch(this.id, method, params, ['tabs.read','tabs.create','page.control','files.upload','files.download']); }
+  call(method: string, params: Record<string, any> = {}): Promise<any> { return this.runtime.dispatch(this.id, method, params, ['tabs.read','tabs.create','page.control','files.upload','files.download','clipboard.read','clipboard.write']); }
   dispose(): Promise<void> { return this.runtime.disposeScope(this.id); }
 }

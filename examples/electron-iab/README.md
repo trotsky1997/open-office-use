@@ -192,6 +192,10 @@ window, a cross-process iframe. It also checks semantic locator reads, heading
 levels, developer logs, trusted double clicks and same-document navigation. It does not submit the files to a server. A Linux virtual
 display can be used for an isolated run.
 
+Set `OBU_IAB_TEST_CLIPBOARD=1` to include text, HTML and PNG clipboard checks.
+Those checks replace the system clipboard; run them with an isolated clipboard,
+such as a disposable virtual display.
+
 ## Hidden input probe
 
 After building the Electron package and native peer adapter, run

@@ -2,7 +2,14 @@ import { EventEmitter } from 'node:events';
 export function fakeElectron() {
   const sessions = new Map();
   const views = [];
+  let clipboardItems=[];
   return { views, sessions,
+    clipboard: {
+      async readText(){return clipboardItems[0]?.['text/plain'] ? await clipboardItems[0]['text/plain'].text() : '';},
+      async writeText(text){clipboardItems=[{'text/plain':new Blob([text])}];},
+      async read(){return clipboardItems.map(item=>({types:Object.keys(item),getType:async type=>item[type]}));},
+      async write(items){clipboardItems=items;},
+    },
     createSession(partition) {
       if (!sessions.has(partition)) sessions.set(partition, Object.assign(new EventEmitter(), {
         isPersistent: () => partition.startsWith('persist:'), setPermissionRequestHandler() {}, setPermissionCheckHandler() {},

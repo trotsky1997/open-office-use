@@ -12,6 +12,12 @@ export function createIabRuntime(options: { appId: string; visualFeedback?: Visu
       ...(contents ? { webContents: contents } : {}),
       webPreferences: { session, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, webviewTag: false },
     }),
+    ...(typeof electron.ClipboardItem === 'function' && typeof electron.clipboard?.read === 'function' ? {clipboard: {
+      readText: () => electron.clipboard.readText(),
+      writeText: (text: string) => electron.clipboard.writeText(text),
+      read: () => electron.clipboard.read(),
+      write: (items: Array<Record<string,Blob>>) => electron.clipboard.write(items.map(item => new electron.ClipboardItem(item))),
+    }} : {}),
   }, options.appId,options.visualFeedback);
   return runtime;
 }

@@ -69,7 +69,7 @@ navigation listener before the action.
 For subsequent observations, `tab.observe({diff:true})` reports text changes;
 always use the newly returned `nodes` and `snapshotId` for actions.
 Use `await tab.dev.watch()` before an action, then `await tab.dev.logs({levels:["error"]})` to inspect captured console errors, uncaught exceptions and browser resource-load errors.
-Chrome tabs expose `tab.clipboard.readText()`, `writeText(text)`, `read()` and `write(items)` when the page has clipboard access; Electron clipboard operations are unavailable.
+Tabs expose `tab.clipboard.readText()`, `writeText(text)`, `read()` and `write(items)` when permitted. Electron 44 requires explicit `clipboard.read` or `clipboard.write` grants with `page.control`.
 When current field values are needed, request `includeValues:true`; native
 password values are redacted and truncated values are flagged.
 Use `tab.observe({includeFrames:true})` to include iframe controls. Chrome and
