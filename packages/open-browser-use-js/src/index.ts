@@ -38,25 +38,56 @@ export type NotificationHandler = (notification: OpenBrowserUseNotification) => 
 const headerBytes = 4;
 const defaultNavigationTimeoutMs = 10_000;
 
-function urlGlob(pattern: string): RegExp {
-  let result = "^", depth = 0;
-  const literal = (value:string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  for (let i = 0; i < pattern.length; i++) {
-    const char = pattern[i];
-    if (char === "\\" && i + 1 < pattern.length) { result += literal(pattern[++i]); continue; }
+function urlGlob(pattern: string): {test: (url:string) => boolean} {
+  if (pattern.length > 4096) throw new Error("URL glob pattern is too long");
+  type Edge = {to:number; match?:string | "any" | "segment"};
+  const states:Edge[][] = [[]];
+  const newState = () => { states.push([]); return states.length - 1; };
+  const add = (from:number,to:number,match?:Edge["match"]) => states[from].push({to,match});
+  const groups:Array<{start:number;end:number}> = [];
+  let current = 0;
+  for (let i=0;i<pattern.length;i++) {
+    let char=pattern[i];
+    if (char === "\\" && i+1 < pattern.length) {
+      char=pattern[++i]; const next=newState();add(current,next,`literal:${char}`);current=next;continue;
+    }
+    if (char === "{") { const end=newState(), first=newState();groups.push({start:current,end});add(current,first);current=first;continue; }
+    if (char === "," && groups.length) { const group=groups[groups.length-1], next=newState();add(current,group.end);add(group.start,next);current=next;continue; }
+    if (char === "}" && groups.length) { const group=groups.pop()!;add(current,group.end);current=group.end;continue; }
     if (char === "*") {
-      if (pattern[i + 1] === "*") {
-        i++;
-        if ((i === 1 || pattern[i - 2] === "/") && pattern[i + 1] === "/") { result += "(?:.*/)?"; i++; }
-        else result += ".*";
-      } else result += "[^/]*";
-    } else if (char === "{") { result += "(?:"; depth++; }
-    else if (char === "}" && depth) { result += ")"; depth--; }
-    else if (char === "," && depth) result += "|";
-    else result += literal(char);
+      const double=pattern[i+1] === "*";
+      if (double) i++;
+      const next=newState();add(current,next);
+      if (double && (i===1 || pattern[i-2] === "/") && pattern[i+1] === "/") {
+        const loop=newState();add(current,next,"literal:/");add(current,loop,"any");add(loop,loop,"any");add(loop,next,"literal:/");i++;
+      } else add(current,current,double ? "any" : "segment");
+      current=next;continue;
+    }
+    const next=newState();add(current,next,`literal:${char}`);current=next;
   }
-  if (depth) throw new Error("Invalid URL glob pattern");
-  return new RegExp(result + "$");
+  if (groups.length) throw new Error("Invalid URL glob pattern");
+  const accept=current;
+  const closure=(initial:number[]):number[] => {
+    const seen=new Uint8Array(states.length), pending=[...initial], result:number[]=[];
+    for (let i=0;i<pending.length;i++) {
+      const state=pending[i];if(seen[state])continue;seen[state]=1;result.push(state);
+      for(const edge of states[state])if(edge.match===undefined && !seen[edge.to])pending.push(edge.to);
+    }
+    return result;
+  };
+  return {test(url:string):boolean {
+    if (states.length * url.length > 4_000_000) throw new Error("URL glob match exceeds size limit");
+    let active=closure([0]);
+    for (let i=0;i<url.length;i++) {
+      const next:number[]=[];
+      for(const state of active)for(const edge of states[state]) {
+        if(edge.match === "any" || (edge.match === "segment" && url[i] !== "/") || edge.match === `literal:${url[i]}`) next.push(edge.to);
+      }
+      if(!next.length)return false;
+      active=closure(next);
+    }
+    return active.includes(accept);
+  }};
 }
 
 

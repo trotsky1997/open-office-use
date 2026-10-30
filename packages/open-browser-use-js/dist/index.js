@@ -6,43 +6,99 @@ import { isAbsolute } from "node:path";
 const headerBytes = 4;
 const defaultNavigationTimeoutMs = 10_000;
 function urlGlob(pattern) {
-    let result = "^", depth = 0;
-    const literal = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (pattern.length > 4096)
+        throw new Error("URL glob pattern is too long");
+    const states = [[]];
+    const newState = () => { states.push([]); return states.length - 1; };
+    const add = (from, to, match) => states[from].push({ to, match });
+    const groups = [];
+    let current = 0;
     for (let i = 0; i < pattern.length; i++) {
-        const char = pattern[i];
+        let char = pattern[i];
         if (char === "\\" && i + 1 < pattern.length) {
-            result += literal(pattern[++i]);
+            char = pattern[++i];
+            const next = newState();
+            add(current, next, `literal:${char}`);
+            current = next;
+            continue;
+        }
+        if (char === "{") {
+            const end = newState(), first = newState();
+            groups.push({ start: current, end });
+            add(current, first);
+            current = first;
+            continue;
+        }
+        if (char === "," && groups.length) {
+            const group = groups[groups.length - 1], next = newState();
+            add(current, group.end);
+            add(group.start, next);
+            current = next;
+            continue;
+        }
+        if (char === "}" && groups.length) {
+            const group = groups.pop();
+            add(current, group.end);
+            current = group.end;
             continue;
         }
         if (char === "*") {
-            if (pattern[i + 1] === "*") {
+            const double = pattern[i + 1] === "*";
+            if (double)
                 i++;
-                if ((i === 1 || pattern[i - 2] === "/") && pattern[i + 1] === "/") {
-                    result += "(?:.*/)?";
-                    i++;
-                }
-                else
-                    result += ".*";
+            const next = newState();
+            add(current, next);
+            if (double && (i === 1 || pattern[i - 2] === "/") && pattern[i + 1] === "/") {
+                const loop = newState();
+                add(current, next, "literal:/");
+                add(current, loop, "any");
+                add(loop, loop, "any");
+                add(loop, next, "literal:/");
+                i++;
             }
             else
-                result += "[^/]*";
+                add(current, current, double ? "any" : "segment");
+            current = next;
+            continue;
         }
-        else if (char === "{") {
-            result += "(?:";
-            depth++;
-        }
-        else if (char === "}" && depth) {
-            result += ")";
-            depth--;
-        }
-        else if (char === "," && depth)
-            result += "|";
-        else
-            result += literal(char);
+        const next = newState();
+        add(current, next, `literal:${char}`);
+        current = next;
     }
-    if (depth)
+    if (groups.length)
         throw new Error("Invalid URL glob pattern");
-    return new RegExp(result + "$");
+    const accept = current;
+    const closure = (initial) => {
+        const seen = new Uint8Array(states.length), pending = [...initial], result = [];
+        for (let i = 0; i < pending.length; i++) {
+            const state = pending[i];
+            if (seen[state])
+                continue;
+            seen[state] = 1;
+            result.push(state);
+            for (const edge of states[state])
+                if (edge.match === undefined && !seen[edge.to])
+                    pending.push(edge.to);
+        }
+        return result;
+    };
+    return { test(url) {
+            if (states.length * url.length > 4_000_000)
+                throw new Error("URL glob match exceeds size limit");
+            let active = closure([0]);
+            for (let i = 0; i < url.length; i++) {
+                const next = [];
+                for (const state of active)
+                    for (const edge of states[state]) {
+                        if (edge.match === "any" || (edge.match === "segment" && url[i] !== "/") || edge.match === `literal:${url[i]}`)
+                            next.push(edge.to);
+                    }
+                if (!next.length)
+                    return false;
+                active = closure(next);
+            }
+            return active.includes(accept);
+        } };
 }
 function selectSpecs(values) {
     return (Array.isArray(values) ? values : [values]).map(value => {

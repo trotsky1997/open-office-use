@@ -696,7 +696,7 @@ after dispatch, inspect the page before deciding whether to try again.
 
 `await tab.waitForURL("https://example.com/done")` waits for an exact URL.
 `await tab.waitForURL("**/done")` accepts a full-URL glob: `*` excludes `/`,
-`**` includes it, `{a,b}` selects alternatives, `?` is literal, and `\` escapes special characters.
+`**` includes it, `{a,b}` selects alternatives, `?` is literal, and `\` escapes special characters. Patterns are limited to 4,096 characters; matching also has a size limit.
 `await tab.playwright.waitForURL(/\/done(?:\?|$)/, {waitUntil: "domcontentloaded", timeoutMs: 15000})`
 accepts a regular expression. A synchronous predicate such as
 `await tab.waitForURL(url => url.searchParams.get("status") === "done")` receives a

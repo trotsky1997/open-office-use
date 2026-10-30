@@ -566,3 +566,5 @@ CSS 和语义定位器的 waitFor() 默认等待可见，保留严格匹配及�
 URL 等待与导航预期新增星号 glob，覆盖单星、双星、分组、转义及字面问号；不含星号的字符串继续精确匹配。非法分组在触发导航动作前拒绝。SDK 111 项检查通过；Linux ARM64 Chromium 原生消息实测 history.pushState 路由匹配、分组和查询参数。Windows 未测。
 
 URL 等待和导航预期支持接收 URL 对象的同步布尔条件函数，异常向调用方传播，异步或其他非布尔返回值被拒绝。SDK 111 项检查通过；Linux ARM64 Chromium 原生消息实测 history.pushState、路径与查询参数判断。条件函数在宿主进程运行；Windows 未测。
+
+URL glob 从正则转换改为有限状态匹配，限制模式长度和匹配工作规模，分组分支独立。原先 24 个交错星号与不匹配的输入可触发长时间回溯；SDK 112 项检查覆盖该输入、分支隔离与限制。Linux ARM64 Chromium 原生消息实测 URL glob、查询参数和条件函数；Windows 未测。

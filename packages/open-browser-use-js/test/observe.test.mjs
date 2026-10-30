@@ -1886,3 +1886,13 @@ test('tab ownership loss interrupts event waits',async()=>{
   for(const handler of handlers)handler({method:'onTabOwnershipLost',params:{tabId:7}});
   await assert.rejects(waiting,/ownership changed/);assert.equal(handlers.size,0);
 });
+
+test('URL glob matching handles complex patterns without regex backtracking',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  let href='https://example.test/xxa/b';tab.browser.cdp.readDocumentStateStrict=async()=>({href,readyState:'complete'});
+  await assert.rejects(tab.waitForURL('https://example.test/{*,a/b}',{timeoutMs:0}),/Timed out/);
+  href='https://example.test/a/b';await tab.waitForURL('https://example.test/{*,a/b}',{timeoutMs:0});
+  href='https://example.test/'+ 'a'.repeat(35);await assert.rejects(tab.waitForURL('https://example.test/'+ '*a'.repeat(24)+'b',{timeoutMs:0}),/Timed out/);
+  await assert.rejects(tab.waitForURL('*'.repeat(4097),{timeoutMs:0}),/too long/);
+  href='https://example.test/'+ 'a'.repeat(2000);await assert.rejects(tab.waitForURL('*a'.repeat(1500),{timeoutMs:0}),/size limit/);
+});

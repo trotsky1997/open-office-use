@@ -152,3 +152,4 @@
 - [x] CSS 与语义定位器的 waitFor() 默认等待可见，支持只指定超时；Linux ARM64 Chromium 实页验证两个定位器等待隐藏元素出现。
 - [x] URL 等待和导航预期支持包含星号的全 URL glob，涵盖单星、双星、分组、转义与字面问号；导航动作前验证模式。Linux ARM64 Chromium 原生消息实测 history 路由。
 - [x] URL 等待及导航预期接受同步 URL 条件函数，支持路径、查询参数等匹配；Linux ARM64 Chromium 原生消息实测 history 路由。
+- [x] URL glob 改用有限状态匹配并限制模式与匹配规模，防止复杂星号组合阻塞等待；Linux ARM64 Chromium 原生消息实测路由匹配。
