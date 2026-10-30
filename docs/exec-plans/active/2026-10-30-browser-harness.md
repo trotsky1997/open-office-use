@@ -61,6 +61,7 @@
 - [x] macOS ARM64 隔离 Chromium 141：临时 profile 原生清单和临时复制的 Go host 经 SDK/REPL 完成可信点击、差异、截图与清理。
 - [x] Chrome 与 Electron REPL 共用浏览器状态入口和基于浏览器 ID 的连接；Electron 仅暴露宿主授权 scope。
 - [x] 宿主显式启用时，同一 REPL 发现并按 ID 路由 Electron 和 Chrome；真实 Chrome 原生链路与 host 授权 fixture 验证独立撤销。
+- [x] group、list、listitem、table、row 等结构角色支持作用域；Chromium 和 Electron 验证重复按钮消歧。
 - [x] 语义定位器支持多层容器作用域；跨 Shadow DOM 和 iframe 检查包含关系，输入前重核作用域。
 - [x] 按角色和名称语义定位可交互节点；每次操作重新观察，严格处理重复和不可读取的 frame。
 - [x] 语义定位对尚未出现、暂时遮挡或输入前变化的控件进行有界等待，歧义立即报错；输入已发出后不自动重试。macOS/Linux Chrome 与 macOS Electron 实机验证。

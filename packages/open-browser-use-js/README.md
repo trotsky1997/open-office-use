@@ -158,7 +158,8 @@ await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
 ```
 
 This locator covers the interactive roles exposed by `observe`, including
-accessible frames, plus headings, accessible text, images and dialog roles. The `img` role
+accessible frames, plus headings, accessible text, images, dialogs and
+structural roles such as group, list, listitem, table, row, cell and navigation. The `img` role
 uses the accessibility name, including an image alt attribute when it supplies
 that name. It reobserves on every `count`, `click`, `fill`, or `type`
 call and refuses incomplete frame results. Actions require exactly one match;

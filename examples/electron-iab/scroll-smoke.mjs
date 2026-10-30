@@ -59,6 +59,15 @@ app.whenReady().then(async () => {
     await dialog.hover();
     assert.equal(await evaluate('window.dialogHoverTrusted'),true);
     await evaluate("document.querySelector('dialog').close();document.querySelector('dialog').remove();document.querySelector('#outside-confirm').remove();window.scrollTo(0,0)");
+    await evaluate(`(()=>{const group=document.createElement('section');group.id='products';group.setAttribute('role','group');group.setAttribute('aria-label','Shop');group.innerHTML='<ul aria-label="Products"><li aria-label="Apples"><button>Add</button></li><li aria-label="Pears"><button>Add</button></li></ul>';group.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.listClick={item:i,trusted:e.isTrusted});document.body.append(group)})()`);
+    assert.equal(await sdkTab.playwright.getByRole('button',{name:'Add',exact:true}).count(),2);
+    await sdkTab.playwright.getByRole('group',{name:'Shop',exact:true}).getByRole('list',{name:'Products',exact:true}).getByRole('listitem',{name:'Apples',exact:true}).getByRole('button',{name:'Add',exact:true}).click();
+    assert.deepEqual(await evaluate('window.listClick'),{item:0,trusted:true});
+    await evaluate("document.querySelector('#products').remove();window.scrollTo(0,0)");
+    await evaluate(`(()=>{const table=document.createElement('table');table.id='inventory';table.setAttribute('aria-label','Inventory');table.innerHTML='<thead><tr><th>Item</th><th>Action</th></tr></thead><tbody><tr aria-label="Apples row"><td>Apples</td><td><button>Remove</button></td></tr><tr aria-label="Pears row"><td>Pears</td><td><button>Remove</button></td></tr></tbody>';table.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.tableClick={item:i,trusted:e.isTrusted});document.body.append(table)})()`);
+    await sdkTab.playwright.getByRole('table',{name:'Inventory',exact:true}).getByRole('row',{name:'Pears row',exact:true}).getByRole('button',{name:'Remove',exact:true}).click();
+    assert.deepEqual(await evaluate('window.tableClick'),{item:1,trusted:true});
+    await evaluate("document.querySelector('#inventory').remove();window.scrollTo(0,0)");
     const view = window.contentView.children.find(item => item.webContents && item.webContents !== window.webContents);
     assert.equal(view.webContents.backgroundThrottling,true);
     await call('Input.synthesizeScrollGesture',{x:100,y:100,xDistance:0,yDistance:-250,gestureSourceType:'mouse',preventFling:true});

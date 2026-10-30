@@ -113,3 +113,5 @@ Linux ARM64 Chromium 150 在隔离临时 profile 中复跑真实扩展、原生 
 新增可链式组合的语义定位器，按容器后代范围消除重复匹配；使用 DOM 包含关系穿过 Shadow DOM 和 iframe，输入前重核容器角色、名称及包含关系，聚焦后再次检查。macOS Chromium 验证 closed Shadow DOM 与跨进程 iframe，Electron 验证重复按钮及多层容器。
 
 Linux ARM64 Chromium 150 隔离原生消息链路验证作用域跨 closed Shadow DOM、多层容器及嵌套跨进程 iframe；复用的临时浏览器使用 --no-sandbox。
+
+扩展作用域角色，涵盖分组、列表、表格、导航等可访问结构；macOS/Linux Chromium 与 macOS Electron 验证 group/list/listitem 四层定位，Electron 验证 table/row。Linux 测试使用隔离浏览器和 --no-sandbox。

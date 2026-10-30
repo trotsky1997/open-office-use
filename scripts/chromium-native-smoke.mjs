@@ -38,6 +38,12 @@ try {
  const state=await tab.observe();const button=state.nodes.find(n=>n.role==='button'&&n.name==='Save');assert.ok(button);await tab.click(button.index,state.snapshotId);
  assert.deepEqual(await tab.evaluate('({text:document.querySelector("button").textContent,trusted:window.trusted})'),{text:'Done',trusted:true});
  assert.match((await tab.observe({diff:true})).text,/\+ .*button.*Done/);
+ await tab.evaluate(`(()=>{const group=document.createElement('section');group.id='products';group.setAttribute('role','group');group.setAttribute('aria-label','Shop');group.innerHTML='<ul aria-label="Products"><li aria-label="Apples"><button>Add</button></li><li aria-label="Pears"><button>Add</button></li></ul>';group.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.listClick={item:i,trusted:e.isTrusted});document.body.append(group)})()`);
+ assert.equal(await tab.playwright.getByRole('button',{name:'Add',exact:true}).count(),2);
+ await tab.playwright.getByRole('group',{name:'Shop',exact:true}).getByRole('list',{name:'Products',exact:true}).getByRole('listitem',{name:'Apples',exact:true}).getByRole('button',{name:'Add',exact:true}).click();
+ assert.deepEqual(await tab.evaluate('window.listClick'),{item:0,trusted:true});
+ await tab.evaluate("document.querySelector('#products').remove()");
+
  await tab.evaluate(`(()=>{const d=document.createElement('dialog');d.setAttribute('aria-label','Sign in');d.textContent='Welcome';d.addEventListener('mouseenter',e=>window.dialogHoverTrusted=e.isTrusted);document.body.append(d);d.showModal()})()`);
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).count(),1);
  await tab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).hover();

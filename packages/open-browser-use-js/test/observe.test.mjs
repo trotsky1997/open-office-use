@@ -553,6 +553,8 @@ test('scoped locators disambiguate descendants and recheck the scope before inpu
     if(command==='Accessibility.getFullAXTree')return {nodes:[
       {backendDOMNodeId:10,role:{value:'dialog'},name:{value:scopeName}},
       {backendDOMNodeId:11,role:{value:'dialog'},name:{value:'Beta'}},
+      {backendDOMNodeId:12,role:{value:'list'},name:{value:'Products'}},
+      {backendDOMNodeId:13,role:{value:'listitem'},name:{value:'Apples'}},
       {backendDOMNodeId:20,role:{value:'button'},name:{value:'Save'}},
       {backendDOMNodeId:21,role:{value:'button'},name:{value:'Save'}}
     ]};
@@ -560,7 +562,7 @@ test('scoped locators disambiguate descendants and recheck the scope before inpu
     if(command==='DOM.focus') { if(moveOnFocus)moved=true; return {}; }
     if(command==='Input.dispatchKeyEvent')keys++;
     if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('activeElement')) return {result:{value:true}};
-    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('target===this')) return {result:{value:args.objectId==='10' && args.arguments[0].objectId==='20' && !moved || args.objectId==='11' && args.arguments[0].objectId==='21'}};
+    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('target===this')) return {result:{value:args.objectId==='10' && args.arguments[0].objectId==='20' && !moved || args.objectId==='11' && args.arguments[0].objectId==='21' || args.objectId==='12' && ['13','20'].includes(args.arguments[0].objectId) || args.objectId==='13' && args.arguments[0].objectId==='20'}};
     if(command==='Runtime.callFunctionOn') { if(moveOnMeasure)moved=true; if(renameOnMeasure)scopeName='Renamed'; return {result:{value:{x:10,y:10,width:10,height:10}}}; }
     if(command==='Input.dispatchMouseEvent')mouse++;
     return {};
@@ -569,6 +571,7 @@ test('scoped locators disambiguate descendants and recheck the scope before inpu
   const save=tab.playwright.getByRole('dialog',{name:'Alpha',exact:true}).getByRole('button',{name:'Save',exact:true});
   assert.equal(await tab.playwright.getByRole('button',{name:'Save'}).count(),2);
   assert.equal(await save.count(),1);
+  assert.equal(await tab.playwright.getByRole('list',{name:'Products'}).getByRole('listitem',{name:'Apples'}).getByRole('button',{name:'Save'}).count(),1);
   await save.click(); assert.equal(mouse,2);
   moveOnMeasure=true;
   await assert.rejects(save.click({timeoutMs:0}),/outside scope/);

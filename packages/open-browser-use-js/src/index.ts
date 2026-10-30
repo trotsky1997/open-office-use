@@ -54,6 +54,7 @@ export type SelectOption = string | {value?: string; label?: string};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
+const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 type Observation = { id: string; documentId: number; nodes: ObservedNode[]; guards: Map<number,number[]> };
 class RetryablePreflightError extends Error {}
 
@@ -705,7 +706,7 @@ export class OpenBrowserUseTab {
     if (node.frameChain) await this.validateFrames(node.frameChain);
     const targetSession = node.frameChain?.[0]?.sessionId;
     const targetTree = node.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: node.frameId }, { sessionId: targetSession }) : await this.getAXState();
-    const current = interactiveNodes(targetTree, 0, ["heading", "StaticText", "image", "dialog", "alertdialog"].includes(node.role)).find((item) => item.backendNodeId === node.backendNodeId && item.role === node.role);
+    const current = interactiveNodes(targetTree, 0, supplementalRoles.includes(node.role)).find((item) => item.backendNodeId === node.backendNodeId && item.role === node.role);
     if (!current || current.role !== node.role || current.name !== node.name || current.stateKey !== node.stateKey) throw new RetryablePreflightError("Target changed; observe again");
     await this.verifyLocatorScope(observation,node);
     if (checked !== undefined) {
@@ -767,7 +768,7 @@ export class OpenBrowserUseTab {
           moving(first.geometry.width, second.geometry.width) || moving(first.geometry.height, second.geometry.height) ||
           moving(first.point.x as number, second.point.x as number) || moving(first.point.y as number, second.point.y as number)) throw new RetryablePreflightError("Target is moving; observe again");
       const finalTree = node.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", {frameId:node.frameId}, {sessionId:targetSession}) : await this.getAXState();
-      const finalNode = interactiveNodes(finalTree, 0, ["heading", "StaticText", "image", "dialog", "alertdialog"].includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
+      const finalNode = interactiveNodes(finalTree, 0, supplementalRoles.includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
       if (!finalNode || finalNode.name !== node.name || finalNode.stateKey !== node.stateKey) throw new RetryablePreflightError("Target changed; observe again");
       await this.verifyLocatorScope(observation,node);
       let {point, inputPoint} = second;
@@ -1070,7 +1071,7 @@ export class OpenBrowserUseRoleLocator {
   getByPlaceholder(text: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByPlaceholder(text,options)); }
 
   private needsText(): boolean {
-    return this.roles.some(role => ["heading", "StaticText", "image", "dialog", "alertdialog"].includes(role)) || !!this.scope?.needsText();
+    return this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText();
   }
 
   private async matches(state: InteractiveState): Promise<Array<{node:InteractiveNode; path:number[]}>> {
@@ -1381,7 +1382,7 @@ function frameAncestry(frame: FrameInfo, frames: FrameInfo[]): FrameInfo[] {
 
 function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Array<InteractiveNode & { backendNodeId: number; stateKey: string }> {
   if (!isObject(tree) || !Array.isArray(tree.nodes)) throw new Error("Invalid accessibility tree");
-  const roles = new Set(["button", "link", "checkbox", "radio", "switch", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "option", "combobox", "listbox", "textbox", "searchbox", "slider", "spinbutton", "Date", "DateTime", "InputTime", ...(includeText ? ["heading", "StaticText", "image", "dialog", "alertdialog"] : [])]);
+  const roles = new Set(["button", "link", "checkbox", "radio", "switch", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "option", "combobox", "listbox", "textbox", "searchbox", "slider", "spinbutton", "Date", "DateTime", "InputTime", ...(includeText ? supplementalRoles : [])]);
   const nodes: Array<InteractiveNode & { backendNodeId: number; stateKey: string }> = [];
   const byId = new Map(tree.nodes.filter(isObject).filter(node => typeof node.nodeId === "string").map(node => [node.nodeId, node]));
   const temporalAncestor = (node: {[key:string]:JsonValue}): boolean => {
