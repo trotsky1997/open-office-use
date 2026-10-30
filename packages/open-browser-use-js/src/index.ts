@@ -531,6 +531,7 @@ export class OpenBrowserUseTab {
   readonly id: number;
   readonly playwright: OpenBrowserUseTabPlaywright;
   readonly cua: OpenBrowserUseTabCUA;
+  readonly dom_cua: OpenBrowserUseTabDomCUA;
   readonly dev: OpenBrowserUseTabDev;
   readonly clipboard: OpenBrowserUseTabClipboard;
   #observation?: Observation;
@@ -541,6 +542,7 @@ export class OpenBrowserUseTab {
     this.id = id;
     this.playwright = new OpenBrowserUseTabPlaywright(this);
     this.cua = new OpenBrowserUseTabCUA(this);
+    this.dom_cua = new OpenBrowserUseTabDomCUA(this);
     this.dev = new OpenBrowserUseTabDev(this);
     this.clipboard = new OpenBrowserUseTabClipboard(this);
   }
@@ -957,7 +959,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}): Promise<void | string[]> {
+  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, domIdentity?:{tag:string;role:string | null;name:string | null}): Promise<void | string[]> {
     if (key !== undefined) this.parseKey(key);
     const frame = snapshot.frame;
     if (!frame || !snapshot.ids.includes(id)) throw new RetryablePreflightError("Selector target changed; observe again");
@@ -1083,6 +1085,13 @@ export class OpenBrowserUseTab {
         }
         if (status!=='text') throw new Error("Target is not an editable text field");
       }
+      const verifyDomIdentity=async()=>{
+        if(!domIdentity)return;
+        const result=await this.browser.cdp.call(this.id,'Runtime.callFunctionOn',{objectId,returnByValue:true,functionDeclaration:`function(){if(!this.isConnected)return null;const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role')?.slice(0,200) ?? null,name:name.trim().slice(0,500) || null}}`},{sessionId});
+        const value=isObject(result) && isObject(result.result) ? result.result.value : null;
+        if(!isObject(value) || value.tag!==domIdentity.tag || value.role!==domIdentity.role || value.name!==domIdentity.name)throw new RetryablePreflightError('DOM target changed; observe again');
+      };
+      await verifyDomIdentity();
       this.#observation=undefined;
       const options={sessionId,...(sessionId ? {visualPoint:second.point} : {})};
       inputIssued=true;
@@ -1122,6 +1131,7 @@ export class OpenBrowserUseTab {
           if (moving(second.geometry.x,after.geometry.x) || moving(second.geometry.y,after.geometry.y) || moving(second.geometry.width,after.geometry.width) || moving(second.geometry.height,after.geometry.height) || moving(second.point.x,after.point.x) || moving(second.point.y,after.point.y)) throw new Error("Target moved after the first click; observe again");
           const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after the first click; observe again");
+          await verifyDomIdentity();
           await this.dispatchClick(second.inputPoint,mouse,2,options);
         }
       }
@@ -2110,6 +2120,69 @@ export class OpenBrowserUseTabCUA {
     return this.tab.pressKey(keys.join("+"));
   }
   async get_visible_screenshot(): Promise<OpenBrowserUseImage> { return new OpenBrowserUseImage(await this.tab.getScreenshot()); }
+}
+
+export class OpenBrowserUseTabDomCUA {
+  private snapshot?:CssSnapshot;
+  private ids=new Map<string,{id:number;identity:{tag:string;role:string | null;name:string | null}}>();
+  constructor(private tab:OpenBrowserUseTab) {}
+  async get_visible_dom():Promise<{nodes:Array<{node_id:string;tag:string;role:string | null;name:string | null}>}> {
+    this.snapshot=undefined;this.ids.clear();
+    const step:CssStep={selector:'a[href],button,input,textarea,select,summary,details,label,img,video,audio,[role],[onclick],[contenteditable="true"],[tabindex]',before:[{visible:true}]};
+    const snapshot=await this.tab.queryCss(step);
+    const nodes:Array<{node_id:string;tag:string;role:string | null;name:string | null}>=[];
+    if (!snapshot.frame) throw new RetryablePreflightError('DOM frame unavailable; observe again');
+    const sessionId=snapshot.frame.sessionId;
+    const world=await this.tab.browser.cdp.call(this.tab.id,'Page.createIsolatedWorld',{frameId:snapshot.frame.id,worldName:'open-browser-use-selector'},{sessionId});
+    if(!isObject(world) || typeof world.executionContextId!=='number')throw new RetryablePreflightError('DOM context unavailable; observe again');
+    for(const id of snapshot.ids) {
+      const resolved=await this.tab.browser.cdp.call(this.tab.id,'DOM.resolveNode',{backendNodeId:id,executionContextId:world.executionContextId},{sessionId});
+      const objectId=isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+      if(typeof objectId!=='string')throw new RetryablePreflightError('DOM target changed; observe again');
+      try {
+        const result=await this.tab.browser.cdp.call(this.tab.id,'Runtime.callFunctionOn',{objectId,returnByValue:true,functionDeclaration:`function(){if(!this.isConnected)return null;const r=this.getBoundingClientRect();if(r.right<=0 || r.bottom<=0 || r.left>=innerWidth || r.top>=innerHeight)return {outside:true};const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role'),name:name.trim().slice(0,500) || null}}`},{sessionId});
+        const value=isObject(result) && isObject(result.result) ? result.result.value : null;
+        if(!isObject(value))throw new RetryablePreflightError('DOM target changed; observe again');
+        if(value.outside===true)continue;
+        if(typeof value.tag!=='string' || (value.role!==null && typeof value.role!=='string') || (value.name!==null && typeof value.name!=='string'))throw new RetryablePreflightError('DOM target changed; observe again');
+        const node_id=randomUUID(),identity={tag:value.tag,role:typeof value.role==='string' ? value.role.slice(0,200) : null,name:value.name as string | null};this.ids.set(node_id,{id,identity});nodes.push({node_id,...identity});
+      } finally {await this.tab.browser.cdp.call(this.tab.id,'Runtime.releaseObject',{objectId},{sessionId}).catch(()=>{});}
+    }
+    const fresh=await this.tab.queryCss(step);
+    if(fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids)) {this.ids.clear();throw new RetryablePreflightError('DOM changed; observe again');}
+    this.snapshot=snapshot;return {nodes};
+  }
+  private target(node_id:string):{snapshot:CssSnapshot;id:number;identity:{tag:string;role:string | null;name:string | null}} {
+    const target=this.ids.get(node_id);if(!this.snapshot || !target)throw new Error('Unknown or stale DOM node id');return {snapshot:this.snapshot,...target};
+  }
+  private async clickNode(node_id:string,double:boolean):Promise<void> {
+    const {snapshot,id,identity}=this.target(node_id);this.snapshot=undefined;this.ids.clear();await this.tab.actCss(snapshot,id,false,undefined,undefined,double,undefined,undefined,false,undefined,identity);
+  }
+  click(options:{node_id:string}):Promise<void> { return this.clickNode(options.node_id,false); }
+  double_click(options:{node_id:string}):Promise<void> { return this.clickNode(options.node_id,true); }
+  keypress(options:{keys:string[]}):Promise<void> { return this.tab.cua.keypress(options); }
+  type(options:{text:string}):Promise<void> { return this.tab.cua.type(options); }
+  async scroll(options:{node_id?:string;x:number;y:number}):Promise<void> {
+    let point:{x:number;y:number};
+    if(options.node_id!==undefined) {
+      const {snapshot,id,identity}=this.target(options.node_id);if(await this.tab.readCss(snapshot,id,'visible')!==true)throw new RetryablePreflightError('DOM target is hidden; observe again');
+      const world=await this.tab.browser.cdp.call(this.tab.id,'Page.createIsolatedWorld',{frameId:snapshot.frame!.id,worldName:'open-browser-use-selector'},{sessionId:snapshot.frame?.sessionId});
+      if(!isObject(world) || typeof world.executionContextId!=='number')throw new RetryablePreflightError('DOM context unavailable; observe again');
+      const resolved=await this.tab.browser.cdp.call(this.tab.id,'DOM.resolveNode',{backendNodeId:id,executionContextId:world.executionContextId},{sessionId:snapshot.frame?.sessionId});
+      const objectId=isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+      if(typeof objectId!=='string')throw new RetryablePreflightError('DOM target changed; observe again');
+      try {
+        const result=await this.tab.browser.cdp.call(this.tab.id,'Runtime.callFunctionOn',{objectId,returnByValue:true,arguments:[{value:identity}],functionDeclaration:`function(expected){if(!this.isConnected)return null;const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';if(this.tagName.toLowerCase()!==expected.tag || (this.getAttribute('role')?.slice(0,200) ?? null)!==expected.role || (name.trim().slice(0,500) || null)!==expected.name)return null;const r=this.getBoundingClientRect(),x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;let target=this,root=target.getRootNode();while(true){const hit=root.elementFromPoint(x,y);if(!hit || (hit!==target && !target.contains(hit)))return null;if(!(root instanceof ShadowRoot))return {x,y};target=root.host;root=target.getRootNode()}}`},{sessionId:snapshot.frame?.sessionId});
+        const value=isObject(result) && isObject(result.result) ? result.result.value : null;
+        if(!isObject(value) || typeof value.x!=='number' || typeof value.y!=='number')throw new RetryablePreflightError('DOM target changed; observe again');
+        point={x:value.x,y:value.y};await this.tab.readCss(snapshot,id,'visible');
+      } finally {await this.tab.browser.cdp.call(this.tab.id,'Runtime.releaseObject',{objectId},{sessionId:snapshot.frame?.sessionId}).catch(()=>{});}
+    } else {
+      const metrics=await this.tab.browser.cdp.call(this.tab.id,'Page.getLayoutMetrics');const viewport=isObject(metrics) && isObject(metrics.cssVisualViewport) ? metrics.cssVisualViewport : null;
+      if(!viewport || typeof viewport.clientWidth!=='number' || typeof viewport.clientHeight!=='number')throw new Error('Browser viewport is unavailable');point={x:viewport.clientWidth/2,y:viewport.clientHeight/2};
+    }
+    this.snapshot=undefined;this.ids.clear();await this.tab.scrollAt(point.x,point.y,options.x,options.y);
+  }
 }
 
 export class OpenBrowserUseTabClipboard {

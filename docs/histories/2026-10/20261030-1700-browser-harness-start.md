@@ -285,3 +285,5 @@ locator(selector, options) 现在实际应用 hasText/hasNotText/has/hasNot，�
 语义与 CSS locator 的单击和双击共用鼠标按下/释放路径；按下或释放结果未知时尝试释放同一按钮和修饰键，保留原错误且不重发点击或双击后半段。SDK 66 项通过，故障注入覆盖释放失败与右键 Shift 参数；Linux ARM64 Chromium 原生消息及 Electron 44/Xvfb socket 实页回归通过。释放重试可能发生在页面已响应之后；macOS/Windows 本轮未测。
 
 语义与 CSS locator 新增 downloadMedia，定位首个匹配并在隔离 world 内触发媒体链接下载；使用现有下载等待、scope 授权和操作前重查，失败后不重发。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证链接下载与跨来源拒绝，隔离测试 profile 显式允许自动下载；Electron 44/Xvfb 验证两类 locator、data GIF 和跨进程 frame 实际落盘。HTTP(S) 媒体暂限同来源，重定向与自动下载策略由浏览器处理；macOS/Windows 本轮未测。
+
+新增 tab.dom_cua 主文档和开放 shadow root 可见节点快照、节点单击/双击、焦点输入/按键及节点或视口滚动。节点 ID 绑定快照，点击前重核文本、角色、标签、CSS 匹配、位置及命中；节点动作后失效。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证可信点击、旧 ID 和文本变化拒绝；Electron 44/Xvfb 验证节点点击、焦点输入及滚动。当前仅主 frame，匹配数上限 1000，子 frame 快照仍待实现；macOS/Windows 本轮未测。

@@ -238,6 +238,7 @@ export declare class OpenBrowserUseTab {
     readonly id: number;
     readonly playwright: OpenBrowserUseTabPlaywright;
     readonly cua: OpenBrowserUseTabCUA;
+    readonly dom_cua: OpenBrowserUseTabDomCUA;
     readonly dev: OpenBrowserUseTabDev;
     readonly clipboard: OpenBrowserUseTabClipboard;
     constructor(browser: OpenBrowserUseBrowser, id: number);
@@ -374,6 +375,39 @@ export declare class OpenBrowserUseTabCUA {
         keys: string[];
     }): Promise<void>;
     get_visible_screenshot(): Promise<OpenBrowserUseImage>;
+}
+export declare class OpenBrowserUseTabDomCUA {
+    private tab;
+    private snapshot?;
+    private ids;
+    constructor(tab: OpenBrowserUseTab);
+    get_visible_dom(): Promise<{
+        nodes: Array<{
+            node_id: string;
+            tag: string;
+            role: string | null;
+            name: string | null;
+        }>;
+    }>;
+    private target;
+    private clickNode;
+    click(options: {
+        node_id: string;
+    }): Promise<void>;
+    double_click(options: {
+        node_id: string;
+    }): Promise<void>;
+    keypress(options: {
+        keys: string[];
+    }): Promise<void>;
+    type(options: {
+        text: string;
+    }): Promise<void>;
+    scroll(options: {
+        node_id?: string;
+        x: number;
+        y: number;
+    }): Promise<void>;
 }
 export declare class OpenBrowserUseTabClipboard {
     private tab;
