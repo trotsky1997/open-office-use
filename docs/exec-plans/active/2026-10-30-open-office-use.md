@@ -188,3 +188,5 @@ PowerPoint chart reconciliation now reports incomplete coverage when a mismatche
 Chart cache synchronization can add missing points when saved source values are fully comparable, in XLSX and embedded PPTX chart data. Missing caches and unverified source values remain unsupported.
 
 New PowerPoint chart authoring normalizes axis IDs to positive values, preserving cross-axis references. Column and line chart examples pass OfficeCLI schema validation and LibreOffice rendering.
+
+Chart cache checks and sync handle verified literal blank cells, including filling and clearing points during atomic PowerPoint grid edits. Formula cells with no stored result and blank cells in merged or multi-cell formula ranges stay unverified.

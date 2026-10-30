@@ -263,3 +263,7 @@ Extended XLSX and PowerPoint chart cache synchronization to add missing points f
 ### New slide chart axis IDs
 
 Normalized generated PowerPoint chart axis IDs and cross-references to positive values after OfficeCLI validation revealed invalid negative IDs from the chart library. Verified column and line charts with schema validation and PDF rendering.
+
+### Chart blanks and cache synchronization
+
+Added literal blank-cell comparison and cache point removal to spreadsheet and PowerPoint chart workflows. Validated filling and clearing embedded chart values in atomic revisions, preserving unknown status for uncached formulas and merged ranges, and OfficeCLI validation. Blank rendering depends on chart settings.

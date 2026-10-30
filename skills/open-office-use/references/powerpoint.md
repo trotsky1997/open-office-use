@@ -15,3 +15,5 @@ Use `session_sync_slide_chart_cache` to repair one fully comparable mismatched r
 Use `session_read_slide_chart_grid` and `session_edit_slide_chart_grid` to inspect and edit an embedded workbook using the chart part and source sheet from chart inspection. The edit creates a revision and can leave chart caches and formula results stale; re-inspect, synchronize supported references and review the slides. Shared workbooks can affect multiple charts.
 
 Set `sync_caches: true` on `session_edit_slide_chart_grid` to synchronize fully comparable affected chart references in the same atomic revision. All charts sharing the workbook must be inspected and initially match; unsupported or stale caches cause the edit to fail. Formula freshness remains unknown.
+
+Verified blank cells can be filled or cleared with atomic cache synchronization. Blanks in merged or multi-cell formula ranges and formulas without saved results remain unverified; chart blank display depends on rendering settings.

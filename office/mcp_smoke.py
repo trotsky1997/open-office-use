@@ -83,6 +83,18 @@ async def main():
                 assert not chart_edit.isError and chart_edit.structuredContent['revision'] == 1, chart_edit
                 chart_changed = await session.call_tool('session_inspect_slide_charts', {'directory':str(chart_draft),'revision':1})
                 assert chart_changed.structuredContent['charts'][0]['reconciliation']['status'] == 'match' and chart_edit.structuredContent['synchronized_references'], chart_changed
+                blank_slide = root/'blank-chart.pptx'
+                blank_spec = {'slides':[{'layout':'blank','elements':[{'type':'chart','chart_type':'column','x':1,'y':1,'width':5,'height':3,'categories':['Q1','Q2'],'series':[{'name':'Revenue','values':[100,None]}]}]}]}
+                assert not (await session.call_tool('author_file', {'spec':blank_spec,'output':str(blank_slide)})).isError
+                blank_draft = root/'blank-chart-draft'; assert not (await session.call_tool('start_session', {'directory':str(blank_draft),'source':str(blank_slide)})).isError
+                blank_scan = await session.call_tool('session_inspect_slide_charts', {'directory':str(blank_draft),'revision':0})
+                blank_chart = blank_scan.structuredContent['charts'][0]; assert blank_chart['reconciliation']['status'] == 'match', blank_scan
+                blank_fill = await session.call_tool('session_edit_slide_chart_grid', {'directory':str(blank_draft),'base_revision':0,'part':blank_chart['chart_part'],'sheet':'Sheet1','cell_range':'B3','changes':[{'cell':'B3','value':'125'}],'sync_caches':True})
+                assert not blank_fill.isError and blank_fill.structuredContent['synchronized_references'], blank_fill
+                blank_clear = await session.call_tool('session_edit_slide_chart_grid', {'directory':str(blank_draft),'base_revision':1,'part':blank_chart['chart_part'],'sheet':'Sheet1','cell_range':'B2','changes':[{'cell':'B2','value':''}],'sync_caches':True})
+                assert not blank_clear.isError and blank_clear.structuredContent['synchronized_references'], blank_clear
+                blank_check = await session.call_tool('session_inspect_slide_charts', {'directory':str(blank_draft),'revision':2})
+                assert blank_check.structuredContent['charts'][0]['series'][0]['values'] == [None,125], blank_check
                 diagnostics = await session.call_tool('office_doctor', {})
                 assert not diagnostics.isError and diagnostics.structuredContent['capabilities']['mcp_server'] is True, diagnostics
                 word_source = root / 'search.docx'; search_doc = Document(); search_doc.add_paragraph('find needle'); search_doc.save(word_source)

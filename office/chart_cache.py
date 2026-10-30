@@ -60,7 +60,7 @@ def scan(file):
                 workbook = load_workbook(snapshot, read_only=True, data_only=True, keep_links=False)
                 try:
                     spreadsheet.prepare_shared_strings(workbook, archive)
-                    sheets = {sheet.title: sheet for sheet in workbook.worksheets}; results = []; complete = True; points_read = 0; limit_hit = False
+                    sheets = {sheet.title: sheet for sheet in workbook.worksheets}; results = []; complete = True; points_read = 0; limit_hit = False; constraints = {}
                     # shortcut: inspect 50 chart parts, 100 references and 10,000 source cells; split or inspect larger workbooks separately.
                     for part, kind in chart_parts[:50]:
                         if kind != CHART_TYPE or archive.getinfo(part).file_size > 4 * 1024 * 1024:
@@ -108,12 +108,28 @@ def scan(file):
                             values = []
                             for row in sheets[name].iter_rows(min_row=r1,max_row=r2,min_col=c1,max_col=c2,values_only=False): values.extend(row)
                             values.extend([None] * (count-len(values))); points_read += count
+                            blank_cells = None; protected = None
+                            if any(cell is None or cell.value is None for cell in values):
+                                try:
+                                    if name not in constraints: constraints[name] = spreadsheet.worksheet_constraints(snapshot, name)
+                                    protected = constraints[name]['formula_ranges'] + constraints[name]['merged_ranges']
+                                    cell_range = f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}'
+                                    blank_cells = [cell for row in spreadsheet.read_range(snapshot, name, cell_range)['rows'] for cell in row]
+                                except (ValueError, TypeError, KeyError, OSError, RuntimeError):
+                                    blank_cells = None
                             unknown = 0; compared = 0; mismatches = 0
                             for index, source_cell in enumerate(values[:count]):
                                 value = source_cell.value if source_cell is not None else None
                                 cached = points.get(index); reason = None
-                                if value is None or isinstance(value, bool) or getattr(source_cell, 'data_type', None) == 'e': unknown += 1; continue
-                                if node.tag == C+'numRef':
+                                if value is None:
+                                    col = c1 + (index if r1 == r2 else 0); row = r1 + (index if c1 == c2 else 0)
+                                    blank = blank_cells[index] if blank_cells is not None and index < len(blank_cells) else None
+                                    in_range = protected is None or any(a <= col <= c and b <= row <= d for a,b,c,d in protected)
+                                    if blank is None or blank.get('value') is not None or 'formula' in blank or blank.get('type') == 'e' or in_range:
+                                        unknown += 1; continue
+                                    if cached is not None: reason = 'extra_point'
+                                elif isinstance(value, bool) or getattr(source_cell, 'data_type', None) == 'e': unknown += 1; continue
+                                elif node.tag == C+'numRef':
                                     if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value): unknown += 1; continue
                                     if cached is None: reason = 'missing_point'
                                     elif len(cached) > 256: unknown += 1; continue
@@ -133,7 +149,7 @@ def scan(file):
                                     mismatches += 1
                                     if len(item['mismatches']) < 20:
                                         address = f'{get_column_letter(c1 + (index if r1 == r2 else 0))}{r1 + (index if c1 == c2 else 0)}'
-                                        item['mismatches'].append({'index': index, 'cell': address, 'reason': reason, 'stored_value': str(value)[:500], 'cached_value': cached[:500] if cached is not None else None})
+                                        item['mismatches'].append({'index': index, 'cell': address, 'reason': reason, 'stored_value': str(value)[:500] if value is not None else None, 'cached_value': cached[:500] if cached is not None else None})
                             item.update({'sheet': name, 'range': f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}', 'points': count, 'compared_points': compared,
                                          'unverified_points': unknown, 'mismatch_count': mismatches, 'mismatches_truncated': mismatches > len(item['mismatches']),
                                          'status': 'mismatch' if mismatches else 'unverified' if unknown else 'match'})
@@ -146,7 +162,7 @@ def scan(file):
                     return {'charts': results, 'chart_parts_total': len(chart_parts), 'complete': complete,
                             'mismatch_references': sum(ref['status']=='mismatch' for ref in refs),
                             'missing_caches': sum(ref['status']=='missing_cache' for ref in refs),
-                            'unverified_references': sum(ref['status']=='unverified' for ref in refs), 'source_cells_read': points_read,
+                            'unverified_references': sum(ref['status']=='unverified' or ref.get('unverified_points', 0)>0 for ref in refs), 'source_cells_read': points_read,
                             'notes': ['Comparison uses stored worksheet values; formula caches can be stale.', 'Chart parts may be unreferenced; unsupported chart types and data sources are not fully covered.', 'Blank values, hidden data, formatting and rendering may affect chart behavior.']}
                 finally: workbook.close()
         except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
@@ -154,7 +170,7 @@ def scan(file):
 
 
 def sync(source, output, part, reference, allow_formula_caches=False):
-    """Update or add mismatched cache points from stored worksheet values."""
+    """Synchronize mismatched cache points from stored worksheet values."""
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
     if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx': raise ValueError('Chart cache sync requires XLSX input and output')
     if not isinstance(part, str) or isinstance(reference, bool) or not isinstance(reference, int) or reference < 1:
@@ -203,7 +219,12 @@ def sync(source, output, part, reference, allow_formula_caches=False):
                 points[index] = values[0]
             for index, cell in enumerate(cells):
                 value = cell.get('value'); node_value = points.get(index)
-                if value is None or isinstance(value, bool) or cell.get('type') == 'e' or cell.get('text_complete') is False: raise ValueError('Chart source contains unverified values')
+                if value is None:
+                    if 'formula' in cell or cell.get('type') == 'e': raise ValueError('Chart source contains unverified values')
+                    if node_value is not None:
+                        cache_nodes[0].remove(node_value.getparent()); updated += 1
+                    continue
+                if isinstance(value, bool) or cell.get('type') == 'e' or cell.get('text_complete') is False: raise ValueError('Chart source contains unverified values')
                 old = (node_value.text or '') if node_value is not None else None
                 if node.tag == C+'numRef':
                     if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value) or old is not None and len(old)>256:

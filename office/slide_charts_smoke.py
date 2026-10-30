@@ -90,6 +90,27 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as exc: assert 'outside the inspected charts' in str(exc)
     else: raise AssertionError('Uninspected workbook relationship accepted')
     assert session.info(root_draft)['latest_revision']==0
+    blank_spec={'slides':[{'layout':'blank','elements':[dict(spec['slides'][0]['elements'][0],series=[{'name':'Revenue','values':[100,None]}])]}]}
+    blank_source=root/'blank-chart.pptx'; open_office_use.author(blank_spec,blank_source)
+    blank_draft=root/'blank-chart-draft'; session.start(blank_draft,source=blank_source)
+    blank_chart=session.inspect_slide_charts(blank_draft,0)['charts'][0]
+    assert blank_chart['reconciliation']['status']=='match' and blank_chart['reconciliation']['complete']
+    filled=session.edit_slide_chart_grid(blank_draft,0,blank_chart['chart_part'],'Sheet1','B3',[{'cell':'B3','value':'125'}],True)
+    assert len(filled['synchronized_references'])==1 and session.inspect_slide_charts(blank_draft,1)['charts'][0]['series'][0]['values']==[100,125]
+    cleared=session.edit_slide_chart_grid(blank_draft,1,blank_chart['chart_part'],'Sheet1','B2',[{'cell':'B2','value':''}],True)
+    cleared_chart=session.inspect_slide_charts(blank_draft,2)['charts'][0]
+    assert len(cleared['synchronized_references'])==1 and cleared_chart['reconciliation']['status']=='match' and cleared_chart['series'][0]['values']==[None,125]
+    code, validation, _=officecli_backend.invoke('validate',cleared['file']); assert code==0 and validation['success'],validation
+    merged_blank=root/'merged-blank.pptx'
+    with zipfile.ZipFile(blank_source) as src, zipfile.ZipFile(merged_blank,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename.startswith('ppt/embeddings/') and entry.filename.endswith('.xlsx'):
+                book=load_workbook(io.BytesIO(data)); book.active.merge_cells('B2:B3')
+                buffer=io.BytesIO();book.save(buffer);data=buffer.getvalue()
+            dst.writestr(entry,data)
+    merged_report=slide_charts.inspect(merged_blank)['charts'][0]['reconciliation']
+    assert not merged_report['complete'] and any(ref.get('unverified_points',0)>0 for ref in merged_report['references'])
     mismatch=root/'mismatch.pptx'
     with zipfile.ZipFile(source) as src, zipfile.ZipFile(mismatch,'w') as dst:
         for entry in src.infolist():
@@ -119,7 +140,7 @@ with tempfile.TemporaryDirectory() as tmp:
         for entry in src.infolist():
             data=src.read(entry.filename)
             if entry.filename.startswith('ppt/embeddings/') and entry.filename.endswith('.xlsx'):
-                book=load_workbook(io.BytesIO(data)); book.active['B3']=None
+                book=load_workbook(io.BytesIO(data)); book.active['B3']='=1+1'
                 buffer=io.BytesIO(); book.save(buffer); data=buffer.getvalue()
             dst.writestr(entry,data)
     mixed_chart=slide_charts.inspect(mixed)['charts'][0]['reconciliation']

@@ -926,7 +926,7 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
   document.getElementById('chart-cache-output').textContent=JSON.stringify(result, null, 2);
   const list=document.getElementById('chart-cache-actions');
   for (const chart of result.charts) for (const ref of chart.references) {
-   if (ref.status!=='mismatch' || ref.unverified_points || ref.mismatches_truncated || ref.mismatches.some(m=>!['value_differs','missing_point'].includes(m.reason)) || chart.external_data || chart.extensions_present) continue;
+   if (ref.status!=='mismatch' || ref.unverified_points || ref.mismatches_truncated || ref.mismatches.some(m=>!['value_differs','missing_point','extra_point'].includes(m.reason)) || chart.external_data || chart.extensions_present) continue;
    const row=document.createElement('li'); row.appendChild(document.createTextNode(`${chart.part} · reference ${ref.index} · ${ref.formula} · ${ref.mismatch_count} mismatch(es) `));
    const sync=document.createElement('button'); sync.type='button'; sync.textContent='Sync cache as new revision'; sync.disabled=revision!==current || pinned!==null;
    sync.addEventListener('click', async () => {

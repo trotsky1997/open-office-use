@@ -40,6 +40,17 @@ with tempfile.TemporaryDirectory() as tmp:
     try: session.sync_chart_cache(draft,1,result['charts'][0]['part'],mismatch['index'])
     except ValueError as exc: assert 'conflict' in str(exc)
     else: raise AssertionError('Stale sync accepted')
+    blank_draft=root/'blank-draft'; session.start(blank_draft,source=source)
+    session.edit_grid(blank_draft,0,'Sales Data','B2',[{'cell':'B2','value':''}])
+    blank_scan=session.scan_chart_caches(blank_draft,1); blank_ref=next(ref for ref in blank_scan['charts'][0]['references'] if ref['status']=='mismatch')
+    assert blank_ref['mismatches'][0]['reason']=='extra_point' and blank_ref['unverified_points']==0
+    blank_sync=session.sync_chart_cache(blank_draft,1,blank_scan['charts'][0]['part'],blank_ref['index'])
+    assert blank_sync['updated_points']==1 and session.scan_chart_caches(blank_draft,2)['complete'] and session.scan_chart_caches(blank_draft,2)['mismatch_references']==0
+    blank_fill=session.edit_grid(blank_draft,2,'Sales Data','B2',[{'cell':'B2','value':'15'}])
+    fill_scan=session.scan_chart_caches(blank_draft,3); fill_ref=next(ref for ref in fill_scan['charts'][0]['references'] if ref['status']=='mismatch')
+    assert fill_ref['mismatches'][0]['reason']=='missing_point'
+    session.sync_chart_cache(blank_draft,3,fill_scan['charts'][0]['part'],fill_ref['index'])
+    assert session.scan_chart_caches(blank_draft,4)['mismatch_references']==0
     signed=root/'signed.xlsx'
     with zipfile.ZipFile(changed['file']) as before,zipfile.ZipFile(signed,'w') as after:
         for entry in before.infolist(): after.writestr(entry,before.read(entry))
@@ -91,6 +102,18 @@ with tempfile.TemporaryDirectory() as tmp:
     else: raise AssertionError('Extended chart sync accepted')
     assert chart_cache.parse_reference("'O''Brien!Data'!$A$1:$A$2")[0]=="O'Brien!Data"
     assert chart_cache.parse_reference('Sheet!A1:B2') is None
+    mixed_source=root/'mixed-formula.xlsx'; mixed_book=xlsxwriter.Workbook(str(mixed_source)); mixed_sheet=mixed_book.add_worksheet('Calc')
+    mixed_sheet.write_formula('A1','=1+1',None,''); mixed_sheet.write_number('A2',20)
+    mixed_chart=mixed_book.add_chart({'type':'column'}); mixed_chart.add_series({'values':'=Calc!$A$1:$A$2'}); mixed_sheet.insert_chart('D2',mixed_chart); mixed_book.close()
+    mixed_stale=root/'mixed-formula-stale.xlsx'
+    with zipfile.ZipFile(mixed_source) as before,zipfile.ZipFile(mixed_stale,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/charts/chart1.xml':
+                tree=etree.fromstring(data); points=tree.findall('.//'+C+'numRef/'+C+'numCache/'+C+'pt'); next(p for p in points if p.get('idx')=='1').find(C+'v').text='9'; data=etree.tostring(tree)
+            after.writestr(entry,data)
+    mixed_scan=chart_cache.scan(mixed_stale)
+    assert not mixed_scan['complete'] and mixed_scan['mismatch_references']==1 and mixed_scan['unverified_references']==1, mixed_scan
     formula_source=root/'formula.xlsx'; book=xlsxwriter.Workbook(str(formula_source)); sheet=book.add_worksheet('Calc'); sheet.write_formula('A1','=5+5',None,10); sheet.write_number('A2',20)
     chart=book.add_chart({'type':'column'}); chart.add_series({'values':'=Calc!$A$1:$A$2'}); sheet.insert_chart('D2',chart); book.close()
     stale=root/'formula-stale.xlsx'
