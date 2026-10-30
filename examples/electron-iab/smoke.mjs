@@ -249,6 +249,10 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
       assert.equal(await evaluate(a.id,'window.crossMessages.length'),messageCount+1);
       assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-click',trusted:true});
       assert.equal((await run('nodeRepl.emitImage(await tab.getScreenshot())')).content[0].type, 'image');
+      assert.equal((await run(`const tab = browser.tab(${a.id}); class Again {}\n(() => nodeRepl.write(tab.id))()`)).content[0].text,String(a.id));
+      assert.equal((await repl.callTool('js_reset',{})).isError,undefined);
+      assert.equal((await run('typeof tab')).content[0].text,"'undefined'");
+      assert.equal((await run('const browser = await agent.browsers.get("iab"); nodeRepl.write((await browser.getTabs()).length > 0)')).content[0].text,'true');
       repl.revoke();
       assert.equal((await run('await browser.getTabs()')).isError, true);
     } catch (error) { await repl.close().catch(() => {}); throw error; }

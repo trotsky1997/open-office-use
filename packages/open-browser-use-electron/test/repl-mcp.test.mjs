@@ -34,6 +34,10 @@ for (const transport of ['private', 'socket']) test(`IAB REPL uses a host-author
     const run = code => mcp.callTool('js', {code});
     assert.equal((await run('const browser = await connectBrowser(); const tab = await browser.newTab()')).isError, undefined);
     assert.equal((await run('nodeRepl.write(tab.id)')).content[0].text, '42');
+    assert.equal((await run('const tab = browser.tab(42); class Again {}\n(() => nodeRepl.write(tab.id))()')).content[0].text,'42');
+    assert.equal((await mcp.callTool('js_reset',{})).isError,undefined);
+    assert.equal((await run('typeof tab')).content[0].text,"'undefined'");
+    assert.equal((await run('const browser = await connectBrowser(); const tab = browser.tab(42); nodeRepl.write(tab.id)')).content[0].text,'42');
     assert.equal(calls[0].scope, 'task');
     assert.equal(calls[0].params.session_id, 'task');
     assert.equal((await run('nodeRepl.write((await getBrowserState()).available[0].kind)')).content[0].text,'embedded');

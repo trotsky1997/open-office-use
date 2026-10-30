@@ -55,6 +55,7 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     assert.equal((await js("const value = await Promise.resolve(1); let {x: item} = {x: 2}; class Box { static value = 3 } ")).isError,undefined);
     assert.equal((await js("const value = 4; let {x: item} = {x: 5}; class Box { static value = 6 } ")).isError,undefined);
     assert.equal((await js("nodeRepl.write([value,item,Box.value])")).content[0].text,"[ 4, 5, 6 ]");
+    assert.equal((await js("class Next {}\n(() => nodeRepl.write('next'))()")).content[0].text,"next");
     assert.equal((await js("{ let value = 9; nodeRepl.write(value) } ")).content[0].text,"9");
     assert.equal((await js("nodeRepl.write(value)")).content[0].text,"4");
     assert.equal((await js("const duplicate = 1; const duplicate = 2")).isError,true);

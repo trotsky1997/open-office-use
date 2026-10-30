@@ -159,7 +159,10 @@ function redeclarableSource(code:string):string {
   const edits:Array<{start:number;end:number;text:string}>=[];
   for(const node of program.body) {
     if(node.type==="VariableDeclaration" && (node.kind==="let" || node.kind==="const")) edits.push({start:node.start,end:node.start+node.kind.length,text:"var"});
-    if(node.type==="ClassDeclaration" && node.id) edits.push({start:node.start,end:node.start,text:`var ${node.id.name} = `});
+    if(node.type==="ClassDeclaration" && node.id) {
+      edits.push({start:node.start,end:node.start,text:`var ${node.id.name} = `});
+      edits.push({start:node.end,end:node.end,text:";"});
+    }
   }
   for(const edit of edits.reverse())code=code.slice(0,edit.start)+edit.text+code.slice(edit.end);
   return code;

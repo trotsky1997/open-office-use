@@ -401,3 +401,5 @@ URL 与加载状态检查改用主 frame 的隔离 world，避免页面脚本篡
 持久 JavaScript MCP 新增 js_reset，清空绑定并恢复浏览器帮助对象，已连接的浏览器会话与标签保留；执行仍活跃时拒绝重置。SDK 88 项通过；隔离 Linux ARM64 Chromium 原生扩展通过绑定清除、重新发现同一标签及继续操作。后台任务不会被取消，同步阻塞仍需重启 MCP；Electron 与 Windows 本轮未测。
 
 持久 JavaScript MCP 用 Acorn 识别顶层 const/let 与具名 class 声明并转为可重复声明的绑定；块级作用域保持原样，同一段代码中的重复声明仍报错。顶层变量可被重新赋值，解析失败时交由原 Node REPL 处理。SDK 88 项通过；隔离 Linux ARM64 Chromium 验证重复绑定后复用浏览器标签，打包并在独立 npm 目录验证运行时依赖导入。Electron 与 Windows 本轮未测。
+
+修复 REPL 类声明转换后相邻括号表达式被误当成调用的问题，并补充边界回归；SDK 88 项、Electron 52 项通过。macOS Electron 44.7 真宿主通过私有通道与 socket 的重复绑定、类语句、重置与标签复用；完整 example smoke 在早期后台输入返回 IAB_INPUT_OUTCOME_UNKNOWN，未到达 REPL 检查。Windows 未测。
