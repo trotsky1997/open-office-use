@@ -202,6 +202,7 @@ def main():
     slide_search = commands.add_parser('search-slides'); slide_search.add_argument('file'); slide_search.add_argument('--query', required=True); slide_search.add_argument('--slide', type=int); slide_search.add_argument('--offset', type=int, default=0); slide_search.add_argument('--snapshot-sha256'); slide_search.add_argument('--scope', choices=('slides', 'notes'), default='slides')
     note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
+    external_read = commands.add_parser('external-links'); external_read.add_argument('file')
     slide_text_read = commands.add_parser('inspect-slide-text'); slide_text_read.add_argument('file')
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
     render_command = commands.add_parser('render'); render_command.add_argument('file'); render_command.add_argument('--out-dir', required=True)
@@ -256,6 +257,7 @@ def main():
     session_changes = sub.add_parser('tracked-changes'); session_changes.add_argument('directory'); session_changes.add_argument('--revision', type=int, required=True)
     session_stories = sub.add_parser('stories'); session_stories.add_argument('directory'); session_stories.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
+    session_external = sub.add_parser('external-links'); session_external.add_argument('directory'); session_external.add_argument('--revision', type=int, required=True)
     session_slide_text = sub.add_parser('inspect-slide-text'); session_slide_text.add_argument('directory'); session_slide_text.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True); session_calc.add_argument('--allow-dynamic-arrays', action='store_true')
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
@@ -354,6 +356,8 @@ def main():
                 result = session.inspect_slide_text(args.directory, args.revision, render)
             elif args.action == 'inspect-layout':
                 result = session.inspect_layout(args.directory, args.revision)
+            elif args.action == 'external-links':
+                result = session.external_relationships(args.directory, args.revision)
             elif args.action == 'recalculate':
                 result = session.recalculate(args.directory, args.base, args.allow_dynamic_arrays)
             elif args.action == 'scan-formulas':
@@ -398,6 +402,8 @@ def main():
             result = slide_text_check.scan(args.file, render)
         elif args.command == 'inspect-layout':
             result = layout.inspect(args.file)
+        elif args.command == 'external-links':
+            result = review.external_relationships(args.file)
         elif args.command == 'author':
             with open(args.spec, encoding='utf-8') as f:
                 spec = json.load(f)

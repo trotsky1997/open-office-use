@@ -7,6 +7,7 @@ from pathlib import Path
 
 import layout
 import notes
+import review
 import chart_cache
 import officecli_backend
 import spreadsheet
@@ -37,6 +38,10 @@ def create(source, destination, render, revision=None):
                 report['checks'][name] = {'status': 'error', 'error_type': type(exc).__name__, 'error': str(exc)[:2000]}; return None
         audit = check('officecli_audit', lambda: officecli_backend.audit(snapshot))
         flags = []
+        external = check('external_relationships', lambda: review.external_relationships(snapshot))
+        if external is not None:
+            if external['external_count']: flags.append('external_relationships_present')
+            if not external['complete'] or external['truncated'] or external['fields_truncated']: flags.append('external_relationships_incomplete')
         if audit is not None:
             if audit['validation']['exit_code'] != 0 or audit['validation']['result'].get('success') is not True:
                 flags.append('schema_validation_failed')

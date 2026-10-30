@@ -134,3 +134,7 @@ A real PPTX was authored through OfficeCLI, rendered and inspected. Slide layout
 The viewer lists small-text candidates and highlights their visible object geometry, with separate font-size coverage status. Table candidates highlight the full table; hidden-slide and page-mapping restrictions remain.
 
 Font-size inspection also uses explicit paragraph default run sizes when a run has no direct size, with direct run settings taking precedence and `size_source` identifying the source. Theme, list-style and layout/master inheritance still require review.
+
+## External relationship inventory
+
+CLI, MCP and revision-aware inspection report bounded OPC external relationships without network access, and review bundles flag their presence or incomplete output. Targets may contain sensitive information. Formulas, field codes, embedded documents and indirect references require separate inspection.

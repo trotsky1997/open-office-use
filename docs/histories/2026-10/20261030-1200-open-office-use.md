@@ -187,3 +187,7 @@ Connected small-text candidates to the layout viewer list, coverage status and v
 ### Paragraph-default font sizes
 
 Extended PowerPoint small-text review to paragraph `defRPr` sizes when the run lacks a direct size. Candidates include their source, with direct runs taking precedence. Tested mixed run sizes, tables and unresolved inheritance using real PPTX files and the review bundle. Theme and layout/master inheritance remain outside the scan.
+
+### External relationship inspection
+
+Added bounded, snapshot-bound external OPC relationship inventory across DOCX, XLSX and PPTX through CLI, MCP, session revisions and review bundles. Verified real hyperlinks in all three formats, revision identity, malformed relationship XML and review flags. Targets are not contacted; indirect references outside OPC relationships remain outside scope.

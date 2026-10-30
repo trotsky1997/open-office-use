@@ -12,6 +12,8 @@ from openpyxl.utils.cell import get_column_letter, range_boundaries
 import officecli_backend
 import spreadsheet
 import notes
+import ooxml
+import snapshot as snapshots
 
 
 def part_hashes(file):
@@ -30,6 +32,61 @@ def part_hashes(file):
                     digest.update(chunk)
             hashes[entry.filename] = digest.hexdigest()
         return hashes
+
+
+def external_relationships(file):
+    """Inventory external OPC relationships without opening their targets."""
+    source = Path(file).resolve(strict=True)
+    if source.suffix.lower() not in ('.docx', '.xlsx', '.pptx'):
+        raise ValueError('External relationship inspection requires DOCX, XLSX or PPTX')
+    with tempfile.TemporaryDirectory(prefix='office-external-') as tmp:
+        snapshot, digest = snapshots.copy(source, tmp)
+        with zipfile.ZipFile(snapshot) as archive:
+            entries = [item for item in archive.infolist() if not item.is_dir()]
+            if len(entries) > 5000 or sum(item.file_size for item in entries) > 128 * 1024 * 1024 or len({item.filename for item in entries}) != len(entries):
+                raise ValueError('Office package exceeds limits or contains duplicate parts')
+            if not {'[Content_Types].xml', '_rels/.rels'} <= {item.filename for item in entries}:
+                raise ValueError('Office package is missing required metadata')
+            rels = [item for item in entries if item.filename.endswith('.rels') and (item.filename.startswith('_rels/') or '/_rels/' in item.filename)]
+            namespace = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+            results, issues = [], []
+            external_count = relationships_scanned = issue_count = 0
+            stop = False
+            def issue(part, reason):
+                nonlocal issue_count
+                issue_count += 1
+                if len(issues) < 200: issues.append({'part': part, 'reason': reason})
+            for entry in rels:
+                try:
+                    root = ooxml.parse_xml(archive.read(entry)).getroot()
+                    if root.tag != namespace + 'Relationships': raise ValueError('unexpected_root')
+                except (ooxml.etree.XMLSyntaxError, ValueError):
+                    issue(entry.filename, 'invalid_relationship_xml'); continue
+                ids = set()
+                for item in root:
+                    if relationships_scanned >= 100000:
+                        issue(entry.filename, 'relationship_limit'); stop = True; break
+                    relationships_scanned += 1
+                    if item.tag != namespace + 'Relationship':
+                        issue(entry.filename, 'unsupported_relationship_element'); continue
+                    identifier, kind, target, mode = item.get('Id'), item.get('Type'), item.get('Target'), item.get('TargetMode')
+                    if not identifier or identifier in ids or not kind or not target:
+                        issue(entry.filename, 'invalid_or_duplicate_relationship')
+                    if identifier: ids.add(identifier)
+                    if mode not in (None, 'Internal', 'External'):
+                        issue(entry.filename, 'unknown_target_mode'); continue
+                    if mode == 'External':
+                        external_count += 1
+                        if len(results) < 200:
+                            values = {'relationship_part': entry.filename, 'id': identifier, 'type': kind, 'target': target}
+                            results.append({**{key: value[:1000] if value is not None else None for key, value in values.items()},
+                                            'truncated_fields': [key for key, value in values.items() if value is not None and len(value) > 1000]})
+                if stop: break
+            return {'snapshot_sha256': digest, 'relationship_parts': len(rels), 'relationships_scanned': relationships_scanned,
+                    'external_count': external_count, 'relationships': results, 'truncated': external_count > len(results),
+                    'fields_truncated': any(item['truncated_fields'] for item in results),
+                    'complete': issue_count == 0, 'issue_count': issue_count, 'issues': issues, 'issues_truncated': issue_count > len(issues),
+                    'scope': 'OPC external relationships; formulas, field codes, embedded documents and other indirect references are excluded.'}
 
 
 def compare(before, after):

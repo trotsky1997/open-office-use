@@ -61,6 +61,18 @@ def inspect_file(file: str) -> dict[str, Any]:
 
 
 @server.tool()
+def inspect_external_relationships(file: str) -> dict[str, Any]:
+    """List bounded external OPC relationships from a saved file without opening targets."""
+    return review.external_relationships(file)
+
+
+@server.tool()
+def session_inspect_external_relationships(directory: str, revision: int) -> dict[str, Any]:
+    """List external OPC relationships in a session revision without opening targets."""
+    return session.external_relationships(directory, revision)
+
+
+@server.tool()
 def session_inspect_workbook(directory: str, revision: int) -> dict[str, Any]:
     """Inspect a bounded sparse sample of an exact XLSX session revision."""
     return session.inspect_workbook(directory, revision)
