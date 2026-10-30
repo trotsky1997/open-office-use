@@ -90,10 +90,14 @@ untrusted page data. The scope option defaults to false and cannot be changed
 after the scope is created. A tool invocation may have taken effect if its
 result times out or the grant is revoked, so inspect the page before retrying.
 
-Popup contents are attached after the popup is created. Their bridge is installed
-lazily on first use, so tools registered only during initial popup load may be
-unavailable. The bridge runs in the main document; child-frame tools are not
-included. Tool errors are reduced to scoped error codes across the socket.
+For the standard Electron adapter, opted-in tabs and popups install a sandboxed
+preload that initializes the page bridge before page scripts run. Custom
+`IabRuntime` adapters must supply `webMcpPreload` and honor the `webmcp`
+argument to `createView` to provide the same popup behavior. The preload uses
+Electron's experimental `contextBridge.executeInMainWorld`; Electron 44 is
+covered by the real-page check. The bridge reports tools from the main document;
+child-frame tools are not included. Tool errors are reduced to scoped error
+codes across the socket.
 
 ## Explicit file upload authorization
 

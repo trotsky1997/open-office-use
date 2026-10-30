@@ -11,7 +11,8 @@ import { FeedbackController, type VisualFeedbackOptions } from './feedback.js';
 import { webMcpSource } from './webmcp-source.js';
 
 export type ElectronAdapter = {
-  createView(session: Session, contents?: WebContents): WebContentsView;
+  createView(session: Session, contents?: WebContents, webmcp?:boolean): WebContentsView;
+  webMcpPreload?:string;
   createSession(partition: string): Session;
   clipboard?: {
     readText(): Promise<string>;
@@ -137,7 +138,7 @@ export class IabRuntime implements Backend {
     if (scope.tabs.size >= 32 || this.tabsById.size >= 128) throw new Error('IAB_TAB_LIMIT');
     const profile = this.profileSessions.get(scope.profileId)!;
     if (contents && contents.session !== profile) throw new Error('Popup profile mismatch');
-    const view = this.adapter.createView(profile, contents);
+    const view = this.adapter.createView(profile, contents, scope.webmcp);
     view.setBounds({ x: 0, y: 0, width: 800, height: 600 }); view.setVisible(false);
     const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, webMcpReady:false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
     scope.tabs.set(tab.id, tab); this.tabsById.set(tab.id, tab);
@@ -192,7 +193,7 @@ export class IabRuntime implements Backend {
     wc.setWindowOpenHandler(details => {
       try { assertUrl(details.url); } catch { return { action: 'deny' }; }
       if (!this.hasScope(scopeId) || scope.tabs.size >= 32 || this.tabsById.size >= 128) return { action: 'deny' };
-      return { action: 'allow', createWindow: options => {
+      return { action: 'allow', ...(scope.webmcp && this.adapter.webMcpPreload ? {overrideBrowserWindowOptions:{webPreferences:{preload:this.adapter.webMcpPreload}}} : {}), createWindow: options => {
         // Electron internally supplies a precreated WebContents for some popup
         // dispositions; preserve it when present to retain opener semantics.
         const contents = (options as typeof options & { webContents?: WebContents }).webContents;

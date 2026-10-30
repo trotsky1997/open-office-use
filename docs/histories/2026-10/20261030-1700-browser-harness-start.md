@@ -309,3 +309,5 @@ DOM CUA 节点摘要加入关联 label、aria-labelledby、控件类型、禁用
 JS SDK 增加 browser/tab capabilities.list/get 和 WebMCP 高层工具列表/调用，复用 Chrome 的功能开关、标签归属和 registration_id 快照校验，工具调用不重放。SDK 70 项通过；Linux ARM64 Chromium 原生消息验证页面注册、调用和重新列举后旧 ID 失效；Electron 44/Xvfb 验证 WebMCP 未提供时明确拒绝。Electron WebMCP 尚未实现，macOS/Windows 本轮未测。
 
 Electron scope 新增默认关闭的 webmcp 选项，复用 Chrome 页面桥接源码，在新建标签导航前安装；page.control 授权的 scope 可发现并调用当前页面工具，注册快照变化或导航后旧 ID 失效，排队调用在授权撤销后不执行。SDK 70 项和 Electron 50 项检查通过；Linux ARM64 Electron 44/Xvfb 实页验证启动脚本注册、调用、重新列举和导航失效。Popup 在初次使用时安装桥，初始加载注册的工具可能不可用；子 frame 工具、macOS/Windows 本轮未测。
+
+Electron WebMCP opt-in scope 为标准 adapter 的标签和 popup 配置 sandbox preload，在页面脚本前通过 contextBridge 初始化桥；未启用的 scope 不配置 preload。Electron 51 项检查通过，Linux ARM64 Electron 44/Xvfb 实测 popup 初始脚本注册工具、发现及调用。使用实验性 executeInMainWorld，自定义 adapter 需接入 preload，子 frame 工具及 macOS/Windows 本轮未测。

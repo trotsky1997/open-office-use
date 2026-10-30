@@ -32,6 +32,13 @@ test('WebMCP is scope opt-in, installed before navigation and respects revocatio
   const waiting=runtime.dispatch('web','webmcp_list_tools',{tabId:tab.id},['page.control'],()=>allowed);const rejected=assert.rejects(waiting,/AUTH_REVOKED/);allowed=false;release({result:{value:true}});await blocked;await rejected;assert.equal(bridgeCalls,0);
 });
 
+test('WebMCP popup preload is scoped and preserves disabled scopes',async t=>{
+  const {runtime,adapter,a}=setup(t);adapter.webMcpPreload='/tmp/fixture-preload.cjs';const plain=await a.tabs.create();
+  const plainHandler=adapter.views[0].webContents.popup({url:'https://fixture.test/'});assert.equal(plainHandler.overrideBrowserWindowOptions,undefined);
+  const web=runtime.scopes.open({id:'popup-web',profileId:'work',webmcp:true});await web.tabs.create();const handler=adapter.views.at(-1).webContents.popup({url:'https://fixture.test/'});
+  assert.equal(handler.overrideBrowserWindowOptions.webPreferences.preload,'/tmp/fixture-preload.cjs');assert.equal(typeof handler.createWindow,'function');
+});
+
 test('file chooser requires a scoped grant and explicit file authorization', async t => {
   const {runtime,adapter,a,b}=setup(t), tab=await a.tabs.create();
   const dir=await mkdtemp(join(tmpdir(),'obu-upload-test-'));t.after(()=>rm(dir,{recursive:true,force:true}));
