@@ -28,6 +28,8 @@ office-use inspect hello.docx
 
 Output paths must be new. The `doctor` report identifies optional system dependencies: OfficeCLI for structured operations, LibreOffice for PDF rendering, and Poppler for page images and selected-text extraction. Install those separately for the workflows you need. See [installation and usage](office/README.md) for commands and format-specific limits.
 
+For a complete cross-format example, see [Quarterly review](examples/quarterly-review/README.md): one dataset generates a Word report, an Excel workbook, a PowerPoint deck and PDF previews.
+
 ## Agent setup
 
 Install the skill separately:

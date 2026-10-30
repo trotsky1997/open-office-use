@@ -431,3 +431,5 @@ Extended PowerPoint navigation inventory to text-run and hover actions and kept 
 Added internal slide navigation to authored rich text runs, including table cells and source-deck forward references.
 
 Extended snapshot-bound slide navigation editing to regular text runs in shapes and table cells.
+
+Added a runnable quarterly review example that generates a report, workbook, presentation and PDF previews from a shared dataset. Visually reviewed the LibreOffice pages and checked output schemas and consistent values.

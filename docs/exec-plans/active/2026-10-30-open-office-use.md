@@ -328,3 +328,5 @@ PowerPoint navigation inspection covers regular text-run and shape click/hover l
 Rich PowerPoint text runs, including table cells, can be authored with internal slide jumps. Targeted text replacement and slide reordering retain the destination, and LibreOffice PDF export resolved a run jump to the destination page. Native PowerPoint validation remains outstanding.
 
 Existing regular text-run slide jumps can be set or removed through snapshot-bound session, CLI, MCP and viewer paths, including table cells. External and complex actions remain protected.
+
+Added a reproducible cross-format quarterly review example using a shared illustrative dataset. OfficeCLI validation and LibreOffice PDF previews cover the generated DOCX, XLSX and PPTX; the workbook print range was adjusted after visual review. Native Office and real-world source-file preservation remain open.
