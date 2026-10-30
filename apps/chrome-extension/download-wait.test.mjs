@@ -310,3 +310,22 @@ test('moving an active tab clears the old session cursor and persisted active ta
     backend.activeTabsBySession.set('b',7);assert.equal(backend.readCursorOverlayState(7).sessionId,'b');
   } finally {chrome.tabs=oldTabs;}
 });
+
+test('cancelled chooser wait does not attach a debugger after delayed authorization',async()=>{
+  const backend=new Backend();await backend.store.ready;let release,calls=0,checks=0;
+  backend.requireSessionTab=async()=>{if(++checks===2)await new Promise(resolve=>{release=resolve;});};
+  const previous=chrome.debugger.attach;chrome.debugger.attach=async()=>{calls++;};
+  try {
+    const controller=new AbortController(),pending=backend.waitForFileChooser({session_id:'owner',tabId:7},controller.signal);
+    while(!release)await new Promise(resolve=>setImmediate(resolve));controller.abort();release();
+    await assert.rejects(pending,/cancelled/);assert.equal(calls,0);assert.equal(backend.attachedTabs.has(7),false);
+  } finally {chrome.debugger.attach=previous;}
+});
+
+test('closing the active tab clears its cursor state and keeps its close owner',async()=>{
+  const previous=chrome.tabs;let removed;chrome.tabs={onRemoved:{addListener(callback){removed=callback;}}};
+  try {
+    const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1,activeTabId:7};backend.sessionByTabId.set(7,'a');backend.activeTabsBySession.set('a',7);backend.cursorByTabId.set(7,{visible:true,x:1,y:2});
+    removed(7);assert.equal(backend.activeTabsBySession.has('a'),false);assert.equal(backend.store.state.sessions.a.activeTabId,null);assert.equal(backend.cursorByTabId.has(7),false);assert.equal(backend.takeClosedOwner(7),'a');
+  } finally {chrome.tabs=previous;}
+});

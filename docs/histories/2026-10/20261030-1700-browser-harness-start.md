@@ -580,3 +580,5 @@ JavaScript 对话框监听在附着前记录标签生命周期，Page.enable 前
 记录 JavaScript 对话框事件中的 frameId；来源 frame 脱离后暴露 frameDetached，并拒绝 SDK 发送 accept/dismiss。SDK 117 项检查通过；隔离 Linux ARM64 Chromium 153 跨进程 frame 实测标记及决定拒绝，随后关闭该标签时浏览器进程仍崩溃，完整恢复路径尚未验证。Windows 未测。
 
 文件选择等待的超时包含 frame 准备与后端注册，下载注册也受期限约束；超时取消挂起请求并释放就绪监听，准备完成后使用剩余等待时间。SDK 118 项检查通过；Linux ARM64 Chromium 原生消息注入 frame 准备延迟，确认超时信号传播，随后注册文件选择并完成真实上传。已派发的浏览器准备命令可能完成；Windows 未测。
+
+Chrome 文件选择等待向调试器附着传播取消信号，授权延迟返回后复核取消；活动标签关闭时清除旧活动标签及鼠标缓存，关闭事件仍按原归属路由。扩展 50 项检查通过；Linux ARM64 Chromium 原生消息注入授权延迟，确认取消信号到达扩展后不会迟到附着，关闭标签后旧活动状态清除。取消传播与浏览器派发之间存在竞态；Windows 未测。

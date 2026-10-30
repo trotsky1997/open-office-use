@@ -359,6 +359,11 @@ class BrowserBackend {
     chrome.tabs?.onRemoved?.addListener((tabId) => {
       this.tabGroupRevisions.set(tabId, ++this.groupRevision);
       if (this.downloadStartWait?.tabId === tabId) this.downloadStartWait.controller.abort();
+      const owner=this.sessionByTabId.get(tabId) ?? this.pendingUngrouped.get(tabId)?.sessionId;
+      if (this.activeTabsBySession.get(owner) === tabId) this.activeTabsBySession.delete(owner);
+      const session=this.store.state.sessions[owner];
+      if (session?.activeTabId === tabId) { session.activeTabId=null; void this.store.save().catch(() => {}); }
+      this.cursorByTabId.delete(tabId);
     });
     chrome.tabs?.onUpdated?.addListener((tabId, change) => {
       if (typeof change.groupId === "number") this.handleTabGroupChange(tabId, change.groupId);
@@ -812,7 +817,7 @@ class BrowserBackend {
     check(); await this.requireSessionTab(params, "waitForFileChooser"); check();
     const tabId = requireTabId(params, "waitForFileChooser");
     if (!this.attachedTabs.has(tabId)) {
-      await this.attach(params);
+      await this.attach(params, signal);
     }
     check();
     const timeoutMs =
