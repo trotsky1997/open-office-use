@@ -410,10 +410,11 @@ async def main():
                 assert not stale_dynamic.isError and stale_dynamic.structuredContent['revision'] == 1 and stale_dynamic.structuredContent['latest_revision'] == 2 and stale_dynamic.structuredContent['stale'] is True, stale_dynamic
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
                 assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1 and saved_grid.structuredContent['formula_cache_effect'] == 'may_be_stale' and saved_grid.structuredContent['recalculation_requested'], saved_grid
-                styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True, 'italic': True, 'font_color': '336699', 'horizontal': 'center', 'wrap': True}})
+                styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True, 'italic': True, 'font_color': '336699', 'horizontal': 'center', 'wrap': True, 'border': 'thin', 'border_color': '336699'}})
                 assert not styled.isError and styled.structuredContent['revision'] == 2 and styled.structuredContent['formula_cache_effect'] == 'preserved', styled
                 styled_cell = load_workbook(grid_draft / 'revision-000002.xlsx').active['A1']
                 assert styled_cell.font.i and styled_cell.font.color.rgb[-6:] == '336699' and styled_cell.alignment.horizontal == 'center' and styled_cell.alignment.wrap_text
+                assert styled_cell.border.top.style == 'thin' and styled_cell.border.top.color.rgb[-6:] == '336699'
                 format_diff = await session.call_tool('compare_cells', {'before': str(grid_draft / 'revision-000001.xlsx'), 'after': str(grid_draft / 'revision-000002.xlsx'), 'sheet': 'Sheet', 'cell_range': 'A1:A2'})
                 assert not format_diff.isError and 'format.font' in format_diff.structuredContent['changes'][0]['changed_fields'], format_diff
                 sizing_draft = root / 'grid-sizing-draft'

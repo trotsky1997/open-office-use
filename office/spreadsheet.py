@@ -185,6 +185,12 @@ def _read_range(file, sheet, cell_range, include_style=False):
                                          'font_color_rgb': font_rgb[-6:] if isinstance(font_rgb, str) else None,
                                          'fill_rgb': rgb[-6:] if isinstance(rgb, str) else None, 'number_format': getattr(f, 'number_format', 'General'),
                                          'horizontal': getattr(alignment, 'horizontal', None), 'vertical': getattr(alignment, 'vertical', None), 'wrap': getattr(alignment, 'wrap_text', None)}
+                        border = getattr(f, 'border', None); sides = {}
+                        for name in ('top', 'bottom', 'left', 'right'):
+                            side = getattr(border, name, None); color = getattr(side, 'color', None)
+                            rgb = color.rgb if color and color.type == 'rgb' else None
+                            sides[name] = {'style': getattr(side, 'style', None), 'color_rgb': rgb[-6:] if isinstance(rgb, str) else None}
+                        cell['style']['border'] = sides
                         cell['locked'] = getattr(getattr(f, 'protection', None), 'locked', True) is not False
                     size += len(json.dumps(cell.get('format', cell.get('style')), ensure_ascii=False, default=str))
                     if size > 1000000: raise ValueError('Cell data exceeds the 1,000,000-character response limit; request a smaller range')

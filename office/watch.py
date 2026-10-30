@@ -123,6 +123,8 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <label>Vertical <select id="grid-vertical"><option value="">Keep</option><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option></select></label>
 <label>Wrap <select id="grid-wrap"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
 <label><input id="grid-fill-enabled" type="checkbox"> Set fill</label> <input id="grid-fill" type="color" value="#ffcc00" aria-label="Fill color">
+<label>All borders <select id="grid-border"><option value="">Keep</option><option value="none">None</option><option value="thin">Thin</option><option value="medium">Medium</option><option value="thick">Thick</option><option value="double">Double</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select></label>
+<label><input id="grid-border-color-enabled" type="checkbox"> Set border color</label> <input id="grid-border-color" type="color" value="#000000" aria-label="Border color">
 <label>Number format <input id="grid-numberformat" maxlength="120" placeholder="Keep"></label>
 <button type="button" id="grid-format" disabled>Apply formatting</button></fieldset>
 <fieldset><legend>Size columns and rows</legend>
@@ -369,6 +371,11 @@ async function loadGrid(target=null) {
      input.style.color=(rgb[0]*299+rgb[1]*587+rgb[2]*114)/1000 < 140 ? 'white' : 'black';
     }
     if (/^[0-9A-Fa-f]{6}$/.test(cell.style.font_color_rgb || '')) input.style.color='#'+cell.style.font_color_rgb;
+    for (const side of ['top','bottom','left','right']) {
+     const border=cell.style.border?.[side], style=border?.style;
+     const css={thin:'1px solid',medium:'2px solid',thick:'3px solid',double:'3px double',dashed:'1px dashed',dotted:'1px dotted'}[style];
+     if (css) input.style.setProperty(`border-${side}`, `${css} ${/^[0-9A-Fa-f]{6}$/.test(border.color_rgb || '') ? '#'+border.color_rgb : '#808080'}`);
+    }
     if (['left','center','right'].includes(cell.style.horizontal)) input.style.textAlign=cell.style.horizontal;
     input.title=`Number format: ${cell.style.number_format}`;
     if (value.includes('\\r')) input.title+='; editing normalizes carriage returns to line feeds';
@@ -463,6 +470,12 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  if (fontSize) properties.font_size=Number(fontSize);
  if (document.getElementById('grid-font-color-enabled').checked) properties.font_color=document.getElementById('grid-font-color').value.slice(1);
  if (document.getElementById('grid-fill-enabled').checked) properties.fill=document.getElementById('grid-fill').value.slice(1);
+ const border=document.getElementById('grid-border').value;
+ if (border) properties.border=border;
+ if (document.getElementById('grid-border-color-enabled').checked) {
+  if (!border || border==='none') { document.getElementById('grid-status').textContent='Choose a border style before setting its color.'; return; }
+  properties.border_color=document.getElementById('grid-border-color').value.slice(1);
+ }
  if (numberformat) properties.numberformat=numberformat;
  if (!Object.keys(properties).length) { document.getElementById('grid-status').textContent='Choose a formatting change.'; return; }
  gridBusy=true; const button=document.getElementById('grid-format'); button.disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-save').disabled=true; lockGridInputs(inputs,true);

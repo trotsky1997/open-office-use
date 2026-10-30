@@ -675,7 +675,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
 
 
 def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):
-    allowed = {'bold', 'italic', 'underline', 'font_name', 'font_size', 'font_color', 'fill', 'horizontal', 'vertical', 'wrap', 'numberformat'}
+    allowed = {'bold', 'italic', 'underline', 'font_name', 'font_size', 'font_color', 'fill', 'horizontal', 'vertical', 'wrap', 'numberformat', 'border', 'border_color', 'border_top', 'border_bottom', 'border_left', 'border_right'}
     if not isinstance(properties, dict) or not properties or not set(properties) <= allowed:
         raise ValueError('Provide supported cell formatting properties')
     props = {}
@@ -691,6 +691,17 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
         if name in properties:
             if properties[name] not in choices: raise ValueError(f'Invalid {name}')
             props[target] = properties[name]
+    border_names = ('border', 'border_top', 'border_bottom', 'border_left', 'border_right')
+    if 'border' in properties and any(name in properties for name in border_names[1:]): raise ValueError('Choose either all borders or individual sides')
+    for name in border_names:
+        if name in properties:
+            if properties[name] not in ('thin', 'medium', 'thick', 'double', 'dashed', 'dotted', 'none'): raise ValueError(f'Invalid {name}')
+            props['border.all' if name == 'border' else 'border.' + name[7:]] = properties[name]
+    if 'border_color' in properties:
+        color = properties['border_color']
+        if not isinstance(color, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', color): raise ValueError('border_color must be a six-digit RGB color')
+        if properties.get('border') in (None, 'none'): raise ValueError('border_color requires an all-sides border style')
+        props['border.color'] = color
     if 'font_name' in properties:
         value = properties['font_name']
         if not isinstance(value, str) or not value.strip() or len(value) > 100 or any(ord(c) < 32 for c in value): raise ValueError('Font name must contain 1 to 100 characters without control characters')
