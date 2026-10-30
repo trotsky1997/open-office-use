@@ -290,7 +290,12 @@ the native input parser; their `input` and `change` events are synthetic
 (`isTrusted` is false). `locator()` chains descendant queries, and `first`,
 `last` and `nth` can select an intermediate scope. Each chain is limited to
 32 selectors and 1,000 matched elements in total; the identity of each selected
-scope is rechecked along with the final matches before reads and input. `waitFor`
+scope is rechecked along with the final matches before reads and input. CSS locators support
+`filter({hasText: ...})` and `filter({hasNotText: ...})` with strings or regular
+expressions, before or after `first`/`last`/`nth`. Filters use normalized DOM
+text including open shadow roots and hidden text, excluding script, style and
+noscript; they stay within the selected frame. A filtered element's collected
+text is limited to 30,000 characters. Filters are re-evaluated before input. `waitFor`
 supports attached, detached, visible and hidden states. Visibility checks CSS
 visibility and nonzero element and frame bounds; it does not test occlusion.
 

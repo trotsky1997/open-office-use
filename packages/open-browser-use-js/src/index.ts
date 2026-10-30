@@ -75,8 +75,10 @@ function testIdSelector(testId: string): string {
   if (typeof testId !== "string" || testId.length > 500 || /[\u0000\ud800-\udfff]/u.test(testId)) throw new Error("Invalid test id");
   return `[data-testid="${Array.from(testId,char=>`\\${char.codePointAt(0)!.toString(16)} `).join("")}"]`;
 }
-type CssStep = {selector:string; position?:number};
-type CssSnapshot = { selector:string; scopes:readonly CssStep[]; scopeIds:number[][]; framePath?:readonly string[]; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
+type CssMatcher = string | {source:string; flags:string};
+type CssTextFilter = {hasText?:CssMatcher; hasNotText?:CssMatcher};
+type CssStep = {selector:string; position?:number; before?:readonly CssTextFilter[]; after?:readonly CssTextFilter[]};
+type CssSnapshot = { step:CssStep; scopes:readonly CssStep[]; scopeIds:number[][]; framePath?:readonly string[]; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher };
@@ -786,7 +788,8 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async queryCss(selector: string, framePath?: readonly string[], scopes: readonly CssStep[] = []): Promise<CssSnapshot> {
+  async queryCss(step: CssStep, framePath?: readonly string[], scopes: readonly CssStep[] = []): Promise<CssSnapshot> {
+    const selector=step.selector;
     if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
     const documentId = await this.documentId();
     const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
@@ -795,7 +798,7 @@ export class OpenBrowserUseTab {
     const frameId = framePath ? await this.resolveFramePath(framePath) : frames[0].id;
     if (!frameId) {
       if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames)) throw new RetryablePreflightError("Frame tree changed; observe again");
-      return {selector,scopes,scopeIds:[],framePath,frame:null,frames,documentId,ids:[]};
+      return {step,scopes,scopeIds:[],framePath,frame:null,frames,documentId,ids:[]};
     }
     const frame = frames.find(item=>item.id === frameId);
     if (!frame) throw new RetryablePreflightError("Frame tree changed; observe again");
@@ -804,13 +807,16 @@ export class OpenBrowserUseTab {
     const contextId = isObject(world) ? world.executionContextId : undefined;
     if (typeof contextId !== "number" || !Number.isSafeInteger(contextId)) throw new RetryablePreflightError("Selector context is unavailable; observe again");
     const expression = `(() => {
-      const steps=${JSON.stringify([...scopes,{selector}])}, output=[]; let roots=[document], total=0;
+      const steps=${JSON.stringify([...scopes,step])}, output=[]; let roots=[document], total=0;
+      const normalize=text=>text.replace(/\\s+/g,' ').trim();
+      const textOf=element=>{let text='',stack=[element];while(stack.length){const node=stack.pop();if(node.nodeType===Node.TEXT_NODE){text+=node.nodeValue || '';if(text.length>30000)throw new Error('Filter text exceeds the 30000 character limit');continue;}if(node.nodeType===Node.ELEMENT_NODE && ['SCRIPT','STYLE','NOSCRIPT'].includes(node.tagName))continue;if(node.shadowRoot)stack.push(node.shadowRoot);const children=node.childNodes;for(let j=children.length-1;j>=0;j--)stack.push(children[j]);}return normalize(text);};
+      const apply=(items,filters)=>!filters?.length ? items : items.filter(element=>{const text=textOf(element);const match=pattern=>typeof pattern==='string' ? text.toLowerCase().includes(normalize(pattern).toLowerCase()) : new RegExp(pattern.source,pattern.flags).test(text);return filters.every(filter=>(filter.hasText===undefined || match(filter.hasText)) && (filter.hasNotText===undefined || !match(filter.hasNotText)));});
       for (let i=0;i<steps.length;i++) {
-        const {selector,position}=steps[i], found=[], seen=new Set();
+        const {selector,position,before,after}=steps[i], found=[], seen=new Set();
         document.createDocumentFragment().querySelector(selector);
         const walk=root=>{const matched=new Set(root.querySelectorAll(selector));for(const element of root.querySelectorAll('*')) {if(matched.has(element) && !seen.has(element)){seen.add(element);found.push(element);if(found.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);}};
         for(const root of roots) { walk(root); if(root instanceof Element && root.shadowRoot)walk(root.shadowRoot); }
-        const selected=position===undefined ? found : position===-1 ? found.slice(-1) : found.slice(position,position+1);
+        const filtered=apply(found,before);const selected=apply(position===undefined ? filtered : position===-1 ? filtered.slice(-1) : filtered.slice(position,position+1),after);
         total+=selected.length;if(total>1000)throw new Error('Selector matched more than 1000 elements');
         output.push(i,...selected);roots=selected;
       }
@@ -820,6 +826,7 @@ export class OpenBrowserUseTab {
     if (isObject(evaluated) && evaluated.exceptionDetails) {
       const details = isObject(evaluated.exceptionDetails) && isObject(evaluated.exceptionDetails.exception) ? evaluated.exceptionDetails.exception.description : undefined;
       if (typeof details === "string" && details.includes("Selector matched more than 1000 elements")) throw new Error("Selector matched more than 1000 elements");
+      if (typeof details === "string" && details.includes("Filter text exceeds the 30000 character limit")) throw new Error("Filter text exceeds the 30000 character limit");
       throw new Error("Invalid CSS selector");
     }
     const arrayId = isObject(evaluated) && isObject(evaluated.result) ? evaluated.result.objectId : undefined;
@@ -842,7 +849,7 @@ export class OpenBrowserUseTab {
         stages[stages.length-1].push(node.backendNodeId);
       }
       if (stages.length !== scopes.length+1 || await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames)) throw new RetryablePreflightError("Frame tree changed; observe again");
-      return {selector,scopes,scopeIds:stages.slice(0,-1),framePath,frame,frames,documentId,ids:stages[stages.length-1]};
+      return {step,scopes,scopeIds:stages.slice(0,-1),framePath,frame,frames,documentId,ids:stages[stages.length-1]};
     } finally {
       for (const objectId of objectIds) await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});
       await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId:arrayId},{sessionId}).catch(()=>{});
@@ -886,7 +893,7 @@ export class OpenBrowserUseTab {
           } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId:ownerId},{sessionId:ownerSession}).catch(()=>{}); }
         }
       }
-      const fresh = await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+      const fresh = await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
       if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
       return mode === "visible" && payload.value === true ? frameVisible : payload.value as string | boolean | null;
     } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{}); }
@@ -935,7 +942,7 @@ export class OpenBrowserUseTab {
       const second=await measure();
       const moving=(a:number,b:number)=>Math.abs(a-b)>0.25;
       if (moving(first.geometry.x,second.geometry.x) || moving(first.geometry.y,second.geometry.y) || moving(first.geometry.width,second.geometry.width) || moving(first.geometry.height,second.geometry.height) || moving(first.point.x,second.point.x) || moving(first.point.y,second.point.y)) throw new RetryablePreflightError("Target is moving; observe again");
-      const fresh=await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+      const fresh=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
       if (fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
       const checkedState = async () => {
         const result=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function() {
@@ -951,7 +958,7 @@ export class OpenBrowserUseTab {
       };
       if (checked !== undefined) {
         const state=await checkedState();
-        const latest=await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+        const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
         if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
         const current=await checkedState();
         if (current.value!==state.value || current.radio!==state.radio) throw new RetryablePreflightError("Checked state changed; observe again");
@@ -977,7 +984,7 @@ export class OpenBrowserUseTab {
         if (found.status==='ambiguous') throw new Error("Requested select option is ambiguous");
         if (found.status==='multiple') throw new Error("Multiple options require a multiple select");
         if (found.status!=='ok' || !Array.isArray(found.chosen)) throw new Error("Target is not an enabled native select");
-        const latest=await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+        const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
         if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
         this.#observation=undefined;
         inputIssued=true;
@@ -1006,7 +1013,7 @@ export class OpenBrowserUseTab {
         const status=isObject(editable) && isObject(editable.result) ? editable.result.value : undefined;
         if (status==='invalid') throw new Error("Invalid date or time value");
         if (status==='temporal') {
-          const latest=await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
           this.#observation=undefined;
           inputIssued=true;
@@ -1022,7 +1029,7 @@ export class OpenBrowserUseTab {
       if (key !== undefined || text !== undefined) {
         await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId});
         const verifyFocus = async () => {
-          const afterFocus=await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+          const afterFocus=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
           if (afterFocus.documentId!==snapshot.documentId || JSON.stringify(afterFocus.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(afterFocus.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after focus; observe again");
           if ((await this.focusedInputFrame()).id !== frame.id) throw new Error("Target frame lost focus; observe again");
           const focused=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text !== undefined}],functionDeclaration:`function(editable) { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; if (editable && (this.readOnly || this.getAttribute('aria-readonly') === 'true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))) return false; let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }`},{sessionId});
@@ -1046,13 +1053,13 @@ export class OpenBrowserUseTab {
         await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:"left",buttons:1,clickCount:1},options);
         await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:"left",buttons:0,clickCount:1},options);
         if (checked !== undefined) {
-          const latest=await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids) || (await checkedState()).value!==checked) throw new Error("Target did not retain the requested checked state");
         }
         if (doubleClick) {
           const after=await measure();
           if (moving(second.geometry.x,after.geometry.x) || moving(second.geometry.y,after.geometry.y) || moving(second.geometry.width,after.geometry.width) || moving(second.geometry.height,after.geometry.height) || moving(second.point.x,after.point.x) || moving(second.point.y,after.point.y)) throw new Error("Target moved after the first click; observe again");
-          const latest=await this.queryCss(snapshot.selector,snapshot.framePath,snapshot.scopes);
+          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after the first click; observe again");
           await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:"left",buttons:1,clickCount:2},options);
           await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:"left",buttons:0,clickCount:2},options);
@@ -2107,22 +2114,29 @@ export class OpenBrowserUseFrameLocator {
 }
 
 export class OpenBrowserUseCssLocator {
-  constructor(private tab: OpenBrowserUseTab, private selector: string, private framePath?: readonly string[], private position?: number, private scopes: readonly CssStep[] = []) {
+  constructor(private tab: OpenBrowserUseTab, private selector: string, private framePath?: readonly string[], private position?: number, private scopes: readonly CssStep[] = [], private before: readonly CssTextFilter[] = [], private after: readonly CssTextFilter[] = []) {
     if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
   }
   nth(index: number): OpenBrowserUseCssLocator {
     if (!Number.isSafeInteger(index) || index < 0) throw new Error("Locator index must be a non-negative integer");
-    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER,this.scopes);
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER,this.scopes,this.before,this.after);
   }
   first(): OpenBrowserUseCssLocator { return this.nth(0); }
-  last(): OpenBrowserUseCssLocator { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,-1,this.scopes) : this; }
+  last(): OpenBrowserUseCssLocator { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,-1,this.scopes,this.before,this.after) : this; }
   locator(selector: string): OpenBrowserUseCssLocator {
     if (this.scopes.length >= 31) throw new Error("CSS locator nesting exceeds 32 levels");
-    return new OpenBrowserUseCssLocator(this.tab,selector,this.framePath,undefined,[...this.scopes,{selector:this.selector,...(this.position !== undefined ? {position:this.position} : {})}]);
+    return new OpenBrowserUseCssLocator(this.tab,selector,this.framePath,undefined,[...this.scopes,this.step()]);
   }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
-  private select(ids: number[]): number[] { return this.position === undefined ? ids : this.position === -1 ? ids.slice(-1) : ids.slice(this.position,this.position+1); }
-  async count(): Promise<number> { return this.select((await this.tab.queryCss(this.selector,this.framePath,this.scopes)).ids).length; }
+  private step(): CssStep { return {selector:this.selector,...(this.position !== undefined ? {position:this.position} : {}),before:this.before,after:this.after}; }
+  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher}): OpenBrowserUseCssLocator {
+    if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key=>!["hasText","hasNotText"].includes(key)) ||
+        (options.hasText === undefined && options.hasNotText === undefined) || [options.hasText,options.hasNotText].some(value=>value !== undefined && (typeof value === "string" ? value.length>30_000 : !types.isRegExp(value)))) throw new Error("Invalid text filter");
+    const encode=(value:TextMatcher):CssMatcher=>typeof value === "string" ? value : {source:value.source,flags:value.flags};
+    const filter:CssTextFilter={...(options.hasText !== undefined ? {hasText:encode(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:encode(options.hasNotText)} : {})};
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter]);
+  }
+  async count(): Promise<number> { return (await this.tab.queryCss(this.step(),this.framePath,this.scopes)).ids.length; }
   async all(): Promise<OpenBrowserUseCssLocator[]> { return Array.from({length:await this.count()},(_,i)=>this.nth(i)); }
   async allTextContents(options: {timeoutMs?: number} = {}): Promise<string[]> {
     const timeoutMs=options.timeoutMs ?? 5000;
@@ -2130,9 +2144,9 @@ export class OpenBrowserUseCssLocator {
     const deadline=performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot=await this.tab.queryCss(this.selector,this.framePath,this.scopes), values:string[]=[];
+        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes), values:string[]=[];
         let total=0;
-        for (const id of this.select(snapshot.ids)) {
+        for (const id of snapshot.ids) {
           const value=await this.tab.readCss(snapshot,id,"textContent");
           if (typeof value !== "string") throw new RetryablePreflightError("Target text is unavailable; observe again");
           total+=value.length;if(total>1_000_000) throw new Error("Locator values exceed the 1000000 character limit");
@@ -2150,8 +2164,8 @@ export class OpenBrowserUseCssLocator {
     const deadline = performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot = await this.tab.queryCss(this.selector,this.framePath,this.scopes);
-        const ids = this.select(snapshot.ids);
+        const snapshot = await this.tab.queryCss(this.step(),this.framePath,this.scopes);
+        const ids = snapshot.ids;
         if (ids.length > 1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
         if (ids.length) return await action(snapshot,ids[0]);
       } catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
@@ -2166,7 +2180,7 @@ export class OpenBrowserUseCssLocator {
   isEnabled(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"enabled") as boolean); }
   isChecked(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"checked") as boolean); }
   async isVisible(): Promise<boolean> {
-    const snapshot=await this.tab.queryCss(this.selector,this.framePath,this.scopes), ids=this.select(snapshot.ids);
+    const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes), ids=snapshot.ids;
     if (!ids.length) return false;
     if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
     return await this.tab.readCss(snapshot,ids[0],"visible") as boolean;
@@ -2178,7 +2192,7 @@ export class OpenBrowserUseCssLocator {
     const deadline=performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot=await this.tab.queryCss(this.selector,this.framePath,this.scopes), ids=this.select(snapshot.ids);
+        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes), ids=snapshot.ids;
         if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
         const matched=options.state==='attached' || options.state==='detached' ? ids.length>0 : ids.length>0 && await this.tab.readCss(snapshot,ids[0],"visible")===true;
         if (matched === (options.state==='attached' || options.state==='visible')) return;

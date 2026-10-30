@@ -100,9 +100,19 @@ export type InteractiveState = {
     unavailableFrames?: string[];
     valuesTruncated?: boolean;
 };
+type CssMatcher = string | {
+    source: string;
+    flags: string;
+};
+type CssTextFilter = {
+    hasText?: CssMatcher;
+    hasNotText?: CssMatcher;
+};
 type CssStep = {
     selector: string;
     position?: number;
+    before?: readonly CssTextFilter[];
+    after?: readonly CssTextFilter[];
 };
 type TextFilter = {
     hasText?: TextMatcher;
@@ -433,13 +443,19 @@ export declare class OpenBrowserUseCssLocator {
     private framePath?;
     private position?;
     private scopes;
-    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined, scopes?: readonly CssStep[]);
+    private before;
+    private after;
+    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined, scopes?: readonly CssStep[], before?: readonly CssTextFilter[], after?: readonly CssTextFilter[]);
     nth(index: number): OpenBrowserUseCssLocator;
     first(): OpenBrowserUseCssLocator;
     last(): OpenBrowserUseCssLocator;
     locator(selector: string): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
-    private select;
+    private step;
+    filter(options: {
+        hasText?: TextMatcher;
+        hasNotText?: TextMatcher;
+    }): OpenBrowserUseCssLocator;
     count(): Promise<number>;
     all(): Promise<OpenBrowserUseCssLocator[]>;
     allTextContents(options?: {
