@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP, Image
 import officecli_backend
 import spreadsheet
 import layout
+import visual
 import review
 import session
 import selection_text
@@ -238,6 +239,22 @@ def render_pdf(file: str, output_dir: str) -> dict[str, str]:
 def preview_pages(file: str, output_dir: str) -> dict[str, list[str]]:
     """Render page PNGs into a new directory using LibreOffice and Poppler."""
     return {'pages': preview(file, output_dir)}
+
+
+@server.tool()
+def view_contact_sheet(file: str, start_page: int = 1, count: int = 12) -> Image:
+    """Render up to 12 numbered pages as a PNG overview. Page numbers refer to rendered PDF pages."""
+    data, _ = visual.contact_sheet(file, start_page, count, render)
+    return Image(data=data, format='png')
+
+
+@server.tool()
+def session_contact_sheet(directory: str, revision: int, start_page: int = 1, count: int = 12) -> Image:
+    """Render a numbered overview of an exact session revision, up to 12 PDF pages."""
+    state = session.info(directory)
+    source = session.revision_file(state, revision)
+    data, _ = visual.contact_sheet(source, start_page, count, render)
+    return Image(data=data, format='png')
 
 
 @server.tool()

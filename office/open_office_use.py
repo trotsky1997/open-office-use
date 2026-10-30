@@ -13,6 +13,7 @@ from openpyxl import Workbook, load_workbook
 from pptx import Presentation
 
 import layout
+import visual
 import officecli_backend
 import spreadsheet
 import review
@@ -145,6 +146,7 @@ def main():
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
     render_command = commands.add_parser('render'); render_command.add_argument('file'); render_command.add_argument('--out-dir', required=True)
     images = commands.add_parser('preview'); images.add_argument('file'); images.add_argument('--out-dir', required=True)
+    contact = commands.add_parser('contact-sheet'); contact.add_argument('file'); contact.add_argument('--out', required=True); contact.add_argument('--start', type=int, default=1); contact.add_argument('--count', type=int, default=12)
     structured = commands.add_parser('structured'); structured.add_argument('file'); structured.add_argument('mode', choices=['outline', 'get', 'query']); structured.add_argument('target', nargs='?')
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
     cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
@@ -228,6 +230,8 @@ def main():
             result = {'pdf': render(args.file, args.out_dir)}
         elif args.command == 'preview':
             result = {'pages': preview(args.file, args.out_dir)}
+        elif args.command == 'contact-sheet':
+            result = visual.save_contact_sheet(args.file, args.out, args.start, args.count, render)
         elif args.command == 'audit':
             result = officecli_backend.audit(args.file)
         elif args.command == 'compare-cells':
