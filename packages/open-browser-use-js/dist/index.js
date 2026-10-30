@@ -34,6 +34,18 @@ function matchesTextFilters(text, filters) {
     return filters.every(filter => (filter.hasText === undefined || matches(filter.hasText)) && (filter.hasNotText === undefined || !matches(filter.hasNotText)));
 }
 function copyMatcher(value) { return typeof value === "string" ? value : new RegExp(value.source, value.flags); }
+function browserLogEntry(method, params) {
+    const details = isObject(params.exceptionDetails) ? params.exceptionDetails : undefined;
+    const exception = details && isObject(details.exception) ? details.exception : undefined;
+    const kind = method === "Runtime.exceptionThrown" ? "error" : params.type;
+    const level = kind === "warning" || kind === "warn" ? "warn" : kind === "error" || kind === "assert" ? "error" : kind === "debug" || kind === "info" ? kind : "log";
+    const message = method === "Runtime.exceptionThrown"
+        ? String(exception?.description ?? exception?.value ?? details?.text ?? "Uncaught exception")
+        : Array.isArray(params.args) ? params.args.slice(0, 50).map(arg => isObject(arg) ? String(arg.value ?? arg.unserializableValue ?? arg.description ?? "[object]").slice(0, 4096) : "[object]").join(" ") : "";
+    const trace = isObject(params.stackTrace) && Array.isArray(params.stackTrace.callFrames) ? params.stackTrace.callFrames[0] : undefined;
+    const url = typeof details?.url === "string" ? details.url : isObject(trace) && typeof trace.url === "string" ? trace.url : undefined;
+    return { level, message: message.slice(0, 4096), timestamp: new Date().toISOString(), ...(url ? { url: url.slice(0, 4096) } : {}) };
+}
 export class OpenBrowserUseClient {
     socketPath;
     sessionId;
@@ -424,12 +436,14 @@ export class OpenBrowserUseTab {
     browser;
     id;
     playwright;
+    dev;
     #observation;
     #lastText;
     constructor(browser, id) {
         this.browser = browser;
         this.id = id;
         this.playwright = new OpenBrowserUseTabPlaywright(this);
+        this.dev = new OpenBrowserUseTabDev(this);
     }
     goto(url, options = {}) {
         this.#observation = undefined;
@@ -1613,6 +1627,23 @@ export class OpenBrowserUseTab {
         return this.browser.cdp.call(this.id, "Page.close");
     }
 }
+export class OpenBrowserUseTabDev {
+    tab;
+    constructor(tab) {
+        this.tab = tab;
+    }
+    async watch() { await this.tab.browser.cdp.watchLogs(this.tab.id); }
+    async logs(options = {}) {
+        if (!options || typeof options !== "object" || (options.filter !== undefined && typeof options.filter !== "string") ||
+            (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 0 || options.limit > 500)) ||
+            (options.levels !== undefined && (!Array.isArray(options.levels) || options.levels.some(level => !["debug", "info", "log", "warn", "warning", "error"].includes(level)))))
+            throw new Error("Invalid log options");
+        await this.watch();
+        const levels = options.levels?.map(level => level === "warning" ? "warn" : level);
+        const entries = this.tab.browser.cdp.logs(this.tab.id).filter(entry => (!levels || levels.includes(entry.level)) && (options.filter === undefined || entry.message.includes(options.filter)));
+        return options.limit === undefined ? entries : options.limit === 0 ? [] : entries.slice(-options.limit);
+    }
+}
 export class OpenBrowserUseTabPlaywright {
     tab;
     constructor(tab) {
@@ -1856,8 +1887,10 @@ export class OpenBrowserUseCdp {
     #generations = new Map();
     #dialogs = new Map();
     #dialogEnabled = new Map();
+    #logs = new Map();
     constructor(client) {
         this.client = client;
+        client.onDisconnect(() => this.#logs.clear());
         client.onNotification(notification => {
             if (["onDebuggerDetach", "onTabClosed"].includes(notification.method) && isObject(notification.params) && typeof notification.params.tabId === "number") {
                 const tabId = notification.params.tabId;
@@ -1867,6 +1900,7 @@ export class OpenBrowserUseCdp {
                 this.#failure.delete(tabId);
                 this.#dialogs.delete(tabId);
                 this.#dialogEnabled.delete(tabId);
+                this.#logs.delete(tabId);
                 return;
             }
             if (notification.method !== "onCDPEvent" || !isObject(notification.params))
@@ -1874,6 +1908,15 @@ export class OpenBrowserUseCdp {
             const { source, method, params } = notification.params;
             if (!isObject(source) || typeof source.tabId !== "number" || !isObject(params))
                 return;
+            const capture = this.#logs.get(source.tabId);
+            if (capture && capture.generation === this.client.connectionGeneration && (method === "Runtime.consoleAPICalled" || method === "Runtime.exceptionThrown")) {
+                const entry = browserLogEntry(method, params);
+                if (entry) {
+                    capture.entries.push(entry);
+                    if (capture.entries.length > 500)
+                        capture.entries.shift();
+                }
+            }
             if (method === "Page.javascriptDialogOpening" && typeof params.type === "string" && ["alert", "confirm", "prompt", "beforeunload"].includes(params.type) && typeof params.message === "string" && typeof params.url === "string") {
                 const info = { id: randomUUID(), type: params.type, message: params.message, url: params.url, ...(typeof params.defaultPrompt === "string" ? { defaultPrompt: params.defaultPrompt } : {}) };
                 this.#dialogs.set(source.tabId, { info, generation: this.client.connectionGeneration, ...(typeof source.sessionId === "string" ? { sessionId: source.sessionId } : {}), issued: false });
@@ -1889,6 +1932,7 @@ export class OpenBrowserUseCdp {
             if (method === "Target.detachedFromTarget" && typeof params.sessionId === "string") {
                 const remove = (id) => {
                     frames.delete(id);
+                    capture?.sessions.delete(id);
                     for (const child of frames.values())
                         if (child.parentSessionId === id)
                             remove(child.sessionId);
@@ -1908,11 +1952,53 @@ export class OpenBrowserUseCdp {
             this.#pending.set(tabId, pending);
             frames.set(sessionId, { sessionId, frameId: info.targetId, parentFrameId: info.parentFrameId, ...(typeof source.sessionId === "string" ? { parentSessionId: source.sessionId } : {}) });
             const task = this.call(tabId, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true, filter: [{ type: "iframe", exclude: false }, { exclude: true }] }, { sessionId })
+                .then(async () => { if (capture && this.#logs.get(tabId) === capture)
+                await this.enableLogSession(tabId, capture, sessionId); })
                 .then(() => { }, error => { if (frames.has(sessionId))
                 this.#failure.set(tabId, error instanceof Error ? error : new Error(String(error))); })
                 .finally(() => pending.delete(task));
             pending.add(task);
         });
+    }
+    enableLogSession(tabId, capture, sessionId) {
+        const key = sessionId ?? "";
+        const existing = capture.sessions.get(key);
+        if (existing)
+            return existing;
+        const pending = this.call(tabId, "Runtime.enable", {}, { sessionId, expectedGeneration: capture.generation }).then(() => { });
+        capture.sessions.set(key, pending);
+        void pending.catch(() => { if (capture.sessions.get(key) === pending)
+            capture.sessions.delete(key); });
+        return pending;
+    }
+    /** @internal */
+    async watchLogs(tabId) {
+        await this.ensureAttached(tabId);
+        let capture = this.#logs.get(tabId);
+        if (capture?.generation !== this.client.connectionGeneration) {
+            capture = { generation: this.client.connectionGeneration, entries: [], sessions: new Map() };
+            this.#logs.set(tabId, capture);
+        }
+        if (!capture.ready) {
+            const current = capture;
+            const ready = (async () => {
+                await this.enableFrameSessions(tabId);
+                await this.enableLogSession(tabId, current);
+                for (const frame of await this.frameSessions(tabId))
+                    await this.enableLogSession(tabId, current, frame.sessionId);
+            })();
+            current.ready = ready;
+            void ready.catch(() => { if (current.ready === ready)
+                current.ready = undefined; });
+        }
+        await capture.ready;
+        for (const frame of await this.frameSessions(tabId))
+            await this.enableLogSession(tabId, capture, frame.sessionId);
+    }
+    /** @internal */
+    logs(tabId) {
+        const capture = this.#logs.get(tabId);
+        return capture?.generation === this.client.connectionGeneration ? capture.entries.map(entry => ({ ...entry })) : [];
     }
     /** @internal */
     async enableDialogs(tabId) {
@@ -1996,6 +2082,12 @@ export class OpenBrowserUseCdp {
         }, options.expectedGeneration);
         if (method === "Page.disable" && !options.sessionId)
             this.#dialogEnabled.delete(tabId);
+        if (method === "Runtime.disable") {
+            const capture = this.#logs.get(tabId);
+            capture?.sessions.delete(options.sessionId ?? "");
+            if (capture)
+                capture.ready = undefined;
+        }
         return result;
     }
     async evaluate(tabId, expression, options = {}) {

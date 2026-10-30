@@ -58,6 +58,12 @@ export type OpenBrowserUseDialogInfo = {
     url: string;
     defaultPrompt?: string;
 };
+export type OpenBrowserUseLogEntry = {
+    level: "debug" | "info" | "log" | "warn" | "error";
+    message: string;
+    timestamp: string;
+    url?: string;
+};
 export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {
     name?: TextMatcher;
@@ -177,6 +183,7 @@ export declare class OpenBrowserUseTab {
     readonly browser: OpenBrowserUseBrowser;
     readonly id: number;
     readonly playwright: OpenBrowserUseTabPlaywright;
+    readonly dev: OpenBrowserUseTabDev;
     constructor(browser: OpenBrowserUseBrowser, id: number);
     goto(url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     back(): Promise<void>;
@@ -256,6 +263,16 @@ export declare class OpenBrowserUseTab {
         awaitPromise?: boolean;
     }): Promise<JsonValue>;
     close(): Promise<JsonValue>;
+}
+export declare class OpenBrowserUseTabDev {
+    private tab;
+    constructor(tab: OpenBrowserUseTab);
+    watch(): Promise<void>;
+    logs(options?: {
+        filter?: string;
+        levels?: Array<OpenBrowserUseLogEntry["level"] | "warning">;
+        limit?: number;
+    }): Promise<OpenBrowserUseLogEntry[]>;
 }
 export declare class OpenBrowserUseTabPlaywright {
     readonly tab: OpenBrowserUseTab;
@@ -373,6 +390,7 @@ export declare class OpenBrowserUseCdp {
     #private;
     readonly client: OpenBrowserUseClient;
     constructor(client: OpenBrowserUseClient);
+    private enableLogSession;
     enableFrameSessions(tabId: number): Promise<boolean>;
     frameSessions(tabId: number): Promise<Array<{
         sessionId: string;

@@ -163,6 +163,26 @@ test('expectNavigation arms before the action and ignores child-frame navigation
   assert.equal(handlers.size,1);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(handlers.size,1);
 });
 
+test('developer logs are tab-scoped, bounded and cleared on disconnect',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set(),commands=[];
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async(method,params)=>{if(method==='attach')return {};commands.push(params.method);return {};};
+  const browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1);
+  await tab.dev.watch();await tab.dev.watch();assert.equal(commands.filter(command=>command==='Runtime.enable').length,1);
+  const emit=(tabId,method,params)=>{for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId},method,params}});};
+  emit(2,'Runtime.consoleAPICalled',{type:'error',args:[{value:'other tab'}]});
+  emit(1,'Runtime.consoleAPICalled',{type:'warning',args:[{value:'careful'},{value:42}]});
+  emit(1,'Runtime.exceptionThrown',{exceptionDetails:{text:'Uncaught',exception:{description:'Error: broken'},url:'https://example.test/'}});
+  const logs=await tab.dev.logs();assert.deepEqual(logs.map(({level,message})=>({level,message})),[{level:'warn',message:'careful 42'},{level:'error',message:'Error: broken'}]);
+  assert.equal(logs[1].url,'https://example.test/');assert.equal((await tab.dev.logs({levels:['warning'],filter:'careful'})).length,1);
+  assert.equal((await tab.dev.logs({limit:1}))[0].level,'error');assert.deepEqual(await tab.dev.logs({limit:0}),[]);
+  await assert.rejects(tab.dev.logs({limit:-1}),/Invalid log options/);
+  for(let i=0;i<501;i++)emit(1,'Runtime.consoleAPICalled',{type:'log',args:[{value:`line ${i}`}]});
+  assert.equal((await tab.dev.logs()).length,500);assert.equal((await tab.dev.logs())[0].message,'line 1');
+  await browser.cdp.call(1,'Runtime.disable');await tab.dev.watch();assert.equal(commands.filter(command=>command==='Runtime.enable').length,2);
+  client.close();assert.deepEqual(browser.cdp.logs(1),[]);
+});
+
 test('goto does not treat a loaded previous document as a completed navigation', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let sameDocument=false, detached=false;const handlers=new Set();

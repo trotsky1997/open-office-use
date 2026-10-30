@@ -68,6 +68,7 @@ locator.click(), {url: "https://example.com/target"})` to arm the main-frame
 navigation listener before the action.
 For subsequent observations, `tab.observe({diff:true})` reports text changes;
 always use the newly returned `nodes` and `snapshotId` for actions.
+Use `await tab.dev.watch()` before an action, then `await tab.dev.logs({levels:["error"]})` to inspect captured console errors and uncaught exceptions.
 When current field values are needed, request `includeValues:true`; native
 password values are redacted and truncated values are flagged.
 Use `tab.observe({includeFrames:true})` to include iframe controls. Chrome and

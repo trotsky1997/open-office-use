@@ -37,6 +37,10 @@ try {
  const client=new OpenBrowserUseClient({socketPath,sessionId:'native-e2e',timeoutMs:15000});browser=new OpenBrowserUseBrowser({client});await browser.connect();
  const info=await client.getInfo();assert.equal(info.metadata.extensionId,id);
  const tab=await browser.newTab();await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
+ await tab.dev.watch();await tab.evaluate(`console.log('root-log-fixture',42);setTimeout(()=>{throw new Error('root-error-fixture')},0)`);
+ await new Promise(r=>setTimeout(r,100));
+ assert.ok((await tab.dev.logs({filter:'root-log-fixture'})).some(entry=>entry.level==='log' && entry.message.includes('42')));
+ assert.ok((await tab.dev.logs({levels:['error'],filter:'root-error-fixture'})).length);
  await tab.goto(`http://127.0.0.1:${http.address().port}/#same-document`,{timeoutMs:1500});
  assert.match(await tab.evaluate('location.href'),/#same-document$/);
  await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:1500});
@@ -233,6 +237,8 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`console.warn('cross-log-fixture')`},{sessionId:crossSession});await new Promise(r=>setTimeout(r,100));
+ assert.ok((await tab.dev.logs({levels:['warning'],filter:'cross-log-fixture'})).length);
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Cross heading';document.body.append(h)})()`},{sessionId:crossSession});
  assert.equal(await tab.playwright.getByRole('heading',{name:'Cross heading',level:3}).count(),1);
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`setTimeout(()=>{const b=document.createElement('button');b.id='wait-cross';b.textContent='Cross wait';document.body.prepend(b)},100)`},{sessionId:crossSession});

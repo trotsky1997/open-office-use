@@ -20,6 +20,8 @@ app.whenReady().then(async()=>{
     const grant=runtime.connections.grant(scope.id,'socket',{ttlMs:120000,operations:['page.control','files.upload','files.download']},process.pid);
     const client=await connectSocketIab(grant);
     const sdk=client.browser().tab(tab.id);
+    await sdk.dev.watch();await sdk.evaluate(`console.error('socket-log-fixture')`);await new Promise(resolve=>setTimeout(resolve,50));
+    assert.ok((await sdk.dev.logs({levels:['error'],filter:'socket-log-fixture'})).length);
     assert.equal(await sdk.playwright.getByRole('heading',{name:/welcome/i,level:1}).count(),1);
     await sdk.evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.id='double-fixture';b.textContent='Socket double';b.setAttribute('data-fixture','yes');b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'double',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
     const double=sdk.playwright.getByRole('button',{name:/^socket double$/i});
@@ -50,6 +52,8 @@ app.whenReady().then(async()=>{
     await sdk.evaluate(`(async()=>{const f=document.createElement('iframe');f.id='cross';f.src=${JSON.stringify(crossUrl)};Object.assign(f.style,{position:'fixed',left:'20px',top:'200px',width:'500px',height:'300px',zIndex:'9999'});document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`,{awaitPromise:true});
     const observed=await sdk.observe({includeFrames:true});const node=observed.nodes.find(item=>item.name==='Cross-frame action');assert.ok(node?.frameId);
     const session=(await sdk.browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===node.frameId)?.sessionId;assert.ok(session);
+    await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`console.warn('socket-cross-log')`},{sessionId:session});await new Promise(resolve=>setTimeout(resolve,50));
+    assert.ok((await sdk.dev.logs({levels:['warning'],filter:'socket-cross-log'})).length);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Child heading';document.body.append(h);document.querySelector('button').ondblclick=e=>window.childDouble={trusted:e.isTrusted,detail:e.detail}})()`},{sessionId:session});
     assert.equal(await sdk.playwright.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
     window.hide();

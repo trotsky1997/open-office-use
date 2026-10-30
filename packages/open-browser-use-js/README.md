@@ -373,6 +373,17 @@ the requested URL and load state. A timeout or action error can occur after
 the action has taken effect; inspect the page before retrying. The timeout also
 bounds a pending action callback; it cannot cancel a command already issued.
 
+## Page developer logs
+
+Call `await tab.dev.watch()` before the action to capture console calls and
+uncaught JavaScript exceptions, including supported cross-process frames.
+Read them with `await tab.dev.logs({levels: ["error", "warning"], filter: "save", limit: 20})`.
+Calling `logs()` starts capture if necessary. Capture retains up to 500 entries
+per tab, with messages and source URLs capped at 4,096 characters; arguments
+are rendered from CDP values or descriptions. Entries are cleared on debugger
+detach, tab closure or client disconnect. Earlier console history depends on
+what the browser supplies when the runtime is enabled.
+
 ## JavaScript dialogs
 
 Call `watchDialogs()` before triggering a JavaScript dialog. Start the action
