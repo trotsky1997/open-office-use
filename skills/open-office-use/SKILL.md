@@ -48,3 +48,5 @@ XLSX targeted text replacement requests sheet recalculation on load while retain
 Use `session_edit_grid` for bounded multi-cell value and formula edits; XLSX `session_edit` shares this cache-preserving path for a single cell and supports `literal` mode for text; set `type: "text"` on nonempty changes to retain literal values such as `00123` or `=literal`; unchanged formula caches are retained, changed formulas lose their caches, and sheet recalculation is requested. When formulas change, a validated saved calculation chain is removed for rebuilding; ambiguous chain metadata is rejected.
 
 Use `session_replace_text_batch` for 1–25 ordered, explicit text replacements that must commit as one revision. Each change supplies `path`, `find`, and `replacement`; inspect targets first and review the result.
+
+Grid and XLSX single-cell editing can create supported dynamic-array formulas when XLDAPR metadata and candidate tokens validate. Their spill range and cached results require review in a compatible calculation application; local LibreOffice testing did not populate a SEQUENCE spill. Existing array anchors and saved ranges are read-only.

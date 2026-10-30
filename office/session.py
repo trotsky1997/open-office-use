@@ -663,7 +663,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
     try: result = grid_values.apply(source, output, sheet, normalized, operations)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True, 'calculation_chain': result['calculation_chain']}
+    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True, 'calculation_chain': result['calculation_chain'], 'dynamic_formula_cells': result['dynamic_formula_cells']}
 
 
 def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):

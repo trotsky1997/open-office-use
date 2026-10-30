@@ -440,7 +440,7 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
   const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
   inputs.forEach(input=>{input.dataset.baseline=input.value; input.parentElement.querySelector('select').value='default';});
-  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Formula caches may be stale; recalculation is requested on open.${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}`); await refresh();
+  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Formula caches may be stale; recalculation is requested on open.${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}${result.dynamic_formula_cells?.length ? ' Dynamic formula spill ranges require compatible recalculation and review.' : ''}`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; }
@@ -533,7 +533,7 @@ document.getElementById('edit-form').addEventListener('submit', async event => {
  try {
   const response=await fetch('edit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,mode:snapshot.mode,value:snapshot.value})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Edit failed');
-  editBaseline=snapshot; invalidateEdit(`Saved as revision ${result.revision}.${result.recalculation_requested ? ' Formula caches may be stale; recalculation is requested on open.' : ''}${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}`); await refresh();
+  editBaseline=snapshot; invalidateEdit(`Saved as revision ${result.revision}.${result.recalculation_requested ? ' Formula caches may be stale; recalculation is requested on open.' : ''}${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}${result.dynamic_formula_cells?.length ? ' Dynamic formula spill ranges require compatible recalculation and review.' : ''}`); await refresh();
  } catch (error) {
   document.getElementById('edit-status').textContent=`Edit error: ${error.message}`;
   if (loaded === target && current === target.revision && pinned === null) { value.readOnly=false; mode.disabled=false; button.disabled=false; }

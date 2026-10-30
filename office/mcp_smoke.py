@@ -371,6 +371,12 @@ async def main():
                 assert not literal_edit.isError, literal_edit
                 literal_book = load_workbook(literal_draft / 'revision-000001.xlsx')
                 assert literal_book.active['A1'].value == '00123' and literal_book.active['A2'].value == '=literal' and literal_book.active['A2'].data_type == 's'
+                dynamic_draft = root / 'dynamic-grid-draft'
+                assert not (await session.call_tool('start_session', {'directory': str(dynamic_draft), 'source': str(original)})).isError
+                dynamic = await session.call_tool('session_edit_grid', {'directory': str(dynamic_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'C1', 'changes': [{'cell': 'C1', 'value': '=SEQUENCE(3)'}]})
+                assert not dynamic.isError and dynamic.structuredContent['recalculation_requested'] and dynamic.structuredContent['dynamic_formula_cells'] == ['C1'], dynamic
+                dynamic_read = await session.call_tool('session_read_grid', {'directory': str(dynamic_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'C1'})
+                assert not dynamic_read.isError and not dynamic_read.structuredContent['rows'][0][0]['editable'], dynamic_read
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
                 assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1 and saved_grid.structuredContent['formula_cache_effect'] == 'may_be_stale' and saved_grid.structuredContent['recalculation_requested'], saved_grid
                 styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True, 'italic': True, 'font_color': '336699', 'horizontal': 'center', 'wrap': True}})

@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from lxml import etree
+from openpyxl.formula import Tokenizer
 import cell_text
 import grid_styles
 import officecli_backend
@@ -21,6 +22,64 @@ SHARED = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStri
 
 CHAIN_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain'
 CHAIN_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml'
+
+
+META_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata'
+META_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
+DYNAMIC_METADATA = b'''<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray"><metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes><futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata><cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>'''
+
+
+def dynamic_formula_matches(requested, candidate):
+    if requested == candidate: return True
+    try:
+        before = Tokenizer('=' + requested).items; after = Tokenizer('=' + candidate).items
+    except Exception as exc: raise ValueError('Unable to verify dynamic formula') from exc
+    if len(before) != len(after): return False
+    local = None; result_start = len(before)
+    if before and before[0].type == 'FUNC' and before[0].value.upper() == 'LET(':
+        depth = 0; separators = []; nested = False
+        for index, token in enumerate(before):
+            if token.subtype == 'OPEN':
+                if index and token.type == 'FUNC' and token.value.upper() in ('LET(', 'LAMBDA('): nested = True
+                depth += 1
+            elif token.subtype == 'CLOSE': depth -= 1
+            elif token.type == 'SEP' and token.subtype == 'ARG' and depth == 1: separators.append(index)
+        if not nested and len(separators) == 2 and separators[0] == 2 and before[1].type == 'OPERAND' and before[1].subtype == 'RANGE':
+            name = before[1].value
+            if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', name) and not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', name):
+                local = name; result_start = separators[1] + 1
+    future = {'SEQUENCE', 'XLOOKUP', 'FILTER', 'SORT', 'SORTBY', 'UNIQUE', 'RANDARRAY', 'LET'}
+    for index, (original, produced) in enumerate(zip(before, after)):
+        if (original.type, original.subtype) != (produced.type, produced.subtype): return False
+        value = produced.value
+        if produced.type == 'FUNC' and produced.subtype == 'OPEN':
+            match = re.fullmatch(r'_xlfn\.(?:_xlws\.)?([A-Za-z][A-Za-z0-9.]*)\(', value, re.IGNORECASE)
+            if match and match.group(1).upper() in future: value = match.group(1) + '('
+        elif produced.type == 'OPERAND' and produced.subtype == 'RANGE' and local and (index == 1 or index >= result_start):
+            if value.lower() == ('_xlpm.' + local).lower(): value = value[6:]
+        if value != original.value: return False
+    return True
+
+
+def metadata_part(archive):
+    rels = ooxml.parse_xml(archive.read('xl/_rels/workbook.xml.rels')).getroot()
+    manifest = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
+    if rels.tag != grid_styles.REL + 'Relationships' or manifest.tag != CT + 'Types': raise ValueError('Invalid workbook metadata')
+    relationships = [item for item in rels.findall(grid_styles.REL + 'Relationship') if item.get('Type', '').endswith('/sheetMetadata')]
+    overrides = [item for item in manifest.findall(CT + 'Override') if item.get('ContentType', '').endswith('.sheetMetadata+xml')]
+    if any(item.get('ContentType') == META_TYPE for item in manifest.findall(CT + 'Default')): raise ValueError('Unsupported default sheet metadata content type')
+    if not relationships and not overrides: return None
+    if len(relationships) != 1 or len(overrides) != 1 or relationships[0].get('Type') != META_REL or overrides[0].get('ContentType') != META_TYPE: raise ValueError('Ambiguous sheet metadata')
+    rel = relationships[0]; target = rel.get('Target', '')
+    if rel.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', '\\', ':')): raise ValueError('Unsupported sheet metadata target')
+    path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('xl', target))
+    if not path.startswith('xl/') or path not in archive.namelist() or overrides[0].get('PartName') != '/' + path: raise ValueError('Invalid sheet metadata part')
+    if len([item for item in manifest.findall(CT + 'Override') if item.get('PartName') == '/' + path]) != 1: raise ValueError('Ambiguous sheet metadata content type')
+    if posixpath.join(posixpath.dirname(path), '_rels', posixpath.basename(path) + '.rels') in archive.namelist(): raise ValueError('Sheet metadata has relationships')
+    root = ooxml.parse_xml(archive.read(path)).getroot()
+    expected = ooxml.parse_xml(DYNAMIC_METADATA).getroot()
+    if grid_styles.equivalent(root) != grid_styles.equivalent(expected): raise ValueError('Unsupported sheet metadata structure')
+    return path
 
 
 def remove_calculation_chain(archive, manifest):
@@ -96,19 +155,26 @@ def apply(source, output, sheet, changes, operations):
                     if address in targets:
                         if address in cells or row.get('r') != re.fullmatch(r'[A-Z]{1,3}([1-9][0-9]{0,6})', address).group(1): raise ValueError('Duplicate or invalid candidate cell')
                         cells[address] = cell
-            values = {}
+            values = {}; dynamic = set(); dynamic_metadata = None
             for address, requested in targets.items():
                 cell = cells.get(address)
                 if cell is None:
                     if requested: raise ValueError('OfficeCLI omitted a target cell')
                     values[address] = (None, None, None); continue
-                if any(key not in ('r', 's', 't') for key in cell.attrib): raise ValueError('Candidate cell has unsupported metadata')
+                if any(key not in ('r', 's', 't', 'cm') for key in cell.attrib): raise ValueError('Candidate cell has unsupported metadata')
+                is_dynamic = cell.get('cm') is not None
+                if is_dynamic and (address in literal or not requested.startswith('=') or cell.get('cm') != '1'): raise ValueError('Unsupported candidate cell metadata')
                 style = cell.get('s', '0'); kind = cell.get('t'); children = list(cell)
                 if address not in literal and requested.startswith('='):
                     formulas = cell.findall(X + 'f')
-                    if len(formulas) != 1 or formulas[0].attrib or len(formulas[0]) or not formulas[0].text or any(child.tag not in (X + 'f', X + 'v') for child in children):
-                        raise ValueError('Candidate formula is unsupported')
-                    if formulas[0].text != requested[1:]: raise ValueError('Candidate formula differs from requested expression')
+                    if len(formulas) != 1 or len(formulas[0]) or not formulas[0].text or any(child.tag not in (X + 'f', X + 'v') for child in children): raise ValueError('Candidate formula is unsupported')
+                    if is_dynamic:
+                        if dict(formulas[0].attrib) != {'t': 'array', 'ref': address} or kind not in (None, 'n', 'e', 'str', 'b'): raise ValueError('Unsupported dynamic formula')
+                        if not dynamic_formula_matches(requested[1:], formulas[0].text): raise ValueError('Candidate formula differs from requested expression')
+                        metadata_path = metadata_part(archive)
+                        if metadata_path is None: raise ValueError('Dynamic formula metadata is missing')
+                        dynamic_metadata = archive.read(metadata_path); dynamic.add(address)
+                    elif formulas[0].attrib or formulas[0].text != requested[1:]: raise ValueError('Candidate formula differs from requested expression or has unsupported metadata')
                     values[address] = (style, None, [copy.deepcopy(formulas[0])]); continue
                 if address not in literal and requested == '':
                     if any(child.tag not in (X + 'v',) for child in children) or any((child.text or '') for child in children): raise ValueError('Candidate did not clear target cell')
@@ -182,6 +248,7 @@ def apply(source, output, sheet, changes, operations):
                             if xf.get(key) in ('0', 'false'): xf.attrib.pop(key)
                     if grid_styles.equivalent(before_xf) != grid_styles.equivalent(after_xf): raise ValueError('Candidate changed unrelated cell formatting')
                 if style is not None and int(style) != int(old_style): cell.set('s', style)
+                if address in dynamic: cell.set('cm', '1')
                 if kind is None: cell.attrib.pop('t', None)
                 else: cell.set('t', kind)
                 for child in list(cell): cell.remove(child)
@@ -194,6 +261,19 @@ def apply(source, output, sheet, changes, operations):
                 chain_changes, chain_status = remove_calculation_chain(archive, manifest_tree)
                 if source_part in chain_changes or style_name in chain_changes: raise ValueError('Calculation chain conflicts with workbook parts')
                 additional.update(chain_changes)
+            if dynamic:
+                existing_metadata = metadata_part(archive)
+                if existing_metadata is None:
+                    path = 'xl/office-use-metadata.xml'
+                    if path in archive.namelist() or any(item.get('PartName') == '/' + path for item in manifest.findall(CT + 'Override')): raise ValueError('Sheet metadata destination already exists')
+                    rel_path = 'xl/_rels/workbook.xml.rels'; rel_raw = additional.get(rel_path, archive.read(rel_path)); rel_tree = ooxml.parse_xml(rel_raw); rels = rel_tree.getroot()
+                    ids = {item.get('Id') for item in rels.findall(grid_styles.REL + 'Relationship')}; number = 1
+                    while f'rId{number}' in ids: number += 1
+                    etree.SubElement(rels, grid_styles.REL + 'Relationship', Id=f'rId{number}', Type=META_REL, Target='/'+path)
+                    etree.SubElement(manifest, CT + 'Override', PartName='/'+path, ContentType=META_TYPE)
+                    additional[rel_path] = ooxml.serialize_xml(rel_tree, rel_raw)
+                    additional['[Content_Types].xml'] = ooxml.serialize_xml(manifest_tree, archive.read('[Content_Types].xml'))
+                    additional[path] = dynamic_metadata
             shared_parts = [item.get('PartName', '').lstrip('/') for item in manifest.findall(CT + 'Override') if item.get('ContentType') == SHARED]
             if len(shared_parts) > 1 or (shared_parts and (not shared_parts[0] or shared_parts[0] not in archive.namelist())): raise ValueError('Ambiguous shared string table')
             if shared_parts:
@@ -212,5 +292,5 @@ def apply(source, output, sheet, changes, operations):
             index = item.get('index')
             if isinstance(index, int) and 0 <= index < len(changes) and changes[index]['cell'] in literal and isinstance(item.get('output'), str):
                 item['output'] = item['output'].replace('office-use-literal-text', '[literal text]')
-        ooxml.edit_xml(source, output, lambda _: source_part, edit, allow_remove=True)
-        return {'output': str(output), 'result': result, 'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True, 'calculation_chain': chain_status}
+        ooxml.edit_xml(source, output, lambda _: source_part, edit, allow_new=True, allow_remove=True)
+        return {'output': str(output), 'result': result, 'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True, 'calculation_chain': chain_status, 'dynamic_formula_cells': sorted(dynamic)}
