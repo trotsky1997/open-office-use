@@ -810,7 +810,7 @@ def merge_cells(directory, base_revision, sheet, cell_range, merge=True):
             base = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
             def related(item, expected_type):
                 target = item.get('Target', '')
-                if item.get('Type') != base + expected_type or item.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported related worksheet part')
+                if item.get('Type') != expected_type or item.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported related worksheet part')
                 path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(part), target))
                 if not path.startswith('xl/') or path not in archive.namelist(): raise ValueError('Invalid related worksheet part')
                 return ooxml.parse_xml(archive.read(path)).getroot()
@@ -827,16 +827,18 @@ def merge_cells(directory, base_revision, sheet, cell_range, merge=True):
                     table_ids.append(item.get(rid_key))
             if len(table_ids) != len(set(table_ids)) or set(table_ids) != {item.get('Id') for item in table_rels}: raise ValueError('Ambiguous table references')
             for rel in table_rels:
-                table = related(rel, 'table')
+                table = related(rel, base + 'table')
                 if table.tag != ns + 'table': raise ValueError('Invalid table part')
                 try: table_bounds = range_boundaries(table.get('ref'))
                 except (TypeError, ValueError): raise ValueError('Invalid table range') from None
                 if any(v is None for v in table_bounds) or not (1 <= table_bounds[0] <= table_bounds[2] <= 16384 and 1 <= table_bounds[1] <= table_bounds[3] <= 1048576): raise ValueError('Invalid table range')
                 if overlap(bounds, table_bounds): raise ValueError('Merged range overlaps a table')
-            comment_rels = [item for item in relationships if item.get('Type', '').lower().endswith(('/comments', '/threadedcomment'))]
-            if len(comment_rels) > 1 or any(item.get('Type') != base + 'comments' for item in comment_rels): raise ValueError('Unsupported comment references')
+            comment_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/comments')]
+            threaded_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/threadedcomment')]
+            thread_type = 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment'
+            if len(comment_rels) > 1 or len(threaded_rels) > 1: raise ValueError('Ambiguous comment references')
             for rel in comment_rels:
-                comments = related(rel, 'comments'); lists = comments.findall(ns + 'commentList')
+                comments = related(rel, base + 'comments'); lists = comments.findall(ns + 'commentList')
                 if comments.tag != ns + 'comments' or len(lists) != 1 or len(list(comments.iter(ns + 'commentList'))) != 1 or any(child.tag not in (ns + 'authors', ns + 'commentList') for child in comments): raise ValueError('Unsupported comment structure')
                 seen_comments = set()
                 for comment in lists[0]:
@@ -845,6 +847,16 @@ def merge_cells(directory, base_revision, sheet, cell_range, merge=True):
                     seen_comments.add(ref); col, number = range_boundaries(ref)[:2]
                     if col > 16384 or number > 1048576: raise ValueError('Invalid comment reference')
                     if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1): raise ValueError(f'Non-anchor cell {ref} has a comment')
+            thread_ns = '{http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments}'
+            for rel in threaded_rels:
+                thread = related(rel, thread_type)
+                if thread.tag != thread_ns + 'ThreadedComments' or any(child.tag != thread_ns + 'threadedComment' for child in thread): raise ValueError('Unsupported threaded comment structure')
+                for comment in thread:
+                    ref = comment.get('ref', '')
+                    if not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref): raise ValueError('Invalid threaded comment reference')
+                    col, number = range_boundaries(ref)[:2]
+                    if col > 16384 or number > 1048576: raise ValueError('Invalid threaded comment reference')
+                    if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1): raise ValueError(f'Non-anchor cell {ref} has a threaded comment')
             for link in root.iter(ns + 'hyperlink'):
                 try: linked = range_boundaries(link.get('ref'))
                 except (ValueError, TypeError): raise ValueError('Invalid hyperlink range') from None

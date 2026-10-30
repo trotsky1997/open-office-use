@@ -143,3 +143,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Add versioned merge/unmerge through viewer, CLI and MCP, preserving cell XML and formula caches while rejecting occupied interiors, overlapping formulas and unsupported worksheet features.
 
 - Resolve worksheet table relationships and legacy comment anchors before merging: allow disjoint structures and anchor comments, and reject overlaps, ambiguous references and threaded comments.
+
+- Check threaded-comment anchors alongside legacy notes before merges and preserve all related parts byte-for-byte. Validated three public reference workbooks with replies and mentions, plus malformed and overlapping cases.

@@ -98,4 +98,23 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Unverified threaded comments accepted')
     assert session.info(threaded_draft)['latest_revision'] == 0
+    valid_threaded = root / 'valid-threaded.xlsx'
+    thread_part = 'xl/threadedComments/threadedComment1.xml'
+    xml = b'<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"><threadedComment ref="A1" id="root"/><threadedComment ref="A1" id="reply" parentId="root"/><threadedComment ref="H8" id="other"/></ThreadedComments>'
+    with zipfile.ZipFile(threaded) as before, zipfile.ZipFile(valid_threaded, 'w') as after:
+        for entry in before.infolist(): after.writestr(entry, xml if entry.filename == thread_part else before.read(entry))
+    valid_draft = root / 'valid-threaded-draft'; session.start(valid_draft, source=valid_threaded)
+    result = session.merge_cells(valid_draft, 0, 'Sheet', 'A1:B1')
+    with zipfile.ZipFile(valid_threaded) as before, zipfile.ZipFile(result['file']) as after:
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name != 'xl/worksheets/sheet1.xml')
+    try: session.merge_cells(valid_draft, 1, 'Sheet', 'H7:H8')
+    except ValueError as exc: assert 'threaded comment' in str(exc)
+    else: raise AssertionError('Non-anchor threaded comment accepted')
+    missing_ref = root / 'missing-thread-ref.xlsx'
+    with zipfile.ZipFile(valid_threaded) as before, zipfile.ZipFile(missing_ref, 'w') as after:
+        for entry in before.infolist(): after.writestr(entry, xml.replace(b' ref="H8"', b'') if entry.filename == thread_part else before.read(entry))
+    invalid_draft = root / 'missing-thread-ref-draft'; session.start(invalid_draft, source=missing_ref)
+    try: session.merge_cells(invalid_draft, 0, 'Sheet', 'A1:B1')
+    except ValueError: pass
+    else: raise AssertionError('Unanchored threaded comment accepted')
     print('Merge cells smoke passed: merge, unmerge, formatting, caches and content protection')
