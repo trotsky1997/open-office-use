@@ -1776,6 +1776,28 @@ export class OpenBrowserUseRoleLocator {
             this.tab.bindLocatorScope(state.snapshotId, match.node.index, match.path, match.filters);
         return await this.tab.locatorRead(state.snapshotId, match.node.index, "visible");
     }
+    async waitFor(options) {
+        if (!options || !["visible", "hidden"].includes(options.state))
+            throw new Error("Locator wait supports visible and hidden states");
+        const timeoutMs = options.timeoutMs ?? 5_000;
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+            throw new Error("Invalid locator timeout");
+        const deadline = performance.now() + timeoutMs;
+        while (true) {
+            try {
+                if (await this.isVisible() === (options.state === "visible"))
+                    return;
+            }
+            catch (error) {
+                if (!(error instanceof RetryablePreflightError))
+                    throw error;
+            }
+            const remaining = deadline - performance.now();
+            if (remaining <= 0)
+                throw new Error(`Timed out waiting for locator to become ${options.state}`);
+            await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
+        }
+    }
     async getAttribute(name, options = {}) {
         if (typeof name !== "string" || !name || name.length > 256)
             throw new Error("Invalid attribute name");

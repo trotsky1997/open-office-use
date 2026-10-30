@@ -327,6 +327,10 @@ export declare class OpenBrowserUseRoleLocator {
     }): Promise<string | null>;
     isEnabled(): Promise<boolean>;
     isVisible(): Promise<boolean>;
+    waitFor(options: {
+        state: "visible" | "hidden";
+        timeoutMs?: number;
+    }): Promise<void>;
     getAttribute(name: string, options?: {
         timeoutMs?: number;
     }): Promise<string | null>;

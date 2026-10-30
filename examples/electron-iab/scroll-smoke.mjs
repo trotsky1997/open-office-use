@@ -28,6 +28,10 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    await evaluate(`setTimeout(()=>{const b=document.createElement('button');b.id='wait-fixture';b.textContent='Wait fixture';document.body.append(b)},100)`);
+    const waitFixture=sdkTab.playwright.getByRole('button',{name:'Wait fixture',exact:true});await waitFixture.waitFor({state:'visible',timeoutMs:5000});
+    await evaluate(`setTimeout(()=>document.querySelector('#wait-fixture').style.display='none',100)`);await waitFixture.waitFor({state:'hidden',timeoutMs:5000});
+    await evaluate(`document.querySelector('#wait-fixture').remove()`);
     await evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.id='double-fixture';b.textContent='Double fixture';b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'dblclick',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
     await sdkTab.playwright.getByRole('button',{name:'Double fixture',exact:true}).dblclick();
     assert.deepEqual(await evaluate('window.doubleEvents'),[{kind:'click',detail:1,trusted:true},{kind:'click',detail:2,trusted:true},{kind:'dblclick',detail:2,trusted:true}]);

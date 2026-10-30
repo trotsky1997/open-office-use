@@ -1608,6 +1608,19 @@ export class OpenBrowserUseRoleLocator {
     if (match.path.length || match.filters.length) this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters);
     return await this.tab.locatorRead(state.snapshotId,match.node.index,"visible") as boolean;
   }
+  async waitFor(options: {state: "visible" | "hidden"; timeoutMs?: number}): Promise<void> {
+    if (!options || !["visible","hidden"].includes(options.state)) throw new Error("Locator wait supports visible and hidden states");
+    const timeoutMs = options.timeoutMs ?? 5_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
+    const deadline = performance.now() + timeoutMs;
+    while (true) {
+      try { if (await this.isVisible() === (options.state === "visible")) return; }
+      catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw new Error(`Timed out waiting for locator to become ${options.state}`);
+      await new Promise(resolve => setTimeout(resolve,Math.min(100,remaining)));
+    }
+  }
   async getAttribute(name: string, options: {timeoutMs?: number} = {}): Promise<string | null> {
     if (typeof name !== "string" || !name || name.length > 256) throw new Error("Invalid attribute name");
     return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"attribute",name)) as string | null, options.timeoutMs);

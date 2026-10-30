@@ -174,6 +174,11 @@ same match and length checks.
 its frame owners; an absent accessible match returns `false`. Offscreen or
 covered elements can still be visible. Locator matching uses the accessibility
 tree, so elements omitted from that tree cannot be detected by this method.
+`waitFor({state: "visible" | "hidden", timeoutMs})` polls the same semantic
+visibility check. `hidden` includes absent accessible matches; `attached` and
+`detached` are not supported because accessibility matching does not expose
+every DOM node. Polling may miss transient changes, and a slow browser request
+can finish after the timeout.
 `getAttribute(name)` reads the raw attribute from one match and returns `null`
 when absent; it applies the same size limit. Text-node matches do not have
 attributes; select their containing element to read its attributes.

@@ -691,6 +691,20 @@ test("role locator waits for a missing target but never retries an issued action
   await assert.rejects(locator.click({timeoutMs:-1}),/Invalid locator timeout/);
 });
 
+test('locator waits for visible and hidden states without accepting ambiguous matches',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  let nodes=[],visible=true;
+  tab.observe=async()=>({snapshotId:'1',nodes,unavailableFrames:[],text:'',textMode:'full',truncated:false});
+  tab.locatorRead=async()=>visible;
+  const locator=tab.playwright.getByRole('button',{name:'Later'});
+  setTimeout(()=>{nodes=[{index:1,role:'button',name:'Later'}];},20);
+  await locator.waitFor({state:'visible',timeoutMs:500});
+  visible=false;await locator.waitFor({state:'hidden',timeoutMs:0});
+  visible=true;await assert.rejects(locator.waitFor({state:'hidden',timeoutMs:0}),/Timed out/);
+  nodes.push({index:2,role:'button',name:'Later'});await assert.rejects(locator.waitFor({state:'visible',timeoutMs:0}),/matched 2/);
+  await assert.rejects(locator.waitFor({state:'attached',timeoutMs:0}),/visible and hidden/);
+});
+
 test("locator retries a covered target before input, and stops at an unknown input result", async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let covered=true, mouse=0, failMouse=false;
   client.request=async(method,params)=>{

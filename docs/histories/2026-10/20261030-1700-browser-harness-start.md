@@ -181,3 +181,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 修复 expectNavigation 的整体等待超时：即使主 frame 导航事件已到而动作回调未返回，超时仍会结束等待并清理监听；迟到回调不会继续启动后续加载检查，已发出的动作无法撤回。SDK 55 项通过，macOS 隔离 Chromium 原生链路实测同文档导航后回调挂起的超时。
 
 语义定位器和观察索引新增 dblclick：发送 clickCount 1 和 2 的可信输入，第一次点击后重新核对目标、frame、作用域及位置，变化时停止且不自动重试。SDK 56 项通过；macOS 隔离 Chromium 原生消息链路与 Electron 44 验证主页面及跨进程 frame 的可信 dblclick 事件。
+
+语义定位器新增 waitFor({state:'visible'|'hidden'})：轮询现有可见状态，重复匹配报错并限制等待时间。SDK 57 项通过；macOS 隔离 Chromium 原生消息链路验证主页面和跨进程 frame 中异步出现、隐藏和移除，Electron 44 验证主页面。匹配范围为可访问树；DOM attached/detached 尚不支持，隐藏状态包含无可访问匹配。
