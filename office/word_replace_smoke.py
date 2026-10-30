@@ -15,9 +15,9 @@ with tempfile.TemporaryDirectory() as tmp:
     image = root / 'image.png'; Image.new('RGB', (10, 10), 'red').save(image)
     doc = Document(); para = doc.add_paragraph(); para.add_run('Hello ').bold = True; para.add_run('world!').italic = True
     doc.add_paragraph('red red'); doc.add_paragraph('before\tafter'); doc.add_picture(str(image))
-    marked = doc.add_paragraph('marked'); marker = OxmlElement('w:bookmarkStart'); marker.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', '0'); marker.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}name', 'test'); marked._p.insert(0, marker)
+    marked = doc.add_paragraph('before'); marker = OxmlElement('w:bookmarkStart'); marker.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', '0'); marker.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}name', 'test'); marked._p.append(marker); marked.add_run('marked'); end = OxmlElement('w:bookmarkEnd'); end.set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id', '0'); marked._p.append(end)
     doc.save(source); original = source.read_bytes(); session.start(draft, source=source)
-    for path, find in [('/body/p[2]', 'red'), ('/body/p[3]', 'before'), ('/body/p[5]', 'marked'), ('/body/p[1]', 'missing')]:
+    for path, find in [('/body/p[2]', 'red'), ('/body/p[3]', 'before'), ('/body/p[5]', 'beforemarked'), ('/body/p[1]', 'missing')]:
         try:
             session.replace_text(draft, 0, path, find, 'new')
             raise AssertionError('Unsafe or ambiguous replacement succeeded')
@@ -52,12 +52,15 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as error:
         assert 'signed' in str(error)
     assert session.info(signed_draft)['latest_revision'] == 0
+    bookmarked = session.replace_text(draft, 1, '/body/p[5]', 'marked', 'target')
+    bookmark_para = Document(bookmarked['file']).paragraphs[4]
+    assert bookmark_para.text == 'beforetarget' and len(bookmark_para._p.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}bookmarkStart')) == 1 and len(bookmark_para._p.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}bookmarkEnd')) == 1
     try:
         session.replace_text(draft, 0, '/body/p[1]', 'Hello', 'Bad')
         raise AssertionError('Stale revision accepted')
     except ValueError as error:
         assert 'conflict' in str(error)
-    assert session.info(draft)['latest_revision'] == 1
+    assert session.info(draft)['latest_revision'] == 2
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'table.docx'; draft = root / 'draft'; doc = Document()
     doc.add_paragraph('outside'); table = doc.add_table(rows=2, cols=3)

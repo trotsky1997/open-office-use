@@ -9,17 +9,22 @@ from pathlib import Path
 from lxml import etree
 
 
-def replace_nodes(nodes, find, replacement, preserve_space=False):
+def match_index(text, find, replacement):
     if not isinstance(find, str) or not find or len(find) > 4000:
         raise ValueError('Find text must contain 1 to 4,000 characters')
     if not isinstance(replacement, str) or len(replacement) > 4000:
         raise ValueError('Replacement must contain at most 4,000 characters')
     if any(ord(char) < 32 for char in find + replacement):
         raise ValueError('Control characters are not supported in text replacement')
-    text = ''.join(node.text or '' for node in nodes)
     start = text.find(find)
     if start < 0 or text.find(find, start + 1) >= 0:
         raise ValueError('Find text must match exactly once in the paragraph')
+    return start
+
+
+def replace_nodes(nodes, find, replacement, preserve_space=False):
+    text = ''.join(node.text or '' for node in nodes)
+    start = match_index(text, find, replacement)
     end = start + len(find); offset = 0; inserted = False
     for node in nodes:
         value = node.text or ''; next_offset = offset + len(value)

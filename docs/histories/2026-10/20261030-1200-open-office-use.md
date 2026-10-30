@@ -59,3 +59,5 @@ Added versioned, run-preserving Word text replacement for simple direct-body par
 Extended run-preserving Word replacement to physical table-cell paths, nested tables and saved paragraph IDs; fixed preservation of the XML standalone declaration.
 
 Added run-preserving PowerPoint replacement with relationship-based slide resolution, shape and group paths, and shared atomic single-part package editing.
+
+Extended Word run-preserving replacement to ordinary hyperlinks, bookmark and comment regions, while rejecting matches crossing their boundaries.

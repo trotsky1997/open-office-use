@@ -6,6 +6,9 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE
 from pptx import Presentation
 from pptx.util import Inches
 from session import set_selection
@@ -54,6 +57,15 @@ async def main():
                 assert not slide_started.isError, slide_started
                 slide_edit = await session.call_tool('session_replace_text', {'directory': str(slide_draft), 'base_revision': 0, 'path': '/slide[1]/shape[1]/paragraph[1]', 'find': 'content', 'replacement': 'result'})
                 assert not slide_edit.isError and Presentation(slide_draft / 'revision-000001.pptx').slides[0].shapes[0].text == 'slide result', slide_edit
+                link_source = root / 'link.docx'; linked = Document(); paragraph = linked.add_paragraph('Read ')
+                hyperlink = OxmlElement('w:hyperlink'); hyperlink.set(qn('r:id'), linked.part.relate_to('https://example.com', RELATIONSHIP_TYPE.HYPERLINK, is_external=True))
+                run = OxmlElement('w:r'); content = OxmlElement('w:t'); content.text = 'linked text'; run.append(content); hyperlink.append(run); paragraph._p.append(hyperlink); linked.save(link_source)
+                link_draft = root / 'link-draft'; link_started = await session.call_tool('start_session', {'directory': str(link_draft), 'source': str(link_source)})
+                assert not link_started.isError, link_started
+                link_edit = await session.call_tool('session_replace_text', {'directory': str(link_draft), 'base_revision': 0, 'path': '/body/p[1]', 'find': 'linked', 'replacement': 'updated'})
+                assert not link_edit.isError, link_edit
+                linked_result = Document(link_draft / 'revision-000001.docx'); link_node = linked_result.paragraphs[0]._p.find(qn('w:hyperlink'))
+                assert linked_result.part.rels[link_node.get(qn('r:id'))].target_ref == 'https://example.com', link_edit
                 directory = root / 'draft'
                 started = await session.call_tool('start_session', {'directory': str(directory), 'source': str(output)})
                 assert not started.isError and started.structuredContent['latest_revision'] == 0, started

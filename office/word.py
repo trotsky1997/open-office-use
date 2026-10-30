@@ -41,13 +41,46 @@ def replace_text(source, output, path, find, replacement):
                 if index >= len(candidates):
                     raise ValueError('Target paragraph path does not exist')
                 paragraph = candidates[index]
-        if any(child.tag not in (W + 'pPr', W + 'r') for child in paragraph):
-            raise ValueError('Paragraph contains unsupported structures such as hyperlinks or annotations')
-        nodes = []
-        for run in paragraph.findall(W + 'r'):
-            if any(child.tag not in (W + 'rPr', W + 't') for child in run):
+        groups, current = [], []
+
+        def boundary():
+            if current:
+                groups.append(current[:]); current.clear()
+
+        def add_run(run):
+            tags = {child.tag for child in run}
+            if tags <= {W + 'rPr', W + 'commentReference'} and W + 'commentReference' in tags:
+                boundary(); return
+            if not tags <= {W + 'rPr', W + 't'}:
                 raise ValueError('Paragraph contains unsupported run content such as fields, tabs or images')
-            nodes.extend(run.findall(W + 't'))
-        ooxml.replace_nodes(nodes, find, replacement, preserve_space=True)
+            current.extend(run.findall(W + 't'))
+
+        markers = {W + name for name in ('bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'proofErr')}
+        for child in paragraph:
+            if child.tag == W + 'pPr':
+                continue
+            if child.tag == W + 'r':
+                add_run(child)
+            elif child.tag == W + 'hyperlink':
+                boundary()
+                if any(run.tag != W + 'r' for run in child):
+                    raise ValueError('Hyperlink contains unsupported content')
+                for run in child:
+                    add_run(run)
+                boundary()
+            elif child.tag in markers:
+                boundary()
+            else:
+                raise ValueError('Paragraph contains unsupported structures such as fields or tracked changes')
+        boundary()
+        text = ''.join(node.text or '' for group in groups for node in group)
+        start = ooxml.match_index(text, find, replacement); end = start + len(find); offset = 0
+        for group in groups:
+            length = sum(len(node.text or '') for node in group)
+            if offset <= start and end <= offset + length:
+                ooxml.replace_nodes(group, find, replacement, preserve_space=True)
+                return
+            offset += length
+        raise ValueError('Match crosses a hyperlink or annotation boundary')
 
     return ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)

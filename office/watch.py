@@ -51,7 +51,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <label>Find text <input id="word-find" maxlength="4000"></label>
 <label>Replace with <input id="word-replacement" maxlength="4000"></label>
 <button type="button" id="word-replace">Replace once</button>
-<p>Requires one exact match in a simple Word or PowerPoint paragraph. Replacement takes the first matched run's formatting; fields, links and annotations require another workflow.</p></fieldset>
+<p>Requires one exact match in a simple Word or PowerPoint paragraph. Replacement takes the first matched run's formatting. Word matches must stay within link or annotation boundaries; fields and complex content require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
