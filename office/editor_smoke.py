@@ -52,4 +52,12 @@ with tempfile.TemporaryDirectory() as tmp:
             except ValueError as error:
                 assert 'formula mode' in str(error)
         assert session.info(draft)['latest_revision'] == 1
+    literal_source = root / 'literal.xlsx'; book = Workbook(); book.active['A1'] = '00123'; book.save(literal_source)
+    literal_draft = root / 'literal'; session.start(literal_draft, source=literal_source)
+    assert session.edit_target(literal_draft, 0, '/Sheet/A1')['mode'] == 'literal'
+    literal = session.edit(literal_draft, 0, '/Sheet/A1', 'literal', '=ordinary text')
+    saved = load_workbook(literal['file']).active['A1']; assert saved.value == '=ordinary text' and saved.data_type == 's'
+    assert session.edit_target(literal_draft, 1, '/Sheet/A1')['mode'] == 'literal'
+    cleared = session.edit(literal_draft, 1, '/Sheet/A1', 'literal', '')
+    assert load_workbook(cleared['file']).active['A1'].value is None
 print('Editor smoke passed: docx, xlsx formula, pptx, stale and invalid edits')

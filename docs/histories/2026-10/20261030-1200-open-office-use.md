@@ -103,3 +103,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 新增 Word、Excel 和 PowerPoint 的原子批量定向文本替换，通过 CLI 和 MCP 在一次版本中顺序提交，并验证失败回滚及并发冲突。
 
 - XLSX 单元素编辑复用网格的安全合并，保留无关公式缓存，报告重算请求并处理公式计算链；验证 MCP、界面和受保护单元格。
+
+- XLSX 单元素编辑支持文字类型并识别已有文字；校验公式候选文本与请求一致，阻止意外改写后提交。

@@ -505,8 +505,8 @@ async function loadElement(path) {
   const target=await response.json(); if (!response.ok) throw new Error(target.error || 'Could not load element');
   if (target.revision !== current || pinned !== null || document.getElementById('edit-path').value !== path) throw new Error('Version or path changed; load the element again.');
   loaded=target; document.getElementById('edit-path').value=target.path;
-  const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula'] : ['text'];
-  mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind;return option;}));
+  const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula','literal'] : ['text'];
+  mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind==='literal' ? 'literal text' : kind;return option;}));
   const tableCell=target.format==='pptx' && target.type==='tc' || target.replace_only || Boolean(target.read_only_reason);
   mode.value=target.mode; mode.disabled=tableCell;
   const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=tableCell; value.value=target.value;

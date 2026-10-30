@@ -46,6 +46,29 @@ with tempfile.TemporaryDirectory() as tmp:
     recalc = session.recalculate(draft, 1); recalculated = load_workbook(recalc['file'], data_only=True)
     assert recalculated.active['B1'].value == 16 and recalculated.active['C1'].value == 9
     assert source.read_bytes() == original
+    tampered_draft = root / 'tampered-draft'; session.start(tampered_draft, source=source)
+    batch_original = officecli_backend.batch
+    def tampered_batch(operations, output, original):
+        result = batch_original(operations, output, original)
+        modified = Path(str(output) + '.tmp')
+        with zipfile.ZipFile(output) as before, zipfile.ZipFile(modified, 'w') as after:
+            for entry in before.infolist():
+                data = before.read(entry)
+                if entry.filename == 'xl/worksheets/sheet1.xml':
+                    tree = etree.fromstring(data)
+                    for cell in tree.iter(X + 'c'):
+                        if cell.get('r') == 'C1': cell.find(X + 'f').text = 'A1+999'
+                    data = etree.tostring(tree)
+                after.writestr(entry, data)
+        modified.replace(output)
+        return result
+    officecli_backend.batch = tampered_batch
+    try:
+        try: session.edit_grid(tampered_draft, 0, 'Sheet', 'C1', [{'cell': 'C1', 'value': '=A1+1'}])
+        except ValueError as error: assert 'differs from requested' in str(error)
+        else: raise AssertionError('Altered candidate formula was accepted')
+    finally: officecli_backend.batch = batch_original
+    assert session.info(tampered_draft)['latest_revision'] == 0
     single_draft = root / 'single-draft'; session.start(single_draft, source=source)
     single = session.edit(single_draft, 0, '/Sheet/A1', 'value', '8')
     assert single['formula_cache_effect'] == 'may_be_stale' and single['recalculation_requested']

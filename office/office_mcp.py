@@ -186,8 +186,8 @@ def session_edit_target(directory: str, base_revision: int, path: str) -> dict[s
 
 
 @server.tool()
-def session_edit(directory: str, base_revision: int, path: str, mode: Literal['text', 'value', 'formula'], value: str) -> dict[str, Any]:
-    """Set one element in a new revision; XLSX edits retain unrelated formula caches and request recalculation. Text replacement may change formatting."""
+def session_edit(directory: str, base_revision: int, path: str, mode: Literal['text', 'value', 'formula', 'literal'], value: str) -> dict[str, Any]:
+    """Set one element in a new revision; XLSX literal mode retains text, unrelated formula caches are preserved and recalculation is requested. Text replacement may change formatting."""
     return session.edit(directory, base_revision, path, mode, value)
 
 

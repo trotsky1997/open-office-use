@@ -108,6 +108,7 @@ def apply(source, output, sheet, changes, operations):
                     formulas = cell.findall(X + 'f')
                     if len(formulas) != 1 or formulas[0].attrib or len(formulas[0]) or not formulas[0].text or any(child.tag not in (X + 'f', X + 'v') for child in children):
                         raise ValueError('Candidate formula is unsupported')
+                    if formulas[0].text != requested[1:]: raise ValueError('Candidate formula differs from requested expression')
                     values[address] = (style, None, [copy.deepcopy(formulas[0])]); continue
                 if address not in literal and requested == '':
                     if any(child.tag not in (X + 'v',) for child in children) or any((child.text or '') for child in children): raise ValueError('Candidate did not clear target cell')

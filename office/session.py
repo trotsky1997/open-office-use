@@ -344,7 +344,7 @@ def edit_target(directory, base_revision, path):
         mode = 'formula'
         value = formula if formula.startswith('=') else '=' + formula
     else:
-        mode = 'value' if state['format'] == 'xlsx' else 'text'
+        mode = ('literal' if format_data.get('type') in {'String', 'SharedString', 'InlineString'} else 'value') if state['format'] == 'xlsx' else 'text'
         value = text or ''
     if len(value) > 4000:
         raise ValueError('Element value exceeds the 4,000-character editor limit')
@@ -362,7 +362,7 @@ def edit_target(directory, base_revision, path):
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
             'format': state['format'], 'mode': mode, 'value': value, 'read_only_reason': read_only_reason,
-            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode == 'value' and format_data.get('type') in {'String', 'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
+            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode in ('value', 'literal') and format_data.get('type') in {'String', 'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
 
 
 def edit(directory, base_revision, path, mode, value):
@@ -373,7 +373,7 @@ def edit(directory, base_revision, path, mode, value):
     if target.get('replace_only'): raise ValueError('Use text replacement for header and footer paragraphs')
     if target['format'] == 'pptx' and target['type'] == 'tc':
         raise ValueError('Use text replacement to edit PowerPoint table cells')
-    allowed = {'xlsx': {'value', 'formula'}, 'docx': {'text'}, 'pptx': {'text'}}
+    allowed = {'xlsx': {'value', 'formula', 'literal'}, 'docx': {'text'}, 'pptx': {'text'}}
     if mode not in allowed[target['format']]:
         raise ValueError('Edit mode is not supported for this format')
     if mode == 'value' and value.lstrip().startswith('='):
@@ -383,7 +383,7 @@ def edit(directory, base_revision, path, mode, value):
     if target['format'] == 'xlsx':
         match = cell_text.PATH.fullmatch(target['path'])
         address = match.group(2).upper() + match.group(3)
-        return edit_grid(directory, base_revision, match.group(1), address, [{'cell': address, 'value': value}])
+        return edit_grid(directory, base_revision, match.group(1), address, [{'cell': address, 'value': value, **({'type': 'text'} if mode == 'literal' and value else {})}])
     return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])
 
 
