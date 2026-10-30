@@ -955,7 +955,7 @@ export declare class OpenBrowserUseCdp {
     readonly client: OpenBrowserUseClient;
     constructor(client: OpenBrowserUseClient);
     private enableLogSession;
-    enableFrameSessions(tabId: number): Promise<boolean>;
+    enableFrameSessions(tabId: number, signal?: AbortSignal): Promise<boolean>;
     frameSessions(tabId: number): Promise<Array<{
         sessionId: string;
         frameId: string;

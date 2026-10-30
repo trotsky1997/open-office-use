@@ -1942,3 +1942,15 @@ test('URL glob matching handles complex patterns without regex backtracking',asy
   await assert.rejects(tab.waitForURL('*'.repeat(4097),{timeoutMs:0}),/too long/);
   href='https://example.test/'+ 'a'.repeat(2000);await assert.rejects(tab.waitForURL('*a'.repeat(1500),{timeoutMs:0}),/size limit/);
 });
+
+test('file chooser and download preparation respect their deadlines',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let release,requestSignal,requests=0;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async(_method,_params,_generation,_timeout,signal)=>{requests++;requestSignal=signal;return await new Promise(()=>{});};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);let frameSignal;
+  tab.browser.cdp.enableFrameSessions=(_tab,signal)=>{frameSignal=signal;return new Promise(resolve=>{release=resolve;});};
+  await assert.rejects(tab.prepareFileChooser({timeoutMs:20}),/Timed out preparing file chooser/);
+  assert.equal(frameSignal.aborted,true);release(true);await new Promise(resolve=>setImmediate(resolve));assert.equal(requests,0);
+  await assert.rejects(tab.prepareDownload({timeoutMs:20}),/Timed out preparing browser event wait/);
+  assert.equal(requestSignal.aborted,true);assert.equal(handlers.size,1);
+});

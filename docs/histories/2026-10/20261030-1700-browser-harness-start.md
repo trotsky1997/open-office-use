@@ -578,3 +578,5 @@ JavaScript 对话框监听在附着前记录标签生命周期，Page.enable 前
 子调试会话脱离时，清理绑定该会话或被递归移除的后代会话的弹窗句柄；其他会话句柄保留。SDK 116 项检查通过，事件覆盖使用合成通知。隔离 Linux ARM64 Chromium 153 跨站子 frame confirm 实验中，弹窗事件由主标签会话报告；通过 CDP 移除仍有弹窗的 frame 后，浏览器进程在处理弹窗期间崩溃，未能完成实页句柄验收。该场景需要更多浏览器和平台复现；Windows 未测。
 
 记录 JavaScript 对话框事件中的 frameId；来源 frame 脱离后暴露 frameDetached，并拒绝 SDK 发送 accept/dismiss。SDK 117 项检查通过；隔离 Linux ARM64 Chromium 153 跨进程 frame 实测标记及决定拒绝，随后关闭该标签时浏览器进程仍崩溃，完整恢复路径尚未验证。Windows 未测。
+
+文件选择等待的超时包含 frame 准备与后端注册，下载注册也受期限约束；超时取消挂起请求并释放就绪监听，准备完成后使用剩余等待时间。SDK 118 项检查通过；Linux ARM64 Chromium 原生消息注入 frame 准备延迟，确认超时信号传播，随后注册文件选择并完成真实上传。已派发的浏览器准备命令可能完成；Windows 未测。

@@ -1991,19 +1991,21 @@ export class OpenBrowserUseTab {
   }
 
   private async prepareBrowserEvent(method: string, readyMethod: string, timeoutMs: number): Promise<{result: Promise<JsonValue>}> {
-    const waitId = randomUUID(), client = this.browser.client;
+    const waitId = randomUUID(), client = this.browser.client, controller=new AbortController();
+    const deadline=performance.now()+timeoutMs;
     let remove = () => {};
     const ready = new Promise<void>(resolve => {
       remove = client.onNotification(event => {
         if (event.method === readyMethod && isObject(event.params) && event.params.waitId === waitId) resolve();
       });
     });
-    const result = Promise.resolve().then(() => client.request(method, {tabId:this.id,timeoutMs,waitId}, undefined, Math.max(client.timeoutMs,timeoutMs + 2000)));
+    const result = Promise.resolve().then(() => client.request(method, {tabId:this.id,timeoutMs,waitId}, undefined, Math.max(client.timeoutMs,timeoutMs + 2000),controller.signal));
     void result.catch(() => {});
     try {
-      await Promise.race([ready, result.then(() => { throw new Error("Event wait ended before registration was confirmed"); })]);
+      await locatorReadBeforeDeadline(Promise.race([ready, result.then(() => { throw new Error("Event wait ended before registration was confirmed"); })]),timeoutMs,deadline,"Timed out preparing browser event wait");
       return {result};
-    } finally { remove(); }
+    } catch(error) { controller.abort(); throw error; }
+    finally { remove(); }
   }
 
   async prepareDownloadStart(options: {timeoutMs?:number} = {}):Promise<OpenBrowserUseDownloadStartWait> {
@@ -2065,9 +2067,14 @@ export class OpenBrowserUseTab {
   async prepareFileChooser(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseFileChooserWait> {
     const timeoutMs = options.timeoutMs ?? 10_000;
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) throw new Error("Invalid file chooser timeout");
-    await this.browser.cdp.enableFrameSessions(this.id);
-    const prepared = await this.prepareBrowserEvent("waitForFileChooser", "onFileChooserWaitReady", timeoutMs);
-    return new OpenBrowserUseFileChooserWait(this.browser.client,prepared.result);
+    const deadline=performance.now()+timeoutMs,controller=new AbortController();
+    try {
+      await locatorReadBeforeDeadline(this.browser.cdp.enableFrameSessions(this.id,controller.signal),timeoutMs,deadline,"Timed out preparing file chooser");
+      const remaining=deadline-performance.now();
+      if(remaining<=0)throw new Error("Timed out preparing file chooser");
+      const prepared = await this.prepareBrowserEvent("waitForFileChooser", "onFileChooserWaitReady", remaining);
+      return new OpenBrowserUseFileChooserWait(this.browser.client,prepared.result);
+    } catch(error) {controller.abort();throw error;}
   }
 
   async watchDialogs(signal?:AbortSignal): Promise<void> { await this.browser.cdp.enableDialogs(this.id,signal); }
@@ -3938,8 +3945,9 @@ export class OpenBrowserUseCdp {
     if (this.#dialogs.get(tabId)?.info.id === id) this.#dialogs.delete(tabId);
   }
 
-  async enableFrameSessions(tabId: number): Promise<boolean> {
-    await this.ensureAttached(tabId);
+  async enableFrameSessions(tabId: number, signal?:AbortSignal): Promise<boolean> {
+    await waitUntilAbortable(this.ensureAttached(tabId,undefined,signal),signal);
+    if(signal?.aborted)throw new Error("Frame preparation cancelled");
     if (this.#generations.get(tabId) !== this.client.connectionGeneration) {
       this.#frames.get(tabId)?.clear();
       this.#frames.delete(tabId);
@@ -3949,9 +3957,9 @@ export class OpenBrowserUseCdp {
     const first = !this.#frames.has(tabId);
     if (first) this.#frames.set(tabId, new Map());
     try {
-      if (first) await this.call(tabId, "Target.setAutoAttach", {autoAttach: false, waitForDebuggerOnStart: false, flatten: true});
-      await this.call(tabId, "Target.setAutoAttach", {autoAttach: true, waitForDebuggerOnStart: false, flatten: true, filter: [{type: "iframe", exclude: false}, {exclude: true}]});
-      await this.frameSessions(tabId);
+      if (first) await this.call(tabId, "Target.setAutoAttach", {autoAttach: false, waitForDebuggerOnStart: false, flatten: true}, {signal});
+      await this.call(tabId, "Target.setAutoAttach", {autoAttach: true, waitForDebuggerOnStart: false, flatten: true, filter: [{type: "iframe", exclude: false}, {exclude: true}]}, {signal});
+      await waitUntilAbortable(this.frameSessions(tabId),signal);
       return true;
     } catch (error) {
       if (error instanceof Error && error.message.includes("IAB CDP command is outside page permissions")) {
