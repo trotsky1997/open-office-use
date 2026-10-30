@@ -623,10 +623,18 @@ def read_grid(directory, base_revision, sheet, cell_range):
             cells.append({'cell': address, **cell, 'dynamic_formula_anchor': dynamic_anchor,
                           'editable': reason is None, 'read_only_reason': reason, 'merged_anchor': origin})
         rows.append(cells)
+    part = grid_styles.sheet_part(source, sheet)
+    with zipfile.ZipFile(source) as archive:
+        root = ooxml.parse_xml(archive.read(part)).getroot(); views = root.findall(grid_styles.X + 'sheetViews')
+        if len(views) != 1 or len(views[0]) != 1 or views[0][0].tag != grid_styles.X + 'sheetView':
+            view_info = {'pane': None, 'issue': 'unsupported_worksheet_views'}
+        else:
+            panes = views[0][0].findall(grid_styles.X + 'pane')
+            view_info = {'pane': dict(panes[0].attrib) if len(panes) == 1 else None, 'issue': 'ambiguous_panes' if len(panes) > 1 else None}
     latest = info(directory)['latest_revision']
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
-    return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'], 'dimensions': constraints['dimensions'],
+    return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'], 'dimensions': constraints['dimensions'], 'worksheet_view': view_info,
             'rows': rows, 'cache_freshness': 'unknown'}
 
 
@@ -756,6 +764,48 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
     try: result = grid_styles.apply(source, output, sheet, [op['path'].rsplit('/', 1)[1] for op in operations], operations)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect']}
+
+
+def freeze_panes(directory, base_revision, sheet, cell):
+    if cell is not None:
+        if not isinstance(cell, str) or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', cell): raise ValueError('Freeze position must be an uppercase cell address or null')
+        col, row = range_boundaries(cell)[:2]
+        if col > 16384 or row > 1048576: raise ValueError('Freeze position is outside the worksheet')
+        if cell == 'A1': cell = None
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx': raise ValueError('Freeze panes require an XLSX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
+    ns = grid_styles.X
+    def edit(tree, archive):
+        root = tree.getroot(); containers = root.findall(ns + 'sheetViews')
+        if root.tag != ns + 'worksheet' or len(containers) != 1 or len(list(root.iter(ns + 'sheetViews'))) != 1 or len(containers[0]) != 1 or containers[0][0].tag != ns + 'sheetView': raise ValueError('Unsupported worksheet views')
+        view = containers[0][0]
+        if view.get('workbookViewId') != '0' or any(child.tag not in (ns + 'pane', ns + 'selection') for child in view) or len(view.findall(ns + 'pane')) > 1: raise ValueError('Unsupported worksheet view')
+        pane = view.find(ns + 'pane')
+        if pane is not None and (pane.get('state') != 'frozen' or set(pane.attrib) - {'state', 'xSplit', 'ySplit', 'topLeftCell', 'activePane'} or len(pane)): raise ValueError('Unsupported existing pane')
+        for selection in view.findall(ns + 'selection'):
+            if len(selection) or set(selection.attrib) - {'pane', 'activeCell', 'sqref'}: raise ValueError('Unsupported existing selection')
+        for child in list(view): view.remove(child)
+        if cell is not None:
+            attrs = {'topLeftCell':cell, 'state':'frozen'}
+            if col > 1: attrs['xSplit'] = str(col - 1)
+            if row > 1: attrs['ySplit'] = str(row - 1)
+            active = 'bottomRight' if col > 1 and row > 1 else 'topRight' if col > 1 else 'bottomLeft'
+            attrs['activePane'] = active
+            from lxml import etree
+            etree.SubElement(view, ns + 'pane', **attrs)
+            if col > 1 and row > 1:
+                etree.SubElement(view, ns + 'selection', pane='topRight')
+                etree.SubElement(view, ns + 'selection', pane='bottomLeft')
+            etree.SubElement(view, ns + 'selection', pane=active, activeCell=cell, sqref=cell)
+        else:
+            from lxml import etree
+            etree.SubElement(view, ns + 'selection', activeCell='A1', sqref='A1')
+    try: ooxml.edit_xml(source, output, lambda path: grid_styles.sheet_part(path, sheet), edit)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'freeze_panes': cell, 'formula_cache_effect': 'preserved'}
 
 
 def resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width=None, row_height=None):

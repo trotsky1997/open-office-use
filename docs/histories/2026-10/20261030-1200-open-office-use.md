@@ -137,3 +137,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Extend XLSX grid borders with range outline and interior placement, per-side RGB colors, viewer placement controls, and verification that untouched edges retain their existing styles.
 
 - Reset viewer formatting controls after a successful commit and lock them during the request, retaining options on failure to prevent accidental reuse of prior formatting.
+
+- Add versioned XLSX freeze/unfreeze operations through CLI, MCP and viewer, expose saved pane attributes in grid reads, and preserve unrelated workbook parts and formula caches.

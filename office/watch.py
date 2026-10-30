@@ -128,6 +128,11 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <label><input id="grid-border-color-enabled" type="checkbox"> Set border color</label> <input id="grid-border-color" type="color" value="#000000" aria-label="Border color">
 <label>Number format <input id="grid-numberformat" maxlength="120" placeholder="Keep"></label>
 <button type="button" id="grid-format" disabled>Apply formatting</button></fieldset>
+<fieldset><legend>Freeze panes</legend>
+<label>First scrollable cell <input id="grid-freeze-cell" value="A2" maxlength="10"></label>
+<button type="button" id="grid-freeze" disabled>Freeze</button>
+<button type="button" id="grid-unfreeze" disabled>Unfreeze</button>
+<p id="grid-freeze-info"></p></fieldset>
 <fieldset><legend>Size columns and rows</legend>
 <label>Target range <input id="grid-size-range" maxlength="32"></label>
 <label>Column width (characters) <input id="grid-column-width" type="number" min="0.01" max="255" step="any" placeholder="Keep"></label>
@@ -319,7 +324,7 @@ document.getElementById('formula-recalculate').addEventListener('click', async (
  finally { calcBusy=false; button.disabled=pinned!==null; document.getElementById('formula-scan').disabled=pinned!==null || scanBusy; }
 });
 function invalidateGrid(message) {
- gridLoaded=null; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true;
+ gridLoaded=null; document.getElementById('grid-freeze').disabled=true; document.getElementById('grid-unfreeze').disabled=true; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true;
  lockGridInputs([...document.querySelectorAll('#grid-output textarea')], true);
  if (message) document.getElementById('grid-status').textContent=message;
 }
@@ -391,6 +396,9 @@ async function loadGrid(target=null) {
    body.appendChild(tr);
   }
   table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range,sheet_protected:data.sheet_protected};
+  const pane=data.worksheet_view.pane;
+  document.getElementById('grid-freeze').disabled=false; document.getElementById('grid-unfreeze').disabled=false;
+  document.getElementById('grid-freeze-info').textContent=data.worksheet_view.issue ? 'Worksheet view requires review.' : !pane ? 'No frozen panes.' : pane.state==='frozen' && pane.topLeftCell ? `Frozen panes; first scrollable cell: ${pane.topLeftCell}.` : 'Existing pane requires review before editing.';
   document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=data.sheet_protected; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-size-range').value=cell_range; document.getElementById('grid-resize').disabled=data.sheet_protected; document.getElementById('grid-dimensions').textContent=JSON.stringify({revision,sheet,range:cell_range,...data.dimensions},null,2); document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.${data.sheet_protected ? ' Worksheet protection is enabled; locked cells and grid formatting are read-only.' : ''}`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
@@ -494,6 +502,24 @@ document.getElementById('grid-format').addEventListener('click', async () => {
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false; }
  } finally { fields.disabled=false; gridBusy=false; }
 });
+async function freezeGrid(cell) {
+ if (gridBusy) return;
+ if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
+ const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output textarea')];
+ if (inputs.some(gridChanged)) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before changing the pane.'; return; }
+ gridBusy=true; const freeze=document.getElementById('grid-freeze'), unfreeze=document.getElementById('grid-unfreeze');
+ freeze.disabled=true; unfreeze.disabled=true; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; lockGridInputs(inputs,true);
+ try {
+  const response=await fetch('grid-freeze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Pane change failed');
+  invalidateGrid(`Pane saved as revision ${result.revision}.`); await refresh();
+ } catch(error) {
+  document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
+  if (gridLoaded===loaded && current===loaded.revision && pinned===null) { freeze.disabled=false; unfreeze.disabled=false; document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; lockGridInputs(inputs,false); }
+ } finally { gridBusy=false; }
+}
+document.getElementById('grid-freeze').addEventListener('click',()=>freezeGrid(document.getElementById('grid-freeze-cell').value));
+document.getElementById('grid-unfreeze').addEventListener('click',()=>freezeGrid(null));
 document.getElementById('grid-resize').addEventListener('click', async () => {
  if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision!==current || pinned!==null) {invalidateGrid('Version changed; reload the range.'); return;}
@@ -1264,7 +1290,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1452,6 +1478,9 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range'}:
                                 raise ValueError('Grid requires base_revision, sheet and cell_range')
                             saved = session.read_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'])
+                        elif route.endswith('/grid-freeze'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell'}: raise ValueError('Freeze requires revision, sheet and cell')
+                            saved = session.freeze_panes(directory, payload['base_revision'], payload['sheet'], payload['cell'])
                         elif route.endswith('/grid-resize'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'target_range', 'column_width', 'row_height'}:
                                 raise ValueError('Grid sizing requires revision, sheet, ranges, width and height')

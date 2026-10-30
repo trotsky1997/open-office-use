@@ -141,6 +141,12 @@ with tempfile.TemporaryDirectory() as tmp:
             raise AssertionError('Stale grid edit was accepted')
         except urllib.error.HTTPError as error:
             assert error.code == 400
+        freeze = {'base_revision': 3, 'sheet': 'Sales Data', 'cell': 'B2'}
+        try: post('grid-freeze', freeze, 'http://evil.test'); raise AssertionError('Cross-origin freeze accepted')
+        except urllib.error.HTTPError as error: assert error.code == 403
+        assert post('grid-freeze', freeze)['revision'] == 4
+        assert load_workbook(draft / 'revision-000004.xlsx').active.freeze_panes == 'B2'
+        assert post('grid', {'base_revision': 4, 'sheet': 'Sales Data', 'cell_range': 'A1'})['worksheet_view']['pane']['topLeftCell'] == 'B2'
     finally:
         server.send_signal(signal.SIGINT); server.wait(timeout=10)
 print('Grid smoke passed: multiple cells, formulas, clear, range and revision safety')

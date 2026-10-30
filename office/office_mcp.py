@@ -188,6 +188,12 @@ def session_format_grid(directory: str, base_revision: int, sheet: str, cell_ran
 
 
 @server.tool()
+def session_freeze_panes(directory: str, base_revision: int, sheet: str, cell: str | None) -> dict[str, Any]:
+    """Freeze rows and columns above and left of cell; pass null or A1 to unfreeze."""
+    return session.freeze_panes(directory, base_revision, sheet, cell)
+
+
+@server.tool()
 def session_resize_grid(directory: str, base_revision: int, sheet: str, cell_range: str, target_range: str, column_width: float | None = None, row_height: float | None = None) -> dict[str, Any]:
     """Set entire column widths and/or row heights for a subrange of the loaded grid, in a new revision."""
     return session.resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width, row_height)
