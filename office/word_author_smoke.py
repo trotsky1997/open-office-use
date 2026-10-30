@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.style import WD_STYLE_TYPE
+from docx.oxml import OxmlElement
 from PIL import Image
 from docx.oxml.ns import qn
 import open_office_use
@@ -105,6 +107,20 @@ with tempfile.TemporaryDirectory() as tmp:
     toc_pdf = open_office_use.render(toc,root/'toc-render')
     toc_text = subprocess.run(['pdftotext','-f','1','-l','1',str(toc_pdf),'-'],check=True,capture_output=True,text=True).stdout
     assert 'Introduction' in toc_text and 'Analysis results' in toc_text and 'Hidden from contents' not in toc_text
+    custom = root/'custom-toc.docx'; custom_doc = Document(toc)
+    style = custom_doc.styles.add_style('Custom Heading',WD_STYLE_TYPE.PARAGRAPH); style.base_style = custom_doc.styles['Heading 2']
+    custom_doc.add_paragraph('Inherited heading',style=style)
+    direct = custom_doc.add_paragraph('Direct outline'); outline = OxmlElement('w:outlineLvl'); outline.set(qn('w:val'),'0'); direct._p.get_or_add_pPr().append(outline)
+    custom_doc.save(custom); custom_result = root/'custom-refreshed.docx'
+    word.refresh_authored_toc(custom,custom_result,'/body/p[1]')
+    custom_contents = Document(custom_result).paragraphs[0].text
+    assert '  Inherited heading' in custom_contents and 'Direct outline' in custom_contents, custom_contents
+    code, validation, _ = officecli_backend.invoke('validate',custom_result); assert code == 0 and validation['success'], validation
+    cycle = root/'cycle.docx'; style.base_style = style; custom_doc.save(cycle)
+    try: word.refresh_authored_toc(cycle,root/'cycle-result.docx','/body/p[1]')
+    except ValueError as exc: assert 'inheritance' in str(exc), exc
+    else: raise AssertionError('Cyclic heading style accepted')
+    assert not (root/'cycle-result.docx').exists()
     altered = root/'altered-toc.docx'; altered_doc = Document(toc); altered_doc.paragraphs[0].runs[3].bold = True; altered_doc.save(altered)
     try: word.refresh_authored_toc(altered,root/'rejected-toc.docx','/body/p[1]')
     except ValueError: pass

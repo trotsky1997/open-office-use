@@ -453,14 +453,56 @@ def refresh_authored_toc(source, output, path, expected_sha256=None):
         if any(node.attrib or node[0].tag not in (W + 't', W + 'br') or set(node[0].attrib) - {'{http://www.w3.org/XML/1998/namespace}space'} for node in children[3:-1]): raise ValueError('Unsupported TOC field cache')
         body = tree.getroot().find(W + 'body')
         if paragraph.getparent() is not body: raise ValueError('TOC must be a direct body paragraph')
+        relations = ooxml.parse_xml(archive.read('word/_rels/document.xml.rels')).getroot()
+        style_rels = [rel for rel in relations.findall(REL + 'Relationship') if rel.get('Type') == R[1:-1] + '/styles']
+        if len(style_rels) != 1 or style_rels[0].get('TargetMode', 'Internal') != 'Internal': raise ValueError('Word styles relationship is missing or ambiguous')
+        target = style_rels[0].get('Target', '')
+        if not target or any(char in target for char in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported Word styles relationship')
+        styles_part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+        if not styles_part.startswith('word/') or styles_part not in archive.namelist(): raise ValueError('Invalid Word styles part')
+        styles_root = ooxml.parse_xml(archive.read(styles_part)).getroot()
+        if styles_root.tag != W + 'styles': raise ValueError('Invalid Word styles XML')
+        styles = {}; defaults = []
+        for style in styles_root.findall(W + 'style'):
+            if style.get(W + 'type') != 'paragraph': continue
+            identity = style.get(W + 'styleId', '')
+            if not identity or identity in styles or len(styles) >= 20000: raise ValueError('Ambiguous Word paragraph styles')
+            styles[identity] = style
+            if style.get(W + 'default') in ('1', 'true', 'on'): defaults.append(identity)
+        if len(defaults) > 1: raise ValueError('Ambiguous default paragraph style')
+        def outline(node):
+            values = node.findall(W + 'pPr/' + W + 'outlineLvl')
+            if len(values) > 1: raise ValueError('Ambiguous outline level')
+            if not values: return None
+            value = values[0].get(W + 'val', '')
+            if not re.fullmatch(r'[0-9]', value): raise ValueError('Unsupported outline level')
+            return int(value)
+        def style_outline(identity):
+            seen = set()
+            while identity:
+                if identity in seen or len(seen) >= 64 or identity not in styles: raise ValueError('Unsupported paragraph style inheritance')
+                seen.add(identity); style = styles[identity]; level = outline(style)
+                if level is not None: return level
+                base = style.findall(W + 'basedOn')
+                if len(base) > 1: raise ValueError('Ambiguous paragraph style inheritance')
+                identity = base[0].get(W + 'val') if base else None
+                if base and not identity: raise ValueError('Missing base paragraph style')
+            return 9
         fields = field_paragraphs(body); headings = []
         for item in body.iter(W + 'p'):
-            style = item.find(W + 'pPr/' + W + 'pStyle'); value = style.get(W + 'val', '') if style is not None else ''
-            level = re.fullmatch(r'Heading([1-9])', value)
-            if not level or int(level.group(1)) > int(match.group(1)): continue
+            style_nodes = item.findall(W + 'pPr/' + W + 'pStyle')
+            if len(style_nodes) > 1: raise ValueError('Ambiguous paragraph style')
+            identity = style_nodes[0].get(W + 'val', '') if style_nodes else (defaults[0] if defaults else None)
+            if style_nodes and not identity: raise ValueError('Missing paragraph style')
+            style_level = style_outline(identity) if identity else 9
+            direct_level = outline(item); effective = direct_level if direct_level is not None else style_level
+            builtin = re.fullmatch(r'Heading([1-9])', identity or '')
+            if builtin and effective not in (int(builtin.group(1)) - 1, 9): raise ValueError('Built-in heading outline differs from its TOC level')
+            level = int(builtin.group(1)) if builtin else effective + 1
+            if level > int(match.group(1)): continue
             if item.getparent() is not body or item in fields or any(node.tag in {W + name for name in ('ins', 'del', 'moveFrom', 'moveTo', 'sdt', 'drawing', 'object', 'tab', 'br', 'sym', 'footnoteReference', 'endnoteReference')} | {W14 + 'conflictIns', W14 + 'conflictDel'} for node in item.iter()): raise ValueError('TOC headings require supported direct body text')
             text = ''.join(node.text or '' for node in item.iter(W + 't'))
-            headings.append((int(level.group(1)), text))
+            headings.append((level, text))
             if len(headings) > 2000 or sum(len(value) for _, value in headings) > 200000: raise ValueError('TOC heading cache exceeds limits')
         if not headings: raise ValueError('No supported headings in the TOC range')
         for node in children[3:-1]: paragraph.remove(node)

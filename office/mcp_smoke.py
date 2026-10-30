@@ -11,6 +11,7 @@ from openpyxl import Workbook, load_workbook
 from lxml import etree
 from openpyxl.styles import Font, Protection
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE
@@ -48,6 +49,8 @@ async def main():
                 toc_file = root/'toc.docx'
                 toc_result = await session.call_tool('author_file', {'spec':{'blocks':[{'type':'table_of_contents'},{'type':'heading','text':'Overview'}]},'output':str(toc_file)})
                 assert not toc_result.isError and 'Overview' in Document(toc_file).paragraphs[0].text, toc_result
+                toc_doc = Document(toc_file); heading_style = toc_doc.styles.add_style('MCP Custom Heading',WD_STYLE_TYPE.PARAGRAPH); heading_style.base_style = toc_doc.styles['Heading 2']
+                toc_doc.add_paragraph('Inherited heading',style=heading_style); toc_doc.save(toc_file)
                 toc_draft = root/'toc-draft'; assert not (await session.call_tool('start_session', {'directory':str(toc_draft),'source':str(toc_file)})).isError
                 toc_search = await session.call_tool('session_search_word_body', {'directory':str(toc_draft),'revision':0,'query':'Overview'})
                 assert toc_search.structuredContent['matches'][0]['in_field'] and not toc_search.structuredContent['matches'][0]['replace_text_path_supported'], toc_search
@@ -58,7 +61,7 @@ async def main():
                 heading_update = await session.call_tool('session_replace_text', {'directory':str(toc_draft),'base_revision':0,'path':'/body/p[2]','find':'Overview','replacement':'Revised'})
                 assert not heading_update.isError, heading_update
                 toc_refresh = await session.call_tool('session_refresh_word_toc', {'directory':str(toc_draft),'base_revision':1,'path':'/body/p[1]'})
-                assert not toc_refresh.isError and toc_refresh.structuredContent['page_numbers'] == 'require_field_update' and Document(toc_refresh.structuredContent['file']).paragraphs[0].text == 'Revised', toc_refresh
+                assert not toc_refresh.isError and toc_refresh.structuredContent['page_numbers'] == 'require_field_update' and Document(toc_refresh.structuredContent['file']).paragraphs[0].text == 'Revised\n  Inherited heading', toc_refresh
                 oversized_cell = root / 'oversized-cell.xlsx'
                 rejected_cell = await session.call_tool('author_file', {'spec':{'sheets':{'Data':{'A1':'😀'*16384}}}, 'output':str(oversized_cell)})
                 assert rejected_cell.isError and not oversized_cell.exists(), rejected_cell
