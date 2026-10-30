@@ -77,10 +77,9 @@ with tempfile.TemporaryDirectory() as tmp:
     def missing_point(tree):
         cache=tree.find('.//'+C+'cat/'+C+'strRef/'+C+'strCache'); cache.remove(cache.find(C+'pt'))
     gap_source=rewrite('missing-point.xlsx',missing_point); gap=chart_cache.scan(gap_source); gap_ref=next(x for x in gap['charts'][0]['references'] if x['status']=='mismatch')
-    try: chart_cache.sync(gap_source,root/'gap-output.xlsx',gap['charts'][0]['part'],gap_ref['index'])
-    except ValueError as exc: assert 'missing points' in str(exc)
-    else: raise AssertionError('Missing cache point accepted')
-    assert not (root/'gap-output.xlsx').exists()
+    gap_result=chart_cache.sync(gap_source,root/'gap-output.xlsx',gap['charts'][0]['part'],gap_ref['index'])
+    assert gap_result['updated_points']==1 and chart_cache.scan(gap_result['output'])['mismatch_references']==0
+    validation_code, validation, _=officecli_backend.invoke('validate',gap_result['output']); assert validation_code==0 and validation['success'],validation
     def extension(tree): etree.SubElement(tree,C+'extLst')
     extension_result=chart_cache.scan(rewrite('extension.xlsx',extension)); assert extension_result['charts'][0]['extensions_present'] and not extension_result['complete']
     def extended_mismatch(tree):

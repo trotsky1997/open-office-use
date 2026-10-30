@@ -255,3 +255,11 @@ Added optional atomic cache synchronization to embedded chart grid edits. Covere
 ### Mixed chart mismatch coverage
 
 Corrected PowerPoint chart reconciliation completeness when a reference contains both mismatched and unverified points. Verified the mixed case and both corresponding review-bundle flags.
+
+### Fill missing chart cache points
+
+Extended XLSX and PowerPoint chart cache synchronization to add missing points from verified stored values. Validated workbook and slide examples, package isolation and OfficeCLI schema validation; missing caches and unverified source values still require separate review.
+
+### New slide chart axis IDs
+
+Normalized generated PowerPoint chart axis IDs and cross-references to positive values after OfficeCLI validation revealed invalid negative IDs from the chart library. Verified column and line charts with schema validation and PDF rendering.

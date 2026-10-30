@@ -14,6 +14,7 @@ from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.util import Inches
 import open_office_use
+import officecli_backend
 import session
 import slide_charts
 import review_bundle
@@ -97,6 +98,22 @@ with tempfile.TemporaryDirectory() as tmp:
                 workbook=load_workbook(io.BytesIO(data)); workbook.active['B2']=999
                 buffer=io.BytesIO(); workbook.save(buffer); data=buffer.getvalue()
             dst.writestr(entry,data)
+    gap=root/'missing-point.pptx'
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(gap,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename=='ppt/charts/chart1.xml':
+                tree=etree.fromstring(data); cache=tree.find('.//'+slide_charts.C+'val/'+slide_charts.C+'numRef/'+slide_charts.C+'numCache'); cache.remove(cache.find(slide_charts.C+'pt')); data=etree.tostring(tree)
+            dst.writestr(entry,data)
+    gap_draft=root/'gap-draft';session.start(gap_draft,source=gap)
+    gap_chart=session.inspect_slide_charts(gap_draft,0)['charts'][0]
+    gap_ref=next(ref for ref in gap_chart['reconciliation']['references'] if ref['status']=='mismatch')
+    assert gap_ref['mismatches'][0]['reason']=='missing_point'
+    fixed=session.sync_slide_chart_cache(gap_draft,0,gap_chart['chart_part'],gap_ref['index'])
+    assert fixed['updated_points']==1 and session.inspect_slide_charts(gap_draft,1)['charts'][0]['reconciliation']['status']=='match'
+    code, validation, _=officecli_backend.invoke('validate',fixed['output']); assert code==0 and validation['success'],validation
+    with zipfile.ZipFile(gap) as before,zipfile.ZipFile(fixed['output']) as after:
+        assert {name for name in before.namelist() if before.read(name)!=after.read(name)}=={gap_chart['chart_part'].lstrip('/')}
     mixed=root/'mixed-unverified.pptx'
     with zipfile.ZipFile(mismatch) as src, zipfile.ZipFile(mixed,'w') as dst:
         for entry in src.infolist():

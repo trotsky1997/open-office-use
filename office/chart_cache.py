@@ -154,7 +154,7 @@ def scan(file):
 
 
 def sync(source, output, part, reference, allow_formula_caches=False):
-    """Update existing mismatched cache points from stored worksheet values."""
+    """Update or add mismatched cache points from stored worksheet values."""
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
     if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx': raise ValueError('Chart cache sync requires XLSX input and output')
     if not isinstance(part, str) or isinstance(reference, bool) or not isinstance(reference, int) or reference < 1:
@@ -203,21 +203,28 @@ def sync(source, output, part, reference, allow_formula_caches=False):
                 points[index] = values[0]
             for index, cell in enumerate(cells):
                 value = cell.get('value'); node_value = points.get(index)
-                if node_value is None: raise ValueError('Chart cache has missing points; sync does not add points')
                 if value is None or isinstance(value, bool) or cell.get('type') == 'e' or cell.get('text_complete') is False: raise ValueError('Chart source contains unverified values')
-                old = node_value.text or ''
+                old = (node_value.text or '') if node_value is not None else None
                 if node.tag == C+'numRef':
-                    if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value) or len(old)>256:
+                    if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value) or old is not None and len(old)>256:
                         raise ValueError('Chart source contains unsupported numeric values')
                     try:
-                        left, right = Decimal(str(value)), Decimal(old)
-                        if not left.is_finite() or not right.is_finite(): raise InvalidOperation
+                        left = Decimal(str(value)); right = Decimal(old) if old is not None else None
+                        if not left.is_finite() or right is not None and not right.is_finite(): raise InvalidOperation
                     except InvalidOperation as exc: raise ValueError('Chart cache contains unsupported numeric values') from exc
                     changed = left != right; new = str(value)
                 else:
-                    if not isinstance(value, str) or ESCAPED.search(value) or ESCAPED.search(old): raise ValueError('Chart source contains unsupported text values')
+                    if not isinstance(value, str) or ESCAPED.search(value) or old is not None and ESCAPED.search(old): raise ValueError('Chart source contains unsupported text values')
                     changed = value != old; new = value
-                if changed: node_value.text = new; updated += 1
+                if changed:
+                    if node_value is None:
+                        point = etree.Element(C+'pt', idx=str(index)); node_value = etree.SubElement(point, C+'v')
+                        cache = cache_nodes[0]; position = len(cache)
+                        for offset, child in enumerate(cache):
+                            if child.tag == C+'extLst' or child.tag == C+'pt' and int(child.get('idx')) > index:
+                                position = offset; break
+                        cache.insert(position, point)
+                    node_value.text = new; updated += 1
             if updated != ref['mismatch_count']: raise ValueError('Chart source or cache did not match the scan')
         ooxml.edit_xml(snapshot, output, lambda _: part, edit)
     return {'output': str(output), 'part': part, 'reference': reference, 'source_sheet': sheet, 'source_range': cell_range,

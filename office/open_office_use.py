@@ -330,6 +330,12 @@ def append_slides(presentation, slides):
                     if 'color' in series: color(series['color'])
                     data.add_series(name, values, number_format=number_format)
                 chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED if chart_type == 'column' else XL_CHART_TYPE.LINE, x, y, width, height, data).chart
+                # Chart axis IDs must be positive and cross-references must stay consistent.
+                axis_ids = {}
+                for axis_id in chart._element.xpath('.//c:axId | .//c:crossAx'):
+                    value = axis_id.get('val')
+                    if value not in axis_ids: axis_ids[value] = str(len(axis_ids) + 1)
+                    axis_id.set('val', axis_ids[value])
                 embedded = load_workbook(io.BytesIO(chart.part.chart_workbook.xlsx_part.blob), data_only=False)
                 try:
                     table = embedded.active

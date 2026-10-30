@@ -184,3 +184,7 @@ PowerPoint sessions expose embedded workbook grid reads and edits through CLI/MC
 Optional atomic chart-grid edits synchronize comparable affected chart caches, including inspected charts sharing the workbook, before publishing one revision. Incomplete coverage and unsupported formula caches fail the transaction; formula freshness remains unknown.
 
 PowerPoint chart reconciliation now reports incomplete coverage when a mismatched reference also contains unverified points, so review bundles retain both flags.
+
+Chart cache synchronization can add missing points when saved source values are fully comparable, in XLSX and embedded PPTX chart data. Missing caches and unverified source values remain unsupported.
+
+New PowerPoint chart authoring normalizes axis IDs to positive values, preserving cross-axis references. Column and line chart examples pass OfficeCLI schema validation and LibreOffice rendering.

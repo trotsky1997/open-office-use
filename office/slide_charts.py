@@ -1,5 +1,6 @@
 """Inspect bounded cached chart data in saved PowerPoint presentations."""
 import hashlib
+import copy
 import io
 import itertools
 import math
@@ -243,10 +244,10 @@ def sync(source, output, part, reference, allow_formula_caches=False):
             new_refs = [node for node in new_root.iter() if node.tag in chart_cache.REF_TYPES]
             if reference > len(refs) or reference > len(new_refs): raise ValueError('Chart reference changed')
             old_ref, new_ref = refs[reference - 1], new_refs[reference - 1]
-            old_values = old_ref.findall('.//' + C + 'pt/' + C + 'v')
-            new_values = new_ref.findall('.//' + C + 'pt/' + C + 'v')
-            if old_ref.tag != new_ref.tag or len(old_values) != len(new_values): raise ValueError('Chart cache changed')
-            for old, new in zip(old_values, new_values): old.text = new.text
+            cache_tag = C + ('numCache' if old_ref.tag == C + 'numRef' else 'strCache')
+            old_caches, new_caches = old_ref.findall(cache_tag), new_ref.findall(cache_tag)
+            if old_ref.tag != new_ref.tag or len(old_caches) != 1 or len(new_caches) != 1: raise ValueError('Chart cache changed')
+            old_ref.replace(old_caches[0], copy.deepcopy(new_caches[0]))
         ooxml.edit_xml(snapshot, output, lambda _: chart_part, edit)
     return {'output': str(output), 'chart_part': part, 'reference': reference, 'updated_points': synced['updated_points'],
             'source_formula_cells': synced['source_formula_cells'], 'formula_cache_freshness': 'unknown', 'snapshot_sha256': digest}
