@@ -275,3 +275,7 @@ Added font, size, RGB color, alignment, spacing and pagination properties to str
 ### Word page setup and running text
 
 Added page size, orientation, margins, header and footer text and a PAGE field to new Word authoring. Validated two rendered pages and page numbers, schema, input rejection and MCP exposure. Source-based page setup and native Word rendering remain unverified.
+
+### Word table formatting
+
+Added proportional fixed table columns, header colors and table typography to structured authoring. Validated generated markup, bad inputs, CLI/MCP and LibreOffice rendering; complex section widths and native Word rendering need separate review.

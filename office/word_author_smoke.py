@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory() as tmp:
         {'type':'paragraph','align':'justify','space_before':6,'space_after':8,'line_spacing':1.5,'keep_with_next':True,'keep_together':True,'runs':[{'text':'Revenue grew '},{'text':'18%','bold':True,'font':'Arial','font_size':16,'color':'236B8E'},{'text':' year over year.'}]},
         {'type':'bullet','text':'Retention was stable'},
         {'type':'numbered','text':'Prioritize onboarding'},
-        {'type':'table','header':True,'style':'Light Shading Accent 1','rows':[['Metric','Value'],['Retention','92%']]},
+        {'type':'table','header':True,'style':'Light Shading Accent 1','column_weights':[2,1],'header_fill':'236B8E','header_color':'FFFFFF','font':'Arial','font_size':10,'rows':[['Metric','Value'],['Retention','92%']]},
         {'type':'page_break'}, {'type':'heading','level':2,'text':'Next steps'}]}
     path = root/'spec.json'; path.write_text(json.dumps(spec), encoding='utf-8')
     cli = Path(__file__).with_name('open_office_use.py')
@@ -35,7 +35,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert doc.tables[0].cell(1,1).text == '92%'
     code, validation, _=officecli_backend.invoke('validate',output); assert code==0 and validation['success'],validation
     assert doc.tables[0].rows[0]._tr.trPr.find(qn('w:tblHeader')) is not None and doc.tables[0].cell(0,0).paragraphs[0].runs[0].bold
-    assert doc.tables[0].style.name == 'Light Shading Accent 1'
+    table=doc.tables[0]; assert table.style.name == 'Light Shading Accent 1' and table.autofit is False
+    assert abs(table.columns[0].width.twips / table.columns[1].width.twips - 2)<0.01
+    assert table.cell(0,0)._tc.tcPr.find(qn('w:shd')).get(qn('w:fill'))=='236B8E'
+    assert str(table.cell(0,0).paragraphs[0].runs[0].font.color.rgb)=='FFFFFF' and table.cell(1,0).paragraphs[0].runs[0].font.size.pt==10
+    assert table.cell(1,0).paragraphs[0].runs[0]._r.rPr.rFonts.get(qn('w:eastAsia'))=='Arial'
     body = list(doc._element.body)
     assert [item.tag.rsplit('}', 1)[-1] for item in body] == ['p','p','p','p','tbl','p','p','sectPr']
     assert body[5].find('.//' + qn('w:br')).get(qn('w:type')) == 'page'
@@ -80,7 +84,7 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid hyperlink accepted')
         assert not bad_file.exists()
-    for i, bad in enumerate([{'blocks':[{'type':'table','rows':[['a'],['a','b']]}]}, {'blocks':[{'type':'heading','level':10,'text':'bad'}]}, {'blocks':[{'type':'paragraph','text':'a','runs':[]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','bold':'yes'}]}]}, {'blocks':[{'type':'paragraph','align':'bad','text':'a'}]}, {'blocks':[{'type':'paragraph','line_spacing':0,'text':'a'}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':True}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':12.1}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','color':'oops'}]}]}]):
+    for i, bad in enumerate([{'blocks':[{'type':'table','rows':[['a'],['a','b']]}]}, {'blocks':[{'type':'heading','level':10,'text':'bad'}]}, {'blocks':[{'type':'paragraph','text':'a','runs':[]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','bold':'yes'}]}]}, {'blocks':[{'type':'table','rows':[['a','b']],'column_weights':[1]}]}, {'blocks':[{'type':'table','rows':[['a']],'header_fill':'000000'}]}, {'blocks':[{'type':'table','rows':[['a']],'font_size':12.1}]}, {'blocks':[{'type':'paragraph','align':'bad','text':'a'}]}, {'blocks':[{'type':'paragraph','line_spacing':0,'text':'a'}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':True}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':12.1}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','color':'oops'}]}]}]):
         target = root/f'bad{i}.docx'
         try: open_office_use.author(bad, target)
         except ValueError: pass

@@ -194,3 +194,5 @@ Chart cache checks and sync handle verified literal blank cells, including filli
 Word block authoring supports run font, size and color plus paragraph alignment, spacing and pagination controls. Generated table header flags use schema-valid markup; OfficeCLI validation and multipage LibreOffice rendering were checked.
 
 New Word documents support page size, orientation, margins, running header/footer text and a PAGE field through CLI/MCP authoring. Two-page LibreOffice rendering and schema validation were verified; native Word and complex multi-section layouts remain open.
+
+Word table authoring supports fixed proportional columns, header fill and ink, and table font settings. Validated OOXML, CLI/MCP, and LibreOffice rendering; complex section layouts and native Word fidelity remain open.

@@ -21,7 +21,7 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.opc.constants import RELATIONSHIP_TYPE
-from docx.shared import Inches as DocxInches, Pt as DocxPt, RGBColor as DocxRGBColor
+from docx.shared import Inches as DocxInches, Pt as DocxPt, Twips as DocxTwips, RGBColor as DocxRGBColor
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
@@ -165,13 +165,27 @@ def append_word_blocks(doc, blocks):
         if not isinstance(block, dict): raise ValueError('Each Word block must be an object')
         kind = block.get('type')
         if kind == 'table':
-            if set(block) - {'type', 'rows', 'header', 'style'}: raise ValueError('Unsupported Word table property')
+            if set(block) - {'type', 'rows', 'header', 'style', 'column_weights', 'header_fill', 'header_color', 'font', 'font_size'}: raise ValueError('Unsupported Word table property')
             rows = block.get('rows'); header = block.get('header', False); style = block.get('style')
             if not isinstance(rows, list) or not 1 <= len(rows) <= 100 or not all(isinstance(row, list) for row in rows): raise ValueError('A table requires 1 to 100 rows')
             width = len(rows[0])
             if not 1 <= width <= 20 or len(rows) * width > 2000 or any(len(row) != width for row in rows): raise ValueError('A table requires a rectangular grid of at most 2,000 cells and 20 columns')
             if any(not isinstance(value, str) or len(value) > 10000 for row in rows for value in row): raise ValueError('Table cells must be text of at most 10,000 characters')
             if not isinstance(header, bool): raise ValueError('Table header must be a boolean')
+            if not header and ('header_fill' in block or 'header_color' in block): raise ValueError('Header colors require a header row')
+            for key in ('header_fill', 'header_color'):
+                if key in block and (not isinstance(block[key], str) or not re.fullmatch(r'[0-9a-fA-F]{6}', block[key])): raise ValueError('Word table colors must be six-digit RGB')
+            if 'font' in block and (not isinstance(block['font'], str) or not 1 <= len(block['font']) <= 100 or not block['font'].strip() or any(ord(char) < 32 for char in block['font'])): raise ValueError('Font must be a name of at most 100 characters')
+            if 'font_size' in block and (isinstance(block['font_size'], bool) or not isinstance(block['font_size'], (int, float)) or not math.isfinite(block['font_size']) or not 1 <= block['font_size'] <= 400 or block['font_size'] * 2 % 1): raise ValueError('Word font size must be 1 to 400 points in half-point increments')
+            weights = block.get('column_weights')
+            if weights is not None:
+                if not isinstance(weights, list) or len(weights) != width or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0.01 <= value <= 1000 for value in weights): raise ValueError('Provide one positive column weight per column')
+                section = doc.sections[-1]
+                if section.page_width is None or section.left_margin is None or section.right_margin is None: raise ValueError('Word page width and margins are required for column weights')
+                total_twips = round((section.page_width - section.left_margin - section.right_margin) / 635)
+                total_weight = sum(weights); ends = [round(total_twips * sum(weights[:index + 1]) / total_weight) for index in range(width)]
+                starts = [0] + ends[:-1]; widths = [end - start for start, end in zip(starts, ends)]
+                if any(value < 1 for value in widths): raise ValueError('Column weights produce an invalid width')
             if style is not None:
                 if not isinstance(style, str): raise ValueError('Table style must be a name')
                 try: selected = doc.styles[style]
@@ -179,12 +193,24 @@ def append_word_blocks(doc, blocks):
                 if selected.type != WD_STYLE_TYPE.TABLE: raise ValueError('The selected style is not a table style')
             table = doc.add_table(rows=len(rows), cols=width)
             if style is not None: table.style = style
+            if weights is not None:
+                table.autofit = False
+                for column, twips in zip(table.columns, widths): column.width = DocxTwips(twips)
             cells = table._cells
             for row_index, values in enumerate(rows):
                 for column_index, value in enumerate(values):
                     cell = cells[row_index * width + column_index]; cell.text = value
-                    if header and row_index == 0:
-                        for run in cell.paragraphs[0].runs: run.bold = True
+                    if weights is not None: cell.width = DocxTwips(widths[column_index])
+                    is_header = header and row_index == 0
+                    if is_header and 'header_fill' in block:
+                        shading = OxmlElement('w:shd'); shading.set(qn('w:val'), 'clear'); shading.set(qn('w:fill'), block['header_fill'].upper()); cell._tc.get_or_add_tcPr().append(shading)
+                    for run in cell.paragraphs[0].runs:
+                        if is_header: run.bold = True
+                        if is_header and 'header_color' in block: run.font.color.rgb = DocxRGBColor.from_string(block['header_color'].upper())
+                        if 'font_size' in block: run.font.size = DocxPt(block['font_size'])
+                        if 'font' in block:
+                            run.font.name = block['font']; fonts = run._r.get_or_add_rPr().rFonts
+                            fonts.set(qn('w:eastAsia'), block['font']); fonts.set(qn('w:cs'), block['font'])
             if header:
                 properties = table.rows[0]._tr.get_or_add_trPr()
                 marker = OxmlElement('w:tblHeader'); properties.append(marker)
