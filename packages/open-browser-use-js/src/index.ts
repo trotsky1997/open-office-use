@@ -2045,6 +2045,13 @@ export class OpenBrowserUseTabPlaywright {
     return new Promise(resolve=>setTimeout(resolve,timeoutMs));
   }
 
+  waitForEvent(event: "download", options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownload> {
+    if (event !== "download") throw new Error("Unsupported browser event");
+    const preparing=this.tab.prepareDownload(options);
+    this.tab.browser.cdp.blockUntilPrepared(this.tab.id,preparing);
+    return preparing.then(wait=>wait.wait());
+  }
+
   frameLocator(selector: string): OpenBrowserUseFrameLocator {
     return new OpenBrowserUseFrameLocator(this.tab,[]).frameLocator(selector);
   }
@@ -2408,6 +2415,7 @@ export class OpenBrowserUseCdp {
   #dialogs = new Map<number, {info: OpenBrowserUseDialogInfo; generation:number; sessionId?:string; issued:boolean}>();
   #dialogEnabled = new Map<number,number>();
   #logs = new Map<number,LogCapture>();
+  #eventPreparations = new Map<number,Set<Promise<void>>>();
 
   constructor(client: OpenBrowserUseClient) {
     this.client = client;
@@ -2561,12 +2569,24 @@ export class OpenBrowserUseCdp {
     return [...(this.#frames.get(tabId)?.values() ?? [])];
   }
 
+  /** @internal */
+  blockUntilPrepared(tabId: number, preparation: Promise<unknown>): void {
+    const barrier=preparation.then(()=>{});
+    let pending=this.#eventPreparations.get(tabId);
+    if (!pending) { pending=new Set();this.#eventPreparations.set(tabId,pending); }
+    pending.add(barrier);
+    const cleanup=()=>{pending!.delete(barrier);if (!pending!.size && this.#eventPreparations.get(tabId)===pending) this.#eventPreparations.delete(tabId);};
+    void barrier.then(cleanup,cleanup);
+  }
+
   async call(
     tabId: number,
     method: string,
     commandParams: BrowserUseRequestParams = {},
     options: { timeoutMs?: number; sessionId?: string; visualPoint?: {x: number; y: number}; expectedGeneration?: number } = {}
   ): Promise<JsonValue> {
+    const preparations=this.#eventPreparations.get(tabId);
+    if (preparations?.size) await Promise.all([...preparations]);
     await this.ensureAttached(tabId);
     if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration) throw new Error("Connection changed; observe again");
     const result = await this.client.request("executeCdp", {

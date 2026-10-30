@@ -383,6 +383,9 @@ export declare class OpenBrowserUseTabPlaywright {
         fullPage?: boolean;
     }): Promise<OpenBrowserUseImage>;
     waitForTimeout(timeoutMs: number): Promise<void>;
+    waitForEvent(event: "download", options?: {
+        timeoutMs?: number;
+    }): Promise<OpenBrowserUseDownload>;
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
     locator(selector: string): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;

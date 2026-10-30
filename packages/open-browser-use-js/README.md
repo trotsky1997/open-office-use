@@ -789,6 +789,19 @@ const download = await ready.wait();
 const path = await download.path(30000); // null if the download failed or was cancelled
 ```
 
+The Playwright-style equivalent starts waiting before the action:
+
+```js
+const waiting = tab.playwright.waitForEvent("download", {timeoutMs: 30000});
+await tab.playwright.getByRole("link", {name: "Download", exact: true}).click();
+const download = await waiting;
+```
+
+SDK CDP commands issued after `waitForEvent` wait for registration confirmation;
+registration failure rejects those pending commands. Direct low-level client
+requests and actions outside this SDK do not use that barrier. Attach a rejection
+handler to the waiting promise if the triggering action may fail.
+
 `prepareDownload` returns after the extension confirms registration. The
 result is the next Chrome download started after registration; the extension's
 download event currently has no reliable tab association, so another tab's

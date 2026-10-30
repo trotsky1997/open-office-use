@@ -338,6 +338,29 @@ test('prepared download waits for registration and retains the eventual result',
   await assert.rejects(tab.prepareDownload(),/connection unavailable/);assert.equal(handlers.size,1);
 });
 
+test('download event registration blocks browser input until ready',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set(),calls=[];let complete,waitId;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=(method,params)=>{
+    calls.push(method);
+    if(method==='waitForDownload'){waitId=params.waitId;return new Promise(resolve=>{complete=resolve;});}
+    if(method==='attach' || method==='executeCdp')return Promise.resolve({});
+    throw new Error('Unexpected request');
+  };
+  const browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1);
+  const waiting=tab.playwright.waitForEvent('download',{timeoutMs:1000});
+  const input=browser.cdp.call(1,'Input.dispatchMouseEvent',{type:'mousePressed',x:1,y:1});
+  await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,['waitForDownload']);
+  for(const handler of handlers)handler({method:'onDownloadWaitReady',params:{waitId}});
+  await input;assert.deepEqual(calls,['waitForDownload','attach','executeCdp']);
+  complete({downloadId:'download-1'});assert.equal((await waiting).id,'download-1');
+  assert.throws(()=>tab.playwright.waitForEvent('other'),/Unsupported browser event/);
+  let fail;client.request=(method)=>{calls.push(method);if(method==='waitForDownload')return new Promise((_,reject)=>{fail=reject;});throw new Error('Unexpected request');};
+  const failedWait=tab.playwright.waitForEvent('download',{timeoutMs:1000}), blockedInput=browser.cdp.call(1,'Input.dispatchMouseEvent',{type:'mousePressed',x:1,y:1});
+  const rejectedWait=assert.rejects(failedWait,/registration failed/),rejectedInput=assert.rejects(blockedInput,/registration failed/);
+  await new Promise(resolve=>setImmediate(resolve));fail(new Error('registration failed'));await Promise.all([rejectedWait,rejectedInput]);assert.deepEqual(calls,['waitForDownload','attach','executeCdp','waitForDownload']);
+});
+
 test('prepared file chooser validates paths and permits one file decision',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let complete,waitId,chosen;
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};

@@ -2349,6 +2349,13 @@ export class OpenBrowserUseTabPlaywright {
             throw new Error("Invalid timeout");
         return new Promise(resolve => setTimeout(resolve, timeoutMs));
     }
+    waitForEvent(event, options = {}) {
+        if (event !== "download")
+            throw new Error("Unsupported browser event");
+        const preparing = this.tab.prepareDownload(options);
+        this.tab.browser.cdp.blockUntilPrepared(this.tab.id, preparing);
+        return preparing.then(wait => wait.wait());
+    }
     frameLocator(selector) {
         return new OpenBrowserUseFrameLocator(this.tab, []).frameLocator(selector);
     }
@@ -2801,6 +2808,7 @@ export class OpenBrowserUseCdp {
     #dialogs = new Map();
     #dialogEnabled = new Map();
     #logs = new Map();
+    #eventPreparations = new Map();
     constructor(client) {
         this.client = client;
         client.onDisconnect(() => this.#logs.clear());
@@ -2983,7 +2991,23 @@ export class OpenBrowserUseCdp {
         }
         return [...(this.#frames.get(tabId)?.values() ?? [])];
     }
+    /** @internal */
+    blockUntilPrepared(tabId, preparation) {
+        const barrier = preparation.then(() => { });
+        let pending = this.#eventPreparations.get(tabId);
+        if (!pending) {
+            pending = new Set();
+            this.#eventPreparations.set(tabId, pending);
+        }
+        pending.add(barrier);
+        const cleanup = () => { pending.delete(barrier); if (!pending.size && this.#eventPreparations.get(tabId) === pending)
+            this.#eventPreparations.delete(tabId); };
+        void barrier.then(cleanup, cleanup);
+    }
     async call(tabId, method, commandParams = {}, options = {}) {
+        const preparations = this.#eventPreparations.get(tabId);
+        if (preparations?.size)
+            await Promise.all([...preparations]);
         await this.ensureAttached(tabId);
         if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration)
             throw new Error("Connection changed; observe again");

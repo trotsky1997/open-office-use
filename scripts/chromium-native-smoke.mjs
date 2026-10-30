@@ -115,10 +115,9 @@ try {
  await tab.evaluate(`(()=>{const a=document.createElement('a');a.href='/download?run=1';a.textContent='Download fixture';a.id='download-fixture';document.body.append(a)})()`);
  for(let run=1;run<=2;run++){
    await tab.evaluate(`document.querySelector('#download-fixture').href='/download?run=${run}'`);
-   const prepared=await tab.prepareDownload({timeoutMs:5000});
-   assert.equal(await tab.playwright.getByRole('link',{name:'Download fixture',exact:true}).getAttribute('href'),`/download?run=${run}`);
-   const waiting=prepared.wait();void waiting.catch(()=>{});
-   if(run===1) await assert.rejects(tab.prepareDownload({timeoutMs:5000}),/Already waiting for a Chrome download/);
+   let waiting;
+   if(run===1) {const prepared=await tab.prepareDownload({timeoutMs:5000});waiting=prepared.wait();void waiting.catch(()=>{});await assert.rejects(tab.prepareDownload({timeoutMs:5000}),/Already waiting for a Chrome download/);}
+   else {waiting=tab.playwright.waitForEvent('download',{timeoutMs:5000});void waiting.catch(()=>{});}
    await tab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click();
    const download=await waiting;const path=await download.path(5000);
    assert.equal(download.url,`http://127.0.0.1:${http.address().port}/download?run=${run}`);
