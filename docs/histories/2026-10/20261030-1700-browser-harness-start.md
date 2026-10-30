@@ -463,3 +463,5 @@ browser.tabs.getByUrl 按精确 URL 绑定当前会话中唯一标签，缺失�
 持久 REPL 执行完成、超时或取消后关闭输出上下文并释放旧缓冲，后台回调的迟到输出不再格式化或积累；正常响应保留文本和图像。SDK 95 项测试与 macOS Electron 44.7 完整 smoke 通过，覆盖完成和超时后的迟到输出。Linux 与 Windows 本轮未测。
 
 Linux ARM64 Chromium 150 原生扩展实测 getByUrl 返回的句柄导航后保持标签 ID，旧 URL 失去匹配，新 URL 匹配同一标签；README 明确 URL 仅在查询时检查。Windows 与 Electron 此场景本轮未测。
+
+隔离 Linux ARM64 Electron 44.7 / Xvfb 的补充探索：WebContents.capturePage 在未呈现标签与隐藏窗口均返回 UnknownVizError；为 WebContentsView 启用 offscreen 后，页面报告 visible，截图预备仍超时；跳过截图的实验没有产生点击，调用 startPainting/invalidate 也未解除截图超时。上述选项仅在隔离副本中实验，正式视图配置未改动。Electron 的 [capturePage 与 offscreen API](https://www.electronjs.org/docs/latest/api/web-contents) 说明了截图和渲染选项。
