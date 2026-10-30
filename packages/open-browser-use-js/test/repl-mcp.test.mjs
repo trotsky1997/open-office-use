@@ -52,6 +52,8 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
   try {
     assert.equal((await call("tools/list")).tools[0].name, "js");
     assert.equal((await js("nodeRepl.write((await discoverBrowsers()).length)")).content[0].text, "2");
+    assert.equal((await js("nodeRepl.write((await agent.browsers.list()).length)")).content[0].text,"2");
+    assert.equal((await js("await agent.browsers.get('extension')")).isError,true);
     assert.equal((await js("nodeRepl.write((await getBrowserState()).available.length)")).content[0].text, "2");
     assert.equal((await js("await connectBrowser({browserId:'a',socketPath:'b'})")).isError,true);
     assert.equal((await js("await connectBrowser()")).isError, true);
@@ -71,6 +73,8 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
       await stopped;
     }
     assert.equal((await js("const selected = await connectBrowser(); nodeRepl.write(await selected.client.getInfo())")).isError, undefined);
+    assert.equal((await js("nodeRepl.write((await agent.browsers.get('extension')) === selected)")).content[0].text,'true');
+    assert.equal((await js("nodeRepl.write((await agent.browsers.get('extension')).browserId)")).content[0].text,socketPath);
     assert.equal((await js(`const browser = await connectBrowser({ browserId: ${JSON.stringify(socketPath)} }); const tab = await browser.newTab()`)).isError, undefined);
     assert.equal((await js("nodeRepl.write(tab.id)")).content[0].text, "42");
     assert.equal((await js("nodeRepl.write((await getBrowserState()).sessions.some(session => session.tabs?.[0]?.title === 'Fixture'))")).content[0].text, "true");

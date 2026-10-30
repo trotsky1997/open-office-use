@@ -303,3 +303,5 @@ DOM CUA 在每个 frame 批量使用浏览器 IntersectionObserver 排除被 ove
 DOM CUA 节点摘要加入关联 label、aria-labelledby、控件类型、禁用与勾选状态；输入前重核这些字段，避免状态变化后对旧节点操作，摘要不输出表单值。SDK 68 项通过；Linux ARM64 Chromium 原生消息和 Electron 44/Xvfb 验证多段标签、禁用、密码值排除与勾选状态变化拒绝。名称依据 DOM 属性近似计算，完整可访问名称规则仍待覆盖；macOS/Windows 本轮未测。
 
 新增 Codex 风格 browser.tabs、browser.user 和 nameSession；支持会话内列表、查询、创建、选择、保留/清理，用户标签列表与显式接管，以及历史查询；tab 增加 title/url。SDK 69 项通过，覆盖权限范围、重复保留项和跨 realm 日期；Linux ARM64 Chromium 原生消息验证 session 标签入口和 REPL 清理，Electron 44/Xvfb 验证 scope 内选择、创建与保留。Chrome selected 使用 session 逻辑活动标签，Electron 使用呈现状态；Electron 历史不可用，macOS/Windows 本轮未测。
+
+持久 JS REPL 新增 agent.browsers.list/get，按公开 ID 或唯一 extension/iab 类型发现和选择浏览器，复用默认会话连接并保留宿主授权范围；无法响应或歧义时报错，宿主失效时仍可选择独立扩展。SDK 69 项通过，覆盖多连接歧义和复用；Linux ARM64 Chromium 原生消息与混合 REPL 验证真实扩展、嵌入式授权通道、独立撤销，Electron 44/Xvfb 实页回归通过。能力元数据沿用后端格式，macOS/Windows 本轮未测。

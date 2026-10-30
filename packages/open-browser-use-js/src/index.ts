@@ -462,6 +462,7 @@ function browserTabs(value:JsonValue):BrowserTabInfo[] {
 export class OpenBrowserUseBrowser {
   readonly client: OpenBrowserUseClient;
   readonly cdp: OpenBrowserUseCdp;
+  browserId?:string;
   readonly tabs: OpenBrowserUseTabs;
   readonly user: OpenBrowserUseBrowserUser;
   #domCua = new Map<number,WeakRef<OpenBrowserUseTabDomCUA>>();

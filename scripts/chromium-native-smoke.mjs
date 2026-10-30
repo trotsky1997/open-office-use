@@ -590,7 +590,7 @@ try {
  const lines=createInterface({input:repl.stdout})[Symbol.asyncIterator](); let requestSequence=0;
  const call=async(code)=>{const requestId=++requestSequence;repl.stdin.write(JSON.stringify({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name:'js',arguments:{code}}})+'\n');const response=JSON.parse((await lines.next()).value);assert.equal(response.id,requestId);assert.notEqual(response.result?.isError,true,JSON.stringify(response));return response.result;};
  try {
-   await call(`const inventory = await getBrowserState(); const browser = await connectBrowser({browserId:inventory.available[0].id}); const tab = await browser.newTab(); await tab.goto(${JSON.stringify(`http://127.0.0.1:${http.address().port}/`)})`);
+   await call(`const inventory = await agent.browsers.list(); const browser = await agent.browsers.get('extension'); const tab = await browser.tabs.new(); await tab.goto(${JSON.stringify(`http://127.0.0.1:${http.address().port}/`)})`);
    assert.equal((await call('nodeRepl.write((await getBrowserState()).sessions.some(session => session.tabs.some(item => item.id === tab.id)))')).content[0].text,'true');
    await call('await tab.playwright.waitForURL(/127\\.0\\.0\\.1/, {timeoutMs:1000})');
    await call('const state = await tab.observe(); const button = state.nodes.find(n => n.role === "button" && n.name === "Save"); await tab.click(button.index,state.snapshotId)');
@@ -611,9 +611,9 @@ try {
    const js=async(code)=>{const requestId=++sequence;mixed.stdin.write(JSON.stringify({jsonrpc:'2.0',id:requestId,method:'tools/call',params:{name:'js',arguments:{code}}})+'\n');const result=JSON.parse((await replies.next()).value);assert.equal(result.id,requestId);assert.equal(result.result?.isError,undefined,JSON.stringify(result));return result.result;};
    try {
      assert.equal((await js('nodeRepl.write((await getBrowserState()).available.map(b=>b.kind).join(","))')).content[0].text,'embedded,extension');
-     await js('const list = await getBrowserState(); const host = await connectBrowser({browserId:"host"}); const chrome = await connectBrowser({browserId:list.available.find(b=>b.kind==="extension").id}); const mixedTab = await chrome.newTab()');
+     await js('const list = await agent.browsers.list(); const host = await agent.browsers.get("iab"); const chrome = await agent.browsers.get("extension"); const mixedTab = await chrome.tabs.new()');
      assert.equal((await js('nodeRepl.write((await getBrowserState()).sessions.some(s=>s.browserId!=="host" && s.tabs.some(t=>t.id===mixedTab.id)))')).content[0].text,'true');
-     lease.revoke();assert.equal((await js('nodeRepl.write((await chrome.getTabs()).some(t=>t.id===mixedTab.id))')).content[0].text,'true');
+     lease.revoke();assert.equal((await js('nodeRepl.write((await chrome.getTabs()).some(t=>t.id===mixedTab.id))')).content[0].text,'true');assert.equal((await js('nodeRepl.write((await agent.browsers.get("extension")) === chrome)')).content[0].text,'true');
      await js('await chrome.client.finalizeTabs([])');
    } finally {const exited=once(mixed,'exit');mixed.stdin.end();await exited;await connections.dispose();}
    console.log('Mixed REPL: host lease and real Chrome extension discovery, routing and independent revocation passed');

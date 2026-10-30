@@ -630,12 +630,18 @@ Its `js` tool evaluates code in one persistent Node REPL, including top-level
 `await`. Bind a browser and tab once, then reuse them across tool calls:
 
 ```js
-const browser = await connectBrowser();
-const tab = await browser.newTab();
+const available = await agent.browsers.list();
+const browser = await agent.browsers.get('extension'); // or 'iab' / an explicit listed ID
+const tab = await browser.tabs.new();
 await tab.goto("https://example.com");
 nodeRepl.write(await tab.getAXState());
 nodeRepl.emitImage(await tab.getScreenshot());
 ```
+
+`agent.browsers.list()` reports available browser IDs, types and capabilities.
+`agent.browsers.get(id)` selects a listed ID or the unique `extension` / `iab`
+type and reuses the REPL session connection. Ambiguous or unresponsive matches
+fail explicitly; the embedded browser retains its host-authorized scope.
 
 `discoverBrowsers()` probes sockets in `/tmp/open-browser-use` and returns
 their paths and status, with browser metadata for responsive connections.

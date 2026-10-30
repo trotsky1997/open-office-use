@@ -206,6 +206,7 @@ export declare class OpenBrowserUseBrowser {
     #private;
     readonly client: OpenBrowserUseClient;
     readonly cdp: OpenBrowserUseCdp;
+    browserId?: string;
     readonly tabs: OpenBrowserUseTabs;
     readonly user: OpenBrowserUseBrowserUser;
     constructor(options: OpenBrowserUseBrowserOptions);

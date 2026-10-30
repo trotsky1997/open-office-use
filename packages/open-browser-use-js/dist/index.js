@@ -381,6 +381,7 @@ function browserTabs(value) {
 export class OpenBrowserUseBrowser {
     client;
     cdp;
+    browserId;
     tabs;
     user;
     #domCua = new Map();

@@ -22,14 +22,23 @@ const browserIds = new Map<OpenBrowserUseBrowser, string>();
 const outputs = new AsyncLocalStorage<Array<Record<string, string>>>();
 const defaultSessionId = `obu-repl-${randomUUID()}`;
 let hostBrowser: OpenBrowserUseBrowser | undefined;
+let hostPending: Promise<OpenBrowserUseBrowser> | undefined;
 const extensionDiscovery = !connect || options.allowExtensionDiscovery === true;
 function track(browser: OpenBrowserUseBrowser, browserId: string): OpenBrowserUseBrowser {
   if (browsers.has(browser)) return browser;
   const close = browser.close.bind(browser);
   browser.close = () => { browsers.delete(browser); browserIds.delete(browser); if (hostBrowser === browser) hostBrowser = undefined; close(); };
   browsers.add(browser);
+  browser.browserId=browserId;
   browserIds.set(browser, browserId);
   return browser;
+}
+
+async function getHostBrowser():Promise<OpenBrowserUseBrowser> {
+  if(!connect)throw new Error('Embedded browser is unavailable');
+  if(hostBrowser)return hostBrowser;
+  const pending=hostPending ??= connect().then(browser=>hostBrowser=track(browser,'host'));
+  try {return await pending;} finally {if(hostPending===pending)hostPending=undefined;}
 }
 
 type BrowserCandidate = { socketPath: string; status: "connected"; info: JsonValue } | { socketPath: string; status: "unresponsive" };
@@ -57,28 +66,13 @@ async function discoverBrowsers(): Promise<BrowserCandidate[]> {
   return results.filter((result): result is BrowserCandidate => result !== null);
 }
 
-Object.assign(repl.context, {
-  console: new Console({ stdout: process.stderr, stderr: process.stderr }),
-  discoverBrowsers: extensionDiscovery ? discoverBrowsers : undefined,
-  getBrowserState: async () => {
-    if (connect && !hostBrowser) hostBrowser = track(await connect(), "host");
-    const available = [
-      ...(connect ? [{ kind: "embedded", id: "host", status: "host-selected" }] : []),
-      ...(extensionDiscovery ? (await discoverBrowsers()).map(candidate => ({ kind: "extension", id: candidate.socketPath, ...candidate })) : [])
-    ];
-    const sessions = await Promise.all([...browsers].map(async browser => {
-      const identity = { browserId: browserIds.get(browser), sessionId: browser.client.sessionId };
-      try { return { ...identity, tabs: await browser.getTabs() }; }
-      catch (error) { return { ...identity, error: error instanceof Error ? error.message : String(error) }; }
-    }));
-    return { available, sessions };
-  },
-  connectBrowser: async (options: Partial<OpenBrowserUseClientOptions> & {browserId?: string} = {}) => {
+const registryConnections=new Map<string,Promise<OpenBrowserUseBrowser>>();
+async function connectBrowser(options: Partial<OpenBrowserUseClientOptions> & {browserId?: string} = {}) {
     const {browserId, ...clientOptions} = options;
     if (connect && (browserId === "host" || (browserId === undefined && !clientOptions.socketPath))) {
       if (Object.keys(clientOptions).length) throw new Error("The host selects the authorized browser scope");
       if (browserId === undefined && extensionDiscovery && (await discoverBrowsers()).length) throw new Error("Browser discovery is ambiguous or incomplete; select a browser ID");
-      return hostBrowser ??= track(await connect(), "host");
+      return getHostBrowser();
     }
     if (!extensionDiscovery) throw new Error("The host selects the authorized browser scope");
     if (browserId !== undefined && (typeof browserId !== "string" || !browserId)) throw new Error("A valid browser ID is required");
@@ -92,7 +86,56 @@ Object.assign(repl.context, {
     if (typeof socketPath !== "string" || !socketPath) throw new Error("A browser socket path is required");
     const browser = await connectOpenBrowserUse({ ...clientOptions, socketPath, sessionId: clientOptions.sessionId ?? defaultSessionId });
     return track(browser, socketPath);
+}
+
+const browserRegistry={
+  async list():Promise<Array<{id:string;name:string;type:'iab' | 'extension';capabilities:unknown;status?:string}>> {
+    const result:Array<{id:string;name:string;type:'iab' | 'extension';capabilities:unknown;status?:string}>=[];
+    if(connect) {
+      try {
+        const host=await getHostBrowser();
+        const raw=await host.client.getInfo(),info=raw && typeof raw==='object' && !Array.isArray(raw) ? raw : {};
+        result.push({id:'host',name:typeof info.name==='string' ? info.name : 'Embedded browser',type:'iab',capabilities:info.capabilities ?? {}});
+      } catch {result.push({id:'host',name:'Embedded browser',type:'iab',capabilities:{},status:'unresponsive'});}
+    }
+    if(extensionDiscovery)for(const candidate of await discoverBrowsers()) {
+      const info=candidate.status==='connected' && candidate.info && typeof candidate.info==='object' && !Array.isArray(candidate.info) ? candidate.info : {};
+      result.push({id:candidate.socketPath,name:typeof info.name==='string' ? info.name : 'Chrome extension',type:'extension',capabilities:info.capabilities ?? {},...(candidate.status==='unresponsive' ? {status:'unresponsive'} : {})});
+    }
+    return result;
   },
+  async get(id:string):Promise<OpenBrowserUseBrowser> {
+    if(typeof id!=='string' || !id)throw new Error('A valid browser ID is required');
+    const candidates=await this.list();
+    const matches=id==='extension' || id==='iab' ? candidates.filter(item=>item.type===id) : candidates.filter(item=>item.id===id);
+    if(matches.length!==1 || matches[0].status==='unresponsive')throw new Error('Browser selection is ambiguous, unavailable, or unresponsive');
+    const selected=matches[0].id;
+    const existing=[...browsers].find(browser=>browserIds.get(browser)===selected && (selected==='host' || browser.client.sessionId===defaultSessionId));
+    if(existing)return existing;
+    let pending=registryConnections.get(selected);
+    if(!pending) {pending=connectBrowser({browserId:selected});registryConnections.set(selected,pending);}
+    try {return await pending;} finally {if(registryConnections.get(selected)===pending)registryConnections.delete(selected);}
+  }
+};
+
+Object.assign(repl.context, {
+  console: new Console({ stdout: process.stderr, stderr: process.stderr }),
+  discoverBrowsers: extensionDiscovery ? discoverBrowsers : undefined,
+  getBrowserState: async () => {
+    if (connect && !hostBrowser) await getHostBrowser();
+    const available = [
+      ...(connect ? [{ kind: "embedded", id: "host", status: "host-selected" }] : []),
+      ...(extensionDiscovery ? (await discoverBrowsers()).map(candidate => ({ kind: "extension", id: candidate.socketPath, ...candidate })) : [])
+    ];
+    const sessions = await Promise.all([...browsers].map(async browser => {
+      const identity = { browserId: browserIds.get(browser), sessionId: browser.client.sessionId };
+      try { return { ...identity, tabs: await browser.getTabs() }; }
+      catch (error) { return { ...identity, error: error instanceof Error ? error.message : String(error) }; }
+    }));
+    return { available, sessions };
+  },
+  connectBrowser,
+  agent: {browsers: browserRegistry},
   nodeRepl: {
     write: (value: unknown) => { outputs.getStore()?.push({ type: "text", text: typeof value === "string" ? value : inspect(value, { depth: 5 }) }); },
     emitImage: (bytes: Uint8Array, mimeType = "image/png") => {
