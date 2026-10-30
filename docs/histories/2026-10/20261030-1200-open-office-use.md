@@ -65,3 +65,5 @@ Extended Word run-preserving replacement to ordinary hyperlinks, bookmark and co
 Extended PowerPoint run-preserving replacement to table cells, merged origins, explicit paragraphs and grouped tables; table cell whole-text editing stays disabled.
 
 Added versioned, run-preserving XLSX text-cell replacement with shared-string isolation, merged and formula-range safeguards, and atomic multi-part writes.
+
+Added version-bound XLSX formula scanning and LibreOffice recalculation through session CLI, MCP and the viewer, with atomic publication and concurrent-write protection.

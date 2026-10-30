@@ -340,3 +340,5 @@ Word sessions can replace a unique literal match across simple body and table-ce
 PowerPoint sessions reuse the single-part OOXML transaction to replace literal text across simple runs, resolving the original slide part through presentation relationships without renumbering it. Supported text shapes, table cells and nested groups preserve all other package parts. Table paths use physical cell indices and reject merged-cell placeholders.
 
 Excel text replacement edits inline or shared rich strings, reuses equivalent shared entries or appends a new entry, and atomically updates the worksheet and shared-string XML together. Other package parts remain unchanged; dependent formula caches are not recalculated.
+
+XLSX sessions expose revision-bound formula scans and explicit LibreOffice recalculation. Recalculation publishes atomically as a new revision; concurrent writers conflict, and the viewer retains pending edits and clears outdated scan results.

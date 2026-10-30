@@ -27,7 +27,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 .box{position:absolute;border:2px solid #0867c4;background:#087dd126;pointer-events:none;display:none;box-sizing:border-box}
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
-#comparison-text,#comparison-parts{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
+#comparison-text,#comparison-parts,#formula-scan-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
 input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
@@ -55,6 +55,10 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <p>Requires one exact match in supported Word, PowerPoint or Excel text. Replacement takes the first matched run's formatting. Word matches must stay within link or annotation boundaries; fields and complex content require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
+<details id="formula-panel" hidden><summary>Workbook calculation and checks</summary>
+<p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
+<button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
+<p id="formula-status" role="status"></p><pre id="formula-scan-output"></pre></details>
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
@@ -88,7 +92,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -137,6 +141,31 @@ function elementDirty() {
 }
 window.addEventListener('beforeunload', event => {
  if (gridDirty() || elementDirty()) { event.preventDefault(); event.returnValue=''; }
+});
+document.getElementById('formula-scan').addEventListener('click', async () => {
+ if (scanBusy || calcBusy || pinned!==null || current<0) return;
+ const revision=current, button=document.getElementById('formula-scan'); scanBusy=true; formulaStatusRevision=revision; button.disabled=true; document.getElementById('formula-recalculate').disabled=true;
+ document.getElementById('formula-status').textContent='Scanning saved revision…'; document.getElementById('formula-scan-output').textContent='';
+ try {
+  const response=await fetch('formula-scan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Scan failed');
+  if (current!==revision || pinned!==null) return;
+  document.getElementById('formula-status').textContent=`Revision ${revision}: ${result.formula_errors} formula error(s), ${result.literal_errors} literal error(s), ${result.empty_or_missing_cache} empty or missing cache(s). ${result.complete ? 'Scan complete.' : 'Scan incomplete.'}`;
+  document.getElementById('formula-scan-output').textContent=JSON.stringify(result, null, 2);
+ } catch(error) { if (current===revision && pinned===null) document.getElementById('formula-status').textContent=`Scan error: ${error.message}`; }
+ finally { scanBusy=false; button.disabled=pinned!==null; document.getElementById('formula-recalculate').disabled=pinned!==null || calcBusy; }
+});
+document.getElementById('formula-recalculate').addEventListener('click', async () => {
+ if (calcBusy || scanBusy || pinned!==null || current<0) return;
+ if (gridBusy || editBusy || gridDirty() || elementDirty()) { document.getElementById('formula-status').textContent='Save or copy pending edits before recalculation.'; return; }
+ const revision=current, button=document.getElementById('formula-recalculate'); calcBusy=true; formulaStatusRevision=revision; button.disabled=true; document.getElementById('formula-scan').disabled=true; document.getElementById('formula-scan-output').textContent='';
+ document.getElementById('formula-status').textContent=`Recalculating revision ${revision} with LibreOffice…`;
+ try {
+  const response=await fetch('formula-recalculate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Recalculation failed');
+  formulaStatusRevision=result.revision; await refresh(); document.getElementById('formula-status').textContent=`Recalculated revision ${revision} as revision ${result.revision}. Review formulas, errors and file changes.`;
+ } catch(error) { document.getElementById('formula-status').textContent=`Recalculation error: ${error.message}`; }
+ finally { calcBusy=false; button.disabled=pinned!==null; document.getElementById('formula-scan').disabled=pinned!==null || scanBusy; }
 });
 function invalidateGrid(message) {
  gridLoaded=null; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true;
@@ -395,6 +424,7 @@ function display(state, live) {
  document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; viewKey=key; clearCandidates();
  document.getElementById('selection').textContent = live ? 'Drag on a page to save a selection for the agent.' : 'Selections are available on the latest revision.';
  document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load, #grid-sheets, #grid-sheet, #grid-range, #grid-load').forEach(element => element.disabled=!live);
+ document.getElementById('formula-scan').disabled=!live || scanBusy || calcBusy; document.getElementById('formula-recalculate').disabled=!live || scanBusy || calcBusy;
  if (!live) invalidateGrid('Return to the latest revision to edit cells.');
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
@@ -417,7 +447,7 @@ function displayComparison(state) {
  document.getElementById('comparison-text').textContent=''; document.getElementById('comparison-parts').textContent='';
  cellComparisonEpoch++; document.getElementById('cell-comparison-output').replaceChildren(); document.getElementById('cell-comparison-status').textContent='';
  document.getElementById('selection').textContent='Selections are available on the latest revision.';
- document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load, #grid-sheets, #grid-sheet, #grid-range, #grid-load').forEach(element => element.disabled=true);
+ document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load, #grid-sheets, #grid-sheet, #grid-range, #grid-load, #formula-scan, #formula-recalculate').forEach(element => element.disabled=true);
  invalidateGrid('Return to the latest revision to edit cells.');
  invalidateEdit('Return to the latest revision to edit.');
 }
@@ -490,8 +520,10 @@ async function refresh() {
   const response = await fetch('state', {cache:'no-store'});
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
+  document.getElementById('formula-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
   if (state.revision !== current) {
+   if (formulaStatusRevision !== state.revision) { formulaStatusRevision=null; document.getElementById('formula-status').textContent=''; document.getElementById('formula-scan-output').textContent=''; }
    if (gridLoaded) invalidateGrid('Version changed; copy unsaved edits and reload the range.');
    if (loaded) invalidateEdit('Version changed; load the element again.');
    const select=document.getElementById('restore-revision'); const previous=select.value;
@@ -555,13 +587,18 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/formula-scan') or route.endswith('/formula-recalculate'):
+                        if not isinstance(payload, dict) or set(payload) != {'base_revision'}:
+                            raise ValueError('Formula operation requires base_revision')
+                        saved = session.scan_formulas(directory, payload['base_revision']) if route.endswith('/formula-scan') else session.recalculate(directory, payload['base_revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/cell-comparison'):
                         if not isinstance(payload, dict) or set(payload) != {'before', 'after', 'sheet', 'cell_range'}:
                             raise ValueError('Cell comparison requires revisions, sheet and range')

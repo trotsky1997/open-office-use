@@ -130,6 +130,18 @@ office-use recalculate budget.xlsx --out budget-calculated.xlsx
 
 `scan-formulas` scans stored cells across worksheets, including hidden sheets, and reports counts and the first 200 formula errors, literal error cells, and empty or missing formula caches in separate lists. Formula text is OOXML text without a leading `=` and is clipped to 500 characters; shared-formula followers may have empty formula text. An empty cached string can be intentional. `complete: false` means the one-million-cell limit stopped the scan and counts cover only scanned cells; package limits are 5,000 parts and 128 MiB. This scan does not calculate formulas or determine whether existing caches are current. `cells` reports formulas, their stored cached values, and cell types, including formula errors. Cache freshness is always `unknown`; a missing cached result is returned as `null`. Rows include blank cells in the requested rectangle. `recalculate` opens a copy in a fresh LibreOffice profile, saves a new XLSX, and refuses an existing output. Read the output again to inspect calculated values and errors. LibreOffice uses its own calculation engine and may change layout or unsupported workbook features; review the resulting file against the source. External links, advanced Excel functions, complex workbooks and fidelity have not been comprehensively validated. Use a saved, closed source and review workbooks containing external links before conversion.
 
+
+For a versioned XLSX session, scan its latest saved revision and explicitly recalculate into a new revision:
+
+```sh
+office-use session start ./budget-draft --source budget.xlsx
+office-use session scan-formulas ./budget-draft --base 0
+office-use session recalculate ./budget-draft --base 0
+office-use session scan-formulas ./budget-draft --base 1
+```
+
+The equivalent MCP tools are `session_scan_formulas` and `session_recalculate`. Both require the latest base revision; competing writes are rejected. The local viewer's “Workbook calculation and checks” offers both operations, clears obsolete scan results, and keeps pending edits available. The scan examines saved caches; LibreOffice recalculation creates a new revision and may alter workbook features. Compare the revisions and inspect resulting errors and layout before delivery.
+
 ## MCP for agents
 
 Install the optional MCP dependency from the repository root:
@@ -146,7 +158,7 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `scan_formulas`, `recalculate_workbook`, `compare_files`, `compare_cells`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_restore`, `session_export`, `session_edit_target`, `session_edit`, `session_replace_text`, `session_sheets`, `session_read_grid`, `session_edit_grid`, `session_format_grid`, `session_selection`, `session_selection_image`, `session_selection_text`, and `session_selection_candidates`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. Selected text extraction uses `pdftotext` word centers within the rectangle on a freshly rendered PDF and returns text, normalized word boxes, revision and staleness. It is bounded to 5,000 selected words and an 8 MiB page extraction. It can miss partially selected words, reordered text, images, or scanned text; it does not perform OCR. Candidate lookup searches up to three selected text lines against OfficeCLI and returns possible paths with matching text. Results are limited and non-exhaustive: repeated text, wrapped lines, tables, formulas, images and complex layouts can yield ambiguity or missing matches. The paths are not geometrically verified. Check the selected revision and use structured reads and visual context to verify the exact target before editing. Search fragments are passed as OfficeCLI command arguments, which may be visible to other local processes. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `scan_formulas`, `recalculate_workbook`, `compare_files`, `compare_cells`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_restore`, `session_recalculate`, `session_scan_formulas`, `session_export`, `session_edit_target`, `session_edit`, `session_replace_text`, `session_sheets`, `session_read_grid`, `session_edit_grid`, `session_format_grid`, `session_selection`, `session_selection_image`, `session_selection_text`, and `session_selection_candidates`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. Selected text extraction uses `pdftotext` word centers within the rectangle on a freshly rendered PDF and returns text, normalized word boxes, revision and staleness. It is bounded to 5,000 selected words and an 8 MiB page extraction. It can miss partially selected words, reordered text, images, or scanned text; it does not perform OCR. Candidate lookup searches up to three selected text lines against OfficeCLI and returns possible paths with matching text. Results are limited and non-exhaustive: repeated text, wrapped lines, tables, formulas, images and complex layouts can yield ambiguity or missing matches. The paths are not geometrically verified. Check the selected revision and use structured reads and visual context to verify the exact target before editing. Search fragments are passed as OfficeCLI command arguments, which may be visible to other local processes. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 
@@ -169,5 +181,6 @@ python3 office/audit_smoke.py       # requires OfficeCLI
 python3 office/review_smoke.py      # requires OfficeCLI
 python3 office/spreadsheet_smoke.py # requires LibreOffice
 python3 office/formula_scan_smoke.py # requires LibreOffice
+python3 office/session_calc_smoke.py # requires LibreOffice
 python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
 ```

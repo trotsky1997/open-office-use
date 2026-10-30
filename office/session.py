@@ -108,6 +108,37 @@ def restore(directory, base_revision, revision):
     return {'revision': base_revision + 1, 'restored_revision': revision, 'file': str(output)}
 
 
+def recalculate(directory, base_revision):
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx':
+        raise ValueError('Recalculation requires an XLSX session')
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999:
+        raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
+    try:
+        spreadsheet.recalculate(source, output)
+    except FileExistsError as exc:
+        raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'engine': 'LibreOffice'}
+
+
+def scan_formulas(directory, base_revision):
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx':
+        raise ValueError('Formula scanning requires an XLSX session')
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    result = spreadsheet.scan_formulas(source)
+    latest = info(directory)['latest_revision']
+    if base_revision != latest:
+        raise ValueError(f'Revision conflict: latest revision is {latest}')
+    return {'revision': base_revision, **result}
+
+
 def export(directory, revision, output):
     state = info(directory)
     source = revision_file(state, revision)

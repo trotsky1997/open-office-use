@@ -147,6 +147,18 @@ def session_apply(directory: str, base_revision: int, operations: list[dict[str,
 
 
 @server.tool()
+def session_recalculate(directory: str, base_revision: int) -> dict[str, Any]:
+    """Recalculate a saved XLSX revision with LibreOffice and publish a new revision."""
+    return session.recalculate(directory, base_revision)
+
+
+@server.tool()
+def session_scan_formulas(directory: str, base_revision: int) -> dict[str, Any]:
+    """Scan saved formulas and error caches in the latest XLSX revision."""
+    return session.scan_formulas(directory, base_revision)
+
+
+@server.tool()
 def session_restore(directory: str, base_revision: int, revision: int) -> dict[str, Any]:
     """Copy a historical revision into a new latest revision; reject stale or concurrent writes."""
     return session.restore(directory, base_revision, revision)
