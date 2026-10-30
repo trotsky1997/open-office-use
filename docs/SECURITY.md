@@ -99,6 +99,7 @@ The MV3 extension uses high-privilege Chrome APIs because browser control requir
 
 - `chrome.debugger` for CDP access.
 - `tabs` and `tabGroups` for tab and session management.
+- `webNavigation` for identifying the source of new navigation targets; only tab IDs for controlled source tabs are retained in memory.
 - `history` for history lookup.
 - `downloads` for download observation.
 - Native Messaging to communicate with the local host.

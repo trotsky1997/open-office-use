@@ -55,7 +55,7 @@ Copy the resulting extension ID and register the source-built native host:
 ./build/open-browser-use install-manifest --extension-id YOUR_EXTENSION_ID --path "$PWD/build/open-browser-use"
 ```
 
-Reload the unpacked extension and check `./build/open-browser-use ping`. The
+Reload the unpacked extension and check `./build/open-browser-use ping`. The extension requests `webNavigation` to associate newly opened tabs with controlled source tabs; an update can require renewed permission confirmation. The
 registration updates the browser's Open Browser Use native-host manifest and
 stable host link, so an existing installation using that host name will use
 this binary and extension ID. Keep the checkout and binary at their paths; if

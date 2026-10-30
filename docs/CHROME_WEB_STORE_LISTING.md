@@ -76,7 +76,7 @@ Suggested data use disclosure:
 
 ```text
 The extension can read tab metadata, browser history entries requested through
-the local Open Browser Use API, download events while an automation session is
+the local Open Browser Use API, navigation-target events for identifying new tabs, download events while an automation session is
 active, clipboard content explicitly requested by the local caller for a
 controlled tab, and page content exposed through Chrome DevTools Protocol
 commands.
@@ -109,6 +109,7 @@ short in the Dashboard if character limits apply.
 | `storage` | Persists native host connection status, extension instance id, and active automation session state across MV3 service worker restarts. |
 | `tabGroups` | Groups and labels tabs controlled by an automation session so agent-created tabs are visually separated from user tabs. |
 | `tabs` | Creates, lists, updates, and identifies Chrome tabs for local browser automation sessions. |
+| `webNavigation` | Identifies the controlled source tab for newly opened navigation targets; retained tab IDs are scoped to the controlling session. |
 | `<all_urls>` host access | Allows the local Open Browser Use client to automate pages chosen by the user across arbitrary origins, including injecting the cursor script and attaching CDP where Chrome permits it. |
 
 ## Native Host Boundary

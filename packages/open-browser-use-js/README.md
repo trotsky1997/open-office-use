@@ -99,7 +99,7 @@ const popup = await waiting;
 `browser.tabs.list()` exposes an `openerTabId` when both tabs are in the
 same session and the backend knows the opener.
 It polls owned tabs, so a popup closed before observation or without an opener
-can time out. In isolated Linux Chromium, opening from a background tab has reported the selected tab as the opener; `bringToFront()` before the action resolves that case. Concurrent matching popups are rejected as ambiguous, and only one popup
+can time out. Chrome uses navigation-target events for controlled source tabs when available; both source and target must belong to the same session. This in-memory source record is lost if the extension service worker restarts. Concurrent matching popups are rejected as ambiguous, and only one popup
 expectation per opener can run in a browser instance. The timeout includes
 tab-list preparation. If preparation times out, the action is not issued;
 a timeout after the action starts means it may still be running, so inspect

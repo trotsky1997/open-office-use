@@ -328,6 +328,7 @@ class BrowserBackend {
     this.attachedTabs = new Set();
     this.debuggerSessionByTabId = new Map();
     this.sessionByTabId = new Map();
+    this.navigationSourcesByTabId = new Map();
     this.groupRevision = 0;
     this.tabGroupRevisions = new Map();
     this.pendingUngrouped = new Map();
@@ -356,7 +357,14 @@ class BrowserBackend {
         this.fileChooserWaitersByTabId.get(source.tabId)?.reject(new Error("File chooser debugger detached"));
       }
     });
+    chrome.webNavigation?.onCreatedNavigationTarget?.addListener((details) => {
+      const sessionId=this.sessionByTabId.get(details.sourceTabId);
+      if (sessionId && Number.isInteger(details.tabId) && details.tabId !== details.sourceTabId) {
+        this.navigationSourcesByTabId.set(details.tabId,{sourceTabId:details.sourceTabId,sessionId});
+      }
+    });
     chrome.tabs?.onRemoved?.addListener((tabId) => {
+      this.navigationSourcesByTabId.delete(tabId);
       this.tabGroupRevisions.set(tabId, ++this.groupRevision);
       if (this.downloadStartWait?.tabId === tabId) this.downloadStartWait.controller.abort();
       const owner=this.sessionByTabId.get(tabId) ?? this.pendingUngrouped.get(tabId)?.sessionId;
@@ -447,7 +455,11 @@ class BrowserBackend {
     const session = await this.requireSession(params);
     const tabs = await this.getSessionTabs(session.sessionId);
     const owned = new Set(tabs.map(tab => tab.id));
-    return await this.withLogicalActive(session.sessionId, tabs.map(tab => ({...toBrowserTab(tab),...(owned.has(tab.openerTabId) ? {openerTabId:tab.openerTabId} : {})})));
+    return await this.withLogicalActive(session.sessionId, tabs.map(tab => {
+      const source=this.navigationSourcesByTabId.get(tab.id);
+      const opener=source ? (source.sessionId === session.sessionId ? source.sourceTabId : undefined) : tab.openerTabId;
+      return {...toBrowserTab(tab),...(owned.has(opener) ? {openerTabId:opener} : {})};
+    }));
   }
 
   async getTabPresentation(params) {

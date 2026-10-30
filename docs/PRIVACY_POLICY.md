@@ -9,7 +9,7 @@ compatible local agent tools.
 ## Data handled by the extension
 
 The extension may access browser tabs, tab URLs, page content, browser history,
-download metadata, browser interaction state, and data visible in pages that the
+download metadata, navigation-target events, browser interaction state, and data visible in pages that the
 user or a paired local agent chooses to automate. Depending on the pages being
 used, this can include personally identifiable information, authentication
 information, personal communications, financial information, health information,
@@ -36,7 +36,7 @@ local tools.
 ## Data storage
 
 The extension may store local operational state in Chrome extension storage,
-such as session metadata needed to recover tab groups and native host status.
+such as session metadata needed to recover tab groups and native host status. Navigation-target source and target tab IDs for controlled source tabs are held in service-worker memory until the target closes or the worker restarts.
 This data remains in the user's Chrome profile unless the user removes the
 extension or clears browser extension data.
 

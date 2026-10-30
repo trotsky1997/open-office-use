@@ -163,4 +163,4 @@
 - [x] 下载开始观察超时时取消 frame 自动附着及挂起的 frame 准备；Linux ARM64 Chromium 原生消息验证超时后重新观察实际下载。
 - [x] Playwright 风格 waitForEvent("dialog") 在后续 SDK 输入前准备监听，准备与事件等待共享期限；Linux ARM64 Chromium 原生消息实测延迟准备和真实 confirm 点击。
 - [x] Playwright 风格 waitForEvent("popup") 在后续 SDK 输入前获取所属标签基线，复用 opener 与歧义检查；Linux ARM64 Chromium 原生消息验证前台标签链接。
-- [ ] Linux ARM64 隔离 Chromium 后台标签打开新页时，浏览器报告的 opener 指向当前选中标签；需要可靠的后台归属机制。
+- [x] Chrome 使用 webNavigation 事件识别受控来源标签的新页，并在查询时核对来源和目标的会话归属；Linux ARM64 Chromium 后台标签及 noopener 链接验证通过。来源记录保存在 service worker 内存。

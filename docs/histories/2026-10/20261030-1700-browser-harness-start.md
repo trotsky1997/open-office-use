@@ -588,3 +588,5 @@ Chrome 文件选择等待向调试器附着传播取消信号，授权延迟返�
 Playwright 风格 waitForEvent("dialog") 在后续 SDK 输入前注册监听，监听准备和事件等待共享期限；Page.enable 允许通过准备屏障以避免自锁。SDK 119 项检查通过；Linux ARM64 Chromium 原生消息注入监听准备延迟，随后真实点击触发 confirm，显式拒绝并验证页面结果。低层客户端请求可绕过 SDK 准备协调；Windows 未测。
 
 新增 Playwright 风格 waitForEvent("popup")，获取标签基线后放行后续 SDK 输入，复用 opener 匹配及歧义检查。SDK 120 项检查通过；Linux ARM64 Chromium 原生消息实测已呈现标签的真实链接和新页 URL。隔离 Chromium 中后台标签打开的新页被浏览器报告为当前选中标签的子页，等待超时；显式呈现发起标签后通过。Windows 未测。
+
+Chrome 扩展新增 webNavigation 权限，使用导航目标事件记录受控来源标签与新标签 ID；仅在两者属于原会话时提供来源信息，目标关闭或 service worker 重启清理记录。已观测来源不属于查询会话时，不回退到可能错误的标签 opener。扩展 51 项检查通过；Linux ARM64 Chromium 原生消息实测后台普通及 noopener 链接、双会话隔离。新权限可能触发扩展更新确认；跨窗口未归入会话的新页及 worker 重启后的来源恢复仍待处理，Windows 未测。

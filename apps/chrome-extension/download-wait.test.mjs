@@ -329,3 +329,17 @@ test('closing the active tab clears its cursor state and keeps its close owner',
     removed(7);assert.equal(backend.activeTabsBySession.has('a'),false);assert.equal(backend.store.state.sessions.a.activeTabId,null);assert.equal(backend.cursorByTabId.has(7),false);assert.equal(backend.takeClosedOwner(7),'a');
   } finally {chrome.tabs=previous;}
 });
+
+test('navigation targets use the observed source only inside its owning session',async()=>{
+  const previousTabs=chrome.tabs,previousNav=chrome.webNavigation;let observe;
+  chrome.tabs={};chrome.webNavigation={onCreatedNavigationTarget:{addListener(callback){observe=callback;}}};
+  try {
+    const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};backend.store.state.sessions.b={chromeGroupId:2};
+    backend.requireSession=async params=>({sessionId:params.session_id});backend.withLogicalActive=async(_session,tabs)=>tabs;
+    let owned=[{id:1},{id:2,openerTabId:9}];backend.getSessionTabs=async()=>owned;backend.sessionByTabId.set(1,'a');
+    observe({sourceTabId:1,tabId:2});observe({sourceTabId:9,tabId:3});
+    assert.equal((await backend.getTabs({session_id:'a'}))[1].openerTabId,1);assert.equal(backend.navigationSourcesByTabId.has(3),false);
+    owned=[{id:2,openerTabId:9},{id:9}];assert.equal((await backend.getTabs({session_id:'b'}))[0].openerTabId,undefined);
+    backend.handleTabGroupChange(1,2);assert.equal(backend.navigationSourcesByTabId.has(2),true);assert.equal((await backend.getTabs({session_id:'b'}))[0].openerTabId,undefined);
+  } finally {chrome.tabs=previousTabs;chrome.webNavigation=previousNav;}
+});
