@@ -307,3 +307,5 @@ Added revision-bound table column renaming with consistent header/metadata updat
 ### Structured formula updates on table rename
 
 Extended table column rename to rewrite simple explicit structured references, invalidate changed cell caches, request recalculation and remove a supported calculation chain. Verified cross-sheet and defined-name formulas, LibreOffice recalculation, schema and rollback for complex references. Native Excel and complex reference forms remain unverified/unsupported.
+
+Extended table column rename to handle explicit nested selectors and implicit references in uniquely identified table data cells. Ambiguous implicit contexts and calculated table-column metadata still require review.

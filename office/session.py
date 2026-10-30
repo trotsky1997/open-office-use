@@ -905,7 +905,7 @@ def table_formula_node(part, node):
     return part.startswith('xl/charts/') and tag == '{http://schemas.openxmlformats.org/drawingml/2006/chart}f'
 
 
-def rewrite_table_formula(formula, table_name, old_name, new_name):
+def rewrite_table_formula(formula, table_name, old_name, new_name, allow_implicit=False):
     prefix = '=' if formula.startswith('=') else ''; expression = formula[len(prefix):]
     try: tokens = Tokenizer('=' + expression).items
     except (TokenizerError, ValueError, IndexError) as exc: raise ValueError('Unsupported structured formula') from exc
@@ -914,11 +914,29 @@ def rewrite_table_formula(formula, table_name, old_name, new_name):
     for token in tokens:
         value = token.value
         if '[' in value or ']' in value:
-            match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_.]*)\[([^\[\]#@,':]+)\]", value) if token.type == 'OPERAND' and token.subtype == 'RANGE' else None
+            match = re.fullmatch(r'([A-Za-z_][A-Za-z0-9_.]*)?(\[.*\])', value) if token.type == 'OPERAND' and token.subtype == 'RANGE' else None
             if match is None: raise ValueError('Unsupported structured reference')
-            if match[1].casefold() == table_name.casefold() and match[2].casefold() == old_name.casefold():
-                if re.search(r"[#@,':]", new_name): raise ValueError('New name requires unsupported structured-reference escaping')
-                value = match[1] + '[' + new_name + ']'; count += 1
+            owner, selector = match.groups()
+            if owner is None and not allow_implicit: raise ValueError('Implicit structured reference has ambiguous table context')
+            target = owner is None or owner.casefold() == table_name.casefold()
+            # shortcut: escaped structured names need a full Excel grammar before they can be rewritten.
+            nested = selector.startswith('[[') and selector.endswith(']]')
+            inner = selector[1:-1] if nested else selector
+            pieces = list(re.finditer(r'\[([^\[\]]+)\]', inner))
+            if not pieces or (not nested and (len(pieces) != 1 or pieces[0].span() != (0, len(inner)))): raise ValueError('Unsupported structured reference')
+            if pieces[0].start() != 0 or pieces[-1].end() != len(inner) or any(inner[a.end():b.start()] not in (',', ':') for a,b in zip(pieces,pieces[1:])): raise ValueError('Unsupported structured reference')
+            replacements = []
+            for piece in pieces:
+                column = piece.group(1); marker = '@' if column.startswith('@') else ''; column = column[len(marker):]
+                if column.startswith('#'):
+                    if marker or column.casefold() not in ('#all', '#data', '#headers', '#totals', '#this row'): raise ValueError('Unsupported structured reference selector')
+                elif not column or re.search(r"[#@,':]", column): raise ValueError('Unsupported structured reference escaping')
+                elif target and column.casefold() == old_name.casefold():
+                    if re.search(r"[#@,':]", new_name): raise ValueError('New name requires unsupported structured-reference escaping')
+                    replacements.append((piece.start(1), piece.end(1), marker + new_name)); count += 1
+            for a,b,replacement in reversed(replacements): inner = inner[:a] + replacement + inner[b:]
+            selector = '[' + inner + ']' if nested else inner
+            value = (owner or '') + selector
         updated.append(value)
     return prefix + ''.join(updated), count
 
@@ -981,7 +999,14 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
                     if node.tag.rsplit('}',1)[-1].lower() in ('f','formula','formula1','formula2','definedname','calculatedcolumnformula','totalsrowformula') and re.search(r'(?i)\b(?:INDIRECT|EVALUATE)\s*\(', text): raise ValueError('Workbook contains indirect references; rename requires separate review')
                     if '[' in text or ']' in text:
                         if not eligible: raise ValueError('Workbook contains possible structured references outside supported formulas')
-                        updated, count = rewrite_table_formula(text, table_name, old_name, new_name)
+                        allow_implicit = False
+                        if name == sheet_part and node.tag == grid_styles.X+'f' and node.getparent().tag == grid_styles.X+'c':
+                            address = node.getparent().get('r', '')
+                            if re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', address):
+                                col, row = range_boundaries(address)[:2]
+                                containing = [item for item in constraints['table_parts'] if (lambda bounds: bounds[0] <= col <= bounds[2] and bounds[1] < row <= bounds[3])(range_boundaries(item['ref']))]
+                                allow_implicit = len(containing) == 1 and containing[0]['part'] == table['part'] and not any(a <= col <= c and b <= row <= d for a,b,c,d in constraints['table_totals'])
+                        updated, count = rewrite_table_formula(text, table_name, old_name, new_name, allow_implicit)
                         if count:
                             if node.tag == grid_styles.X+'f' and (node.getparent().tag != grid_styles.X+'c' or node.get('t') not in (None, 'normal') or any(key != 't' for key in node.attrib)): raise ValueError('Shared or array formulas require separate review')
                             rewrites.setdefault(name, []).append((formula_index, text, updated)); rewrite_count += count

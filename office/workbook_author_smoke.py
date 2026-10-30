@@ -134,7 +134,7 @@ with tempfile.TemporaryDirectory() as tmp:
     cli_draft=root/'rename-cli';session.start(cli_draft,source=table_file)
     command=[sys.executable,str(cli),'session','rename-table-column',str(cli_draft),'--base','0','--sheet','Sales','--table','SalesTable','--old','Revenue','--new','Amount']
     assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['new_name']=='Amount'
-    for index, expression in enumerate(['=SUM(SalesTable[[#All],[Revenue]])','=INDIRECT(A2)','=[@Revenue]']):
+    for index, expression in enumerate(['=SUM(SalesTable[[#Unknown],[Revenue]])','=INDIRECT(A2)','=[@Revenue]']):
         dependent=root/f'dependent-{index}.xlsx'
         open_office_use.author({'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C1':expression}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}},dependent)
         blocked=root/f'dependent-draft-{index}';session.start(blocked,source=dependent)
@@ -152,6 +152,13 @@ with tempfile.TemporaryDirectory() as tmp:
     try: session.rename_table_column(encoded_draft,0,'Sales','SalesTable','Revenue','Amount')
     except ValueError as exc: assert 'structured' in str(exc)
     else: raise AssertionError('Encoded structured reference accepted')
+    implicit_source=root/'implicit-table.xlsx'
+    implicit_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','C1':'Double','A2':'Q1','B2':120,'C2':'=[@Revenue]*2'}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:C2'}]}}}
+    open_office_use.author(implicit_spec,implicit_source)
+    implicit_draft=root/'implicit-draft';session.start(implicit_draft,source=implicit_source)
+    implicit_result=session.rename_table_column(implicit_draft,0,'Sales','SalesTable','Revenue','Amount')
+    assert implicit_result['rewritten_references']==1 and load_workbook(implicit_result['file'])['Sales']['C2'].value=='=[@Amount]*2'
+    assert session.rewrite_table_formula('=SUM(SalesTable[[Revenue]:[Quarter]])','SalesTable','Revenue','Amount')[0]=='=SUM(SalesTable[[Amount]:[Quarter]])'
     shared=root/'shared-table.xlsx'
     with zipfile.ZipFile(table_file) as before, zipfile.ZipFile(shared,'w') as after:
         for entry in before.infolist():
@@ -191,7 +198,7 @@ with tempfile.TemporaryDirectory() as tmp:
         shared_root=etree.fromstring(archive.read('xl/sharedStrings.xml'))
         assert shared_root.get('count') is None and shared_root.get('uniqueCount') is None
     referenced=root/'referenced.xlsx'
-    ref_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C2':'=SUM(SalesTable[Revenue])'},'Other':{'A1':'=SUM(SalesTable[Revenue])+SalesTable[Revenue]'}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}}
+    ref_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C2':'=SUM(SalesTable[[#All],[Revenue]])'},'Other':{'A1':'=SUM(SalesTable[Revenue])+SalesTable[Revenue]'}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}}
     open_office_use.author(ref_spec,referenced)
     book=load_workbook(referenced);book.defined_names.add(DefinedName('RevenueRef',attr_text='SalesTable[Revenue]'))
     book.calculation.calcMode='manual';book.calculation.fullCalcOnLoad=False;book.calculation.forceFullCalc=False
@@ -222,7 +229,7 @@ with tempfile.TemporaryDirectory() as tmp:
     ref_result=session.rename_table_column(referenced_draft,0,'Sales','SalesTable','Revenue','Net Revenue')
     renamed_book=load_workbook(ref_result['file'])
     assert ref_result['rewritten_references']==7 and renamed_book['Sales']['B1'].value=='Net Revenue'
-    assert renamed_book['Sales']['C2'].value=='=SUM(SalesTable[Net Revenue])'
+    assert renamed_book['Sales']['C2'].value=='=SUM(SalesTable[[#All],[Net Revenue]])'
     assert renamed_book['Other']['A1'].value=='=SUM(SalesTable[Net Revenue])+SalesTable[Net Revenue]'
     assert renamed_book.defined_names['RevenueRef'].attr_text=='SalesTable[Net Revenue]'
     assert next(iter(renamed_book['Other'].conditional_formatting._cf_rules.values()))[0].formula==['SUM(SalesTable[Net Revenue])>0']
@@ -233,7 +240,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert load_workbook(ref_result['file'],data_only=True)['Sales']['C2'].value is None
     with zipfile.ZipFile(ref_result['file']) as archive: assert 'xl/calcChain.xml' not in archive.namelist()
     code, validation, _=officecli_backend.invoke('validate',ref_result['file']); assert code==0 and validation['success'],validation
-    assert load_workbook(referenced)['Sales']['C2'].value=='=SUM(SalesTable[Revenue])'
+    assert load_workbook(referenced)['Sales']['C2'].value=='=SUM(SalesTable[[#All],[Revenue]])'
     shared_formula=root/'shared-formula.xlsx'
     with zipfile.ZipFile(referenced) as before,zipfile.ZipFile(shared_formula,'w') as after:
         for entry in before.infolist():
