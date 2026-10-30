@@ -256,6 +256,19 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   } finally {unblockPress?.();sdkTab.browser.cdp.call=originalCdpCall;await evaluate(a.id,"document.querySelector('#deadline-click').remove()");}
   check('SDK click deadline: no late press and release after an issued press');
 
+  await evaluate(a.id,`(()=>{const el=document.createElement('input');el.type='checkbox';el.id='deadline-check';el.setAttribute('aria-label','Deadline check');document.body.append(el)})()`);
+  for(const locator of [sdkTab.playwright.locator('#deadline-check'),sdkTab.playwright.getByRole('checkbox',{name:'Deadline check',exact:true})]) {
+    await evaluate(a.id,"document.querySelector('#deadline-check').checked=false");
+    let unblockCheck,checkPresses=0;
+    sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.resolveNode' && !unblockCheck)await new Promise(resolve=>{unblockCheck=resolve});if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mousePressed')checkPresses++;return originalCdpCall(...args);};
+    try {
+      await assert.rejects(locator.check({timeoutMs:500}),/preparation timed out/i);assert.ok(unblockCheck);unblockCheck();await new Promise(resolve=>setTimeout(resolve,200));assert.equal(checkPresses,0);assert.equal(await evaluate(a.id,"document.querySelector('#deadline-check').checked"),false);
+    } finally {unblockCheck?.();sdkTab.browser.cdp.call=originalCdpCall;}
+    await locator.check();assert.equal(await evaluate(a.id,"document.querySelector('#deadline-check').checked"),true);
+  }
+  await evaluate(a.id,"document.querySelector('#deadline-check').remove()");
+  check('SDK check deadline: no late input for CSS and semantic locators');
+
   await evaluate(a.id,`(()=>{window.doubleDeadlineClicks=0;const el=document.createElement('button');el.id='double-deadline';el.textContent='Double deadline';el.onclick=()=>window.doubleDeadlineClicks++;document.body.append(el)})()`);
   for (const locator of [sdkTab.playwright.locator('#double-deadline'),sdkTab.playwright.getByRole('button',{name:'Double deadline',exact:true})]) {
     let unblockFirstRelease,pressed=0;

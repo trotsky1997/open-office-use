@@ -1748,3 +1748,17 @@ test('paste validates the target, preserves clipboard permissions and routes one
   tab.clipboard.writeText=async()=>{generation++;};await assert.rejects(tab.paste(null,'x'),/clipboard was updated/);assert.deepEqual(events,[]);
   connected=false;await assert.rejects(tab.paste(4,'x',{snapshotId:'fresh'}),/Connection changed/);assert.deepEqual(events,[]);
 });
+
+test('check deadline prevents late input and reports issued outcomes',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}),tab=browser.tab(1);
+  const frame={id:'root',loaderId:'v1',url:'https://example.test'},snapshot={frame,frames:[frame],ids:[7],documentId:1,scopeIds:[]};
+  tab.queryCss=async()=>snapshot;let releaseWorld,presses=0,measurements=0;
+  browser.cdp.call=async(_id,method)=>{if(method==='Page.createIsolatedWorld')return await new Promise(resolve=>{releaseWorld=resolve});if(method==='DOM.resolveNode')return {object:{objectId:'target'}};if(method==='Runtime.callFunctionOn')measurements++;if(method==='Input.dispatchMouseEvent')presses++;return {};};
+  await assert.rejects(tab.playwright.locator('input').check({timeoutMs:20}),/Check preparation timed out/);
+  releaseWorld({executionContextId:1});await new Promise(resolve=>setImmediate(resolve));assert.equal(presses,0);assert.equal(measurements,0);
+  const role=tab.playwright.getByRole('checkbox');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};
+  let releaseRole,rolePresses=0;tab.setChecked=async(_index,_snapshot,_checked,_force,mark)=>{await new Promise(resolve=>{releaseRole=resolve});mark();rolePresses++;};
+  await assert.rejects(role.uncheck({timeoutMs:20}),/Check preparation timed out/);releaseRole();await new Promise(resolve=>setImmediate(resolve));assert.equal(rolePresses,0);
+  let signal,releaseInput;tab.setChecked=async(_index,_snapshot,_checked,_force,mark)=>{signal=mark();await new Promise(resolve=>{releaseInput=resolve});};
+  await assert.rejects(role.check({timeoutMs:20}),/Check timed out; outcome is unknown/);assert.equal(signal.aborted,true);releaseInput();
+});

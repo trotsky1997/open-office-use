@@ -115,3 +115,4 @@
 - [x] Chromium 清空富文本保留单个 BR 占位时按空内容校验；macOS Electron 与 Linux Chromium 实页验证。
 - [x] Electron 客户端取消和超时通知宿主，阻止排队中的迟到输入；已派发操作报告结果可能未知。
 - [x] Electron 文件选择等待响应取消并释放拦截；队列中尚未开始的等待取消时保留其他命令。macOS Electron 实页验证取消、重试与授权上传。
+- [x] CSS 和语义 locator 的 check/uncheck 正数期限覆盖点击准备；派发后提示结果未知。macOS Electron 实页验证超时后无迟到点击及正常恢复。

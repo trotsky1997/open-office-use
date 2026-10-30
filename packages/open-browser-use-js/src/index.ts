@@ -83,7 +83,7 @@ async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number,
     return result;
   } finally { if (timer) clearTimeout(timer); }
 }
-async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover" | "Sequential typing"):Promise<void> {
+async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover" | "Sequential typing" | "Check"):Promise<void> {
   if(timeoutMs===0)return action(()=>undefined);
   const controller=new AbortController();
   let expired=false,issued=false,timer:ReturnType<typeof setTimeout> | undefined;
@@ -2306,9 +2306,9 @@ export class OpenBrowserUseTab {
     await this.act(index, snapshotId, text, true);
   }
 
-  async setChecked(index: number, snapshotId: string, checked: boolean, force = false): Promise<void> {
+  async setChecked(index: number, snapshotId: string, checked: boolean, force = false, mark:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
     if (typeof checked !== "boolean") throw new Error("Checked state must be boolean");
-    await this.act(index, snapshotId, undefined, false, checked, undefined, false, undefined, false, {button:"left",buttons:1,modifiers:0,...(force ? {force:true} : {})});
+    await this.act(index, snapshotId, undefined, false, checked, undefined, false, undefined, false, {button:"left",buttons:1,modifiers:0,...(force ? {force:true} : {})}, false, undefined, mark, signal, check);
   }
 
   async selectOption(index: number, snapshotId: string, values: SelectOption | SelectOption[]): Promise<string[]> {
@@ -3269,7 +3269,7 @@ export class OpenBrowserUseCssLocator {
   setChecked(checked: boolean, options: LocatorCheckOptions = {}): Promise<void> {
     validateCheckOptions(options);
     if (typeof checked !== "boolean") throw new Error("Checked state must be a boolean");
-    return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,checked,undefined,false,{button:"left",buttons:1,modifiers:0,...(options.force ? {force:true} : {})});},options.timeoutMs);
+    return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,checked,undefined,false,{button:"left",buttons:1,modifiers:0,...(options.force ? {force:true} : {})},undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Check"),options.timeoutMs);
   }
   focus(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async mark=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,undefined,undefined,undefined,true,mark);},options.timeoutMs ?? 5000,deadline,"Focus"),options.timeoutMs); }
   press(key: string, options: {timeoutMs?: number} = {}): Promise<void> {
@@ -3653,7 +3653,7 @@ export class OpenBrowserUseRoleLocator {
   async setChecked(checked: boolean, options: LocatorCheckOptions = {}): Promise<void> {
     validateCheckOptions(options);
     if (typeof checked !== "boolean") throw new Error("Checked state must be a boolean");
-    await this.perform((node,id)=>this.tab.setChecked(node.index,id,checked,options.force), options.timeoutMs);
+    await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.setChecked(node.index,id,checked,options.force,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Check"), options.timeoutMs);
   }
   async selectOption(values: SelectOption | SelectOption[], options: {timeoutMs?: number} = {}): Promise<string[]> { return this.perform((node,id)=>this.tab.selectOption(node.index,id,values), options.timeoutMs); }
 }
