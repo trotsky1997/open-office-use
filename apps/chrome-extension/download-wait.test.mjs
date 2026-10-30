@@ -193,3 +193,11 @@ test('cancelled download path releases its completion listener',async()=>{
   await new Promise(resolve=>setImmediate(resolve));assert.equal(backend.downloadWaiters.size,1);controller.abort();
   await assert.rejects(pending,/canceled/);assert.equal(backend.downloadWaiters.size,0);
 });
+
+test('debugger attachment records the owning session and clears it on detach',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>{};
+  const previousAttach=chrome.debugger.attach,previousDetach=chrome.debugger.detach;
+  chrome.debugger.attach=async()=>{};chrome.debugger.detach=async()=>{};
+  try{await backend.attach({session_id:'owner',tabId:7});assert.equal(backend.debuggerSessionByTabId.get(7),'owner');await backend.detach({session_id:'owner',tabId:7});assert.equal(backend.debuggerSessionByTabId.has(7),false);}
+  finally{chrome.debugger.attach=previousAttach;chrome.debugger.detach=previousDetach;}
+});

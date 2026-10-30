@@ -130,3 +130,5 @@
 - [x] Electron WebMCP 同步 Chrome 页面桥，取消时向已调用工具发送 AbortSignal 并释放标签队列；macOS Electron 实页验证。
 - [x] Linux ARM64 Electron 44.7 socket 实测 WebMCP 工具取消及挂起列表取消后的新注册调用。
 - [x] Chrome WebMCP 内容桥及后台内部等待超时向页面传播取消；Linux ARM64 原生消息实测挂起列表超时与恢复。
+- [x] Chrome 调试器事件按所属会话路由，未标记事件丢弃；Linux ARM64 原生消息实测两个会话的调试事件隔离。
+- [ ] Chrome 下载等共享通知按会话或请求收敛；当前 session_id 用于路由，本地 socket 负责接入控制。

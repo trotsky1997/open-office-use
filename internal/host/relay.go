@@ -48,9 +48,10 @@ type Relay struct {
 }
 
 type clientConn struct {
-	id   int64
-	conn net.Conn
-	mu   sync.Mutex
+	id       int64
+	conn     net.Conn
+	mu       sync.Mutex
+	sessions map[string]bool
 }
 
 type pendingRequest struct {
@@ -137,7 +138,7 @@ func (r *Relay) acceptLoop(ctx context.Context) error {
 			return err
 		}
 		id := r.nextID.Add(1)
-		client := &clientConn{id: id, conn: conn}
+		client := &clientConn{id: id, conn: conn, sessions: make(map[string]bool)}
 		r.mu.Lock()
 		r.clients[id] = client
 		r.mu.Unlock()
@@ -180,6 +181,16 @@ func (r *Relay) readClientLoop(client *clientConn) {
 				r.cancelClientRequest(client, message.Params.ID)
 			}
 			continue
+		}
+		var subscription struct {
+			Params struct {
+				SessionID string `json:"session_id"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(payload, &subscription) == nil && subscription.Params.SessionID != "" {
+			r.mu.Lock()
+			client.sessions[subscription.Params.SessionID] = true
+			r.mu.Unlock()
 		}
 		forwarded, hostID, originalID, err := r.rewriteClientRequest(payload)
 		if err != nil {
@@ -283,7 +294,11 @@ func (r *Relay) dispatchExtensionPayload(payload []byte) error {
 		}
 		return nil
 	}
-	r.broadcast(payload)
+	if sessionID, ok := message["session_id"].(string); ok && sessionID != "" {
+		r.broadcastSession(payload, sessionID)
+	} else if message["method"] != "onCDPEvent" && message["method"] != "onDebuggerDetach" {
+		r.broadcast(payload)
+	}
 	return nil
 }
 
@@ -305,6 +320,20 @@ func (r *Relay) writeClientError(client *clientConn, id any, err error) {
 			"message": err.Error(),
 		},
 	})
+}
+
+func (r *Relay) broadcastSession(payload []byte, sessionID string) {
+	r.mu.Lock()
+	clients := make([]*clientConn, 0, len(r.clients))
+	for _, client := range r.clients {
+		if client.sessions[sessionID] {
+			clients = append(clients, client)
+		}
+	}
+	r.mu.Unlock()
+	for _, client := range clients {
+		_ = client.write(payload)
+	}
 }
 
 func (r *Relay) broadcast(payload []byte) {

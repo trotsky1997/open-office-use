@@ -386,3 +386,57 @@ func TestRelayCancellationIsScopedToItsClient(t *testing.T) {
 		t.Fatalf("bad cancellation mapping: %#v", cancelled)
 	}
 }
+
+func TestRelayScopesDebuggerEventsToSubscribedSessions(t *testing.T) {
+	hostIn, hostOut := net.Pipe()
+	defer hostIn.Close()
+	defer hostOut.Close()
+	extensionIn, extensionOut := net.Pipe()
+	defer extensionIn.Close()
+	defer extensionOut.Close()
+	socketDir := shortSocketDir(t)
+	socketPath := filepath.Join(socketDir, "obu.sock")
+	relay := NewRelay(Config{SocketDir: socketDir, SocketPath: socketPath}, extensionIn, hostOut)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = relay.Serve(ctx) }()
+	waitForSocket(t, socketPath)
+	first, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	waitForClients(t, relay, 2)
+	for _, item := range []struct {
+		conn    net.Conn
+		session string
+	}{{first, "a"}, {second, "b"}} {
+		if err := wire.WriteJSON(item.conn, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "attach", "params": map[string]any{"session_id": item.session}}); err != nil {
+			t.Fatal(err)
+		}
+		var forwarded map[string]any
+		if err := wire.ReadJSON(hostIn, &forwarded); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := wire.WriteJSON(extensionOut, map[string]any{"jsonrpc": "2.0", "method": "onCDPEvent", "session_id": "a", "params": map[string]any{"secret": "only a"}}); err != nil {
+		t.Fatal(err)
+	}
+	_ = first.SetReadDeadline(time.Now().Add(time.Second))
+	var received map[string]any
+	if err := wire.ReadJSON(first, &received); err != nil {
+		t.Fatal(err)
+	}
+	if received["method"] != "onCDPEvent" {
+		t.Fatalf("missing scoped event: %#v", received)
+	}
+	_ = second.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	if err := wire.ReadJSON(second, &received); err == nil {
+		t.Fatalf("other session received event: %#v", received)
+	}
+}

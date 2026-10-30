@@ -528,3 +528,5 @@ Chrome WebMCP 列表结果按请求代次和工具变更校验；取消或过期
 Linux ARM64 Electron 44.7 在隔离 Xvfb 和 socket 通道实测 WebMCP：已调用工具收到取消信号且队列恢复；页面挂起的旧列表取消后，新列表正常生成，旧列表恢复后新注册仍可调用。Windows 未测。
 
 Chrome WebMCP 内容桥和后台内部等待超时会向页面发送取消；准备过程在脚本注入阶段检查取消。扩展 37 项检查通过；Linux ARM64 Chromium 150 原生消息实测挂起的工具列表超时后页面请求控制器被清除，新列表正常恢复。Windows 未测。
+
+Chrome 调试器事件按标签的所属会话标记并由 relay 路由至订阅该会话的连接；未标记的调试事件丢弃。Go 88 项、扩展 38 项检查通过；Linux ARM64 Chromium 150 原生消息实测两个会话各自收到本标签 console 事件且未收到对方事件，跨 frame 操作继续通过。下载等共享通知仍需单独收敛；session_id 是路由标识，接入权限仍由本地 socket 控制；Windows 未测。

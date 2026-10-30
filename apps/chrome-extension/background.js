@@ -86,8 +86,8 @@ class JsonRpcPeer {
     }
   }
 
-  sendNotification(method, params) {
-    this.transport.sendMessage({ jsonrpc: "2.0", method, params });
+  sendNotification(method, params, sessionId) {
+    this.transport.sendMessage({ jsonrpc: "2.0", method, params, ...(sessionId ? {session_id:sessionId} : {}) });
   }
 }
 
@@ -317,6 +317,7 @@ class BrowserBackend {
     this.store = new SessionStore();
     this.webMcpGate = webMcpGate;
     this.attachedTabs = new Set();
+    this.debuggerSessionByTabId = new Map();
     this.activeTabsBySession = new Map();
     this.cursorByTabId = new Map();
     this.downloadFilenamesById = new Map();
@@ -591,11 +592,13 @@ class BrowserBackend {
   async attach(params) {
     await this.requireSessionTab(params, "attach");
     const tabId = requireTabId(params, "attach");
+    this.debuggerSessionByTabId.set(tabId, params.session_id);
     if (!this.attachedTabs.has(tabId)) {
       try {
         await chrome.debugger.attach({ tabId }, "1.3");
       } catch (error) {
         if (!String(error?.message ?? error).includes("Another debugger")) {
+          this.debuggerSessionByTabId.delete(tabId);
           throw error;
         }
       }
@@ -1371,6 +1374,7 @@ class BrowserBackend {
       await chrome.debugger.detach({ tabId });
     } finally {
       this.attachedTabs.delete(tabId);
+      this.debuggerSessionByTabId.delete(tabId);
       for (const [fileChooserId, chooser] of this.fileChoosersById) {
         if (chooser.tabId === tabId) {
           this.fileChoosersById.delete(fileChooserId);
@@ -1707,10 +1711,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 chrome.debugger.onEvent.addListener((source, method, params) => {
   backend.handleCdpEvent(source, method, params);
-  safeSendNotification(peer, "onCDPEvent", { source, method, params });
+  const sessionId = backend.debuggerSessionByTabId.get(source.tabId);
+  if (sessionId) safeSendNotification(peer, "onCDPEvent", { source, method, params }, sessionId);
 });
 chrome.debugger.onDetach.addListener((source) => {
-  if (typeof source.tabId === "number") safeSendNotification(peer, "onDebuggerDetach", { tabId: source.tabId });
+  if (typeof source.tabId === "number") {
+    const sessionId = backend.debuggerSessionByTabId.get(source.tabId);
+    if (sessionId) safeSendNotification(peer, "onDebuggerDetach", { tabId: source.tabId }, sessionId);
+    backend.debuggerSessionByTabId.delete(source.tabId);
+  }
 });
 backend.addDownloadChangeListener((change) => {
   safeSendNotification(peer, "onDownloadChange", change);
@@ -1729,8 +1738,8 @@ chrome.downloads.onChanged.addListener((delta) => {
 });
 startHeartbeat(peer, backend);
 
-function safeSendNotification(peer, method, params) {
+function safeSendNotification(peer, method, params, sessionId) {
   try {
-    peer.sendNotification(method, params);
+    peer.sendNotification(method, params, sessionId);
   } catch {}
 }
