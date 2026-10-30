@@ -142,6 +142,7 @@ For semantic selection, the REPL and SDK also accept:
 
 ```js
 const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
+const saveOrSubmit = tab.playwright.getByRole("button", { name: /^(save|submit)$/i });
 console.log(await save.innerText());
 console.log(await save.getAttribute("type")); // null if the attribute is absent
 console.log(await save.isEnabled());
@@ -185,6 +186,9 @@ attributes; select their containing element to read its attributes.
 `last()` selects the last current match. `all()` returns positional locators
 for the current match count; each locator resolves again when used, so page
 changes can alter which element occupies a position.
+Role names, labels, text, placeholders, alt text and text filters accept strings
+or `RegExp` objects. Regular expressions retain their own case-sensitivity;
+the `exact` option applies to string matching.
 `dblclick()` rechecks the target and its position between clicks. If the first
 click changes the page or a later input fails, inspect the result before retrying.
 

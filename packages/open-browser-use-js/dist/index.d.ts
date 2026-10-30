@@ -57,8 +57,9 @@ export type OpenBrowserUseDialogInfo = {
     url: string;
     defaultPrompt?: string;
 };
+export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {
-    name?: string;
+    name?: TextMatcher;
     exact?: boolean;
     checked?: boolean;
     disabled?: boolean;
@@ -77,8 +78,8 @@ export type InteractiveState = {
     valuesTruncated?: boolean;
 };
 type TextFilter = {
-    hasText?: string;
-    hasNotText?: string;
+    hasText?: TextMatcher;
+    hasNotText?: TextMatcher;
 };
 export declare class OpenBrowserUseClient {
     #private;
@@ -269,16 +270,16 @@ export declare class OpenBrowserUseTabPlaywright {
     }): Promise<void>;
     domSnapshot(): Promise<string>;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
-    getByLabel(name: string, options?: {
+    getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
-    getByText(text: string, options?: {
+    getByText(text: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
-    getByAltText(altText: string, options?: {
+    getByAltText(altText: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
-    getByPlaceholder(placeholder: string, options?: {
+    getByPlaceholder(placeholder: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
 }
@@ -298,21 +299,21 @@ export declare class OpenBrowserUseRoleLocator {
     last(): OpenBrowserUseRoleLocator;
     private child;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
-    getByLabel(name: string, options?: {
+    getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
-    getByText(text: string, options?: {
+    getByText(text: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
-    getByAltText(text: string, options?: {
+    getByAltText(text: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
-    getByPlaceholder(text: string, options?: {
+    getByPlaceholder(text: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
     filter(options: {
-        hasText?: string;
-        hasNotText?: string;
+        hasText?: TextMatcher;
+        hasNotText?: TextMatcher;
     }): OpenBrowserUseRoleLocator;
     private needsText;
     private matches;

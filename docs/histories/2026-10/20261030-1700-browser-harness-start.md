@@ -183,3 +183,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 语义定位器和观察索引新增 dblclick：发送 clickCount 1 和 2 的可信输入，第一次点击后重新核对目标、frame、作用域及位置，变化时停止且不自动重试。SDK 56 项通过；macOS 隔离 Chromium 原生消息链路与 Electron 44 验证主页面及跨进程 frame 的可信 dblclick 事件。
 
 语义定位器新增 waitFor({state:'visible'|'hidden'})：轮询现有可见状态，重复匹配报错并限制等待时间。SDK 57 项通过；macOS 隔离 Chromium 原生消息链路验证主页面和跨进程 frame 中异步出现、隐藏和移除，Electron 44 验证主页面。匹配范围为可访问树；DOM attached/detached 尚不支持，隐藏状态包含无可访问匹配。
+
+语义定位器的 role name、label、text、placeholder、alt 及 hasText/hasNotText 新增 RegExp 匹配；字符串保持原有规则，正则采用自身标志并为每次匹配独立处理游标。SDK 57 项通过，涵盖跨 realm 正则与全局标志；macOS 隔离 Chromium 原生链路和 Electron 44 验证跨进程 frame 的正则作用域与文本过滤。

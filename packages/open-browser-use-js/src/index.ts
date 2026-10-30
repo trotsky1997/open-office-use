@@ -54,12 +54,13 @@ export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | { clien
 export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; checked?: boolean | "mixed"; disabled?: boolean; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
 export type SelectOption = string | {value?: string; label?: string};
 export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; url: string; defaultPrompt?: string };
-export type RoleLocatorOptions = {name?: string; exact?: boolean; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
+export type TextMatcher = string | RegExp;
+export type RoleLocatorOptions = {name?: TextMatcher; exact?: boolean; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
-type TextFilter = { hasText?: string; hasNotText?: string };
+type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher };
 type FilterGuard = { index: number; filters: TextFilter[] };
 type UnindexedText = { backendNodeId?: number; frameId?: string; frameChain?: FrameInfo[] };
 type Observation = { id: string; documentId: number; nodes: ObservedNode[]; unindexedText: UnindexedText[]; guards: Map<number,{scopes:number[]; filters:FilterGuard[]}> };
@@ -83,10 +84,11 @@ function unindexedTextAncestors(tree: JsonValue): Array<number | undefined> {
     });
 }
 function matchesTextFilters(text: string, filters: TextFilter[]): boolean {
-  const normalized = text.toLowerCase();
-  const needle = (value: string) => value.replace(/\s+/g," ").trim().toLowerCase();
-  return filters.every(filter => (filter.hasText === undefined || normalized.includes(needle(filter.hasText))) && (filter.hasNotText === undefined || !normalized.includes(needle(filter.hasNotText))));
+  const matches = (value: TextMatcher) => typeof value === "string" ? text.toLowerCase().includes(value.replace(/\s+/g," ").trim().toLowerCase()) : new RegExp(value.source,value.flags).test(text);
+  return filters.every(filter => (filter.hasText === undefined || matches(filter.hasText)) && (filter.hasNotText === undefined || !matches(filter.hasNotText)));
 }
+
+function copyMatcher(value: TextMatcher): TextMatcher { return typeof value === "string" ? value : new RegExp(value.source,value.flags); }
 
 
 export class OpenBrowserUseClient {
@@ -1487,29 +1489,29 @@ export class OpenBrowserUseTabPlaywright {
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator {
     if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
         Object.keys(options).some(key => !["name","exact","checked","disabled","pressed","selected","expanded"].includes(key)) ||
-        (options.name !== undefined && typeof options.name !== "string") ||
+        (options.name !== undefined && typeof options.name !== "string" && !types.isRegExp(options.name)) ||
         [options.exact,options.checked,options.disabled,options.pressed,options.selected,options.expanded].some(value => value !== undefined && typeof value !== "boolean")) throw new Error("Invalid role locator");
-    return new OpenBrowserUseRoleLocator(this.tab, [role === "img" ? "image" : role], {...options});
+    return new OpenBrowserUseRoleLocator(this.tab, [role === "img" ? "image" : role], {...options,...(options.name !== undefined ? {name:copyMatcher(options.name)} : {})});
   }
 
-  getByLabel(name: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
-    if (typeof name !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid label locator");
-    return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch", "slider", "spinbutton", "Date", "DateTime", "InputTime"], {name, ...options});
+  getByLabel(name: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
+    if ((typeof name !== "string" && !types.isRegExp(name)) || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid label locator");
+    return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch", "slider", "spinbutton", "Date", "DateTime", "InputTime"], {name:copyMatcher(name), ...options});
   }
 
-  getByText(text: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
-    if (typeof text !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid text locator");
-    return new OpenBrowserUseRoleLocator(this.tab, ["StaticText"], {name:text, ...options}, undefined, true);
+  getByText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
+    if ((typeof text !== "string" && !types.isRegExp(text)) || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid text locator");
+    return new OpenBrowserUseRoleLocator(this.tab, ["StaticText"], {name:copyMatcher(text), ...options}, undefined, true);
   }
 
-  getByAltText(altText: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
-    if (typeof altText !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid alt text locator");
-    return new OpenBrowserUseRoleLocator(this.tab, ["image", "button", "link"], {name:altText, ...options}, undefined, false, "altText");
+  getByAltText(altText: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
+    if ((typeof altText !== "string" && !types.isRegExp(altText)) || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid alt text locator");
+    return new OpenBrowserUseRoleLocator(this.tab, ["image", "button", "link"], {name:copyMatcher(altText), ...options}, undefined, false, "altText");
   }
 
-  getByPlaceholder(placeholder: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
-    if (typeof placeholder !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid placeholder locator");
-    return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "spinbutton"], {name:placeholder, ...options}, undefined, false, "placeholder");
+  getByPlaceholder(placeholder: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator {
+    if ((typeof placeholder !== "string" && !types.isRegExp(placeholder)) || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid placeholder locator");
+    return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "spinbutton"], {name:copyMatcher(placeholder), ...options}, undefined, false, "placeholder");
   }
 }
 
@@ -1532,17 +1534,17 @@ export class OpenBrowserUseRoleLocator {
   }
 
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByRole(role,options)); }
-  getByLabel(name: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByLabel(name,options)); }
-  getByText(text: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByText(text,options)); }
-  getByAltText(text: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByAltText(text,options)); }
-  getByPlaceholder(text: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByPlaceholder(text,options)); }
+  getByLabel(name: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByLabel(name,options)); }
+  getByText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByText(text,options)); }
+  getByAltText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByAltText(text,options)); }
+  getByPlaceholder(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByPlaceholder(text,options)); }
 
-  filter(options: {hasText?: string; hasNotText?: string}): OpenBrowserUseRoleLocator {
+  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher}): OpenBrowserUseRoleLocator {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText","hasNotText"].includes(key)) ||
         (options.hasText === undefined && options.hasNotText === undefined) ||
-        (options.hasText !== undefined && (typeof options.hasText !== "string" || options.hasText.length > 30_000)) ||
-        (options.hasNotText !== undefined && (typeof options.hasNotText !== "string" || options.hasNotText.length > 30_000))) throw new Error("Invalid text filter");
-    const filter = {...options};
+        (options.hasText !== undefined && (typeof options.hasText === "string" ? options.hasText.length > 30_000 : !types.isRegExp(options.hasText))) ||
+        (options.hasNotText !== undefined && (typeof options.hasNotText === "string" ? options.hasNotText.length > 30_000 : !types.isRegExp(options.hasNotText)))) throw new Error("Invalid text filter");
+    const filter = {...(options.hasText !== undefined ? {hasText:copyMatcher(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:copyMatcher(options.hasNotText)} : {})};
     return new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,this.position,this.textMatch,this.field,this.scope,
       this.position === undefined ? [...this.filtersBefore,filter] : this.filtersBefore,
       this.position === undefined ? this.filtersAfter : [...this.filtersAfter,filter]);
@@ -1564,7 +1566,7 @@ export class OpenBrowserUseRoleLocator {
         (this.options.pressed === undefined || node.pressed === this.options.pressed) &&
         (this.options.selected === undefined || node.selected === this.options.selected) &&
         (this.options.expanded === undefined || node.expanded === this.options.expanded) &&
-        (this.options.name === undefined || (this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
+        (this.options.name === undefined || (typeof this.options.name !== "string" ? new RegExp(this.options.name.source,this.options.name.flags).test(normalize(value)) : this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
     });
     const matches: Array<{node:InteractiveNode; path:number[]; filters:FilterGuard[]}> = [];
     if (!this.scope) for (const node of candidates) matches.push({node,path:[],filters:[]});

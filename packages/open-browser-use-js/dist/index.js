@@ -30,10 +30,10 @@ function unindexedTextAncestors(tree) {
     });
 }
 function matchesTextFilters(text, filters) {
-    const normalized = text.toLowerCase();
-    const needle = (value) => value.replace(/\s+/g, " ").trim().toLowerCase();
-    return filters.every(filter => (filter.hasText === undefined || normalized.includes(needle(filter.hasText))) && (filter.hasNotText === undefined || !normalized.includes(needle(filter.hasNotText))));
+    const matches = (value) => typeof value === "string" ? text.toLowerCase().includes(value.replace(/\s+/g, " ").trim().toLowerCase()) : new RegExp(value.source, value.flags).test(text);
+    return filters.every(filter => (filter.hasText === undefined || matches(filter.hasText)) && (filter.hasNotText === undefined || !matches(filter.hasNotText)));
 }
+function copyMatcher(value) { return typeof value === "string" ? value : new RegExp(value.source, value.flags); }
 export class OpenBrowserUseClient {
     socketPath;
     sessionId;
@@ -1633,30 +1633,30 @@ export class OpenBrowserUseTabPlaywright {
     getByRole(role, options = {}) {
         if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
             Object.keys(options).some(key => !["name", "exact", "checked", "disabled", "pressed", "selected", "expanded"].includes(key)) ||
-            (options.name !== undefined && typeof options.name !== "string") ||
+            (options.name !== undefined && typeof options.name !== "string" && !types.isRegExp(options.name)) ||
             [options.exact, options.checked, options.disabled, options.pressed, options.selected, options.expanded].some(value => value !== undefined && typeof value !== "boolean"))
             throw new Error("Invalid role locator");
-        return new OpenBrowserUseRoleLocator(this.tab, [role === "img" ? "image" : role], { ...options });
+        return new OpenBrowserUseRoleLocator(this.tab, [role === "img" ? "image" : role], { ...options, ...(options.name !== undefined ? { name: copyMatcher(options.name) } : {}) });
     }
     getByLabel(name, options = {}) {
-        if (typeof name !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean"))
+        if ((typeof name !== "string" && !types.isRegExp(name)) || (options.exact !== undefined && typeof options.exact !== "boolean"))
             throw new Error("Invalid label locator");
-        return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch", "slider", "spinbutton", "Date", "DateTime", "InputTime"], { name, ...options });
+        return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch", "slider", "spinbutton", "Date", "DateTime", "InputTime"], { name: copyMatcher(name), ...options });
     }
     getByText(text, options = {}) {
-        if (typeof text !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean"))
+        if ((typeof text !== "string" && !types.isRegExp(text)) || (options.exact !== undefined && typeof options.exact !== "boolean"))
             throw new Error("Invalid text locator");
-        return new OpenBrowserUseRoleLocator(this.tab, ["StaticText"], { name: text, ...options }, undefined, true);
+        return new OpenBrowserUseRoleLocator(this.tab, ["StaticText"], { name: copyMatcher(text), ...options }, undefined, true);
     }
     getByAltText(altText, options = {}) {
-        if (typeof altText !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean"))
+        if ((typeof altText !== "string" && !types.isRegExp(altText)) || (options.exact !== undefined && typeof options.exact !== "boolean"))
             throw new Error("Invalid alt text locator");
-        return new OpenBrowserUseRoleLocator(this.tab, ["image", "button", "link"], { name: altText, ...options }, undefined, false, "altText");
+        return new OpenBrowserUseRoleLocator(this.tab, ["image", "button", "link"], { name: copyMatcher(altText), ...options }, undefined, false, "altText");
     }
     getByPlaceholder(placeholder, options = {}) {
-        if (typeof placeholder !== "string" || (options.exact !== undefined && typeof options.exact !== "boolean"))
+        if ((typeof placeholder !== "string" && !types.isRegExp(placeholder)) || (options.exact !== undefined && typeof options.exact !== "boolean"))
             throw new Error("Invalid placeholder locator");
-        return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "spinbutton"], { name: placeholder, ...options }, undefined, false, "placeholder");
+        return new OpenBrowserUseRoleLocator(this.tab, ["textbox", "searchbox", "combobox", "spinbutton"], { name: copyMatcher(placeholder), ...options }, undefined, false, "placeholder");
     }
 }
 export class OpenBrowserUseRoleLocator {
@@ -1702,10 +1702,10 @@ export class OpenBrowserUseRoleLocator {
     filter(options) {
         if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText"].includes(key)) ||
             (options.hasText === undefined && options.hasNotText === undefined) ||
-            (options.hasText !== undefined && (typeof options.hasText !== "string" || options.hasText.length > 30_000)) ||
-            (options.hasNotText !== undefined && (typeof options.hasNotText !== "string" || options.hasNotText.length > 30_000)))
+            (options.hasText !== undefined && (typeof options.hasText === "string" ? options.hasText.length > 30_000 : !types.isRegExp(options.hasText))) ||
+            (options.hasNotText !== undefined && (typeof options.hasNotText === "string" ? options.hasNotText.length > 30_000 : !types.isRegExp(options.hasNotText))))
             throw new Error("Invalid text filter");
-        const filter = { ...options };
+        const filter = { ...(options.hasText !== undefined ? { hasText: copyMatcher(options.hasText) } : {}), ...(options.hasNotText !== undefined ? { hasNotText: copyMatcher(options.hasNotText) } : {}) };
         return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.position === undefined ? [...this.filtersBefore, filter] : this.filtersBefore, this.position === undefined ? this.filtersAfter : [...this.filtersAfter, filter]);
     }
     needsText() {
@@ -1725,7 +1725,7 @@ export class OpenBrowserUseRoleLocator {
                 (this.options.pressed === undefined || node.pressed === this.options.pressed) &&
                 (this.options.selected === undefined || node.selected === this.options.selected) &&
                 (this.options.expanded === undefined || node.expanded === this.options.expanded) &&
-                (this.options.name === undefined || (this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
+                (this.options.name === undefined || (typeof this.options.name !== "string" ? new RegExp(this.options.name.source, this.options.name.flags).test(normalize(value)) : this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
         });
         const matches = [];
         if (!this.scope)

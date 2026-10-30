@@ -668,6 +668,9 @@ test("role locators reobserve, reject ambiguous matches and honor explicit posit
   await locator.click();assert.deepEqual(calls.at(-1),{index:4,snapshotId:'6'});
   assert.equal(await tab.playwright.getByRole('button',{name:'save final',exact:true}).count(),0);
   nodes=[{index:10,role:'button',name:'Save first'},{index:11,role:'button',name:'Save last'}];
+  const pattern=runInNewContext('/^save/i');pattern.lastIndex=3;
+  const regexLocator=tab.playwright.getByRole('button',{name:pattern});assert.equal(await regexLocator.count(),2);assert.equal(await regexLocator.count(),2);assert.equal(pattern.lastIndex,3);
+  assert.equal(await tab.playwright.getByRole('button',{name:/last$/g}).count(),1);
   const all=await locator.all();assert.equal(all.length,2);
   await locator.last().click();assert.equal(calls.at(-1).index,11);
   nodes.reverse();await all[0].click();assert.equal(calls.at(-1).index,11);
@@ -1031,6 +1034,8 @@ test('text filters select unnamed containers and recheck changing text before in
   assert.equal(await items.filter({hasText:'pears'}).nth(0).count(),1);
   assert.equal(await items.last().filter({hasText:'pears'}).count(),0);
   assert.equal(await items.filter({hasText:'pears'}).last().count(),1);
+  assert.equal(await items.filter({hasText:/APPLES/i,hasNotText:/pears/}).count(),1);
+  assert.equal(await items.filter({hasText:/Apples/g}).count(),1);assert.equal(await items.filter({hasText:/Apples/g}).count(),1);
   const button=items.filter({hasText:'Apples'}).getByRole('button',{name:'Add'});
   await button.click(); assert.equal(mouse,2);
   changeOnMeasure=true;
