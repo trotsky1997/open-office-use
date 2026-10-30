@@ -244,8 +244,8 @@ export class OpenBrowserUseClient {
     nameSession(name) {
         return this.request("nameSession", { name });
     }
-    attach(tabId) {
-        return this.request("attach", { tabId });
+    attach(tabId, requestTimeoutMs = this.timeoutMs) {
+        return this.request("attach", { tabId }, undefined, requestTimeoutMs);
     }
     detach(tabId) {
         return this.request("detach", { tabId });
@@ -4227,7 +4227,8 @@ export class OpenBrowserUseCdp {
         // Frame attachment and log setup must finish before a chooser can be registered.
         if (preparations?.size && !["Target.setAutoAttach", "Runtime.enable", "Log.enable"].includes(method))
             await Promise.all([...preparations]);
-        await this.ensureAttached(tabId);
+        const requestTimeoutMs = options.timeoutMs === undefined ? this.client.timeoutMs : Math.max(this.client.timeoutMs, Math.ceil(options.timeoutMs) + 2000);
+        await this.ensureAttached(tabId, requestTimeoutMs);
         if (options.signal?.aborted)
             throw new Error("Command cancelled before dispatch");
         if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration)
@@ -4238,7 +4239,7 @@ export class OpenBrowserUseCdp {
             commandParams,
             ...(options.visualPoint ? { visualPoint: options.visualPoint } : {}),
             ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
-        }, options.expectedGeneration);
+        }, options.expectedGeneration, requestTimeoutMs);
         if (method === "Page.disable" && !options.sessionId)
             this.#dialogEnabled.delete(tabId);
         if (method === "Runtime.disable" || method === "Log.disable") {
@@ -4279,7 +4280,7 @@ export class OpenBrowserUseCdp {
         const timeout = () => new Error(started ? `Timed out waiting for ${waitUntil} in tab ${tabId}; navigation outcome unknown` : "Navigation preparation timed out before action");
         try {
             const work = (async () => {
-                await this.call(tabId, "Page.enable");
+                await this.call(tabId, "Page.enable", {}, { timeoutMs: Math.max(1, deadline - performance.now()), signal: controller.signal });
                 if (controller.signal.aborted || performance.now() >= deadline)
                     throw timeout();
                 if (initialGeneration !== undefined && initialGeneration !== this.client.connectionGeneration)
@@ -4442,8 +4443,8 @@ export class OpenBrowserUseCdp {
             timeoutMessage: `Timed out waiting for ${state} in tab ${tabId}`
         }).then(() => undefined);
     }
-    async ensureAttached(tabId) {
-        await this.client.attach(tabId);
+    async ensureAttached(tabId, requestTimeoutMs) {
+        await this.client.attach(tabId, requestTimeoutMs);
     }
 }
 export function encodeFrame(value) {

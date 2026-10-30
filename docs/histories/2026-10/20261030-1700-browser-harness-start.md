@@ -377,3 +377,5 @@ waitForURL 正数超时覆盖单次浏览器读取，零超时仍执行一次检
 waitForLoadState 正数期限覆盖启用事件与状态读取，超时清理监听；零超时检查一次当前状态。修正 expectNavigation 与 expectPopup 的首次按需连接代次检查。SDK 80 项通过；隔离 Linux ARM64 Chromium 实测真实 MDN 加载、按需连接的新标签与同页面导航。Electron 与 Windows 本轮未测。
 
 goto 的时间预算覆盖准备、导航与页面加载；准备超时不会导航，调试器连接阶段超时会阻止迟到的命令，已开始的导航超时提示结果未知。SDK 82 项通过；隔离 Linux ARM64 Chromium 原生扩展验证按需连接访问真实 MDN 与同页面片段导航。Electron 与 Windows 本轮未测。
+
+CDP 命令的显式超时同步用于 socket 请求及调试器附着，并保留 2 秒响应余量；goto 准备阶段传递剩余预算，外层仍按原期限结束。SDK 83 项通过，真实 Unix socket 测试覆盖慢附着和慢响应；隔离 Linux ARM64 Chromium 原生扩展访问 MDN 并等待加载成功。Electron 与 Windows 本轮未测。

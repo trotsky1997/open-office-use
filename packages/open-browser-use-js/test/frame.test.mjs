@@ -107,6 +107,20 @@ test("connection-bound requests reject after a socket reconnect", async () => {
   }
 });
 
+test("CDP request timeout follows the command timeout", async () => {
+  const directory=await mkdtemp(join(tmpdir(),"obu-cdp-timeout-")),socketPath=join(directory,"obu.sock");
+  const server=createServer(socket=>{let pending=Buffer.alloc(0);socket.on("data",chunk=>{
+    pending=Buffer.concat([pending,chunk]);while(pending.length>=4){const length=endianness()==="LE" ? pending.readUInt32LE(0) : pending.readUInt32BE(0);if(pending.length<4+length)return;
+      const request=JSON.parse(pending.subarray(4,4+length));pending=pending.subarray(4+length);
+      const send=()=>socket.write(encodeFrame({jsonrpc:"2.0",id:request.id,result:{ok:true}}));
+      if(request.method==="executeCdp" || request.method==="attach")setTimeout(send,350);else send();
+    }
+  });});
+  server.listen(socketPath);await once(server,"listening");const client=new OpenBrowserUseClient({socketPath,timeoutMs:100});
+  try {assert.deepEqual(await new OpenBrowserUseCdp(client).call(1,"Runtime.enable",{},{timeoutMs:1000}),{ok:true});}
+  finally {client.close();server.close();await once(server,"close");await rm(directory,{recursive:true,force:true});}
+});
+
 test("high-level browser tabs can goto, wait for load state, and read a DOM snapshot", async () => {
   const directory = await mkdtemp(join(tmpdir(), "obu-sdk-js-"));
   const socketPath = join(directory, "obu.sock");

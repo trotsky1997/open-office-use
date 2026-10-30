@@ -174,7 +174,7 @@ export declare class OpenBrowserUseClient {
     claimUserTab(tabId: number): Promise<JsonValue>;
     finalizeTabs(keep: JsonValue[]): Promise<JsonValue>;
     nameSession(name: string): Promise<JsonValue>;
-    attach(tabId: number): Promise<JsonValue>;
+    attach(tabId: number, requestTimeoutMs?: number): Promise<JsonValue>;
     detach(tabId: number): Promise<JsonValue>;
     executeCdp(tabId: number, method: string, commandParams?: BrowserUseRequestParams): Promise<JsonValue>;
     moveMouse(tabId: number, x: number, y: number, waitForArrival?: boolean): Promise<JsonValue>;
@@ -860,7 +860,7 @@ export declare class OpenBrowserUseCdp {
         signal?: AbortSignal;
     }): Promise<OpenBrowserUseNotification>;
     waitForLoadEvent(tabId: number, state: OpenBrowserUseLoadState, timeoutMs: number, signal?: AbortSignal): Promise<void>;
-    ensureAttached(tabId: number): Promise<void>;
+    ensureAttached(tabId: number, requestTimeoutMs?: number): Promise<void>;
 }
 export declare function encodeFrame(value: JsonValue | Record<string, unknown>): Buffer;
 export {};
