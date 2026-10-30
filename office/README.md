@@ -332,6 +332,7 @@ The server offers `office_doctor`, `office_schema`, `inspect_file`, `session_ins
 ## Verification
 
 ```sh
+python3 office/install_smoke.py     # isolated install, CLI and MCP; requires pip, build tooling and MCP extra
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
 python3 office/cell_compare_smoke.py # requires LibreOffice

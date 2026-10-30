@@ -123,3 +123,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 动态公式校验支持多变量和嵌套 LET、LAMBDA 及局部函数调用，并按作用域拒绝潜在语义变化。
 
 - Extend image-only XLSX metadata with a verified dynamic-array record, preserving existing rich-value records and rejecting pre-existing cell metadata references. Validated embedded images, subsequent anchor edits, metadata indices, and OfficeCLI package validation.
+
+- Include the snapshot module in the installed distribution and verify an isolated installation through document creation, inspection, and an MCP handshake.
