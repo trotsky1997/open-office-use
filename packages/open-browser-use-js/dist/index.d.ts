@@ -379,8 +379,12 @@ export declare class OpenBrowserUseTabCUA {
 export declare class OpenBrowserUseTabDomCUA {
     private tab;
     private snapshot;
+    private generation;
+    private busy;
     private ids;
     constructor(tab: OpenBrowserUseTab);
+    private invalidate;
+    private beginAction;
     get_visible_dom(): Promise<{
         nodes: Array<{
             node_id: string;

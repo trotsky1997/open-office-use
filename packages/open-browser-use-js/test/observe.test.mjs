@@ -1,7 +1,14 @@
 import { runInNewContext } from 'node:vm';
 import assert from "node:assert/strict";
 import test from "node:test";
-import { OpenBrowserUseBrowser, OpenBrowserUseClient, OpenBrowserUseFileChooser } from "../dist/index.js";
+import { OpenBrowserUseBrowser, OpenBrowserUseClient, OpenBrowserUseFileChooser, OpenBrowserUseTabDomCUA } from "../dist/index.js";
+
+test('DOM CUA rejects superseded snapshots and snapshots during input',async()=>{
+  const frame={id:'root'},frames=[frame],snapshot={frame,frames,documentId:1,ids:[]};let unblock,blocked=false,releaseInput;
+  const tab={id:1,browser:{cdp:{call:async()=>({executionContextId:1})}},domFrames:async()=>{if(blocked){blocked=false;await new Promise(resolve=>{unblock=resolve;});}return frames;},domFrameInViewport:async()=>true,queryCss:async()=>snapshot,cua:{type:async()=>await new Promise(resolve=>{releaseInput=resolve;})}};
+  const dom=new OpenBrowserUseTabDomCUA(tab);blocked=true;const old=dom.get_visible_dom();await Promise.resolve();const current=await dom.get_visible_dom();assert.deepEqual(current.nodes,[]);unblock();await assert.rejects(old,/snapshot superseded/);
+  blocked=true;const pending=dom.get_visible_dom();await Promise.resolve();const typing=dom.type({text:'x'});await assert.rejects(dom.get_visible_dom(),/action is already in progress/);unblock();await assert.rejects(pending,/snapshot superseded/);releaseInput();await typing;assert.deepEqual((await dom.get_visible_dom()).nodes,[]);
+});
 
 test("browser discovers and claims a user tab before returning its handle", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });

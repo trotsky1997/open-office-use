@@ -2489,13 +2489,26 @@ export class OpenBrowserUseTabCUA {
 export class OpenBrowserUseTabDomCUA {
     tab;
     snapshot = false;
+    generation = 0;
+    busy = false;
     ids = new Map();
     constructor(tab) {
         this.tab = tab;
     }
+    invalidate() { this.generation++; this.snapshot = false; this.ids.clear(); }
+    beginAction() {
+        if (this.busy)
+            throw new Error('DOM CUA action is already in progress');
+        this.busy = true;
+        this.invalidate();
+        return () => { this.invalidate(); this.busy = false; };
+    }
     async get_visible_dom() {
-        this.snapshot = false;
-        this.ids.clear();
+        if (this.busy)
+            throw new Error('DOM CUA action is already in progress');
+        this.invalidate();
+        const generation = this.generation;
+        const ids = new Map();
         const step = { selector: 'a[href],button,input,textarea,select,summary,details,label,img,video,audio,[role],[onclick],[contenteditable="true"],[tabindex]', before: [{ visible: true }] };
         const frames = await this.tab.domFrames();
         const nodes = [];
@@ -2533,7 +2546,7 @@ export class OpenBrowserUseTabDomCUA {
                     if (typeof value.tag !== 'string' || (value.role !== null && typeof value.role !== 'string') || (value.name !== null && typeof value.name !== 'string'))
                         throw new RetryablePreflightError('DOM target changed; observe again');
                     const node_id = randomUUID(), identity = { tag: value.tag, role: typeof value.role === 'string' ? value.role.slice(0, 200) : null, name: value.name };
-                    this.ids.set(node_id, { snapshot, id, identity });
+                    ids.set(node_id, { snapshot, id, identity });
                     nodes.push({ node_id, frame_id: frame.id, ...identity });
                 }
                 finally {
@@ -2542,7 +2555,6 @@ export class OpenBrowserUseTabDomCUA {
             }
             const fresh = await this.tab.queryCss(step, undefined, [], undefined, undefined, frame.id);
             if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids)) {
-                this.ids.clear();
                 throw new RetryablePreflightError('DOM changed; observe again');
             }
         }
@@ -2551,6 +2563,9 @@ export class OpenBrowserUseTabDomCUA {
         for (const frame of frames)
             if (await this.tab.domFrameInViewport(frame, frames) !== frameVisibility.get(frame.id))
                 throw new RetryablePreflightError("Frame visibility changed; observe again");
+        if (this.busy || this.generation !== generation)
+            throw new RetryablePreflightError('DOM snapshot superseded; observe again');
+        this.ids = ids;
         this.snapshot = true;
         return { nodes };
     }
@@ -2561,54 +2576,71 @@ export class OpenBrowserUseTabDomCUA {
         return target;
     }
     async clickNode(node_id, double) {
-        const { snapshot, id, identity } = this.target(node_id);
-        this.snapshot = false;
-        this.ids.clear();
-        if (!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame, snapshot.frames))
-            throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');
-        await this.tab.actCss(snapshot, id, false, undefined, undefined, double, undefined, undefined, false, undefined, identity);
+        const { snapshot, id, identity } = this.target(node_id), finish = this.beginAction();
+        try {
+            if (!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame, snapshot.frames))
+                throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');
+            await this.tab.actCss(snapshot, id, false, undefined, undefined, double, undefined, undefined, false, undefined, identity);
+        }
+        finally {
+            finish();
+        }
     }
     click(options) { return this.clickNode(options.node_id, false); }
     double_click(options) { return this.clickNode(options.node_id, true); }
-    keypress(options) { return this.tab.cua.keypress(options); }
-    type(options) { return this.tab.cua.type(options); }
+    async keypress(options) { const finish = this.beginAction(); try {
+        await this.tab.cua.keypress(options);
+    }
+    finally {
+        finish();
+    } }
+    async type(options) { const finish = this.beginAction(); try {
+        await this.tab.cua.type(options);
+    }
+    finally {
+        finish();
+    } }
     async scroll(options) {
-        let point;
-        if (options.node_id !== undefined) {
-            const { snapshot, id, identity } = this.target(options.node_id);
-            if (!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame, snapshot.frames))
-                throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');
-            if (await this.tab.readCss(snapshot, id, 'visible') !== true)
-                throw new RetryablePreflightError('DOM target is hidden; observe again');
-            const world = await this.tab.browser.cdp.call(this.tab.id, 'Page.createIsolatedWorld', { frameId: snapshot.frame.id, worldName: 'open-browser-use-selector' }, { sessionId: snapshot.frame?.sessionId });
-            if (!isObject(world) || typeof world.executionContextId !== 'number')
-                throw new RetryablePreflightError('DOM context unavailable; observe again');
-            const resolved = await this.tab.browser.cdp.call(this.tab.id, 'DOM.resolveNode', { backendNodeId: id, executionContextId: world.executionContextId }, { sessionId: snapshot.frame?.sessionId });
-            const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
-            if (typeof objectId !== 'string')
-                throw new RetryablePreflightError('DOM target changed; observe again');
-            try {
-                const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: identity }], functionDeclaration: `function(expected){if(!this.isConnected)return null;const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';if(this.tagName.toLowerCase()!==expected.tag || (this.getAttribute('role')?.slice(0,200) ?? null)!==expected.role || (name.trim().slice(0,500) || null)!==expected.name)return null;const r=this.getBoundingClientRect(),x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;let target=this,root=target.getRootNode();while(true){const hit=root.elementFromPoint(x,y);if(!hit || (hit!==target && !target.contains(hit)))return null;if(!(root instanceof ShadowRoot))return {x,y};target=root.host;root=target.getRootNode()}}` }, { sessionId: snapshot.frame?.sessionId });
-                const value = isObject(result) && isObject(result.result) ? result.result.value : null;
-                if (!isObject(value) || typeof value.x !== 'number' || typeof value.y !== 'number')
+        const target = options.node_id !== undefined ? this.target(options.node_id) : undefined, finish = this.beginAction();
+        try {
+            let point;
+            if (options.node_id !== undefined) {
+                const { snapshot, id, identity } = target;
+                if (!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame, snapshot.frames))
+                    throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');
+                if (await this.tab.readCss(snapshot, id, 'visible') !== true)
+                    throw new RetryablePreflightError('DOM target is hidden; observe again');
+                const world = await this.tab.browser.cdp.call(this.tab.id, 'Page.createIsolatedWorld', { frameId: snapshot.frame.id, worldName: 'open-browser-use-selector' }, { sessionId: snapshot.frame?.sessionId });
+                if (!isObject(world) || typeof world.executionContextId !== 'number')
+                    throw new RetryablePreflightError('DOM context unavailable; observe again');
+                const resolved = await this.tab.browser.cdp.call(this.tab.id, 'DOM.resolveNode', { backendNodeId: id, executionContextId: world.executionContextId }, { sessionId: snapshot.frame?.sessionId });
+                const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+                if (typeof objectId !== 'string')
                     throw new RetryablePreflightError('DOM target changed; observe again');
-                point = await this.tab.domFramePoint(snapshot, { x: value.x, y: value.y });
-                await this.tab.readCss(snapshot, id, 'visible');
+                try {
+                    const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: identity }], functionDeclaration: `function(expected){if(!this.isConnected)return null;const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';if(this.tagName.toLowerCase()!==expected.tag || (this.getAttribute('role')?.slice(0,200) ?? null)!==expected.role || (name.trim().slice(0,500) || null)!==expected.name)return null;const r=this.getBoundingClientRect(),x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;let target=this,root=target.getRootNode();while(true){const hit=root.elementFromPoint(x,y);if(!hit || (hit!==target && !target.contains(hit)))return null;if(!(root instanceof ShadowRoot))return {x,y};target=root.host;root=target.getRootNode()}}` }, { sessionId: snapshot.frame?.sessionId });
+                    const value = isObject(result) && isObject(result.result) ? result.result.value : null;
+                    if (!isObject(value) || typeof value.x !== 'number' || typeof value.y !== 'number')
+                        throw new RetryablePreflightError('DOM target changed; observe again');
+                    point = await this.tab.domFramePoint(snapshot, { x: value.x, y: value.y });
+                    await this.tab.readCss(snapshot, id, 'visible');
+                }
+                finally {
+                    await this.tab.browser.cdp.call(this.tab.id, 'Runtime.releaseObject', { objectId }, { sessionId: snapshot.frame?.sessionId }).catch(() => { });
+                }
             }
-            finally {
-                await this.tab.browser.cdp.call(this.tab.id, 'Runtime.releaseObject', { objectId }, { sessionId: snapshot.frame?.sessionId }).catch(() => { });
+            else {
+                const metrics = await this.tab.browser.cdp.call(this.tab.id, 'Page.getLayoutMetrics');
+                const viewport = isObject(metrics) && isObject(metrics.cssVisualViewport) ? metrics.cssVisualViewport : null;
+                if (!viewport || typeof viewport.clientWidth !== 'number' || typeof viewport.clientHeight !== 'number')
+                    throw new Error('Browser viewport is unavailable');
+                point = { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 };
             }
+            await this.tab.scrollAt(point.x, point.y, options.x, options.y);
         }
-        else {
-            const metrics = await this.tab.browser.cdp.call(this.tab.id, 'Page.getLayoutMetrics');
-            const viewport = isObject(metrics) && isObject(metrics.cssVisualViewport) ? metrics.cssVisualViewport : null;
-            if (!viewport || typeof viewport.clientWidth !== 'number' || typeof viewport.clientHeight !== 'number')
-                throw new Error('Browser viewport is unavailable');
-            point = { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 };
+        finally {
+            finish();
         }
-        this.snapshot = false;
-        this.ids.clear();
-        await this.tab.scrollAt(point.x, point.y, options.x, options.y);
     }
 }
 export class OpenBrowserUseTabClipboard {
