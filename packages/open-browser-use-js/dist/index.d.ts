@@ -725,6 +725,9 @@ export declare class OpenBrowserUseCssLocator {
     press(key: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
+    clear(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
     fill(text: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
@@ -860,6 +863,9 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<void>;
     press(key: string, options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    clear(options?: {
         timeoutMs?: number;
     }): Promise<void>;
     fill(text: string, options?: {

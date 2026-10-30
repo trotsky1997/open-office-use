@@ -3689,6 +3689,7 @@ export class OpenBrowserUseCssLocator {
             throw new Error("Invalid key");
         return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, key); }, options.timeoutMs);
     }
+    clear(options = {}) { return this.fill("", options); }
     fill(text, options = {}) {
         if (typeof text !== "string")
             throw new Error("Text must be a string");
@@ -4110,6 +4111,7 @@ export class OpenBrowserUseRoleLocator {
     async dblclick(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id) => this.tab.dblclick(node.index, id, mouse), options.timeoutMs); }
     async hover(options = {}) { await this.perform((node, id) => this.tab.hover(node.index, id), options.timeoutMs); }
     async press(key, options = {}) { await this.perform((node, id) => this.tab.press(node.index, id, key), options.timeoutMs); }
+    clear(options = {}) { return this.fill("", options); }
     async fill(text, options = {}) { await this.perform((node, id) => this.tab.fill(node.index, id, text), options.timeoutMs); }
     async type(text, options = {}) { await this.perform((node, id) => this.tab.typeText(node.index, id, text), options.timeoutMs); }
     async check(options = {}) { await this.setChecked(true, options); }

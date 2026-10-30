@@ -104,6 +104,11 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.equal(await evaluate(a.id,'document.querySelector("#message").value'),'SDK input');
   assert.equal(await evaluate(a.id,'window.trustedInput'),true);
   check('SDK observation: indexed trusted text input');
+  const messageCss=sdkTab.playwright.locator('#message'),messageRole=sdkTab.playwright.getByRole('textbox',{name:'消息',exact:true});
+  for (const locator of [messageCss,messageRole]) { await evaluate(a.id,'window.trustedInput=false');await locator.clear({timeoutMs:3000});assert.equal(await evaluate(a.id,'document.querySelector("#message").value'),'');assert.equal(await evaluate(a.id,'window.trustedInput'),true);await locator.fill('SDK input'); }
+  assert.equal(await evaluate(a.id,'window.trustedInput'),true);
+  check('SDK locators: CSS and semantic clear preserve trusted input');
+
   await evaluate(a.id,'document.querySelector("#message").addEventListener("keydown", e => window.sdkKey = {key:e.key, trusted:e.isTrusted})');
   await sdkTab.pressKey('Enter');
   assert.deepEqual(await evaluate(a.id,'window.sdkKey'), {key:'Enter', trusted:true});

@@ -449,3 +449,5 @@ CSS 与语义定位器新增 isEditable：检查原生表单、contenteditable �
 macOS Electron 44.7 完整 smoke 扩展 isEditable 实页验证：开放 Shadow DOM 内的禁用 fieldset、页面篡改输入元素原型后的只读检查，以及跨站跨进程 frame 中 CSS/语义定位器的可编辑与只读状态均通过。Shadow DOM 中使用链式定位器跨越宿主。Linux 和 Windows 本轮未测。
 
 定位器状态查询增加 timeoutMs；isVisible/isHidden 对当前匹配立即判断，同时为浏览器读取设置正数期限；enabled、disabled、checked、editable 复用目标等待及读取期限。waitFor 使用独立总期限，零期限保留单次读取。SDK 93 项测试及 macOS Electron 44.7 完整 smoke 通过；Linux 与 Windows 本轮未测。
+
+CSS 与语义定位器新增 clear，复用 fill 空字符串的焦点、目标复核与输入检查。SDK 93 项测试及 macOS Electron 44.7 完整 smoke 通过，两类定位器在真实文本框中均验证清空值与可信 input 事件；Linux 与 Windows 本轮未测。

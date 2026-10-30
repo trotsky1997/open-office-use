@@ -2987,6 +2987,7 @@ export class OpenBrowserUseCssLocator {
     if (typeof key !== "string") throw new Error("Invalid key");
     return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,key);},options.timeoutMs);
   }
+  clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
   fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> {
     if (typeof text !== "string") throw new Error("Text must be a string");
     return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,text);},options.timeoutMs);
@@ -3310,6 +3311,7 @@ export class OpenBrowserUseRoleLocator {
   async dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id)=>this.tab.dblclick(node.index,id,mouse), options.timeoutMs); }
   async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.hover(node.index,id), options.timeoutMs); }
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }
+  clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
   async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }
   async type(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.typeText(node.index,id,text), options.timeoutMs); }
   async check(options: LocatorCheckOptions = {}): Promise<void> { await this.setChecked(true,options); }
