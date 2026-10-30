@@ -59,7 +59,7 @@ class JsonRpcPeer {
       return;
     }
     const id = message.id;
-    const controller = id !== undefined && ["executeCdp", "waitForFileChooser", "waitForDownload"].includes(message.method) ? new AbortController() : undefined;
+    const controller = id !== undefined && ["executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath"].includes(message.method) ? new AbortController() : undefined;
     if (controller) this.inFlight.set(id, controller);
     try {
       const handler = this.handlers[message.method];
@@ -831,8 +831,9 @@ class BrowserBackend {
     }
   }
 
-  async downloadPath(params) {
+  async downloadPath(params, signal) {
     await this.requireSession(params);
+    if (signal?.aborted) throw new Error("Download wait canceled");
     if (typeof params.downloadId !== "string" || params.downloadId === "") {
       throw new Error("downloadPath requires downloadId");
     }
@@ -852,7 +853,8 @@ class BrowserBackend {
         change.id === params.downloadId &&
         (change.status === "complete" || change.status === "failed" || change.status === "canceled"),
       timeoutMs,
-      `Timed out waiting for download ${params.downloadId}.`
+      `Timed out waiting for download ${params.downloadId}.`,
+      { signal }
     );
     return { path: download.status === "complete" ? download.filename ?? null : null };
   }

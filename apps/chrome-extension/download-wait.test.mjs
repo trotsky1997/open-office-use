@@ -186,3 +186,10 @@ test('cancelled waits release download slots and file chooser interception',asyn
   await new Promise(resolve=>setImmediate(resolve));chooserAbort.abort();await assert.rejects(chooser,/canceled/);assert.equal(backend.fileChooserWaitersByTabId.size,0);
   assert.deepEqual(commands.filter(c=>c.method==='Page.setInterceptFileChooserDialog').slice(-2).map(c=>c.params.enabled),[true,false]);
 });
+
+test('cancelled download path releases its completion listener',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSession=async()=>({});
+  const controller=new AbortController();const pending=backend.downloadPath({downloadId:'pending',timeoutMs:5000},controller.signal);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(backend.downloadWaiters.size,1);controller.abort();
+  await assert.rejects(pending,/canceled/);assert.equal(backend.downloadWaiters.size,0);
+});
