@@ -82,9 +82,15 @@ await tab.goto(url, { waitUntil: "load", timeoutMs: 15000 });
 await tab.waitForLoadState({ state: "domcontentloaded", timeoutMs: 15000 });
 const text = await tab.domSnapshot();
 const value = await tab.evaluate("document.title");
+const heading = await tab.playwright.evaluate(selector => document.querySelector(selector)?.textContent, "h1");
 const axTree = await tab.getAXState(); // CDP accessibility tree
 const png = await tab.getScreenshot(); // PNG Buffer
 ```
+
+`playwright.evaluate` accepts a function with one JSON-serializable argument or
+an expression string, awaits promises, and returns a JSON value. The function
+runs in the page context without access to its caller’s closures; like
+`tab.evaluate`, it can modify the page.
 
 `domSnapshot()` returns a bounded accessibility snapshot with roles, names,
 states and readable frame content. Indentation follows the reported accessibility

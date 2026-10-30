@@ -3065,6 +3065,26 @@ export class OpenBrowserUseTabPlaywright {
     domSnapshot() {
         return this.tab.domSnapshot();
     }
+    evaluate(pageFunction, arg) {
+        if (typeof pageFunction === "string") {
+            if (arg !== undefined)
+                throw new Error("An evaluation argument requires a function");
+            return this.tab.evaluate(pageFunction, { awaitPromise: true });
+        }
+        if (typeof pageFunction !== "function")
+            throw new Error("Evaluation requires a function or expression");
+        let serialized;
+        try {
+            serialized = arg === undefined ? undefined : JSON.stringify(arg);
+        }
+        catch {
+            throw new Error("Evaluation argument must be JSON serializable");
+        }
+        if (arg !== undefined && serialized === undefined)
+            throw new Error("Evaluation argument must be JSON serializable");
+        const input = serialized === undefined ? "undefined" : `JSON.parse(${JSON.stringify(serialized)})`;
+        return this.tab.evaluate(`(${Function.prototype.toString.call(pageFunction)})(${input})`, { awaitPromise: true });
+    }
     async screenshot(options = {}) {
         return new OpenBrowserUseImage(await this.tab.getScreenshot(options));
     }

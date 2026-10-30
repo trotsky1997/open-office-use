@@ -538,6 +538,7 @@ export declare class OpenBrowserUseTabPlaywright {
         timeoutMs?: number;
     }): Promise<void>;
     domSnapshot(): Promise<string>;
+    evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((arg: T) => unknown), arg?: T): Promise<JsonValue>;
     screenshot(options?: {
         clip?: {
             x: number;
