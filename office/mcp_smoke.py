@@ -53,6 +53,7 @@ async def main():
                 assert not authored_slide.isError and Presentation(positioned).slides[0].shapes[0].text == 'Positioned title' and Presentation(positioned).slides[0].shapes[1].table.cell(1,1).text == '18%' and tuple(Presentation(positioned).slides[0].shapes[2].chart.series[0].values) == (100,120), authored_slide
                 chart_inventory = await session.call_tool('inspect_slide_charts', {'file':str(positioned)})
                 assert not chart_inventory.isError and chart_inventory.structuredContent['charts'][0]['series'][0]['values'] == [100,120], chart_inventory
+                assert chart_inventory.structuredContent['charts'][0]['reconciliation']['status'] == 'match', chart_inventory
                 chart_draft = root/'chart-inventory-draft'; assert not (await session.call_tool('start_session', {'directory':str(chart_draft),'source':str(positioned)})).isError
                 session_inventory = await session.call_tool('session_inspect_slide_charts', {'directory':str(chart_draft),'revision':0})
                 assert not session_inventory.isError and session_inventory.structuredContent['snapshot_sha256'] == chart_inventory.structuredContent['snapshot_sha256'], session_inventory

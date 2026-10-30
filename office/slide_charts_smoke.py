@@ -1,5 +1,6 @@
 """Inspect PowerPoint chart caches, revisions and bounded failure modes."""
 import hashlib
+import io
 import json
 import subprocess
 import sys
@@ -7,6 +8,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from lxml import etree
+from openpyxl import load_workbook
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
@@ -14,6 +16,7 @@ from pptx.util import Inches
 import open_office_use
 import session
 import slide_charts
+import review_bundle
 
 with tempfile.TemporaryDirectory() as tmp:
     root=Path(tmp); source=root/'chart.pptx'
@@ -22,6 +25,21 @@ with tempfile.TemporaryDirectory() as tmp:
     assert result['complete'] and result['snapshot_sha256']==hashlib.sha256(source.read_bytes()).hexdigest()
     assert chart['categories']==['Q1','Q2'] and chart['series'][0]['name']=='Revenue' and chart['series'][0]['values']==[100,120]
     assert chart['series'][0]['references']['val']['formula']=='Sheet1!$B$2:$B$3' and chart['workbook']['status']=='embedded'
+    assert chart['reconciliation']['status']=='match' and chart['reconciliation']['complete']
+    assert chart['reconciliation']['formula_freshness']=='unknown'
+    mismatch=root/'mismatch.pptx'
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(mismatch,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename.startswith('ppt/embeddings/') and entry.filename.endswith('.xlsx'):
+                workbook=load_workbook(io.BytesIO(data)); workbook.active['B2']=999
+                buffer=io.BytesIO(); workbook.save(buffer); data=buffer.getvalue()
+            dst.writestr(entry,data)
+    mismatch_report=slide_charts.inspect(mismatch)['charts'][0]['reconciliation']
+    assert mismatch_report['status']=='mismatch' and mismatch_report['mismatch_count']>=1
+    def failed_render(_snapshot, _out): raise RuntimeError('render unavailable')
+    review=review_bundle.create(mismatch,root/'chart-review',failed_render)
+    assert 'slide_chart_cache_mismatch' in review['flags']
     draft=root/'draft';session.start(draft,source=source);assert session.inspect_slide_charts(draft,0)['snapshot_sha256']==result['snapshot_sha256']
     cli=Path(__file__).with_name('open_office_use.py');call=subprocess.run([sys.executable,str(cli),'session','inspect-slide-charts',str(draft),'--revision','0'],capture_output=True,text=True,check=True)
     assert json.loads(call.stdout)['charts'][0]['series'][0]['values']==[100,120]
@@ -42,6 +60,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 tree=etree.fromstring(data); ref=tree.find('.//'+slide_charts.C+'val/'+slide_charts.C+'numRef'); ref.remove(ref.find(slide_charts.C+'numCache'));data=etree.tostring(tree)
             dst.writestr(entry,data)
     absent=slide_charts.inspect(missing);assert not absent['complete'] and any(item['reason']=='unsupported_or_missing_cache' for item in absent['issues'])
+    assert not absent['charts'][0]['reconciliation']['complete']
     huge=root/'huge.pptx'
     with zipfile.ZipFile(source) as src, zipfile.ZipFile(huge,'w') as dst:
         for entry in src.infolist():

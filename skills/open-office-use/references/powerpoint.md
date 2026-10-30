@@ -8,4 +8,4 @@ For an embedded picture, use `session_replace_picture` with a local PNG or JPEG;
 
 For basic new decks, `author_file` can set slide dimensions and create blank slides with positioned textboxes, rectangles, editable tables, native column/line charts with embedded data, and local PNG/JPEG images; choose `fit` as `contain` or `cover` to preserve aspect ratio, or `stretch` to fill the frame. See the project guide for units, formatting options, image limits and template requirements. Inspect rendered slides and use OfficeCLI for richer elements.
 
-Use `inspect_slide_charts` / `session_inspect_slide_charts` to inventory saved chart caches, series, categories, source formulas and embedded workbook metadata. Check completeness: caches may differ from the embedded workbook, which is not reconciled by this inspection.
+Use `inspect_slide_charts` / `session_inspect_slide_charts` to inventory saved chart caches, series, categories, source formulas and embedded workbook metadata. Check each reconciliation status and completeness: saved embedded workbook values are compared to caches within documented limits, while formula result freshness remains unknown.

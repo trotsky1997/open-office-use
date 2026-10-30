@@ -174,3 +174,5 @@ Basic CLI/MCP slide specs support native column and line charts with bounded lit
 ## PowerPoint chart cache inspection
 
 CLI, MCP, session revisions and review bundles expose bounded PowerPoint chart cache inventories, source references and embedded-workbook metadata. Cache freshness and workbook contents are not reconciled; complex charts and scan limits are flagged. Targeted updates remain open.
+
+PowerPoint chart inspection now compares supported chart caches with saved values in embedded workbooks, with bounded per-chart results and review flags. Formula-result freshness and targeted chart-data updates remain open.

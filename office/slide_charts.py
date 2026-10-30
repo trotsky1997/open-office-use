@@ -1,19 +1,77 @@
 """Inspect bounded cached chart data in saved PowerPoint presentations."""
 import hashlib
+import io
 import itertools
 import math
 import tempfile
 import zipfile
 from pathlib import Path
 
+from lxml import etree
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.opc.constants import RELATIONSHIP_TYPE
 
 import snapshot as snapshots
+import chart_cache
+import ooxml
 
 C = '{http://schemas.openxmlformats.org/drawingml/2006/chart}'
 R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+
+
+def reconcile(chart, budget):
+    """Compare chart caches against a bounded embedded workbook copy."""
+    if budget['charts'] >= 20: return {'status': 'incomplete', 'reason': 'chart_limit', 'complete': False}
+    budget['charts'] += 1
+    try:
+        part = chart.part.chart_workbook.xlsx_part
+        if part is None: return {'status': 'unavailable', 'reason': 'missing_workbook', 'complete': False}
+        blob = part.blob
+        if len(blob) > 16 * 1024 * 1024 or budget['bytes'] + len(blob) > 64 * 1024 * 1024:
+            return {'status': 'incomplete', 'reason': 'workbook_size_limit', 'complete': False}
+        budget['bytes'] += len(blob)
+        with zipfile.ZipFile(io.BytesIO(blob)) as source:
+            entries = source.infolist(); names = [entry.filename for entry in entries]
+            if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 64 * 1024 * 1024:
+                return {'status': 'incomplete', 'reason': 'embedded_package_limit', 'complete': False}
+            manifest = ooxml.parse_xml(source.read('[Content_Types].xml')).getroot()
+            if manifest.tag != chart_cache.CT + 'Types': raise ValueError('Invalid content types')
+            synthetic_part = 'xl/charts/office-use-inspection.xml'
+            if synthetic_part in names or any(item.get('PartName') == '/' + synthetic_part for item in manifest):
+                return {'status': 'incomplete', 'reason': 'synthetic_name_conflict', 'complete': False}
+            entry = etree.Element(chart_cache.CT + 'Override', PartName='/' + synthetic_part, ContentType=chart_cache.CHART_TYPE)
+            overrides = [index for index, item in enumerate(manifest) if item.tag == chart_cache.CT + 'Override']
+            manifest.insert(overrides[0] if overrides else len(manifest), entry)
+            chart_root = ooxml.parse_xml(chart.part.blob).getroot()
+            for node in chart_root.findall(C + 'externalData'): chart_root.remove(node)
+            chart_xml = etree.tostring(chart_root, encoding='utf-8', xml_declaration=True)
+            if len(chart_xml) > 4 * 1024 * 1024: return {'status': 'incomplete', 'reason': 'chart_size_limit', 'complete': False}
+            with tempfile.TemporaryDirectory(prefix='office-slide-chart-reconcile-') as tmp:
+                candidate = Path(tmp) / 'embedded.xlsx'
+                with zipfile.ZipFile(candidate, 'w') as destination:
+                    for item in entries:
+                        data = etree.tostring(manifest, encoding='utf-8', xml_declaration=True) if item.filename == '[Content_Types].xml' else source.read(item)
+                        destination.writestr(item, data)
+                    destination.writestr(synthetic_part, chart_xml)
+                report = chart_cache.scan(candidate)
+        found = [item for item in report['charts'] if item['part'] == synthetic_part]
+        if len(found) != 1 or found[0]['status'] != 'scanned': return {'status': 'incomplete', 'reason': 'unsupported_chart', 'complete': False}
+        chart_report = found[0]; refs = chart_report['references']
+        incomplete = chart_report['extensions_present'] or chart_report['external_data'] or any(ref['status'] not in ('match', 'mismatch') for ref in refs)
+        mismatch_count = sum(ref.get('mismatch_count', 0) for ref in refs)
+        visible = []
+        for ref in refs[:30]:
+            item = dict(ref); mismatches = item.get('mismatches', [])
+            item['mismatches'] = mismatches[:3]
+            item['mismatches_truncated'] = item.get('mismatches_truncated', False) or len(mismatches) > 3
+            visible.append(item)
+        return {'status': 'mismatch' if mismatch_count else 'incomplete' if incomplete or len(refs) > 30 else 'match',
+                'complete': not incomplete and len(refs) <= 30, 'mismatch_count': mismatch_count,
+                'references': visible, 'references_truncated': len(refs) > 30,
+                'formula_freshness': 'unknown'}
+    except (ValueError, TypeError, KeyError, OSError, EOFError, IndexError, AttributeError, OverflowError, RuntimeError, NotImplementedError, zipfile.BadZipFile, etree.XMLSyntaxError) as exc:
+        return {'status': 'incomplete', 'reason': 'embedded_workbook_unreadable', 'error_type': type(exc).__name__, 'complete': False}
 
 
 def inspect(file):
@@ -28,7 +86,8 @@ def inspect(file):
         presentation = Presentation(snapshot); slides = presentation.slides
         result = {'snapshot_sha256': digest, 'slides_total': len(slides), 'slides_scanned': 0, 'shapes_scanned': 0,
                   'charts': [], 'issues': [], 'issue_count': 0, 'complete': True,
-                  'scope': 'Chart values and categories are saved caches; embedded workbook contents and cache freshness are not verified.'}
+                  'scope': 'Chart values are saved caches; reconciliation compares them with saved embedded workbook values. Formula cache freshness remains unknown.'}
+        reconcile_budget = {'charts': 0, 'bytes': 0}
         points = 0
         def issue(slide, path, reason):
             result['complete'] = False; result['issue_count'] += 1
@@ -99,6 +158,7 @@ def inspect(file):
                             if len(title_text) > 500: issue(slide_no, path, 'chart_title_truncated')
                     else: record['title'] = None
                     if record['workbook']['status'] not in ('embedded', 'absent'): issue(slide_no, path, 'workbook_' + record['workbook']['status'])
+                    record['reconciliation'] = reconcile(chart, reconcile_budget) if record['workbook']['status'] == 'embedded' else {'status': 'unavailable', 'reason': record['workbook']['status'], 'complete': False}
                     if len(plots) != 1: issue(slide_no, path, 'multiple_plots')
                     if len(series) > 30: issue(slide_no, path, 'series_limit')
                     category_safe = True
@@ -138,7 +198,7 @@ def inspect(file):
                 except (ValueError, TypeError, AttributeError, KeyError, IndexError, OverflowError) as exc:
                     issue(slide_no, path, 'unsupported_chart'); result['charts'].append({'slide': slide_no, 'path': path, 'error': type(exc).__name__})
             return True
-        # shortcut: bounded inventory of saved chart caches; add pagination and workbook reconciliation when supported.
+        # shortcut: bounded chart inventory and reconciliation; add pagination for larger presentations.
         for slide_no in range(1, min(len(slides), 200) + 1):
             slide = slides[slide_no - 1]; visibility = slide._element.get('show')
             if visibility not in (None, '0', 'false', '1', 'true'): issue(slide_no, None, 'unknown_visibility')

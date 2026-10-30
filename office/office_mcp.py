@@ -409,13 +409,13 @@ def session_apply(directory: str, base_revision: int, operations: list[dict[str,
 
 @server.tool()
 def inspect_slide_charts(file: str) -> dict[str, Any]:
-    """Inspect bounded saved PowerPoint chart caches and embedded-workbook metadata; cache freshness is unknown."""
+    """Inspect PowerPoint chart caches and compare saved embedded workbook values; formula freshness is unknown."""
     return slide_charts.inspect(file)
 
 
 @server.tool()
 def session_inspect_slide_charts(directory: str, revision: int) -> dict[str, Any]:
-    """Inspect PowerPoint chart caches in a session revision; embedded-workbook contents are not compared."""
+    """Inspect PowerPoint chart caches and saved embedded workbook values in a session revision."""
     return session.inspect_slide_charts(directory, revision)
 
 

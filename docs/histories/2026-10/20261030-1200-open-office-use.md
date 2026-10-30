@@ -235,3 +235,7 @@ Added positioned native column/line charts with literal embedded workbook data, 
 ### PowerPoint chart cache inspection
 
 Added snapshot-bound, bounded chart cache inventory through CLI, MCP, revision sessions and review bundles. Verified authored charts, missing and oversized caches, snapshot identity and MCP calls. The embedded workbook is identified but its data is not reconciled; targeted chart updates remain future work.
+
+### PowerPoint chart workbook reconciliation
+
+Added bounded comparison of chart caches against saved embedded workbook values, with per-chart coverage and review flags. Verified matching and modified workbook values, missing caches and MCP exposure. Formula freshness and chart-data editing remain open.
