@@ -1101,7 +1101,8 @@ export class OpenBrowserUseTab {
                 if (typeof objectId !== "string")
                     throw new RetryablePreflightError("Frame owner is unavailable; observe again");
                 try {
-                    const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: selector }], functionDeclaration: `function(selector) { if (!this.isConnected) return null; return this.matches(selector); }` }, { sessionId: parent.sessionId });
+                    // Flush the matched frame owner layout before querying its child viewport.
+                    const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: selector }], functionDeclaration: `function(selector) { if (!this.isConnected) return null; const matched=this.matches(selector); if (matched) this.getBoundingClientRect(); return matched; }` }, { sessionId: parent.sessionId });
                     if (isObject(result) && result.exceptionDetails)
                         throw new Error("Invalid frame selector");
                     const value = isObject(result) && isObject(result.result) ? result.result.value : undefined;

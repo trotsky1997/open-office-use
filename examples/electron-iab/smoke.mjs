@@ -105,6 +105,11 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.equal(await evaluate(a.id,'document.querySelector("#frame-test").contentWindow.frameTrusted'),true);
   await evaluate(a.id,"document.querySelector('#frame-test').contentDocument.querySelector('button').title='Frame Help'");
   assert.equal(await sdkTab.playwright.frameLocator('#frame-test').getByTitle(/frame help/i).count(),1);
+  const beforeReplace=await sdkTab.observe({includeFrames:true}),oldFrameButton=beforeReplace.nodes.find(node=>node.name==='Frame action');assert.ok(oldFrameButton);
+  await evaluate(a.id,`(async()=>{const old=document.querySelector('#frame-test'),f=document.createElement('iframe');f.id='frame-test';f.srcdoc='<button title="Frame Help" onclick="window.frameTrusted=event.isTrusted">Frame action</button>';await new Promise(resolve=>{f.onload=resolve;old.replaceWith(f)})})()`);
+  await assert.rejects(sdkTab.click(oldFrameButton.index,beforeReplace.snapshotId),/stale|changed|frame/i);
+  await sdkTab.playwright.frameLocator('#frame-test').getByTitle('Frame Help',{exact:true}).click();
+  assert.equal(await evaluate(a.id,'document.querySelector("#frame-test").contentWindow.frameTrusted'),true);
   await evaluate(a.id,'document.querySelector("#frame-test").remove()');
   check('SDK frame observation: indexed trusted click');
   await evaluate(a.id,`setTimeout(()=>{const b=document.createElement('button');b.id='delayed-sdk';b.textContent='Delayed SDK';b.onclick=e=>window.delayedSdkTrusted=e.isTrusted;document.body.prepend(b)},250)`);

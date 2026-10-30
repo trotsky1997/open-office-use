@@ -437,3 +437,5 @@ CSS 与语义定位器的单目标文本、属性、状态、输入值及边界�
 getByTitle 支持匹配 SVG 元素的直接 title 子元素，返回该 SVG 元素；普通 title 属性与正则继续支持。SDK 92 项测试、macOS Electron 44.7 完整 smoke 和 Linux ARM64 Chromium 150 原生扩展实测通过，Electron 覆盖含 1100 个无标题图形元素的页面。Windows 未测。
 
 隔离 Linux ARM64 Chromium 150 中替换整个跨站 iframe 元素：旧观察拒绝输入且无迟到点击；直接重新定位在三次独立 headless 实验中因目标不可交互而超时。一次额外读取 frame 几何与命中状态的实验随后点击成功，尚需定位渲染恢复条件；桌面浏览器行为尚未验证。
+
+frameLocator 匹配宿主时刷新其布局，修复 Linux Chromium 中替换跨站 frame 后子 viewport 保持 0×0、导致新定位器点击超时的实测问题。原生扩展三次独立验证旧观察拒绝及新目标可信点击；SDK 92 项测试与 macOS Electron 44.7 完整 smoke（同进程 frame 替换）通过。直接索引路径及 Windows 尚未验证。
