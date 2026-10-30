@@ -28,7 +28,11 @@ with tempfile.TemporaryDirectory() as tmp:
     second_run = paragraph.add_run(); second_run.text = 'world!'; second_run.font.italic = True
     multi = target.shapes.add_textbox(Inches(1), Inches(4), Inches(4), Inches(1)); multi.text = 'first\nsecond'
     broken = target.shapes.add_textbox(Inches(1), Inches(5), Inches(4), Inches(1)); broken.text = 'before'; broken.text_frame.paragraphs[0]._p.append(OxmlElement('a:br'))
-    linked = target.shapes.add_textbox(Inches(1), Inches(6), Inches(4), Inches(1)); link_run = linked.text_frame.paragraphs[0].add_run(); link_run.text = 'Link'; link_run.hyperlink.address = 'https://example.com'
+    linked = target.shapes.add_textbox(Inches(1), Inches(6), Inches(4), Inches(1)); link_para=linked.text_frame.paragraphs[0]
+    link_para.add_run().text='Visit '; link_run=link_para.add_run(); link_run.text='Link'; link_run.hyperlink.address='https://example.com';link_run.font.bold=True
+    same_link=link_para.add_run();same_link.text='ed';same_link.hyperlink.address='https://example.com';same_link.font.italic=True
+    other_link=link_para.add_run();other_link.text='other';other_link.hyperlink.address='https://example.org'
+    link_para.add_run().text=' now'
     chart_data = ChartData(); chart_data.categories = ['A', 'B']; chart_data.add_series('Sales', [1, 2])
     target.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(5), Inches(1), Inches(3), Inches(2), chart_data)
     table_shape = target.shapes.add_table(2, 3, Inches(5), Inches(3), Inches(4), Inches(2)); table_id = table_shape.shape_id
@@ -50,13 +54,21 @@ with tempfile.TemporaryDirectory() as tmp:
     session.start(draft, source=source)
     target_info = session.edit_target(draft, 0, '/slide[1]/shape[1]')
     assert target_info['replace_text_path_supported'] and target_info['value'] == 'Hello world!'
-    for path, find in [('/slide[1]/shape[2]', 'first'), ('/slide[1]/shape[3]/paragraph[1]', 'before'), ('/slide[1]/shape[4]/paragraph[1]', 'Link'), ('/slide[1]/shape[1]', 'missing')]:
+    for path, find in [('/slide[1]/shape[2]', 'first'), ('/slide[1]/shape[3]/paragraph[1]', 'before'), ('/slide[1]/shape[4]/paragraph[1]', 'Visit Link'), ('/slide[1]/shape[4]/paragraph[1]', 'edother'), ('/slide[1]/shape[1]', 'missing')]:
         try:
             session.replace_text(draft, 0, path, find, 'bad')
             raise AssertionError('Unsafe replacement succeeded')
         except ValueError:
             pass
     assert session.info(draft)['latest_revision'] == 0
+    link_draft=root/'link-draft';session.start(link_draft,source=source)
+    link_result=session.replace_text(link_draft,0,'/slide[1]/shape[4]/paragraph[1]','nked',' reference')
+    link_shape=next(shape for shape in Presentation(link_result['file']).slides[0].shapes if shape.shape_id==linked.shape_id)
+    link_runs=link_shape.text_frame.paragraphs[0].runs
+    assert link_shape.text=='Visit Li referenceother now' and link_runs[1].font.bold and link_runs[2].font.italic
+    assert link_runs[1].hyperlink.address=='https://example.com' and link_runs[2].hyperlink.address=='https://example.com' and link_runs[3].hyperlink.address=='https://example.org'
+    with zipfile.ZipFile(source) as before,zipfile.ZipFile(link_result['file']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=part)
     result = session.replace_text(draft, 0, '/slide[1]/shape[1]/paragraph[1]', 'llo wor', 'i earth')
     assert result['revision'] == 1 and source.read_bytes() == original
     updated = Presentation(result['file']); shape = next(shape for shape in updated.slides[0].shapes if shape.shape_id == box.shape_id)

@@ -13,6 +13,7 @@ import open_office_use
 import slide_text_check
 import review_bundle
 import session
+import officecli_backend
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'deck.pptx'; deck = Presentation(); slide = deck.slides.add_slide(deck.slide_layouts[6])
@@ -43,7 +44,11 @@ with tempfile.TemporaryDirectory() as tmp:
     linked=root/'linked-rich.pptx';linked_spec={'slides':[{'layout':'blank','elements':[{'type':'table','x':1,'y':1,'width':4,'height':1,'rows':[[{'paragraphs':[{'runs':[{'text':'Linked','url':'https://example.com'}]}]}]]}]}]}
     open_office_use.author(linked_spec,linked);linked_draft=root/'linked-rich-draft';session.start(linked_draft,source=linked)
     link_shape=Presentation(linked).slides[0].shapes[0];linked_target=session.edit_target(linked_draft,0,f'/slide[1]/table[@id={link_shape.shape_id}]/tr[1]/tc[1]/paragraph[1]')
-    assert linked_target['value']=='Linked' and not linked_target['replace_text_path_supported'] and 'hyperlink' in linked_target['read_only_reason']
+    assert linked_target['value']=='Linked' and linked_target['replace_text_path_supported'] and linked_target['read_only_reason'] is None
+    linked_result=session.replace_text(linked_draft,0,linked_target['path'],'Linked','Reference')
+    linked_run=Presentation(linked_result['file']).slides[0].shapes[0].table.cell(0,0).text_frame.paragraphs[0].runs[0]
+    assert linked_run.text=='Reference' and linked_run.hyperlink.address=='https://example.com'
+    code, validation, _=officecli_backend.invoke('validate',linked_result['file']); assert code==0 and validation['success'],validation
     duplicate = root / 'duplicate.pptx'
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')

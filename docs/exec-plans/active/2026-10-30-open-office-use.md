@@ -234,3 +234,5 @@ Workbook authoring supports native typed date and millisecond date-time values, 
 Date-formatted grid cells support verified ISO date/date-time updates without replacing the saved number format; numeric results are checked against the workbook epoch.
 
 Rendered-text checks offer bounded paragraph-level candidates and table paragraph inspection/targeted replacement; paragraph matching shares container bounds and remains a visual-review heuristic.
+
+PowerPoint targeted paragraph replacement supports linked text within a single hyperlink region and rejects boundary-crossing replacements.

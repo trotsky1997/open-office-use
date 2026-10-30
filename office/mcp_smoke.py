@@ -76,6 +76,13 @@ async def main():
                 table_path = f'/slide[1]/table[@id={table_shape.shape_id}]/tr[2]/tc[2]/paragraph[2]'
                 table_target = await session.call_tool('session_edit_target', {'directory':str(chart_draft),'base_revision':0,'path':table_path})
                 assert not table_target.isError and table_target.structuredContent['value']=='Year over year' and table_target.structuredContent['replace_only'], table_target
+                link_draft = root/'mcp-slide-link-draft'; assert not (await session.call_tool('start_session', {'directory':str(link_draft),'source':str(positioned)})).isError
+                link_path = f'/slide[1]/table[@id={table_shape.shape_id}]/tr[2]/tc[2]/paragraph[1]'
+                link_target = await session.call_tool('session_edit_target', {'directory':str(link_draft),'base_revision':0,'path':link_path})
+                assert not link_target.isError and link_target.structuredContent['replace_text_path_supported'], link_target
+                link_edit = await session.call_tool('session_replace_text', {'directory':str(link_draft),'base_revision':0,'path':link_path,'find':'source','replacement':'reference'})
+                link_run = Presentation(link_edit.structuredContent['file']).slides[0].shapes[1].table.cell(1,1).text_frame.paragraphs[0].runs[1]
+                assert not link_edit.isError and link_run.text==' reference' and link_run.hyperlink.address=='https://example.com/chart', link_edit
                 session_inventory = await session.call_tool('session_inspect_slide_charts', {'directory':str(chart_draft),'revision':0})
                 assert not session_inventory.isError and session_inventory.structuredContent['snapshot_sha256'] == chart_inventory.structuredContent['snapshot_sha256'], session_inventory
                 mismatched = root/'mismatched.pptx'

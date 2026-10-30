@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 from pptx import Presentation
+from lxml import etree
 from pptx.opc.constants import RELATIONSHIP_TYPE
 
 import ooxml
@@ -204,8 +205,6 @@ def paragraph_nodes(paragraph):
     for run in paragraph.findall(A + 'r'):
         if any(child.tag not in (A + 'rPr', A + 't') for child in run):
             raise ValueError('Run contains unsupported content')
-        if run.find('.//' + A + 'hlinkClick') is not None or run.find('.//' + A + 'hlinkMouseOver') is not None:
-            raise ValueError('Paragraph contains a hyperlink')
         nodes.extend(run.findall(A + 't'))
     return nodes
 
@@ -219,8 +218,20 @@ def replace_text(source, output, path, find, replacement):
     slide_index = int(match.group(1)) - 1
 
     def edit(tree, archive):
-        paragraph = find_paragraph(tree, path)
-        ooxml.replace_nodes(paragraph_nodes(paragraph), find, replacement)
+        paragraph = find_paragraph(tree, path); nodes = paragraph_nodes(paragraph)
+        text = ''.join(node.text or '' for node in nodes); start = ooxml.match_index(text, find, replacement); end = start + len(find)
+        offset = 0; links = set()
+        for node in nodes:
+            next_offset = offset + len(node.text or '')
+            if offset < end and next_offset > start:
+                run = node.getparent(); link_nodes = [link for link in run.iter() if link.tag in (A+'hlinkClick', A+'hlinkMouseOver')]
+                if len(link_nodes) > 2: raise ValueError('Run contains ambiguous hyperlink metadata')
+                signature = tuple(etree.tostring(link, method='c14n') for link in link_nodes)
+                if sum(map(len, signature)) > 32768: raise ValueError('Hyperlink metadata exceeds inspection limit')
+                links.add(signature)
+            offset = next_offset
+        if len(links) > 1: raise ValueError('Match crosses a hyperlink boundary')
+        ooxml.replace_nodes(nodes, find, replacement)
 
     return ooxml.edit_xml(source, output, lambda file: slide_part(file, slide_index), edit)
 

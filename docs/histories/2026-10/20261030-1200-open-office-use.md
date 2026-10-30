@@ -337,3 +337,5 @@ Added typed date and date-time cells to workbook authoring for individual cells 
 Fixed ISO date edits to preserve existing date formatting while verifying the candidate value against the 1900/1904 workbook epoch. Other existing-format changes still require separate formatting edits.
 
 Rendered slide-text candidates now identify potentially missing paragraphs and can open supported PowerPoint table paragraphs for targeted edits, with complex or hyperlinked runs read-only. Verified rendered overflow and revision editing.
+
+Enabled PowerPoint paragraph replacement inside a single hyperlink region, retaining relationship data and run formatting. Matches spanning different hyperlink regions are rejected.
