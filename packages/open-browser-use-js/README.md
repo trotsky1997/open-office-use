@@ -144,12 +144,14 @@ For semantic selection, the REPL and SDK also accept:
 const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
 console.log(await save.innerText());
 console.log(await save.getAttribute("type")); // null if the attribute is absent
+console.log(await save.isEnabled());
 await save.hover(); // move the pointer over the matched control
 await save.click();
 await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
 await tab.playwright.getByRole("textbox", { name: "Message" }).press("Enter");
 await tab.playwright.getByPlaceholder("Email address", { exact: true }).fill("user@example.com");
 await tab.playwright.getByLabel("Email updates", { exact: true }).check();
+await tab.playwright.getByLabel("Email updates", { exact: true }).setChecked(false);
 await tab.playwright.getByRole("checkbox", { name: "Alerts", checked: false }).check();
 await tab.playwright.getByLabel("Colour", { exact: true }).selectOption({ label: "Blue" });
 await tab.playwright.getByText("Continue", { exact: true }).click();

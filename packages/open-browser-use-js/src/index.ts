@@ -643,7 +643,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async locatorRead(snapshotId: string, index: number, mode: "innerText" | "textContent" | "attribute", attribute = ""): Promise<string | null> {
+  async locatorRead(snapshotId: string, index: number, mode: "innerText" | "textContent" | "attribute" | "enabled", attribute = ""): Promise<string | boolean | null> {
     const observation = this.#observation;
     if (!observation || observation.id !== snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
     const target = observation.nodes.find(node => node.index === index);
@@ -660,16 +660,16 @@ export class OpenBrowserUseTab {
     try {
       const result = await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{
         objectId,returnByValue:true,arguments:[{value:mode},{value:attribute}],
-        functionDeclaration:`function(mode, name) { if (!this.isConnected) return null; const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
+        functionDeclaration:`function(mode, name) { if (!this.isConnected) return null; if (mode === 'enabled') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
       },{sessionId});
       const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
-      if (!isObject(payload) || (typeof payload.value !== "string" && payload.value !== null)) throw new RetryablePreflightError("Target value is unavailable; observe again");
+      if (!isObject(payload) || (mode === "enabled" ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null)) throw new RetryablePreflightError("Target value is unavailable; observe again");
       const value = payload.value;
       if (value === null && mode === "innerText") throw new RetryablePreflightError("Target text is unavailable; observe again");
       if (typeof value === "string" && value.length > 30_000) throw new Error("Locator value exceeds the 30000 character limit");
       if (await this.documentId() !== observation.documentId) throw new RetryablePreflightError("Page changed; observe again");
       if (target.frameChain) await this.validateFrames(target.frameChain);
-      return value;
+      return mode === "enabled" ? value === true && !fresh.disabled : value as string | null;
     } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(() => {}); }
   }
 
@@ -1524,11 +1524,12 @@ export class OpenBrowserUseRoleLocator {
 
   async count(): Promise<number> { return (await this.find()).matches.length; }
 
-  async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText"))!, options.timeoutMs); }
-  async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform((node,id)=>this.tab.locatorRead(id,node.index,"textContent"), options.timeoutMs); }
+  async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs); }
+  async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs); }
+  async isEnabled(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean); }
   async getAttribute(name: string, options: {timeoutMs?: number} = {}): Promise<string | null> {
     if (typeof name !== "string" || !name || name.length > 256) throw new Error("Invalid attribute name");
-    return this.perform((node,id)=>this.tab.locatorRead(id,node.index,"attribute",name), options.timeoutMs);
+    return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"attribute",name)) as string | null, options.timeoutMs);
   }
 
   private async perform<T>(action: (node: InteractiveNode, snapshotId: string) => Promise<T>, timeoutMs = 5_000): Promise<T> {
@@ -1561,6 +1562,10 @@ export class OpenBrowserUseRoleLocator {
   async type(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.typeText(node.index,id,text), options.timeoutMs); }
   async check(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.setChecked(node.index,id,true), options.timeoutMs); }
   async uncheck(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.setChecked(node.index,id,false), options.timeoutMs); }
+  async setChecked(checked: boolean, options: {timeoutMs?: number} = {}): Promise<void> {
+    if (typeof checked !== "boolean") throw new Error("Checked state must be a boolean");
+    await this.perform((node,id)=>this.tab.setChecked(node.index,id,checked), options.timeoutMs);
+  }
   async selectOption(values: SelectOption | SelectOption[], options: {timeoutMs?: number} = {}): Promise<string[]> { return this.perform((node,id)=>this.tab.selectOption(node.index,id,values), options.timeoutMs); }
 }
 

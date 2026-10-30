@@ -32,7 +32,7 @@ tabs via `browser.getUserTabs()`, and claim the matching tab with
 `await browser.claimTab(id)`. Call `await tab.observe()` after page changes;
 use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
 to replace a text field's contents. For semantic selection, use
-`tab.playwright.getByRole(role, {name, exact:true}).click()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)` or `.fill(text)`;
+`tab.playwright.getByRole(role, {name, exact:true}).click()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()` or `.fill(text)`;
 `tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
 binary controls without toggling an already-correct state. `getByRole` accepts boolean `checked`, `disabled`, `pressed`, `selected` and `expanded` filters when the accessibility tree exposes those states. Disabled controls remain observable and can be hovered; actions that modify them require an enabled target. Actions require a
 unique match. Chain locators, such as `dialog.getByRole("button", {name:"Save"})`, to select descendants within a container, including nested frames. Accessible lists, list items, groups, tables and rows also support scoped queries. Use `.filter({hasText:"Apples"})` or `.filter({hasNotText:"Sold out"})` to select by accessible descendant text. For a native select use `.selectOption(value)` or

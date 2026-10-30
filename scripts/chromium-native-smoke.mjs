@@ -41,6 +41,7 @@ try {
  assert.match(await tab.evaluate('location.href'),/#same-document$/);
  await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:1500});
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
+ assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isEnabled(),true);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).getAttribute('missing'),null);
  await tab.evaluate(`(()=>{const hidden=document.createElement('span');hidden.hidden=true;hidden.textContent=' concealed';document.querySelector('button').append(hidden)})()`);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
@@ -218,12 +219,14 @@ try {
  assert.equal(await tab.playwright.getByRole('checkbox',{name:'Notifications',disabled:false}).count(),2);
  assert.equal(await tab.playwright.getByRole('button',{name:'Locked by fieldset',disabled:true}).count(),1);
  assert.equal(await tab.playwright.getByRole('button',{name:'Locked by parent',disabled:true}).count(),1);
+ assert.equal(await tab.playwright.getByRole('button',{name:'Locked by fieldset',disabled:true}).isEnabled(),false);
+ assert.equal(await tab.playwright.getByRole('button',{name:'Locked by parent',disabled:true}).isEnabled(),false);
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('[aria-label="Locked by parent"]').onmouseenter=e=>parent.postMessage({kind:'disabled-hover',trusted:e.isTrusted},'*')`},{sessionId:crossSession});
  await tab.playwright.getByRole('button',{name:'Locked by parent',disabled:true}).hover();await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'disabled-hover',trusted:true});
  await assert.rejects(tab.playwright.getByRole('checkbox',{name:'Notifications',disabled:true}).check({timeoutMs:0}),/disabled/);
  assert.equal(await tab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).count(),1);
- await tab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).check();await new Promise(r=>setTimeout(r,100));
+ await tab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).setChecked(true);await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'state-check',index:1,checked:true,trusted:true});
  const stateMessageCount=await tab.evaluate('window.frameMessages.length');
  await tab.playwright.getByRole('checkbox',{name:'Notifications',checked:true,disabled:false}).nth(1).check({timeoutMs:0});

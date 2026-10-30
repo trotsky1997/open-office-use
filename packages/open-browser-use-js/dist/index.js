@@ -649,10 +649,10 @@ export class OpenBrowserUseTab {
         try {
             const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                 objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }],
-                functionDeclaration: `function(mode, name) { if (!this.isConnected) return null; const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
+                functionDeclaration: `function(mode, name) { if (!this.isConnected) return null; if (mode === 'enabled') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
             }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
-            if (!isObject(payload) || (typeof payload.value !== "string" && payload.value !== null))
+            if (!isObject(payload) || (mode === "enabled" ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
                 throw new RetryablePreflightError("Target value is unavailable; observe again");
             const value = payload.value;
             if (value === null && mode === "innerText")
@@ -663,7 +663,7 @@ export class OpenBrowserUseTab {
                 throw new RetryablePreflightError("Page changed; observe again");
             if (target.frameChain)
                 await this.validateFrames(target.frameChain);
-            return value;
+            return mode === "enabled" ? value === true && !fresh.disabled : value;
         }
         finally {
             await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
@@ -1666,11 +1666,12 @@ export class OpenBrowserUseRoleLocator {
     }
     async count() { return (await this.find()).matches.length; }
     async innerText(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "innerText")), options.timeoutMs); }
-    async textContent(options = {}) { return this.perform((node, id) => this.tab.locatorRead(id, node.index, "textContent"), options.timeoutMs); }
+    async textContent(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "textContent")), options.timeoutMs); }
+    async isEnabled() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "enabled"))); }
     async getAttribute(name, options = {}) {
         if (typeof name !== "string" || !name || name.length > 256)
             throw new Error("Invalid attribute name");
-        return this.perform((node, id) => this.tab.locatorRead(id, node.index, "attribute", name), options.timeoutMs);
+        return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "attribute", name)), options.timeoutMs);
     }
     async perform(action, timeoutMs = 5_000) {
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
@@ -1707,6 +1708,11 @@ export class OpenBrowserUseRoleLocator {
     async type(text, options = {}) { await this.perform((node, id) => this.tab.typeText(node.index, id, text), options.timeoutMs); }
     async check(options = {}) { await this.perform((node, id) => this.tab.setChecked(node.index, id, true), options.timeoutMs); }
     async uncheck(options = {}) { await this.perform((node, id) => this.tab.setChecked(node.index, id, false), options.timeoutMs); }
+    async setChecked(checked, options = {}) {
+        if (typeof checked !== "boolean")
+            throw new Error("Checked state must be a boolean");
+        await this.perform((node, id) => this.tab.setChecked(node.index, id, checked), options.timeoutMs);
+    }
     async selectOption(values, options = {}) { return this.perform((node, id) => this.tab.selectOption(node.index, id, values), options.timeoutMs); }
 }
 export class OpenBrowserUseCdp {

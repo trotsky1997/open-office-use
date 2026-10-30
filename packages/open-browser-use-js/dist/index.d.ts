@@ -312,6 +312,7 @@ export declare class OpenBrowserUseRoleLocator {
     textContent(options?: {
         timeoutMs?: number;
     }): Promise<string | null>;
+    isEnabled(): Promise<boolean>;
     getAttribute(name: string, options?: {
         timeoutMs?: number;
     }): Promise<string | null>;
@@ -335,6 +336,9 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<void>;
     uncheck(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    setChecked(checked: boolean, options?: {
         timeoutMs?: number;
     }): Promise<void>;
     selectOption(values: SelectOption | SelectOption[], options?: {

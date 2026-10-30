@@ -41,6 +41,7 @@ app.whenReady().then(async () => {
     await evaluate(`(()=>{const a=document.createElement('a');a.href='/download-fixture';a.textContent='Download fixture';a.id='iab-download';Object.assign(a.style,{position:'fixed',left:'20px',top:'100px',zIndex:'999999'});document.body.append(a)})()`);
     const downloadReady=await sdkTab.prepareDownload({timeoutMs:20000});const downloading=downloadReady.wait();void downloading.catch(()=>{});
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).innerText(),'Download fixture');
+    assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).isEnabled(),true);
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).textContent(),'Download fixture');
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).getAttribute('href'),'/download-fixture');
     await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});
@@ -169,13 +170,14 @@ app.whenReady().then(async () => {
     assert.equal(await sdkTab.playwright.getByRole('checkbox',{name:'Notifications',disabled:false}).count(),2);
     assert.equal(await sdkTab.playwright.getByRole('button',{name:'Locked by fieldset',disabled:true}).count(),1);
     assert.equal(await sdkTab.playwright.getByRole('button',{name:'Locked by parent',disabled:true}).count(),1);
+    assert.equal(await sdkTab.playwright.getByRole('button',{name:'Locked by parent',disabled:true}).isEnabled(),false);
     await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('[aria-label="Locked by parent"]').onmouseenter=e=>parent.postMessage({kind:'disabled-hover',trusted:e.isTrusted},'*')`},{sessionId:frameSession});
     await sdkTab.playwright.getByRole('button',{name:'Locked by parent',disabled:true}).hover();
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'disabled-hover',trusted:true});
     await assert.rejects(sdkTab.playwright.getByRole('checkbox',{name:'Notifications',disabled:true}).check({timeoutMs:0}),/disabled/);
     assert.equal(await sdkTab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).count(),1);
-    await sdkTab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).check();
+    await sdkTab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).setChecked(true);
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'state-check',index:1,checked:true,trusted:true});
     const stateMessageCount=await evaluate('window.crossMessages.length');
