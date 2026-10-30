@@ -11,6 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE
 from pptx import Presentation
+from PIL import Image as PILImage
 from pptx.util import Inches
 from session import set_selection
 from mcp import ClientSession, StdioServerParameters
@@ -25,7 +26,18 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
+                PILImage.new('RGB', (20, 20), 'red').save(original_image)
+                PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
+                deck = Presentation(); slide = deck.slides.add_slide(deck.slide_layouts[6])
+                picture = slide.shapes.add_picture(str(original_image), Inches(1), Inches(1), Inches(1), Inches(1))
+                picture_source = root / 'mcp-picture.pptx'; deck.save(picture_source)
+                picture_draft = root / 'mcp-picture-draft'
+                started_picture = await session.call_tool('start_session', {'directory': str(picture_draft), 'source': str(picture_source)})
+                assert not started_picture.isError, started_picture
+                changed_picture = await session.call_tool('session_replace_picture', {'directory': str(picture_draft), 'base_revision': 0, 'path': f'/slide[1]/picture[@id={picture.shape_id}]', 'image_file': str(replacement_image)})
+                assert not changed_picture.isError and Presentation(picture_draft / 'revision-000001.pptx').slides[0].shapes[0].image.blob == replacement_image.read_bytes(), changed_picture
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})

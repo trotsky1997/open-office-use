@@ -142,6 +142,15 @@ def session_replace_text(directory: str, base_revision: int, path: str, find: st
 
 
 @server.tool()
+def session_replace_picture(directory: str, base_revision: int, path: str, image_file: str) -> dict[str, Any]:
+    """Replace a PPTX picture with a local PNG or JPEG, preserving its geometry and crop."""
+    image = Path(image_file).resolve(strict=True)
+    if image.stat().st_size > 10 * 1024 * 1024:
+        raise ValueError('Image must be at most 10 MiB')
+    return session.replace_picture(directory, base_revision, path, image.read_bytes())
+
+
+@server.tool()
 def session_apply(directory: str, base_revision: int, operations: list[dict[str, Any]]) -> dict[str, Any]:
     """Apply an OfficeCLI batch to the latest revision; reject concurrent or stale edits."""
     return session.apply(directory, base_revision, operations)

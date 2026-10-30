@@ -280,6 +280,23 @@ def replace_text(directory, base_revision, path, find, replacement):
     return {'revision': base_revision + 1, 'file': str(output), 'path': path}
 
 
+def replace_picture(directory, base_revision, path, image_data):
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if state['format'] != 'pptx':
+        raise ValueError('Picture replacement requires a PPTX session')
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999:
+        raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
+    try:
+        slides.replace_picture(source, output, path, image_data)
+    except FileExistsError as exc:
+        raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'path': path}
+
+
 def grid_bounds(cell_range):
     try:
         min_col, min_row, max_col, max_row = range_boundaries(cell_range)

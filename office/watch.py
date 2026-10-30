@@ -1,5 +1,6 @@
 """Local browser preview and visual selection for a versioned office session."""
 import json
+import base64
 import re
 import secrets
 import shutil
@@ -28,7 +29,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
 #comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
-input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
+input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
 .comparison-page{position:relative;width:100%}.comparison-page img{display:block}.layout-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}.layout-overlay polygon{vector-effect:non-scaling-stroke;stroke-width:2}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
@@ -41,7 +42,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="compare-revision">Compare with latest</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
 <details id="candidate-panel"><summary>Find selected elements</summary>
 <p>Matches use text and, when available for PowerPoint, visible shape geometry. Results may be incomplete or ambiguous. Verify the target before editing.</p>
-<button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul></details>
+<button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul><div id="picture-panel" hidden><p id="picture-target"></p><label>Replacement image <input id="picture-file" type="file" accept="image/png,image/jpeg"></label> <button type="button" id="picture-replace">Replace picture</button><p>PNG or JPEG, up to 10 MiB. Existing crop and shape size remain; review the new revision.</p><p id="picture-status" role="status"></p></div></details>
 <details id="edit-panel"><summary>Edit an element</summary><form id="edit-form">
 <label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
 <button type="button" id="edit-load">Load element</button>
@@ -96,9 +97,9 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null;
 function clearCandidates() {
- savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
+ savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
 }
 async function saveSelection(revision, page, coordinates) {
@@ -129,13 +130,28 @@ document.getElementById('candidate-search').addEventListener('click', async () =
    const use=document.createElement('button'); use.type='button'; use.textContent=`Use ${item.path}`;
    use.addEventListener('click', () => {
     if (epoch !== selectionEpoch || current !== result.revision || pinned !== null) return;
-    document.getElementById('edit-panel').open=true; loadElement(item.path);
+    if (item.type === 'picture') { pictureTarget={revision:result.revision,path:item.path}; document.getElementById('picture-target').textContent=`Picture: ${item.path}`; document.getElementById('picture-file').value=''; document.getElementById('picture-status').textContent=''; document.getElementById('picture-panel').hidden=false; }
+    else { document.getElementById('edit-panel').open=true; loadElement(item.path); }
    });
    row.append(label, document.createTextNode(' '), use); list.appendChild(row);
   }
   document.getElementById('candidate-status').textContent = result.candidates.length ? `${result.candidates.length} candidate(s). ${result.geometry_available ? 'Geometry and text matches. ' : 'Text matches. '}Verify the target; matches may be incomplete.` : 'No candidates found. Try a different selection or enter a path.';
  } catch (error) { if (epoch === selectionEpoch) document.getElementById('candidate-status').textContent=`Candidate error: ${error.message}`; }
  finally { if (epoch === selectionEpoch && pinned === null && savedSelection) button.disabled=false; }
+});
+document.getElementById('picture-replace').addEventListener('click', async () => {
+ const target=pictureTarget, file=document.getElementById('picture-file').files[0], button=document.getElementById('picture-replace');
+ if (!target || pinned!==null || target.revision!==current) { document.getElementById('picture-status').textContent='Version changed; select the picture again.'; return; }
+ if (!file || file.size===0 || file.size>10*1024*1024) { document.getElementById('picture-status').textContent='Choose a PNG or JPEG up to 10 MiB.'; return; }
+ button.disabled=true;
+ try {
+  const encoded=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(new Error('Could not read image'));reader.readAsDataURL(file);});
+  if (target!==pictureTarget || pinned!==null || target.revision!==current) throw new Error('Version or selection changed; select the picture again.');
+  const response=await fetch('replace-picture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,image:encoded})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Picture replacement failed');
+  document.getElementById('picture-status').textContent=`Saved as revision ${result.revision}.`; await refresh();
+ } catch(error) { document.getElementById('picture-status').textContent=`Picture error: ${error.message}`; }
+ finally {button.disabled=false;}
 });
 function gridDirty() {
  return [...document.querySelectorAll('#grid-output input')].some(input=>input.value!==input.dataset.baseline);
@@ -663,10 +679,11 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
-                if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
+                limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 20000
+                if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 8 or not 0 < int(length) <= limit:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
@@ -721,6 +738,11 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'revision'}:
                                 raise ValueError('Restore requires base_revision and revision')
                             saved = session.restore(directory, payload['base_revision'], payload['revision'])
+                        elif route.endswith('/replace-picture'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'image'} or not isinstance(payload['image'], str):
+                                raise ValueError('Picture replacement requires revision, path and image')
+                            image_data = base64.b64decode(payload['image'], validate=True)
+                            saved = session.replace_picture(directory, payload['base_revision'], payload['path'], image_data)
                         elif route.endswith('/replace-text'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement'}:
                                 raise ValueError('Text replacement requires revision, path, find and replacement')

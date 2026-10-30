@@ -59,7 +59,7 @@ def serialize_xml(tree, original):
     return etree.tostring(tree, **options)
 
 
-def edit_xml(source, output, select_part, edit):
+def edit_xml(source, output, select_part, edit, allow_new=False):
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
     if source.suffix.lower() not in ('.docx', '.pptx', '.xlsx') or source.suffix.lower() != output.suffix.lower():
         raise ValueError('Input and output must use the same supported Office format')
@@ -73,12 +73,14 @@ def edit_xml(source, output, select_part, edit):
             if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
                 raise ValueError('Document exceeds package limits or contains duplicate parts')
             if any(name.startswith('_xmlsignatures/') for name in names):
-                raise ValueError('Digitally signed documents are not supported by text replacement')
+                raise ValueError('Digitally signed documents are not supported by package edits')
             part = select_part(source)
             document = archive.read(part); tree = parse_xml(document)
             additional = edit(tree, archive) or {}
-            if not isinstance(additional, dict) or any(name not in names or name == part or not isinstance(data, bytes) for name, data in additional.items()):
+            if not isinstance(additional, dict) or any((name not in names and not allow_new) or name == part or not isinstance(name, str) or not isinstance(data, bytes) or name.startswith('/') or '..' in name.split('/') for name, data in additional.items()):
                 raise ValueError('Invalid additional package changes')
+            if sum(entry.file_size for entry in entries) + sum(len(data) for name, data in additional.items() if name not in names) > 128 * 1024 * 1024 or len(entries) + sum(name not in names for name in additional) > 5000:
+                raise ValueError('Edited package exceeds limits')
             changed = {**additional, part: serialize_xml(tree, document)}
             with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-ooxml-') as tmp:
                 candidate = Path(tmp) / ('document' + output.suffix.lower())
@@ -86,6 +88,9 @@ def edit_xml(source, output, select_part, edit):
                     result.comment = archive.comment
                     for entry in entries:
                         result.writestr(entry, changed[entry.filename] if entry.filename in changed else archive.read(entry))
+                    for name, data in additional.items():
+                        if name not in names:
+                            result.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
                 os.link(candidate, output)
     except (zipfile.BadZipFile, etree.XMLSyntaxError, KeyError) as exc:
         raise ValueError(f'Invalid Office document: {exc}') from exc

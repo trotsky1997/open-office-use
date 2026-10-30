@@ -161,6 +161,7 @@ def main():
     candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
+    picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
@@ -196,6 +197,11 @@ def main():
                 result = selection_candidates.candidates(args.directory, render)
             elif args.action == 'replace-text':
                 result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
+            elif args.action == 'replace-picture':
+                image = Path(args.image)
+                if image.stat().st_size > 10 * 1024 * 1024:
+                    raise ValueError('Image must be at most 10 MiB')
+                result = session.replace_picture(args.directory, args.base, args.path, image.read_bytes())
             elif args.action == 'inspect-layout':
                 result = session.inspect_layout(args.directory, args.revision)
             elif args.action == 'recalculate':
