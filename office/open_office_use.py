@@ -146,6 +146,7 @@ def main():
     structured = commands.add_parser('structured'); structured.add_argument('file'); structured.add_argument('mode', choices=['outline', 'get', 'query']); structured.add_argument('target', nargs='?')
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
     cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
+    formula_scan = commands.add_parser('scan-formulas'); formula_scan.add_argument('file')
     calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
     audit = commands.add_parser('audit'); audit.add_argument('file')
     comparison = commands.add_parser('compare'); comparison.add_argument('before'); comparison.add_argument('after')
@@ -213,6 +214,8 @@ def main():
             result = review.compare(args.before, args.after)
         elif args.command == 'cells':
             result = spreadsheet.read_range(args.file, args.sheet, args.cell_range)
+        elif args.command == 'scan-formulas':
+            result = spreadsheet.scan_formulas(args.file)
         elif args.command == 'recalculate':
             result = {'output': spreadsheet.recalculate(args.file, args.out)}
         elif args.command == 'structured':

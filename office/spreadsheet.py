@@ -3,6 +3,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from xml.etree.ElementTree import tostring
 
@@ -76,6 +78,88 @@ def read_range(file, sheet, cell_range, include_style=False):
         formulas.close()
         if values:
             values.close()
+
+
+FORMULA_SCAN_MAX_CELLS = 1000000
+FORMULA_SCAN_MAX_ISSUES = 200
+
+
+def scan_formulas(file):
+    """Inspect stored formula caches and error cells across saved worksheets."""
+    source = Path(file).resolve(strict=True)
+    if source.suffix.lower() != '.xlsx':
+        raise ValueError('Formula scanning requires an .xlsx file')
+    if source.stat().st_size > 128 * 1024 * 1024:
+        raise ValueError('Workbook exceeds the 128 MiB scan limit')
+    with tempfile.TemporaryDirectory(prefix='office-formulas-') as tmp:
+        snapshot = Path(tmp) / 'workbook.xlsx'
+        shutil.copyfile(source, snapshot)
+        if snapshot.stat().st_size > 128 * 1024 * 1024:
+            raise ValueError('Workbook exceeds the 128 MiB scan limit')
+        try:
+            with zipfile.ZipFile(snapshot) as archive:
+                entries = archive.infolist()
+                names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+                workbook = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
+                try:
+                    sheets = [(sheet.title, getattr(sheet, '_worksheet_path', None)) for sheet in workbook.worksheets]
+                finally:
+                    workbook.close()
+                counts = {'scanned_cells': 0, 'formulas': 0, 'formula_errors': 0,
+                          'literal_errors': 0, 'empty_or_missing_cache': 0}
+                errors, missing, scanned_sheets = [], [], []
+                complete = True
+                for name, path in sheets:
+                    if not isinstance(path, str) or path not in names:
+                        raise ValueError(f'Cannot locate worksheet XML: {name}')
+                    sheet_complete = True
+                    with archive.open(path) as stream:
+                        stack, sheet_data = [], None
+                        for event, element in ET.iterparse(stream, events=('start', 'end')):
+                            tag = element.tag.rsplit('}', 1)[-1]
+                            if event == 'start':
+                                if tag == 'sheetData' and stack[-1:] == ['worksheet']:
+                                    sheet_data = element
+                                stack.append(tag)
+                                continue
+                            if stack[-3:] == ['sheetData', 'row', 'c']:
+                                if counts['scanned_cells'] >= FORMULA_SCAN_MAX_CELLS:
+                                    sheet_complete = complete = False
+                                    break
+                                counts['scanned_cells'] += 1
+                                children = {child.tag.rsplit('}', 1)[-1]: child for child in element}
+                                formula, value = children.get('f'), children.get('v')
+                                is_formula = formula is not None
+                                cached = value.text if value is not None else None
+                                if is_formula:
+                                    counts['formulas'] += 1
+                                if element.get('t') == 'e':
+                                    kind = 'formula_errors' if is_formula else 'literal_errors'
+                                    counts[kind] += 1
+                                    if len(errors) < FORMULA_SCAN_MAX_ISSUES:
+                                        errors.append({'sheet': name, 'cell': element.get('r'), 'kind': kind,
+                                                       'error': (cached or '')[:256], 'formula': (formula.text or '')[:500] if is_formula else None})
+                                elif is_formula and (cached is None or cached == ''):
+                                    counts['empty_or_missing_cache'] += 1
+                                    if len(missing) < FORMULA_SCAN_MAX_ISSUES:
+                                        missing.append({'sheet': name, 'cell': element.get('r'), 'formula': (formula.text or '')[:500]})
+                                element.clear()
+                            elif stack[-2:] == ['sheetData', 'row']:
+                                element.clear()
+                                if sheet_data is not None:
+                                    sheet_data.remove(element)
+                            stack.pop()
+                    scanned_sheets.append({'sheet': name, 'complete': sheet_complete})
+                    if not complete:
+                        break
+                return {**counts, 'sheets': scanned_sheets, 'total_sheets': len(sheets), 'complete': complete,
+                        'errors': errors, 'errors_truncated': counts['formula_errors'] + counts['literal_errors'] > len(errors),
+                        'empty_or_missing': missing, 'empty_or_missing_truncated': counts['empty_or_missing_cache'] > len(missing),
+                        'cache_freshness': 'unknown'}
+        except (zipfile.BadZipFile, ET.ParseError) as exc:
+            raise ValueError(f'Invalid workbook package or worksheet XML: {exc}') from exc
 
 
 def recalculate(source, output):

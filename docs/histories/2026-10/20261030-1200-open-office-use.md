@@ -51,3 +51,5 @@ Connected bounded worksheet cell and formatting diffs to the visual revision com
 Protected unsaved grid and element input during reload and navigation; stale element text remains selectable and in-flight editor actions are serialized.
 
 Added rectangular TSV paste to the worksheet grid, with all-or-nothing bounds and formula-range checks.
+
+Added bounded workbook-wide scanning of stored formula caches and error cells through CLI and MCP, including hidden worksheets and explicit completeness indicators.

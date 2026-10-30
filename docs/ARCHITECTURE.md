@@ -332,3 +332,5 @@ The XLSX revision comparison viewer can request a bounded cell diff for the disp
 The viewer preserves stale grid and element input in selectable read-only controls, confirms before replacing unsaved input, and warns before browser navigation with pending edits. Grid and element requests serialize their own loading and saving actions.
 
 Grid paste parses a bounded rectangular TSV block, validates all target cells before changing inputs, and uses the existing versioned save path. Embedded cell newlines are not supported.
+
+The workbook formula scan streams saved worksheet XML across visible and hidden worksheets. It reports stored formula errors, literal errors and empty or missing caches, with bounded issue lists and an explicit incomplete flag at the cell limit; it does not calculate formulas or establish cache freshness.

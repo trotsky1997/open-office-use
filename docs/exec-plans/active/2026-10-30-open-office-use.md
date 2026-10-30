@@ -23,7 +23,7 @@ The optional stdio MCP server exposes structured reads, isolated batch edits, PD
 
 ## Formula workflow
 
-Added bounded cell reads with formula text, cached values and errors, plus explicit LibreOffice recalculation to a protected copy. Verified basic arithmetic, error results and empty ranges through CLI, and calculation through MCP. Advanced formula compatibility, external links and workbook fidelity remain unverified.
+Added bounded cell reads with formula text, cached values and errors, plus explicit LibreOffice recalculation to a protected copy. Verified basic arithmetic, error results and empty ranges through CLI, and calculation through MCP. A bounded workbook-wide scan now reports stored formula errors and empty or missing caches across worksheets, with explicit scan completeness and issue truncation. Advanced formula compatibility, external links and workbook fidelity remain unverified.
 
 ## Review
 

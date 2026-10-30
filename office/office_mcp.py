@@ -177,6 +177,12 @@ def read_cells(file: str, sheet: str, cell_range: str) -> dict[str, Any]:
 
 
 @server.tool()
+def scan_formulas(file: str) -> dict[str, Any]:
+    """Scan stored formulas and error values across a saved XLSX; cache freshness is unknown."""
+    return spreadsheet.scan_formulas(file)
+
+
+@server.tool()
 def recalculate_workbook(file: str, output: str) -> dict[str, str]:
     """Recalculate an XLSX with LibreOffice and write a new file; conversion may affect fidelity."""
     return {'output': spreadsheet.recalculate(file, output)}
