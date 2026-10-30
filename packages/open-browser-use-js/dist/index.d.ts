@@ -136,6 +136,14 @@ type CssStep = {
     after?: readonly CssTextFilter[];
     union?: readonly [readonly CssStep[], readonly CssStep[]];
 };
+type DomIdentity = {
+    tag: string;
+    role: string | null;
+    name: string | null;
+    type: string | null;
+    disabled: boolean;
+    checked: boolean | "mixed" | null;
+};
 type TextFilter = {
     visible?: boolean;
     hasText?: TextMatcher;
@@ -391,10 +399,7 @@ export declare class OpenBrowserUseTabDomCUA {
         nodes: Array<{
             node_id: string;
             frame_id: string;
-            tag: string;
-            role: string | null;
-            name: string | null;
-        }>;
+        } & DomIdentity>;
         visibility_incomplete?: boolean;
     }>;
     private target;

@@ -37,6 +37,17 @@ function locatorClickOptions(options) {
         throw new Error("Invalid mouse button");
     return { button, buttons: masks[button], modifiers: cuaModifiers(options.modifiers) };
 }
+const domIdentityFunction = `function(){
+  if(!this.isConnected)return null;
+  const root=this.getRootNode(),references=(this.getAttribute('aria-labelledby') || '').trim().split(/\\s+/).filter(Boolean).map(id=>root.getElementById?.(id)?.textContent || '').join(' ').trim();
+  const labels=this.labels ? Array.from(this.labels,label=>label.textContent || '').join(' ').trim() : '';
+  const name=references || this.getAttribute('aria-label') || labels || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';
+  let disabled=false;for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null))if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true'){disabled=true;break}
+  const aria=this.getAttribute('aria-checked');let checked=null;
+  if(this instanceof HTMLInputElement && ['checkbox','radio'].includes(this.type))checked=this.indeterminate ? 'mixed' : this.checked;
+  else if(['true','false','mixed'].includes(aria))checked=aria==='mixed' ? 'mixed' : aria==='true';
+  return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role')?.slice(0,200) ?? null,name:name.replace(/\\s+/g,' ').trim().slice(0,500) || null,type:(this instanceof HTMLInputElement || this instanceof HTMLButtonElement ? this.type : this.getAttribute('type'))?.slice(0,100) ?? null,disabled,checked};
+}`;
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 class RetryablePreflightError extends Error {
 }
@@ -1251,9 +1262,9 @@ export class OpenBrowserUseTab {
                     return;
                 if (this.browser.client.connectionGeneration !== domConnectionGeneration)
                     throw new RetryablePreflightError('Connection changed; observe again');
-                const result = await this.browser.cdp.call(this.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, functionDeclaration: `function(){if(!this.isConnected)return null;const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role')?.slice(0,200) ?? null,name:name.trim().slice(0,500) || null}}` }, { sessionId });
+                const result = await this.browser.cdp.call(this.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, functionDeclaration: domIdentityFunction }, { sessionId });
                 const value = isObject(result) && isObject(result.result) ? result.result.value : null;
-                if (this.browser.client.connectionGeneration !== domConnectionGeneration || !isObject(value) || value.tag !== domIdentity.tag || value.role !== domIdentity.role || value.name !== domIdentity.name)
+                if (this.browser.client.connectionGeneration !== domConnectionGeneration || !isObject(value) || value.tag !== domIdentity.tag || value.role !== domIdentity.role || value.name !== domIdentity.name || value.type !== domIdentity.type || value.disabled !== domIdentity.disabled || value.checked !== domIdentity.checked)
                     throw new RetryablePreflightError('DOM target changed; observe again');
             };
             await verifyDomIdentity();
@@ -2617,15 +2628,15 @@ export class OpenBrowserUseTabDomCUA {
                     if (!intersections[i])
                         continue;
                     const { id, objectId } = objects[i];
-                    const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: clip }], functionDeclaration: `function(clip){if(!this.isConnected)return null;const r=this.getBoundingClientRect();if(r.right<=clip.left || r.bottom<=clip.top || r.left>=clip.right || r.top>=clip.bottom)return {outside:true};const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';return {tag:this.tagName.toLowerCase(),role:this.getAttribute('role'),name:name.trim().slice(0,500) || null}}` }, { sessionId });
+                    const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: clip }], functionDeclaration: `function(clip){if(!this.isConnected)return null;const r=this.getBoundingClientRect();if(r.right<=clip.left || r.bottom<=clip.top || r.left>=clip.right || r.top>=clip.bottom)return {outside:true};return (${domIdentityFunction}).call(this)}` }, { sessionId });
                     const value = isObject(result) && isObject(result.result) ? result.result.value : null;
                     if (!isObject(value))
                         throw new RetryablePreflightError('DOM target changed; observe again');
                     if (value.outside === true)
                         continue;
-                    if (typeof value.tag !== 'string' || (value.role !== null && typeof value.role !== 'string') || (value.name !== null && typeof value.name !== 'string'))
+                    if (typeof value.tag !== 'string' || (value.role !== null && typeof value.role !== 'string') || (value.name !== null && typeof value.name !== 'string') || (value.type !== null && typeof value.type !== 'string') || typeof value.disabled !== 'boolean' || ![true, false, 'mixed', null].includes(value.checked))
                         throw new RetryablePreflightError('DOM target changed; observe again');
-                    const node_id = randomUUID(), identity = { tag: value.tag, role: typeof value.role === 'string' ? value.role.slice(0, 200) : null, name: value.name };
+                    const node_id = randomUUID(), identity = { tag: value.tag, role: value.role, name: value.name, type: value.type, disabled: value.disabled, checked: value.checked };
                     ids.set(node_id, { snapshot, id, identity });
                     nodes.push({ node_id, frame_id: frame.id, ...identity });
                 }
@@ -2705,7 +2716,7 @@ export class OpenBrowserUseTabDomCUA {
                 if (typeof objectId !== 'string')
                     throw new RetryablePreflightError('DOM target changed; observe again');
                 try {
-                    const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: identity }], functionDeclaration: `function(expected){if(!this.isConnected)return null;const name=this.getAttribute('aria-label') || this.getAttribute('alt') || this.getAttribute('title') || this.getAttribute('placeholder') || this.innerText || '';if(this.tagName.toLowerCase()!==expected.tag || (this.getAttribute('role')?.slice(0,200) ?? null)!==expected.role || (name.trim().slice(0,500) || null)!==expected.name)return null;const r=this.getBoundingClientRect(),x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;let target=this,root=target.getRootNode();while(true){const hit=root.elementFromPoint(x,y);if(!hit || (hit!==target && !target.contains(hit)))return null;if(!(root instanceof ShadowRoot))return {x,y};target=root.host;root=target.getRootNode()}}` }, { sessionId: snapshot.frame?.sessionId });
+                    const result = await this.tab.browser.cdp.call(this.tab.id, 'Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: identity }], functionDeclaration: `function(expected){if(!this.isConnected)return null;const actual=(${domIdentityFunction}).call(this);if(!actual || Object.keys(expected).some(key=>actual[key]!==expected[key]))return null;const r=this.getBoundingClientRect(),x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;let target=this,root=target.getRootNode();while(true){const hit=root.elementFromPoint(x,y);if(!hit || (hit!==target && !target.contains(hit)))return null;if(!(root instanceof ShadowRoot))return {x,y};target=root.host;root=target.getRootNode()}}` }, { sessionId: snapshot.frame?.sessionId });
                     const value = isObject(result) && isObject(result.result) ? result.result.value : null;
                     if (!isObject(value) || typeof value.x !== 'number' || typeof value.y !== 'number')
                         throw new RetryablePreflightError('DOM target changed; observe again');
