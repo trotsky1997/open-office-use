@@ -12,3 +12,5 @@ Supported dynamic-array formulas require verified XLDAPR metadata and candidate 
 
 For basic workbook creation, `author_file` supports `sheet_options` for freeze panes, auto-filter ranges, row/column sizes, direct formats, number formats, editable column/line charts and optional page-width fitting in the same request as cell values. Formula results are not calculated. Source-based library round-tripping can alter unsupported features and caches; use targeted session editing where preservation matters.
  Basic chart authoring caches supported literal sources within documented bounds; formula and other unsupported sources can leave chart caches missing. Formula caches are not calculated. Inspect caches and recalculate where needed.
+
+For printable authored sheets, `sheet_options.print_options` sets paper, orientation, print area, repeating rows/columns, margins, and default/odd-page header/footer with optional page number. Inspect every rendered page; small margins can suppress running text.

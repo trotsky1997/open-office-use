@@ -105,6 +105,14 @@ For basic Excel authoring, `sheet_options` can format a workbook in the same req
 
 Options apply to existing worksheets after values are written. Freeze panes accepts a single cell or `null`; auto-filter accepts a range of at most 10,000,000 cells or `null` and rejects replacement when existing filter criteria or sort state are present. Column widths use Excel character units (greater than 0 and at most 255); row heights use points (greater than 0 and at most 409.5). Format entries accept `bold`, `italic`, `font_size`, six-digit RGB `font_color` and `fill`, `number_format`, `horizontal` (`general`, `left`, `center`, `right`) and boolean `wrap`. Omitted properties retain their existing direct settings. Each format covers up to 10,000 cells; all formats together cover up to 20,000 cells, with at most 100 format entries per sheet and 200 dimension entries of each kind. Merged-cell placeholders are rejected. Formulas are stored without calculation; formula caches may be missing and LibreOffice previews may recalculate them. When modifying an existing workbook, library round-tripping can change unsupported features and formula caches; use the targeted session grid when preserving those matters.
 
+For a printable worksheet, set `print_options` within the relevant `sheet_options`:
+
+```json
+{"sheets":{"Data":{"A1":"Metric","B1":"Value","A2":"Revenue","B2":120}},"sheet_options":{"Data":{"print_options":{"paper":"a4","orientation":"landscape","area":"A1:B2","repeat_rows":"1:1","repeat_columns":"A:A","header":{"text":"Quarterly report","align":"left"},"footer":{"text":"Page","align":"right","page_number":true}}}}}
+```
+
+`paper` is `a4` or `letter`; orientation is `portrait` or `landscape`. `area` is a single cell range with at most 10,000,000 cells; `repeat_rows` and `repeat_columns` accept ranges such as `1:2` and `A:B`. Set these fields to `null` to clear them. `margins` accepts `left`, `right`, `top`, `bottom`, `header` and `footer` in inches (0–5). Header and footer write the specified `left`, `center` or `right` slot; existing other slots remain. A footer may include `page_number: true`. Text is literal, including ampersands, and the complete header or footer is limited to 255 UTF-16 code units. These settings apply to default/odd-page headers and footers; existing first/even-page settings are preserved. Small margins can suppress running text in LibreOffice or on printers, so inspect every rendered page. Source-based workbook authoring can alter unsupported workbook features and caches.
+
 The same `sheet_options` can create editable column or line charts:
 
 ```json

@@ -525,7 +525,7 @@ def format_workbook(workbook, options):
         return 'FF' + value.upper()
     for name, setting in options.items():
         if name not in workbook.sheetnames: raise ValueError(f'Worksheet not found: {name}')
-        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page'}: raise ValueError('Invalid worksheet options')
+        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options'}: raise ValueError('Invalid worksheet options')
         sheet = workbook[name]
         if not isinstance(sheet, Worksheet): raise ValueError('Sheet options require a worksheet')
         if 'freeze_panes' in setting:
@@ -540,6 +540,51 @@ def format_workbook(workbook, options):
             if sheet.sheet_properties.pageSetUpPr is None: sheet.sheet_properties.pageSetUpPr = PageSetupProperties()
             sheet.sheet_properties.pageSetUpPr.fitToPage = fit
             if fit: sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0
+        if 'print_options' in setting:
+            printing = setting['print_options']
+            if not isinstance(printing, dict) or set(printing) - {'paper', 'orientation', 'area', 'repeat_rows', 'repeat_columns', 'margins', 'header', 'footer'}: raise ValueError('Invalid worksheet print options')
+            if 'paper' in printing:
+                paper = printing['paper']
+                if not isinstance(paper, str) or paper not in ('a4', 'letter'): raise ValueError('Print paper must be a4 or letter')
+                sheet.page_setup.paperSize = {'a4': sheet.PAPERSIZE_A4, 'letter': sheet.PAPERSIZE_LETTER}[paper]
+            if 'orientation' in printing:
+                orientation = printing['orientation']
+                if not isinstance(orientation, str) or orientation not in ('portrait', 'landscape'): raise ValueError('Invalid print orientation')
+                sheet.page_setup.orientation = orientation
+            if 'area' in printing:
+                area = printing['area']
+                if area is not None: bounds(area, 10000000)
+                sheet.print_area = area
+            if 'repeat_rows' in printing:
+                rows = printing['repeat_rows']
+                match = re.fullmatch(r'([1-9][0-9]{0,6}):([1-9][0-9]{0,6})', rows) if isinstance(rows, str) else None
+                if rows is not None and (match is None or not 1 <= int(match[1]) <= int(match[2]) <= 1048576): raise ValueError('Repeat rows must be a range such as 1:2')
+                sheet.print_title_rows = rows
+            if 'repeat_columns' in printing:
+                columns = printing['repeat_columns']
+                match = re.fullmatch(r'([A-Za-z]{1,3}):([A-Za-z]{1,3})', columns) if isinstance(columns, str) else None
+                if columns is not None and (match is None or not 1 <= column_index_from_string(match[1].upper()) <= column_index_from_string(match[2].upper()) <= 16384): raise ValueError('Repeat columns must be a range such as A:B')
+                sheet.print_title_cols = columns.upper() if columns is not None else None
+            margins = printing.get('margins', {})
+            if not isinstance(margins, dict) or set(margins) - {'left', 'right', 'top', 'bottom', 'header', 'footer'}: raise ValueError('Invalid worksheet print margins')
+            for margin, value in margins.items():
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 5 or not math.isfinite(value): raise ValueError('Print margins must be 0 to 5 inches')
+                setattr(sheet.page_margins, margin, value)
+            dimensions = {'1': (8.5, 11), '9': (8.2677165354, 11.6929133858)}.get(str(sheet.page_setup.paperSize))
+            if dimensions is not None:
+                page_width, page_height = dimensions if sheet.page_setup.orientation != 'landscape' else dimensions[::-1]
+                if sheet.page_margins.left + sheet.page_margins.right > page_width - 0.5 or sheet.page_margins.top + sheet.page_margins.bottom > page_height - 0.5: raise ValueError('Print margins leave insufficient content area')
+            for name in ('header', 'footer'):
+                if name not in printing: continue
+                value = printing[name]; allowed = {'text', 'align'} | ({'page_number'} if name == 'footer' else set())
+                if not isinstance(value, dict) or set(value) - allowed: raise ValueError(f'Invalid worksheet print {name}')
+                text = value.get('text', ''); align = value.get('align', 'right' if name == 'footer' else 'left'); page_number = value.get('page_number', False)
+                if not isinstance(text, str) or len(text) > 255 or any(ord(char) < 32 for char in text): raise ValueError(f'Invalid worksheet print {name} text')
+                if not isinstance(align, str) or align not in ('left', 'center', 'right') or not isinstance(page_number, bool): raise ValueError(f'Invalid worksheet print {name} options')
+                content = text.replace('&', '&&') + ((' ' if text else '') + '&P' if page_number else '')
+                target = sheet.oddHeader if name == 'header' else sheet.oddFooter
+                getattr(target, align).text = content
+                if len(str(target).encode('utf-16-le')) // 2 > 255: raise ValueError(f'Worksheet print {name} exceeds 255 characters')
         if 'auto_filter' in setting:
             value = setting['auto_filter']
             if value is not None: bounds(value, 10000000)

@@ -196,3 +196,5 @@ Word block authoring supports run font, size and color plus paragraph alignment,
 New Word documents support page size, orientation, margins, running header/footer text and a PAGE field through CLI/MCP authoring. Two-page LibreOffice rendering and schema validation were verified; native Word and complex multi-section layouts remain open.
 
 Word table authoring supports fixed proportional columns, header fill and ink, and table font settings. Validated OOXML, CLI/MCP, and LibreOffice rendering; complex section layouts and native Word fidelity remain open.
+
+Workbook authoring supports print paper, orientation, area, repeat rows/columns, margins and default/odd-page header/footer text and page numbers. A four-page LibreOffice render verified repeating headings and page numbers with default margins; small margins can suppress running text.

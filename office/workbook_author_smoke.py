@@ -1,8 +1,12 @@
 """Create a formatted workbook with formulas and worksheet settings."""
 import tempfile
+import json
+import sys
+import subprocess
 from pathlib import Path
 from openpyxl import load_workbook
 import open_office_use
+import officecli_backend
 import chart_cache
 import session
 
@@ -41,6 +45,21 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as exc: assert 'category_type' in str(exc)
     else: raise AssertionError('Formula category type was guessed')
     assert Path(open_office_use.render(output, root/'render')).read_bytes().startswith(b'%PDF')
+    printing=root/'printing.xlsx'; cells={'A1':'Metric','B1':'Value','A100':'OUTSIDE PRINT AREA'}
+    cells.update({f'A{i}':f'Row {i}' for i in range(2,100)}); cells.update({f'B{i}':i for i in range(2,100)})
+    print_settings={'paper':'a4','orientation':'landscape','area':'A1:B99','repeat_rows':'1:1','repeat_columns':'A:A','header':{'text':'R&D REPORT'},'footer':{'text':'Page','page_number':True}}
+    print_spec=root/'print-spec.json'; print_spec.write_text(json.dumps({'sheets':{'Data':cells},'sheet_options':{'Data':{'print_options':print_settings}}}))
+    cli=Path(__file__).with_name('open_office_use.py')
+    created=subprocess.run([sys.executable,str(cli),'author','--spec',str(print_spec),'--out',str(printing)],capture_output=True,text=True,check=True)
+    assert json.loads(created.stdout)['output']==str(printing.resolve())
+    printed=load_workbook(printing)['Data']
+    assert str(printed.page_setup.paperSize)=='9' and printed.page_setup.orientation=='landscape' and printed.print_title_rows=='$1:$1' and printed.print_title_cols=='$A:$A'
+    assert str(printed.print_area)=="'Data'!$A$1:$B$99" and printed.oddHeader.left.text=='R&&D REPORT' and printed.oddFooter.right.text=='Page &P'
+    code, validation, _=officecli_backend.invoke('validate',printing); assert code==0 and validation['success'],validation
+    pdf=open_office_use.render(printing,root/'print-render'); text=subprocess.run(['pdftotext','-layout',pdf,'-'],capture_output=True,text=True,check=True).stdout
+    pages=[page for page in text.split('\f') if page.strip()]; assert len(pages)>=2
+    assert all('Metric' in page and 'R&D REPORT' in page and f'Page {index}' in page for index,page in enumerate(pages,1)),pages
+    assert 'OUTSIDE PRINT AREA' not in text
     before = output.read_bytes(); revised = root/'revised.xlsx'
     open_office_use.author({'sheet_options':{'Forecast':{'formats':[{'range':'A1','italic':True}]}}}, revised, output)
     revised_sheet = load_workbook(revised)['Forecast']; assert revised_sheet['A1'].font.bold and revised_sheet['A1'].font.italic and output.read_bytes() == before
@@ -49,7 +68,7 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as exc: assert 'filter criteria' in str(exc)
     else: raise AssertionError('Existing filter criteria were silently changed')
     assert not (root/'unsafe.xlsx').exists()
-    for index, opts in enumerate([{'freeze_panes':'A1:B2'}, {'fit_to_page':'yes'}, {'column_widths':{'XFE':10}}, {'row_heights':{'1':True}}, {'formats':[{'range':'A1:Z10000','bold':True}]}, {'formats':[{'range':'A1','font_color':'BAD'}]}, {'charts':[{'type':'line','data':'B1:B3','categories':'A2:A2'}]}, {'charts':[{'type':'pie','data':'B1:B3'}]}]):
+    for index, opts in enumerate([{'freeze_panes':'A1:B2'}, {'fit_to_page':'yes'}, {'print_options':{'paper':'bad'}}, {'print_options':{'repeat_rows':'2:1'}}, {'print_options':{'repeat_columns':'A:XFE'}}, {'print_options':{'paper':'letter','margins':{'left':5,'right':5}}}, {'print_options':{'footer':{'page_number':'yes'}}}, {'column_widths':{'XFE':10}}, {'row_heights':{'1':True}}, {'formats':[{'range':'A1:Z10000','bold':True}]}, {'formats':[{'range':'A1','font_color':'BAD'}]}, {'charts':[{'type':'line','data':'B1:B3','categories':'A2:A2'}]}, {'charts':[{'type':'pie','data':'B1:B3'}]}]):
         target = root/f'bad{index}.xlsx'
         try: open_office_use.author({'sheets':{'Forecast':{}},'sheet_options':{'Forecast':opts}}, target)
         except ValueError: pass

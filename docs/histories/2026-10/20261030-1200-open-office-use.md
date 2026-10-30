@@ -279,3 +279,7 @@ Added page size, orientation, margins, header and footer text and a PAGE field t
 ### Word table formatting
 
 Added proportional fixed table columns, header colors and table typography to structured authoring. Validated generated markup, bad inputs, CLI/MCP and LibreOffice rendering; complex section widths and native Word rendering need separate review.
+
+### Spreadsheet print layout
+
+Added worksheet print area, repeating rows and columns, paper, orientation, margins and running text with page numbers to authoring. Validated schema, CLI/MCP, literal ampersands and a four-page LibreOffice PDF; small margins hid running text in the preview. Native Excel remains unverified.
