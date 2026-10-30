@@ -452,3 +452,20 @@ test("WebMCP backend rejects calls when its gate is inactive", async () => {
   const info = json(await backend.getInfo());
   assert.deepEqual(info.capabilities.tab, []);
 });
+
+test('WebMCP cancellation aborts an already invoked page tool',async()=>{
+  let aborted=false,started;const ready=new Promise(resolve=>{started=resolve;});
+  const tool={name:'cancel_tool',inputSchema:{type:'object'},async __execute(_input,{signal}){signal.addEventListener('abort',()=>{aborted=true;});started();return await new Promise(()=>{});}};
+  const {runtime}=await loadBridgeHarness({modelContext:createModelContext([tool])});
+  const listed=await runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_REQUEST',action:'list'});
+  const pending=runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_REQUEST',requestId:'cancel-test',action:'invoke',tool_name:'cancel_tool',registration_id:listed.result.tools[0].registration_id,input:{},timeout_ms:5000});
+  await ready;await runtime.sendToContent({type:'OPEN_BROWSER_USE_WEBMCP_CANCEL',requestId:'cancel-test'});
+  assert.match((await pending).error,/canceled/);await new Promise(resolve=>setImmediate(resolve));assert.equal(aborted,true);
+});
+
+test('WebMCP cancellation during preparation prevents page dispatch',async()=>{
+  const BrowserBackend=await loadBrowserBackend(),backend=new BrowserBackend({webMcpGate:{async enabled(){return true;}}});
+  backend.requireSessionTab=async()=>{};let release;backend.ensureWebMcpContentScripts=async()=>await new Promise(resolve=>{release=resolve;});
+  const controller=new AbortController();const pending=backend.webmcp_list_tools({tabId:1},controller.signal);
+  while(!release)await new Promise(resolve=>setImmediate(resolve));controller.abort();release();await assert.rejects(pending,/canceled/);
+});

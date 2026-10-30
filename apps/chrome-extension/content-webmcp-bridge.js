@@ -41,11 +41,20 @@
       sendResponse({ ok: true });
       return false;
     }
+    if (message?.type === "OPEN_BROWSER_USE_WEBMCP_CANCEL" && typeof message.requestId === "string") {
+      const waiter = pending.get(message.requestId);
+      if (waiter) {
+        pending.delete(message.requestId); clearTimeout(waiter.timeoutId);
+        window.postMessage({source:REQUEST_SOURCE,requestId:message.requestId,action:"cancel"}, "*");
+        waiter.resolve({ok:false,error:"WebMCP request canceled"});
+      }
+      sendResponse({ok:true}); return false;
+    }
     if (message?.type !== REQUEST_MESSAGE) {
       return false;
     }
 
-    const requestId = createRequestId();
+    const requestId = typeof message.requestId === "string" ? message.requestId : createRequestId();
     const timeoutMs = bridgeTimeout(message);
     const responsePromise = new Promise((resolve) => {
       const timeoutId = setTimeout(() => {

@@ -59,7 +59,7 @@ class JsonRpcPeer {
       return;
     }
     const id = message.id;
-    const controller = id !== undefined && ["executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath"].includes(message.method) ? new AbortController() : undefined;
+    const controller = id !== undefined && ["executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath", "webmcp_list_tools", "webmcp_invoke_tool"].includes(message.method) ? new AbortController() : undefined;
     if (controller) this.inFlight.set(id, controller);
     try {
       const handler = this.handlers[message.method];
@@ -635,14 +635,15 @@ class BrowserBackend {
     });
   }
 
-  async webmcp_list_tools(params) {
+  async webmcp_list_tools(params, signal) {
     const tabId = requireWebMcpTabId(params, "webmcp_list_tools");
     await this.requireSessionTab({ ...params, tabId }, "webmcp_list_tools");
     await this.requireWebMcpEnabled();
     const result = await this.sendWebMcpRequest(
       tabId,
       { action: "list" },
-      DEFAULT_WEBMCP_LIST_TIMEOUT_MS + WEBMCP_TIMEOUT_GRACE_MS
+      DEFAULT_WEBMCP_LIST_TIMEOUT_MS + WEBMCP_TIMEOUT_GRACE_MS,
+      signal
     );
     if (!result || typeof result !== "object" || !Array.isArray(result.tools)) {
       throw new Error("WebMCP list response did not include tools");
@@ -650,7 +651,7 @@ class BrowserBackend {
     return result;
   }
 
-  async webmcp_invoke_tool(params) {
+  async webmcp_invoke_tool(params, signal) {
     const tabId = requireWebMcpTabId(params, "webmcp_invoke_tool");
     await this.requireSessionTab({ ...params, tabId }, "webmcp_invoke_tool");
     await this.requireWebMcpEnabled();
@@ -680,7 +681,8 @@ class BrowserBackend {
         input: params.input,
         timeout_ms: timeoutMs
       },
-      timeoutMs + WEBMCP_TIMEOUT_GRACE_MS
+      timeoutMs + WEBMCP_TIMEOUT_GRACE_MS,
+      signal
     );
     if (!result || typeof result !== "object" || !Object.hasOwn(result, "result")) {
       throw new Error("WebMCP invoke response did not include result");
@@ -1402,14 +1404,22 @@ class BrowserBackend {
     }
   }
 
-  async sendWebMcpRequest(tabId, request, timeoutMs) {
+  async sendWebMcpRequest(tabId, request, timeoutMs, signal) {
+    if (signal?.aborted) throw new Error("WebMCP request canceled");
     await this.ensureWebMcpContentScripts(tabId);
-    const response = await withWebMcpTimeout(timeoutMs, async () => {
-      return await chrome.tabs.sendMessage(tabId, {
-        type: "OPEN_BROWSER_USE_WEBMCP_REQUEST",
-        ...request
+    if (signal?.aborted) throw new Error("WebMCP request canceled");
+    const requestId = crypto.randomUUID();
+    const abort = () => { void chrome.tabs.sendMessage(tabId, {type:"OPEN_BROWSER_USE_WEBMCP_CANCEL", requestId}).catch(() => {}); };
+    signal?.addEventListener("abort", abort, {once:true});
+    let response;
+    try {
+      response = await withWebMcpTimeout(timeoutMs, async () => {
+        return await chrome.tabs.sendMessage(tabId, {
+          type: "OPEN_BROWSER_USE_WEBMCP_REQUEST", requestId,
+          ...request
+        });
       });
-    });
+    } finally { signal?.removeEventListener("abort", abort); }
     if (response?.ok !== true) {
       throw new Error(
         typeof response?.error === "string" ? response.error : "WebMCP page bridge request failed"

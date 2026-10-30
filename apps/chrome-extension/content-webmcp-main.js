@@ -12,6 +12,7 @@
     modelContext: null,
     nextRegistrationId: 1,
     registrations: new Map(),
+    invocations: new Map(),
     toolChangeListener: null
   };
   Object.defineProperty(globalThis, STATE_KEY, {
@@ -28,6 +29,7 @@
       return;
     }
     const requestId = event.data.requestId;
+    if (event.data.action === "cancel") { state.invocations.get(requestId)?.abort(); return; }
     void handleRequest(event.data)
       .then((result) => {
         window.postMessage({ source: RESPONSE_SOURCE, requestId, ok: true, result }, "*");
@@ -105,7 +107,8 @@
 
     const timeoutMs = positiveTimeout(request.timeout_ms, DEFAULT_INVOKE_TIMEOUT_MS);
     const controller = new AbortController();
-    let timeoutId;
+    state.invocations.set(request.requestId, controller);
+    let timeoutId, abort;
     try {
       const inputJson = JSON.stringify(request.input);
       if (inputJson === undefined) {
@@ -116,15 +119,19 @@
           modelContext.executeTool(registration.tool, inputJson, { signal: controller.signal })
         ),
         new Promise((_, reject) => {
+          abort = () => reject(new Error("WebMCP request canceled"));
+          controller.signal.addEventListener("abort", abort, {once:true});
           timeoutId = setTimeout(() => {
-            controller.abort();
             reject(new Error(`WebMCP tool invocation timed out after ${timeoutMs}ms`));
+            controller.abort();
           }, timeoutMs);
         })
       ]);
       return { result: normalizeToolResult(rawResult) };
     } finally {
       clearTimeout(timeoutId);
+      controller.signal.removeEventListener("abort", abort);
+      state.invocations.delete(request.requestId);
     }
   }
 
