@@ -842,10 +842,11 @@ Electron hosts must authorize the exact files and grant `files.upload` and
 
 ## DOM CUA
 
-`tab.dom_cua.get_visible_dom()` returns `{nodes}` with opaque `node_id`, tag,
-role and a short name for visible, viewport-intersecting interactive elements
-in the main document and open shadow roots. It currently excludes child-frame
-contents and limits the underlying match set to 1000 elements. Text and
+`tab.dom_cua.get_visible_dom()` returns `{nodes}` with opaque `node_id`,
+`frame_id`, tag, role and a short name for visible, viewport-intersecting
+interactive elements in readable frames and open shadow roots. Each frame is
+checked in its own viewport; an offscreen frame may still contribute nodes.
+The underlying match set is limited to 1000 elements across frames. Text and
 attributes are page data and may be incomplete.
 
 Use `click({node_id})` or `double_click({node_id})` for a node, then
@@ -853,8 +854,7 @@ Use `click({node_id})` or `double_click({node_id})` for a node, then
 node_id?})` sends a wheel gesture at the node or viewport center. A new
 snapshot or node action invalidates old IDs. Before clicking, the SDK rechecks
 node identity, its visible match set, geometry and hit target; an outdated or
-changed target fails and requires another snapshot. Downloads and child-frame
-DOM snapshots remain separate workflows.
+changed target fails and requires another snapshot. Downloads use the separate download workflow.
 
 ## Waiting for a download
 

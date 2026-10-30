@@ -287,3 +287,5 @@ locator(selector, options) 现在实际应用 hasText/hasNotText/has/hasNot，�
 语义与 CSS locator 新增 downloadMedia，定位首个匹配并在隔离 world 内触发媒体链接下载；使用现有下载等待、scope 授权和操作前重查，失败后不重发。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证链接下载与跨来源拒绝，隔离测试 profile 显式允许自动下载；Electron 44/Xvfb 验证两类 locator、data GIF 和跨进程 frame 实际落盘。HTTP(S) 媒体暂限同来源，重定向与自动下载策略由浏览器处理；macOS/Windows 本轮未测。
 
 新增 tab.dom_cua 主文档和开放 shadow root 可见节点快照、节点单击/双击、焦点输入/按键及节点或视口滚动。节点 ID 绑定快照，点击前重核文本、角色、标签、CSS 匹配、位置及命中；节点动作后失效。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证可信点击、旧 ID 和文本变化拒绝；Electron 44/Xvfb 验证节点点击、焦点输入及滚动。当前仅主 frame，匹配数上限 1000，子 frame 快照仍待实现；macOS/Windows 本轮未测。
+
+DOM CUA 快照扩展到可读取的同进程和跨进程 frame，每个节点携带 frame_id 和所属 frame 快照；点击前复核 frame、目标和名称，节点滚动通过 frame 链换算坐标。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证跨进程节点可信点击；Electron 44/Xvfb 验证跨进程节点点击和滚动。每个 frame 按自身视口筛选，视口外的 frame 可能仍有节点；总匹配上限 1000，macOS/Windows 本轮未测。
