@@ -481,3 +481,5 @@ CSS 与语义定位器新增 focus：聚焦前后复核目标、frame 和焦点�
 语义定位器的文本、属性、启用与可见性 DOM 读取改用目标 frame 的隔离 world，frame 宿主可见性检查也使用父 frame 隔离 world；checked 仍从浏览器可访问性状态读取。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展通过，覆盖页面伪造 isConnected 和 iframe 尺寸。Windows 未测。
 
 观察中的字段值分类与密码遮蔽改用对应 frame 的隔离 world；无法创建上下文时将字段标记为不可读取，不输出其 AX 值。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展通过，覆盖页面篡改 input.type，以及 Electron 跨进程 frame 的密码字段。Windows 未测。
+
+REPL 的 nodeRepl.emitImage 对 PNG、JPEG、WebP 校验文件签名与 MIME 一致，格式不符直接报错；检查只覆盖签名，完整解码由接收方负责。SDK 95 项测试、macOS Electron 44.7 完整 smoke 通过；本地真实 JPEG/WebP 经 MCP 输出后由 Pillow 解码验证。Linux 和 Windows 本轮未测。

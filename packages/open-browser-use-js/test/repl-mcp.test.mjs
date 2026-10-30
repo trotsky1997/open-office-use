@@ -90,6 +90,11 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     assert.equal((await js("selected.close(); nodeRepl.write((await getBrowserState()).sessions.length)")).content[0].text,"1");
     const image = (await js("nodeRepl.emitImage(await tab.getScreenshot())")).content[0];
     assert.deepEqual(image, { type: "image", mimeType: "image/png", data: pngFixture.toString("base64") });
+    assert.equal((await js('nodeRepl.emitImage(new Uint8Array([1,2,3]))')).isError,true);
+    assert.equal((await js('nodeRepl.emitImage(await tab.getScreenshot(),"image/jpeg")')).isError,true);
+    assert.equal((await js('nodeRepl.emitImage(new Uint8Array([255,216,255]),"image/jpeg")')).content[0].mimeType,'image/jpeg');
+    assert.equal((await js('nodeRepl.emitImage(new Uint8Array([82,73,70,70,0,0,0,0,87,69,66,80]),"image/webp")')).content[0].mimeType,'image/webp');
+
     const playwrightImage = (await js("nodeRepl.emitImage(await tab.playwright.screenshot({fullPage:false}))")).content[0];
     assert.deepEqual(playwrightImage,image);
     assert.equal((await js("nodeRepl.write((await tab.playwright.screenshot()).toBase64())")).content[0].text,pngFixture.toString("base64"));

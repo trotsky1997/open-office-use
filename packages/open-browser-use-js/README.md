@@ -820,7 +820,7 @@ to select one explicitly. Use `obu profiles --connected --json` to map sockets
 to installed browser profiles. Set `OBU_SOCKET_DIR` when the host uses a
 different socket directory. `nodeRepl.write`
 emits text, and `nodeRepl.emitImage(bytes, mimeType)` emits PNG (the default),
-JPEG or WebP bytes. JavaScript evaluations run one at a time. Closing MCP stdin closes the
+JPEG or WebP bytes; the file signature must match the MIME type. JavaScript evaluations run one at a time. Closing MCP stdin closes the
 SDK connections while preserving browser tabs; use the existing session
 finalization APIs when tabs should be cleaned up.
 

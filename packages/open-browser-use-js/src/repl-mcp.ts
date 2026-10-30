@@ -149,10 +149,13 @@ Object.assign(repl.context, {
     write: (value: unknown) => { const target=outputs.getStore();if(target?.open)target.content.push({ type: "text", text: typeof value === "string" ? value : inspect(value, { depth: 5 }) }); },
     emitImage: (bytes: Uint8Array, mimeType = "image/png") => {
       const target=outputs.getStore();if(!target?.open)return;
-      if (!types.isUint8Array(bytes) || !["image/png", "image/jpeg", "image/webp"].includes(mimeType)) {
-        throw new Error("emitImage requires PNG, JPEG, or WebP bytes and a matching MIME type");
-      }
-      target.content.push({ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType });
+      if (!types.isUint8Array(bytes) || !["image/png", "image/jpeg", "image/webp"].includes(mimeType)) throw new Error("emitImage requires PNG, JPEG, or WebP bytes and a matching MIME type");
+      const data=Buffer.from(bytes);
+      const matches=mimeType === "image/png" ? data.length>=8 && data.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) :
+        mimeType === "image/jpeg" ? data.length>=3 && data[0]===0xff && data[1]===0xd8 && data[2]===0xff :
+        data.length>=12 && data.toString("ascii",0,4)==="RIFF" && data.toString("ascii",8,12)==="WEBP";
+      if(!matches)throw new Error("emitImage bytes do not match the MIME type");
+      target.content.push({ type: "image", data: data.toString("base64"), mimeType });
     }
   }
 });
