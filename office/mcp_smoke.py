@@ -177,7 +177,8 @@ async def main():
                 tracked_view = await session.call_tool('session_list_word_tracked_changes', {'directory': str(track_draft), 'revision': 1})
                 assert not tracked_view.isError and tracked_view.structuredContent['counts'] == {'del': 1, 'ins': 1}, tracked_view
                 record_ids = [record['id'] for record in tracked_view.structuredContent['records']]
-                resolved = await session.call_tool('session_resolve_tracked_runs', {'directory': str(track_draft), 'base_revision': 1, 'part': 'word/document.xml', 'ids': record_ids, 'accept': True})
+                assert (await session.call_tool('session_resolve_tracked_runs', {'directory':str(track_draft),'base_revision':1,'part':'word/document.xml','ids':record_ids,'accept':True,'expected_sha256':'0'*64})).isError
+                resolved = await session.call_tool('session_resolve_tracked_runs', {'directory': str(track_draft), 'base_revision': 1, 'part': 'word/document.xml', 'ids': record_ids, 'accept': True, 'expected_sha256':tracked_view.structuredContent['snapshot_sha256']})
                 assert not resolved.isError and Document(track_draft / 'revision-000002.docx').paragraphs[0].text == 'find thread', resolved
                 insert_draft = root / 'insert-draft'
                 assert not (await session.call_tool('start_session', {'directory': str(insert_draft), 'source': str(word_source)})).isError

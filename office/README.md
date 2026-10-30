@@ -586,3 +586,5 @@ Grid reads use a checked source snapshot and return `snapshot_sha256`. Value and
 Speaker-note reads return `snapshot_sha256`. Pass it as `expected_sha256` to full-note or paragraph replacement; the viewer checks the displayed source and supplies the hash automatically. Full replacement can reset note formatting.
 
 Comment inventories return `snapshot_sha256`; pass it as `expected_sha256` to comment replies and state changes to bind them to the inspected file. The viewer supplies this hash for its comment actions.
+
+Tracked-change inventories return `snapshot_sha256`. Pass it to `session_resolve_tracked_runs` as `expected_sha256` to bind acceptance or rejection to the inspected file. The viewer checks its displayed snapshot and sends the inventory hash.

@@ -186,7 +186,7 @@ let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparison
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
 let slideOrderLoaded=null, slideOrderBusy=false;
-let trackedEpoch=0, trackedRevision=null, trackedBusy=false, slideTextRevision=null, slideTextEpoch=0;
+let trackedEpoch=0, trackedRevision=null, trackedHash=null, trackedBusy=false, slideTextRevision=null, slideTextEpoch=0;
 function clearTextSearch() {
  textSearchEpoch++; textSearchState=null; document.getElementById('text-search-next').disabled=true;
  document.getElementById('text-search-results').replaceChildren(); document.getElementById('text-search-status').textContent='';
@@ -886,16 +886,18 @@ function clearWorkbookFor(revision) {
  if (workbookRevision!==null && workbookRevision!==revision) { workbookEpoch++; workbookRevision=null; document.getElementById('workbook-status').textContent=''; document.getElementById('workbook-results').replaceChildren(); }
 }
 function clearTrackedFor(revision) {
- if (trackedRevision!==null && trackedRevision!==revision) { trackedEpoch++; trackedRevision=null; document.getElementById('tracked-status').textContent=''; document.getElementById('tracked-results').replaceChildren(); document.getElementById('tracked-accept').disabled=true; document.getElementById('tracked-reject').disabled=true; }
+ if (trackedRevision!==null && trackedRevision!==revision) { trackedEpoch++; trackedRevision=null; trackedHash=null; document.getElementById('tracked-status').textContent=''; document.getElementById('tracked-results').replaceChildren(); document.getElementById('tracked-accept').disabled=true; document.getElementById('tracked-reject').disabled=true; }
 }
 document.getElementById('tracked-load').addEventListener('click', async () => {
  if (displayed<0 || trackedBusy) return;
  const revision=displayed, epoch=++trackedEpoch, button=document.getElementById('tracked-load'), status=document.getElementById('tracked-status'), output=document.getElementById('tracked-results');
- trackedRevision=revision; button.disabled=true; document.getElementById('tracked-accept').disabled=true; document.getElementById('tracked-reject').disabled=true; output.replaceChildren(); status.textContent=`Inspecting revision ${revision}…`;
+ trackedRevision=revision; trackedHash=null; button.disabled=true; document.getElementById('tracked-accept').disabled=true; document.getElementById('tracked-reject').disabled=true; output.replaceChildren(); status.textContent=`Inspecting revision ${revision}…`;
  try {
   const response=await fetch('tracked-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not inspect tracked changes');
   if (epoch!==trackedEpoch || displayed!==revision) return;
+  if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; inspect again');
+  trackedHash=result.snapshot_sha256;
   for (const item of result.records) {
    const row=document.createElement('li'), label=document.createElement('label'), box=document.createElement('input');
    box.type='checkbox'; box.dataset.part=item.part; box.dataset.id=item.id;
@@ -911,7 +913,7 @@ document.getElementById('tracked-load').addEventListener('click', async () => {
  finally {button.disabled=false;}
 });
 async function resolveTracked(accept) {
- if (trackedBusy || trackedRevision===null || displayed!==trackedRevision || current!==trackedRevision || pinned!==null) return;
+ if (trackedBusy || trackedRevision===null || trackedHash===null || displayed!==trackedRevision || current!==trackedRevision || pinned!==null) return;
  const selected=[...document.querySelectorAll('#tracked-results input:checked:not(:disabled)')], status=document.getElementById('tracked-status');
  if (!selected.length) {status.textContent='Select at least one supported run revision.'; return;}
  const part=selected[0].dataset.part;
@@ -919,13 +921,13 @@ async function resolveTracked(accept) {
  const revision=trackedRevision, ids=selected.map(item=>item.dataset.id); trackedBusy=true;
  document.querySelectorAll('#tracked-panel button, #tracked-results input').forEach(item=>item.disabled=true);
  try {
-  const response=await fetch('tracked-resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part,ids,accept})});
+  const response=await fetch('tracked-resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part,ids,accept,snapshot_sha256:trackedHash})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not resolve revisions');
   await refresh(); status.textContent=`Selected revisions ${accept ? 'accepted' : 'rejected'} in revision ${result.revision}.`;
  } catch(error) { status.textContent=`Resolution error: ${error.message}`; }
  finally {
   trackedBusy=false; document.getElementById('tracked-load').disabled=false;
-  const live=pinned===null && current===trackedRevision && displayed===trackedRevision;
+  const live=pinned===null && current===trackedRevision && displayed===trackedRevision && trackedHash!==null && trackedHash===displayedHash;
   document.getElementById('tracked-accept').disabled=!live; document.getElementById('tracked-reject').disabled=!live;
   document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=!live || item.dataset.supported!=='true');
  }
@@ -1165,8 +1167,8 @@ function display(state, live) {
  if (slideOrderLoaded && (slideOrderLoaded.revision!==state.revision || slideOrderLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('slide-order-save').disabled=true;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory]]);
  clearTrackedFor(state.revision);
- document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=trackedBusy || !live || item.dataset.supported!=='true');
- document.getElementById('tracked-accept').disabled=trackedBusy || !live || trackedRevision!==state.revision; document.getElementById('tracked-reject').disabled=trackedBusy || !live || trackedRevision!==state.revision;
+ document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=trackedBusy || !live || trackedHash!==state.snapshot_sha256 || item.dataset.supported!=='true');
+ document.getElementById('tracked-accept').disabled=trackedBusy || !live || trackedRevision!==state.revision || trackedHash!==state.snapshot_sha256; document.getElementById('tracked-reject').disabled=trackedBusy || !live || trackedRevision!==state.revision || trackedHash!==state.snapshot_sha256;
  if (textSearchState && textSearchState.revision!==state.revision) clearTextSearch();
  document.querySelectorAll('#text-search-results button').forEach(button=>button.disabled=!live);
  document.querySelectorAll('#slide-text-results button').forEach(button=>button.disabled=!live);
@@ -1587,9 +1589,9 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Comment requires revision, path, text and author')
                             saved = session.add_comment(directory, payload['base_revision'], payload['path'], payload['text'], payload['author'], payload.get('anchor'), expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/tracked-resolve'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'part', 'ids', 'accept'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'part', 'ids', 'accept'}, {'base_revision', 'part', 'ids', 'accept', 'snapshot_sha256'}):
                                 raise ValueError('Resolution requires revision, part, IDs and decision')
-                            saved = session.resolve_tracked_runs(directory, payload['base_revision'], payload['part'], payload['ids'], payload['accept'])
+                            saved = session.resolve_tracked_runs(directory, payload['base_revision'], payload['part'], payload['ids'], payload['accept'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/track-insert-text'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'anchor', 'text', 'position', 'author'}, {'base_revision', 'path', 'anchor', 'text', 'position', 'author', 'snapshot_sha256'}):
                                 raise ValueError('Tracked insertion requires revision, path, anchor, text, position and author')

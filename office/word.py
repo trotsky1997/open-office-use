@@ -667,7 +667,7 @@ def track_insert_text(source, output, path, anchor, text, position, author):
     return {'file': result, 'id': identifier, 'part': selected_part}
 
 
-def resolve_tracked_runs(source, output, part, ids, accept):
+def resolve_tracked_runs(source, output, part, ids, accept, expected_sha256=None):
     """Accept or reject selected simple insertion/deletion run records in one part."""
     if Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx': raise ValueError('Tracked revision resolution requires DOCX input and output')
     if not isinstance(accept, bool): raise ValueError('Accept must be true or false')
@@ -737,7 +737,7 @@ def resolve_tracked_runs(source, output, part, ids, accept):
                     for text in run.findall(W + 'delText'): text.tag = W + 't'
                     parent.insert(position, run); position += 1
             parent.remove(node)
-    return ooxml.edit_xml(source, output, select_part, edit)
+    return ooxml.edit_xml(source, output, select_part, edit, expected_sha256=expected_sha256)
 
 
 def add_comment(source, output, path, text, author, anchor=None):

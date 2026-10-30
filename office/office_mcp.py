@@ -286,9 +286,9 @@ def session_track_insert_text(directory: str, base_revision: int, path: str, anc
 
 
 @server.tool()
-def session_resolve_tracked_runs(directory: str, base_revision: int, part: str, ids: list[str], accept: bool) -> dict[str, Any]:
+def session_resolve_tracked_runs(directory: str, base_revision: int, part: str, ids: list[str], accept: bool, expected_sha256: str | None = None) -> dict[str, Any]:
     """Accept or reject selected simple Word insertion/deletion run records in one part; create a new revision."""
-    return session.resolve_tracked_runs(directory, base_revision, part, ids, accept)
+    return session.resolve_tracked_runs(directory, base_revision, part, ids, accept, expected_sha256)
 
 
 @server.tool()

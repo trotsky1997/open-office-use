@@ -622,13 +622,13 @@ def track_insert_text(directory, base_revision, path, anchor, text, position, au
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'path': path, 'id': result['id'], 'part': result['part'], 'position': position}
 
-def resolve_tracked_runs(directory, base_revision, part, ids, accept):
+def resolve_tracked_runs(directory, base_revision, part, ids, accept, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'docx': raise ValueError('Tracked revision resolution requires a DOCX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
-    try: word.resolve_tracked_runs(source, output, part, ids, accept)
+    try: word.resolve_tracked_runs(source, output, part, ids, accept, expected_sha256)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'part': part, 'ids': ids, 'accepted': accept}
 

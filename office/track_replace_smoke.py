@@ -80,7 +80,13 @@ with tempfile.TemporaryDirectory() as temp:
     range_edit = session.track_replace_text(range_draft, 0, '/body/p[1]', 'target', 'new', 'Editor')
     range_records = session.tracked_changes(range_draft, 1)
     ids = [r['id'] for r in range_records['records'] if r['kind'] in ('ins', 'del')]
-    assert session.resolve_tracked_runs(range_draft, 1, 'word/document.xml', ids, True)['revision'] == 2
+    revision_file = range_draft/'revision-000001.docx'; saved_revision = revision_file.read_bytes(); revision_file.write_bytes(range_source.read_bytes())
+    try: session.resolve_tracked_runs(range_draft,1,'word/document.xml',ids,True,expected_sha256=range_records['snapshot_sha256'])
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Changed tracked revision source accepted')
+    assert session.info(range_draft)['latest_revision'] == 1
+    revision_file.write_bytes(saved_revision)
+    assert session.resolve_tracked_runs(range_draft, 1, 'word/document.xml', ids, True, expected_sha256=range_records['snapshot_sha256'])['revision'] == 2
     assert Document(range_edit['file']).paragraphs[1].text == 'inside target'
     row_source = root / 'row.docx'; row_doc = Document(); table = row_doc.add_table(rows=1, cols=1); table.cell(0, 0).text = 'target'
     row_props = table.rows[0]._tr.get_or_add_trPr(); row_mark = OxmlElement('w:ins'); row_mark.set(qn('w:id'), '41'); row_props.append(row_mark); row_doc.save(row_source)

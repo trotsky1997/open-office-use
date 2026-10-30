@@ -272,3 +272,5 @@ Tracked insertion/replacement and new paragraph comments can bind to the inspect
 Speaker-note reads and replacements use checked snapshots; the viewer binds saves and targeted replacements to its loaded notes hash.
 
 Comment inventory and reply/resolution operations use checked snapshots, with expected hashes in MCP and viewer actions.
+
+Tracked-change resolution can enforce the inventory snapshot hash; the viewer validates its preview and supplies the hash.

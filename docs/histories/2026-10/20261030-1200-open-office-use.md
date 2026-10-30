@@ -375,3 +375,5 @@ Bound Word tracked insertion/replacement and new paragraph comments to checked s
 Bound speaker-note reads and both note replacement operations to checked snapshots, with optional expected hashes through MCP and the viewer.
 
 Bound comment inventory, replies and resolved-state changes to checked snapshots; the viewer and MCP can use the inspected hash.
+
+Bound tracked-change acceptance/rejection to the inspected snapshot hash through MCP and the viewer.
