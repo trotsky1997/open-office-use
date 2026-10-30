@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 from openpyxl import load_workbook
+from lxml import etree
 from openpyxl.formula.tokenizer import Tokenizer, TokenizerError
 from pptx import Presentation
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
@@ -506,7 +507,7 @@ def _edit_target(directory, base_revision, path, state, source):
         value = text or ''
     if len(value) > 4000:
         raise ValueError('Element value exceeds the 4,000-character editor limit')
-    read_only_reason = None
+    read_only_reason = None; link_context = {}
     if state['format'] == 'docx' and item['type'] in ('paragraph', 'run'):
         paragraph_path = item['path'] if item['type'] == 'paragraph' else item['path'].rsplit('/', 1)[0]
         if not word.paragraph_path(paragraph_path): read_only_reason = 'unsupported_word_path'
@@ -517,13 +518,13 @@ def _edit_target(directory, base_revision, path, state, source):
             read_only_reason = 'unsupported_cell_path'
         else:
             address = match.group(2).upper() + match.group(3)
-            cell = _read_grid(directory, base_revision, match.group(1), address, source)['rows'][0][0]
-            read_only_reason = cell['read_only_reason']
+            grid = _read_grid(directory, base_revision, match.group(1), address, source); cell = grid['rows'][0][0]
+            read_only_reason = cell['read_only_reason']; link_context = {'hyperlink': cell['hyperlink'], 'hyperlink_inspection': grid['hyperlink_inspection']}
     latest = info(directory)['latest_revision']
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
-            'format': state['format'], 'mode': mode, 'value': value, 'read_only_reason': read_only_reason,
+            'format': state['format'], 'mode': mode, 'value': value, 'read_only_reason': read_only_reason, **link_context,
             'replace_text_path_supported': (state['format'] == 'docx' and read_only_reason is None and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path'])) or (state['format'] == 'xlsx' and read_only_reason is None and mode in ('value', 'literal') and format_data.get('type') in {'String', 'SharedString', 'InlineString'} and cell_text.cell_path(item['path']))}
 
 
@@ -1007,6 +1008,60 @@ def resolve_grid_lists(source, sheet, validation):
         workbook.close()
 
 
+def grid_hyperlinks(root, archive, part, bounds):
+    """Inspect bounded worksheet hyperlink metadata without following targets."""
+    ns = grid_styles.X; rel_ns = grid_styles.REL; rid_ns = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+    issues = set(); mapped = {}; links_scanned = 0
+    containers = root.findall(ns + 'hyperlinks')
+    if len(containers) > 1: issues.add('multiple_hyperlink_containers')
+    if any(isinstance(node.tag, str) and node.tag.endswith('}hyperlink') and node.tag != ns + 'hyperlink' for node in root.iter()): issues.add('unsupported_hyperlink_extension')
+    rel_path = posixpath.join(posixpath.dirname(part), '_rels', posixpath.basename(part) + '.rels')
+    relationships = {}; duplicate_ids = set()
+    if rel_path in archive.namelist():
+        try:
+            rel_root = ooxml.parse_xml(archive.read(rel_path)).getroot()
+            if rel_root.tag != rel_ns + 'Relationships': raise ValueError('Invalid relationships')
+            entries = list(rel_root)
+            if len(entries) > 10000: issues.add('relationship_scan_limit')
+            for entry in entries[:10000]:
+                if entry.tag != rel_ns + 'Relationship' or not entry.get('Id'): issues.add('invalid_relationship'); continue
+                identity = entry.get('Id')
+                if identity in relationships: duplicate_ids.add(identity); issues.add('duplicate_relationship_id')
+                else: relationships[identity] = entry
+        except (ValueError, KeyError, etree.XMLSyntaxError): issues.add('invalid_relationship_part')
+    for container in containers[:10]:
+        items = list(container)
+        if len(items) > 10000: issues.add('hyperlink_scan_limit')
+        for link in items[:10000]:
+            links_scanned += 1
+            if link.tag != ns + 'hyperlink': issues.add('unsupported_hyperlink'); continue
+            ref = link.get('ref', '')
+            try:
+                c1, r1, c2, r2 = range_boundaries(ref)
+                if None in (c1, r1, c2, r2) or not (1 <= c1 <= c2 <= 16384 and 1 <= r1 <= r2 <= 1048576): raise ValueError
+            except (TypeError, ValueError): issues.add('invalid_hyperlink_range'); continue
+            left, top, right, bottom = max(c1,bounds[0]), max(r1,bounds[1]), min(c2,bounds[2]), min(r2,bounds[3])
+            if left > right or top > bottom: continue
+            identity = link.get(rid_ns + 'id'); location = link.get('location'); target = None; status = 'internal'
+            if identity is not None:
+                relation = relationships.get(identity)
+                if identity in duplicate_ids or relation is None or relation.get('Type') != rid_ns[1:-1] + '/hyperlink' or relation.get('TargetMode') != 'External' or not relation.get('Target'):
+                    status = 'unresolved'; issues.add('unresolved_hyperlink')
+                else: status = 'external'; target = relation.get('Target')
+            elif not location:
+                status = 'unresolved'; issues.add('unresolved_hyperlink')
+            truncated = any(value is not None and len(value) > 2048 for value in (target, location))
+            if truncated: issues.add('hyperlink_target_truncated')
+            details = {'ref': ref, 'status': status, 'target': target[:2048] if target is not None else None, 'location': location[:2048] if location is not None else None, 'truncated': truncated}
+            for row in range(top,bottom+1):
+                for col in range(left,right+1):
+                    address = f'{get_column_letter(col)}{row}'
+                    if address in mapped:
+                        mapped[address] = {'ref': None, 'status': 'ambiguous', 'target': None, 'location': None, 'truncated': False}; issues.add('overlapping_hyperlinks')
+                    else: mapped[address] = details.copy()
+    return mapped, {'complete': not issues, 'issues': sorted(issues), 'links_scanned': links_scanned}
+
+
 def read_grid(directory, base_revision, sheet, cell_range):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'xlsx': raise ValueError('Grid editing requires an XLSX session')
@@ -1048,17 +1103,20 @@ def _read_grid(directory, base_revision, sheet, cell_range, source):
         root = ooxml.parse_xml(archive.read(part)).getroot(); views = root.findall(grid_styles.X + 'sheetViews')
         validations = grid_validations(root, (min_col, min_row, max_col, max_row))
         conditional_formats = grid_conditional_formats(root, (min_col, min_row, max_col, max_row))
+        hyperlinks, hyperlink_inspection = grid_hyperlinks(root, archive, part, (min_col, min_row, max_col, max_row))
         if len(views) != 1 or len(views[0]) != 1 or views[0][0].tag != grid_styles.X + 'sheetView':
             view_info = {'pane': None, 'issue': 'unsupported_worksheet_views'}
         else:
             panes = views[0][0].findall(grid_styles.X + 'pane')
             view_info = {'pane': dict(panes[0].attrib) if len(panes) == 1 else None, 'issue': 'ambiguous_panes' if len(panes) > 1 else None}
+    for row in rows:
+        for cell in row: cell['hyperlink'] = hyperlinks.get(cell['cell'])
     resolve_grid_lists(source, sheet, validations)
     latest = info(directory)['latest_revision']
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'], 'dimensions': constraints['dimensions'], 'worksheet_view': view_info,
-            'rows': rows, 'data_validation': validations, 'conditional_formatting': conditional_formats, 'cache_freshness': 'unknown'}
+            'rows': rows, 'data_validation': validations, 'conditional_formatting': conditional_formats, 'hyperlink_inspection': hyperlink_inspection, 'cache_freshness': 'unknown'}
 
 
 def table_formula_node(part, node):

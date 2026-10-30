@@ -47,4 +47,4 @@ Grid reads return `snapshot_sha256`. Pass it as `expected_sha256` to `session_ed
 
 Chart cache scans return `snapshot_sha256`; pass it as `expected_sha256` to session cache synchronization to bind the repair to inspected workbook bytes.
 
-For native source links in newly authored cells, use `{"type":"hyperlink","value":"Source","url":"https://example.com/report"}`. Cell text is literal, and subsequent grid value edits preserve the link target; audit external relationships and review the destination.
+For native source links in newly authored cells, use `{"type":"hyperlink","value":"Source","url":"https://example.com/report"}`. Cell text is literal, and subsequent grid value edits preserve the link target; inspect `session_read_grid` hyperlink metadata and coverage, audit external relationships, and review the destination.

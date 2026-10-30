@@ -409,3 +409,5 @@ Extended PowerPoint element authoring and inspection with bounded alternative de
 Added targeted CLI and MCP updates for existing PowerPoint object alternative text with revision and snapshot checks.
 
 Added native workbook hyperlink cells with validated URL schemes, literal labels, preserved source styles and external-relationship audit coverage.
+
+Added worksheet hyperlink target mapping and coverage to session grids and viewer, including internal locations and ambiguous or unresolved links.

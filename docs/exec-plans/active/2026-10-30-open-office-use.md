@@ -306,3 +306,5 @@ Positioned PowerPoint elements accept nonvisual descriptions, including tables, 
 Existing slide object descriptions can be updated in snapshot-bound session revisions for shapes, pictures, connectors, tables and charts, including groups. Native PowerPoint and screen-reader behavior remain unverified.
 
 Workbook authoring supports typed HTTP(S)/mailto hyperlinks with literal labels and visible default styling. Grid value edits retain links; external-relationship inspection exposes targets. Native Excel fidelity remains unverified.
+
+Workbook grid reads and viewer expose bounded cell hyperlink targets and locations without following them. Invalid, overlapping or unresolvable links and truncation are reported in coverage.

@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.chart import LineChart, Reference
 from PIL import Image
 import xlsxwriter
@@ -162,7 +163,9 @@ with tempfile.TemporaryDirectory() as tmp:
         assert not invalid.exists()
     links_file = root/'links.xlsx'
     link_spec = {'sheets':{'Sources':{'A1':{'type':'hyperlink','value':'=Source','url':'https://example.com/source'}}},'ranges':{'Sources':[{'start':'A2','values':[[{'type':'hyperlink','value':'Email','url':'mailto:author@example.com'}]]}]}}
-    open_office_use.author(link_spec,links_file); links = load_workbook(links_file)['Sources']
+    open_office_use.author(link_spec,links_file)
+    link_book = load_workbook(links_file); link_book['Sources']['A3'] = 'Internal'; link_book['Sources']['A3'].hyperlink = Hyperlink(ref='A3',location="'Sources'!B2"); link_book.save(links_file)
+    links = load_workbook(links_file)['Sources']
     assert links['A1'].value == '=Source' and links['A1'].data_type == 's' and links['A1'].hyperlink.target == 'https://example.com/source'
     assert links['A1'].font.color.rgb == 'FF0563C1' and links['A1'].font.underline == 'single' and links['A2'].hyperlink.target == 'mailto:author@example.com'
     external = review.external_relationships(links_file); assert external['complete'] and external['external_count'] == 2, external
@@ -172,6 +175,18 @@ with tempfile.TemporaryDirectory() as tmp:
     styled_link = load_workbook(source_linked)['Forecast']['B2']
     assert styled_link.hyperlink.target == 'https://example.com/report' and styled_link.number_format == '#,##0.00'
     link_draft = root/'links-draft'; session.start(link_draft,source=links_file)
+    link_grid = session.read_grid(link_draft,0,'Sources','A1:A3')
+    assert link_grid['hyperlink_inspection']['complete'] and link_grid['rows'][0][0]['hyperlink']['target'] == 'https://example.com/source'
+    link_target = session.edit_target(link_draft,0,'/Sources/A1'); assert link_target['hyperlink']['target'] == 'https://example.com/source' and link_target['hyperlink_inspection']['complete']
+    assert link_grid['rows'][2][0]['hyperlink']['status'] == 'internal' and link_grid['rows'][2][0]['hyperlink']['location'] == "'Sources'!B2"
+    ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    malformed = etree.fromstring(f'<worksheet xmlns="{ns}"><hyperlinks><hyperlink ref="A1:A2" location="A1"/><hyperlink ref="A2" location="A2"/></hyperlinks></worksheet>')
+    with zipfile.ZipFile(links_file) as archive: mapped, coverage = session.grid_hyperlinks(malformed,archive,'xl/worksheets/sheet1.xml',(1,1,1,2))
+    assert mapped['A2']['status'] == 'ambiguous' and 'overlapping_hyperlinks' in coverage['issues'] and not coverage['complete']
+    unresolved = etree.fromstring(f'<worksheet xmlns="{ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><hyperlinks><hyperlink ref="A1" r:id="missing"/></hyperlinks></worksheet>')
+    with zipfile.ZipFile(links_file) as archive: mapped, coverage = session.grid_hyperlinks(unresolved,archive,'xl/worksheets/sheet1.xml',(1,1,1,1))
+    assert mapped['A1']['status'] == 'unresolved' and 'unresolved_hyperlink' in coverage['issues']
+
     modified = session.edit_grid(link_draft,0,'Sources','A1',[{'cell':'A1','value':'New label'}])
     assert load_workbook(modified['file'])['Sources']['A1'].hyperlink.target == 'https://example.com/source'
     for index,url in enumerate(['javascript:alert(1)','file:///tmp/test','https://','https://example.com/bad path','mailto:']):

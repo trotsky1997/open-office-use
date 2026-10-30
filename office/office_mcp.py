@@ -197,7 +197,7 @@ def session_sheets(directory: str, base_revision: int) -> dict[str, Any]:
 
 @server.tool()
 def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Read up to 200 cells with direct styles, stored row/column dimensions, protection, text completeness and bounded data-validation and conditional-formatting metadata. Rules are not evaluated; simple absolute list ranges and scoped names of verified text include bounded choices and source details."""
+    """Read up to 200 cells with direct styles, stored row/column dimensions, protection, text completeness, bounded hyperlink targets and coverage, and data-validation and conditional-formatting metadata. Rules are not evaluated; simple absolute list ranges and scoped names of verified text include bounded choices and source details."""
     return session.read_grid(directory, base_revision, sheet, cell_range)
 
 
