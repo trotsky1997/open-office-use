@@ -375,3 +375,5 @@ expectNavigation 的超时覆盖监听准备和 frame 查询；准备期间超�
 waitForURL 正数超时覆盖单次浏览器读取，零超时仍执行一次检查；超时后已发出的只读请求可能继续完成。真实 MDN 到 GitHub 新标签验证发现关闭标签与 Chrome 会话清理竞争，现逐个清理并只忽略对应标签已消失的错误，其余错误继续上报。SDK 79 项和 Chrome 清理专项通过；隔离 Linux ARM64 Chromium 完成等待、超时、关闭及清理。Electron 与 Windows 本轮未测。
 
 waitForLoadState 正数期限覆盖启用事件与状态读取，超时清理监听；零超时检查一次当前状态。修正 expectNavigation 与 expectPopup 的首次按需连接代次检查。SDK 80 项通过；隔离 Linux ARM64 Chromium 实测真实 MDN 加载、按需连接的新标签与同页面导航。Electron 与 Windows 本轮未测。
+
+goto 的时间预算覆盖准备、导航与页面加载；准备超时不会导航，调试器连接阶段超时会阻止迟到的命令，已开始的导航超时提示结果未知。SDK 82 项通过；隔离 Linux ARM64 Chromium 原生扩展验证按需连接访问真实 MDN 与同页面片段导航。Electron 与 Windows 本轮未测。

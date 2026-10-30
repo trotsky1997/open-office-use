@@ -103,6 +103,12 @@ popups when they have no pending operation.
 `browser.newTab({url})` closes the newly created tab when navigation fails. If
 cleanup also fails, it reports both errors so the session can be inspected.
 
+`goto(url, {timeoutMs})` includes navigation preparation and loading in one
+timeout. A preparation timeout occurs before dispatch; after navigation begins,
+a timeout means the outcome can be unknown. Already issued browser commands
+cannot be cancelled, so inspect the tab before retrying.
+
+
 The same tab helpers are available without the `playwright` alias:
 
 ```js

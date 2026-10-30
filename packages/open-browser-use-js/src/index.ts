@@ -3416,12 +3416,13 @@ export class OpenBrowserUseCdp {
     tabId: number,
     method: string,
     commandParams: BrowserUseRequestParams = {},
-    options: { timeoutMs?: number; sessionId?: string; visualPoint?: {x: number; y: number}; expectedGeneration?: number } = {}
+    options: { timeoutMs?: number; sessionId?: string; visualPoint?: {x: number; y: number}; expectedGeneration?: number; signal?: AbortSignal } = {}
   ): Promise<JsonValue> {
     const preparations=this.#eventPreparations.get(tabId);
     // Frame attachment and log setup must finish before a chooser can be registered.
     if (preparations?.size && !["Target.setAutoAttach","Runtime.enable","Log.enable"].includes(method)) await Promise.all([...preparations]);
     await this.ensureAttached(tabId);
+    if(options.signal?.aborted)throw new Error("Command cancelled before dispatch");
     if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.client.connectionGeneration) throw new Error("Connection changed; observe again");
     const result = await this.client.request("executeCdp", {
       target: { tabId, ...(options.sessionId ? {sessionId: options.sessionId} : {}) },
@@ -3461,30 +3462,42 @@ export class OpenBrowserUseCdp {
     const waitUntil = options.waitUntil ?? "load";
     assertSupportedLoadState(waitUntil);
     const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
-    await this.call(tabId, "Page.enable");
-    const controller = new AbortController();
-    const wait = this.waitForLoadEvent(tabId, waitUntil, timeoutMs, controller.signal);
-    let waitError: unknown;
-    void wait.catch(error => { waitError = error; });
+    if(!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000)throw new Error("Invalid navigation timeout");
+    const deadline=performance.now()+timeoutMs,initialGeneration=this.client.isConnected ? this.client.connectionGeneration : undefined,controller=new AbortController();
+    let timer:ReturnType<typeof setTimeout>|undefined,started=false;
+    const timeout=()=>new Error(started ? `Timed out waiting for ${waitUntil} in tab ${tabId}; navigation outcome unknown` : "Navigation preparation timed out before action");
     try {
-      const result = await this.call(tabId, "Page.navigate", { url }, { timeoutMs });
-      if (isObject(result) && typeof result.errorText === "string" && result.errorText) {
-        throw new Error(`Browser failed to navigate tab ${tabId}: ${result.errorText}`);
-      }
-      if (isObject(result) && typeof result.loaderId !== "string") {
-        const state = await this.readDocumentState(tabId);
-        if (state?.href && documentStateMatches(state, waitUntil)) {
-          let target: string | undefined;
-          try { target = new URL(url, state.href).href; } catch { /* Page.navigate validates the URL. */ }
-          if (target === state.href) {
-            if (waitError !== undefined) throw waitError;
-            return result;
+      const work=(async()=>{
+        await this.call(tabId,"Page.enable");
+        if(controller.signal.aborted || performance.now()>=deadline)throw timeout();
+        if(initialGeneration!==undefined && initialGeneration!==this.client.connectionGeneration)throw new Error("Connection changed during navigation preparation before action");
+        const generation=this.client.connectionGeneration,remaining=deadline-performance.now();
+        if(remaining<=0)throw timeout();
+        const wait=this.waitForLoadEvent(tabId,waitUntil,remaining,controller.signal).catch(error=>{
+          if(error instanceof Error && error.message===`Timed out waiting for ${waitUntil} in tab ${tabId}`)throw timeout();
+          throw error;
+        });
+        let waitError:unknown;void wait.catch(error=>{waitError=error;});
+        started=true;
+        const result=await this.call(tabId,"Page.navigate",{url},{timeoutMs:remaining,expectedGeneration:generation,signal:controller.signal});
+        if(controller.signal.aborted)throw timeout();
+        if(isObject(result) && typeof result.errorText==="string" && result.errorText)throw new Error(`Browser failed to navigate tab ${tabId}: ${result.errorText}`);
+        if(isObject(result) && typeof result.loaderId!=="string") {
+          const state=await this.readDocumentState(tabId);
+          if(controller.signal.aborted)throw timeout();
+          if(state?.href && documentStateMatches(state,waitUntil)) {
+            let target:string | undefined;
+            try { target=new URL(url,state.href).href; } catch { /* Page.navigate validates the URL. */ }
+            if(target===state.href) {if(waitError!==undefined)throw waitError;return result;}
           }
         }
-      }
-      await wait;
+        await wait;
+        return result;
+      })();
+      const result=await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(timeout()),Math.max(0,deadline-performance.now()));})]);
+      if(performance.now()>=deadline)throw timeout();
       return result;
-    } finally { controller.abort(); }
+    } finally {if(timer)clearTimeout(timer);controller.abort();}
   }
 
   async waitForLoadState(tabId: number, options: OpenBrowserUseWaitForLoadStateOptions = {}): Promise<void> {

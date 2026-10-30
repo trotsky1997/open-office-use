@@ -843,6 +843,7 @@ export declare class OpenBrowserUseCdp {
             y: number;
         };
         expectedGeneration?: number;
+        signal?: AbortSignal;
     }): Promise<JsonValue>;
     evaluate(tabId: number, expression: string, options?: {
         awaitPromise?: boolean;

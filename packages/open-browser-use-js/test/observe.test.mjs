@@ -317,6 +317,23 @@ test('goto does not treat a loaded previous document as a completed navigation',
   detached=true;await assert.rejects(tab.goto('https://example.test/old#section',{timeoutMs:1000}),/debugger detached/);
 });
 
+test('goto bounds preparation and does not dispatch after a timed-out attach',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];let release,attachCount=0;
+  client.request=async(method,params)=>{if(method==='attach'){attachCount++;if(attachCount===2)await new Promise(resolve=>{release=resolve;});return {};}calls.push(params.method);return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await assert.rejects(tab.goto('https://example.test/',{timeoutMs:10}),/navigation outcome unknown/);
+  release();await new Promise(resolve=>setImmediate(resolve));assert.ok(!calls.includes('Page.navigate'));
+  await assert.rejects(tab.goto('https://example.test/',{timeoutMs:-1}),/Invalid navigation timeout/);
+});
+
+test('goto preparation timeout does not begin navigation',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];let release;
+  client.request=async(method,params)=>{if(method==='attach')return {};calls.push(params.method);if(params.method==='Page.enable')await new Promise(resolve=>{release=resolve;});return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await assert.rejects(tab.goto('https://example.test/',{timeoutMs:10}),/preparation timed out before action/);
+  release();await new Promise(resolve=>setImmediate(resolve));assert.ok(!calls.includes('Page.navigate'));
+});
+
 test('navigation waits clean up on failure and observe load events during state reads', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set();
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
