@@ -29,7 +29,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 .box{position:absolute;border:2px solid #0867c4;background:#087dd126;pointer-events:none;display:none;box-sizing:border-box}
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
-#comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output,#chart-cache-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
+#comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output,#slide-text-output,#chart-cache-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
 input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
 .comparison-page{position:relative;width:100%}.comparison-page img{display:block}.layout-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}.layout-overlay polygon{vector-effect:non-scaling-stroke;stroke-width:2}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
@@ -94,7 +94,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 </form></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
-<button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details></details>
+<button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details><p>Compare text boxes with extracted text from the rendered PDF; review candidates visually.</p><button type="button" id="slide-text-scan">Check rendered text</button><p id="slide-text-status" role="status"></p><pre id="slide-text-output"></pre></details>
 <details id="formula-panel" hidden><summary>Workbook calculation and checks</summary>
 <p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
 <button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
@@ -151,7 +151,7 @@ let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loa
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
-let trackedEpoch=0, trackedRevision=null, trackedBusy=false;
+let trackedEpoch=0, trackedRevision=null, trackedBusy=false, slideTextRevision=null, slideTextEpoch=0;
 function clearTextSearch() {
  textSearchEpoch++; textSearchState=null; document.getElementById('text-search-next').disabled=true;
  document.getElementById('text-search-results').replaceChildren(); document.getElementById('text-search-status').textContent='';
@@ -590,6 +590,7 @@ function clearHighlight() {
 }
 document.getElementById('layout-clear').addEventListener('click', clearHighlight);
 function clearLayoutFor(revision) {
+ if (slideTextRevision !== null && slideTextRevision !== revision) { slideTextEpoch++; slideTextRevision=null; document.getElementById('slide-text-status').textContent=''; document.getElementById('slide-text-output').textContent=''; }
  if (layoutRevision !== null && layoutRevision !== revision) {
   clearHighlight(); layoutReport=null; layoutRevision=null; document.getElementById('layout-status').textContent=''; document.getElementById('layout-results').replaceChildren(); document.getElementById('layout-scan-output').textContent='';
  }
@@ -623,6 +624,19 @@ async function showLayoutHighlight(highlight, scroll) {
  if (count) { wrapper.appendChild(svg); document.getElementById('layout-highlight-status').textContent=`Slide ${highlight.slide}: highlighted visible geometry.`; }
  else document.getElementById('layout-highlight-status').textContent=`Slide ${highlight.slide}: the object is outside the visible page; inspect its path.`;
 }
+document.getElementById('slide-text-scan').addEventListener('click', async () => {
+ if (displayed<0) return;
+ const revision=displayed, epoch=++slideTextEpoch, button=document.getElementById('slide-text-scan'); slideTextRevision=revision; button.disabled=true;
+ document.getElementById('slide-text-status').textContent=`Checking revision ${revision}…`; document.getElementById('slide-text-output').textContent='';
+ try {
+  const response=await fetch('slide-text-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Text check failed');
+  if (epoch!==slideTextEpoch || displayed!==revision) return;
+  document.getElementById('slide-text-status').textContent=`Revision ${revision}: ${result.candidate_count} candidate(s); ${result.complete ? 'eligible checks complete' : 'scan incomplete'}. Inspect the rendered slides.`;
+  document.getElementById('slide-text-output').textContent=JSON.stringify(result,null,2);
+ } catch(error) { if (epoch===slideTextEpoch && displayed===revision) document.getElementById('slide-text-status').textContent=`Text check error: ${error.message}`; }
+ finally {button.disabled=false;}
+});
 document.getElementById('layout-scan').addEventListener('click', async () => {
  if (layoutBusy || displayed<0) return;
  const revision=displayed, button=document.getElementById('layout-scan'); clearHighlight(); layoutReport=null; layoutBusy=true; layoutRevision=revision; button.disabled=true;
@@ -1146,7 +1160,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1201,6 +1215,10 @@ def serve(directory, preview, port=0, render=None):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}:
                             raise ValueError('Comments require a revision')
                         saved = session.list_comments(directory, payload['revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
+                    if route.endswith('/slide-text-scan'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Slide text scan requires a revision')
+                        saved = session.inspect_slide_text(directory, payload['revision'], render)
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/layout-scan'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}:

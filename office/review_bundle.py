@@ -10,6 +10,7 @@ import layout
 import chart_cache
 import officecli_backend
 import spreadsheet
+import slide_text_check
 import visual
 import word
 
@@ -75,6 +76,14 @@ def create(source, destination, render, revision=None):
                 if not geometry['complete']: flags.append('slide_layout_incomplete')
                 if geometry['off_slide_count'] or geometry['overlap_count']: flags.append('slide_layout_candidates')
         pdf = check('render_pdf', lambda: render(snapshot, root / 'render'))
+        if source.suffix.lower() == '.pptx':
+            if pdf is not None:
+                text_check = check('slide_text', lambda: slide_text_check.inspect(snapshot, pdf))
+                if text_check is not None:
+                    if not text_check['complete']: flags.append('slide_text_scan_incomplete')
+                    if text_check['candidate_count']: flags.append('slide_text_candidates')
+            else:
+                report['checks']['slide_text'] = {'status': 'skipped', 'reason': 'PDF rendering failed'}
         files = {}
         if pdf is not None:
             files['preview.pdf'] = Path(pdf)

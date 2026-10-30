@@ -18,6 +18,7 @@ import session
 import selection_text
 import selection_candidates
 import slides
+import slide_text_check
 from open_office_use import doctor, inspect, preview, render
 
 server = FastMCP(
@@ -386,6 +387,18 @@ def session_review_bundle(directory: str, revision: int, output_dir: str) -> dic
 def audit_file(file: str) -> dict[str, Any]:
     """Check a saved Office file using OfficeCLI schema validation and its issues view."""
     return officecli_backend.audit(file)
+
+
+@server.tool()
+def inspect_slide_text(file: str) -> dict[str, Any]:
+    """Find slide text box candidates needing review against a LibreOffice PDF rendering."""
+    return slide_text_check.scan(file, render)
+
+
+@server.tool()
+def session_inspect_slide_text(directory: str, revision: int) -> dict[str, Any]:
+    """Inspect a saved slide revision against its rendered PDF; review completeness and candidates."""
+    return session.inspect_slide_text(directory, revision, render)
 
 
 @server.tool()

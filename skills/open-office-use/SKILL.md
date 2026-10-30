@@ -34,3 +34,5 @@ Use `office_schema` to discover the installed OfficeCLI elements and property de
 Use `dump_office_subtree` or `session_dump_office_subtree` to extract a bounded starting batch from a saved template. Review paths and dependencies before applying; charts and sibling resources can be omitted, and slide layouts may require a compatible template. Compare and render the replayed document.
 
 For header and footer text, use `search_word_stories` or `session_search_word_stories`; page through results using the snapshot hash and inspect shared-section impact before editing.
+
+For PowerPoint deliverables, use `inspect_slide_text` or `session_inspect_slide_text` to locate candidate text-box rendering problems, review coverage and inspect the rendered slides.

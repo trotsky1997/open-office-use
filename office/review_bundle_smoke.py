@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert report['checks']['overview']['status'] == 'completed' and (out / 'overview.png').read_bytes().startswith(b'\x89PNG')
         assert (out / 'preview.pdf').read_bytes().startswith(b'%PDF') and not report['check_errors']
         if source.suffix == '.xlsx': assert 'formula_cache_missing' in report['flags'], report
+        if source.suffix == '.pptx': assert report['checks']['slide_text']['status'] == 'completed', report
         try: review_bundle.create(source, out, open_office_use.render)
         except FileExistsError: pass
         else: raise AssertionError('Existing bundle overwritten')

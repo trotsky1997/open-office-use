@@ -19,6 +19,7 @@ import ooxml
 import review
 import spreadsheet
 import slides
+import slide_text_check
 import word
 
 FORMATS = ('.docx', '.xlsx', '.pptx')
@@ -166,6 +167,12 @@ def inspect_layout(directory, revision):
         raise ValueError('Slide layout inspection requires a PPTX session')
     return {'revision': revision, **layout.inspect(source)}
 
+
+
+def inspect_slide_text(directory, revision, render):
+    state = info(directory); source = revision_file(state, revision)
+    if state['format'] != 'pptx': raise ValueError('Slide text inspection requires a PPTX session')
+    return {'revision': revision, **slide_text_check.scan(source, render)}
 
 def search_slides(directory, revision, query, slide=None, offset=0, snapshot_sha256=None):
     state = info(directory); source = revision_file(state, revision)
