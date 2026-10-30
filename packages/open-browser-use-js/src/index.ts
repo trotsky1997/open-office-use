@@ -2906,27 +2906,27 @@ export class OpenBrowserUseCssLocator {
 }
 
 export class OpenBrowserUseRoleLocator {
-  constructor(private tab: OpenBrowserUseTab, private roles: readonly string[], private options: RoleLocatorOptions, private position?: number, private textMatch = false, private field: "name" | "placeholder" | "altText" = "name", private scope?: OpenBrowserUseRoleLocator, private filtersBefore: TextFilter[] = [], private filtersAfter: TextFilter[] = [], private framePath?: readonly string[], private cssScope?: OpenBrowserUseCssLocator) {}
+  constructor(private tab: OpenBrowserUseTab, private roles: readonly string[], private options: RoleLocatorOptions, private position?: number, private textMatch = false, private field: "name" | "placeholder" | "altText" = "name", private scope?: OpenBrowserUseRoleLocator, private filtersBefore: TextFilter[] = [], private filtersAfter: TextFilter[] = [], private framePath?: readonly string[], private cssScope?: OpenBrowserUseCssLocator, private combination?: {kind:"and" | "or"; left:OpenBrowserUseRoleLocator; right:OpenBrowserUseRoleLocator}) {}
 
   /** @internal */
   withinFrame(path: readonly string[]): OpenBrowserUseRoleLocator {
-    return new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,this.position,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter,[...path],this.cssScope);
+    return new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,this.position,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter,[...path],this.cssScope,this.combination);
   }
 
   /** @internal */
   withinCss(scope: OpenBrowserUseCssLocator): OpenBrowserUseRoleLocator {
-    return new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,this.position,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter,this.framePath ?? scope.getFramePath(),scope);
+    return new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,this.position,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter,this.framePath ?? scope.getFramePath(),scope,this.combination);
   }
 
   nth(index: number): OpenBrowserUseRoleLocator {
     if (!Number.isSafeInteger(index) || index < 0) throw new Error("Locator index must be a non-negative integer");
-    if (this.position !== undefined) return index === 0 ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, Number.MAX_SAFE_INTEGER, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter,this.framePath,this.cssScope);
-    return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, index, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter,this.framePath,this.cssScope);
+    if (this.position !== undefined) return index === 0 ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, Number.MAX_SAFE_INTEGER, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter,this.framePath,this.cssScope,this.combination);
+    return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, index, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter,this.framePath,this.cssScope,this.combination);
   }
 
   first(): OpenBrowserUseRoleLocator { return this.nth(0); }
   last(): OpenBrowserUseRoleLocator {
-    return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,-1,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter,this.framePath,this.cssScope);
+    return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,-1,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter,this.framePath,this.cssScope,this.combination);
   }
 
   locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab,selector,this.framePath,undefined,[],[],[],undefined,this),options); }
@@ -2941,6 +2941,15 @@ export class OpenBrowserUseRoleLocator {
   getByText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByText(text,options)); }
   getByAltText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByAltText(text,options)); }
   getByPlaceholder(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByPlaceholder(text,options)); }
+
+  private combine(kind:"and" | "or", other:OpenBrowserUseRoleLocator):OpenBrowserUseRoleLocator {
+    if (!(other instanceof OpenBrowserUseRoleLocator) || other.tab.browser!==this.tab.browser || other.tab.id!==this.tab.id || JSON.stringify(other.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Combined locators must belong to the same tab and frame");
+    const depth=(locator:OpenBrowserUseRoleLocator):number=>locator.combination ? 1+Math.max(depth(locator.combination.left),depth(locator.combination.right)) : 1;
+    if(Math.max(depth(this),depth(other))>=8)throw new Error("Locator combination nesting exceeds 8 levels");
+    return new OpenBrowserUseRoleLocator(this.tab,[],{},undefined,false,"name",undefined,[],[],this.framePath,undefined,{kind,left:this,right:other});
+  }
+  and(other:OpenBrowserUseRoleLocator):OpenBrowserUseRoleLocator { return this.combine("and",other); }
+  or(other:OpenBrowserUseRoleLocator):OpenBrowserUseRoleLocator { return this.combine("or",other); }
 
   filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher; has?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator; hasNot?:OpenBrowserUseRoleLocator | OpenBrowserUseCssLocator; visible?:boolean}): OpenBrowserUseRoleLocator {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText","hasNotText","has","hasNot","visible"].includes(key)) ||
@@ -2957,6 +2966,7 @@ export class OpenBrowserUseRoleLocator {
       if (!(locator instanceof OpenBrowserUseRoleLocator) || locator.tab.browser!==this.tab.browser || locator.tab.id!==this.tab.id || JSON.stringify(locator.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Filter locator must belong to the same tab and frame");
       if (locator.cssScope) throw new Error("Semantic filter locator cannot use a CSS scope yet");
       if(locator.scope) check(locator.scope,level);
+      if(locator.combination) {check(locator.combination.left,level+1);check(locator.combination.right,level+1);}
       for(const filter of [...locator.filtersBefore,...locator.filtersAfter]) {if(filter.has)check(filter.has,level+1);if(filter.hasNot)check(filter.hasNot,level+1);}
     };
     if(options.has !== undefined)check(options.has,2);
@@ -2964,11 +2974,11 @@ export class OpenBrowserUseRoleLocator {
     const filter:TextFilter={...(options.visible !== undefined ? {visible:options.visible} : {}),...(options.hasText !== undefined ? {hasText:copyMatcher(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:copyMatcher(options.hasNotText)} : {}),...(options.has !== undefined ? {has:options.has} : {}),...(options.hasNot !== undefined ? {hasNot:options.hasNot} : {})};
     return new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,this.position,this.textMatch,this.field,this.scope,
       this.position === undefined ? [...this.filtersBefore,filter] : this.filtersBefore,
-      this.position === undefined ? this.filtersAfter : [...this.filtersAfter,filter],this.framePath,this.cssScope);
+      this.position === undefined ? this.filtersAfter : [...this.filtersAfter,filter],this.framePath,this.cssScope,this.combination);
   }
 
   private needsText(): boolean {
-    return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText();
+    return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText() || !!this.combination && (this.combination.left.needsText() || this.combination.right.needsText());
   }
 
   private async matches(observation: Observation, baseIndex?: number): Promise<LocatorMatch[]> {
@@ -2980,6 +2990,17 @@ export class OpenBrowserUseRoleLocator {
     if (this.field === "placeholder" && observation.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.placeholderTruncated)) throw new Error("Some placeholders were truncated; locator results are incomplete");
     if (this.field === "altText" && observation.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.altTextTruncated)) throw new Error("Some alt text was truncated; locator results are incomplete");
     const normalize = (value: string) => this.textMatch ? value.replace(/\s+/g," ").trim() : value;
+    const matches: LocatorMatch[] = [];
+    if (this.combination) {
+      const left=await this.combination.left.matches(observation,baseIndex), right=await this.combination.right.matches(observation,baseIndex);
+      const byIndex=new Map(right.map(item=>[item.node.index,item]));
+      if(this.combination.kind==='and') matches.push(...left.filter(item=>byIndex.has(item.node.index)));
+      else {
+        const merged=new Map(left.map(item=>[item.node.index,item]));
+        for(const item of right)if(!merged.has(item.node.index))merged.set(item.node.index,item);
+        for(const node of observation.nodes) {const item=merged.get(node.index);if(item)matches.push(item);}
+      }
+    } else {
     const candidates = observation.nodes.filter(node => {
       const value = node[this.field];
       return inFrame(node) && this.roles.includes(node.role) && typeof value === "string" &&
@@ -2991,7 +3012,6 @@ export class OpenBrowserUseRoleLocator {
         (this.options.expanded === undefined || node.expanded === this.options.expanded) &&
         (this.options.name === undefined || (typeof this.options.name !== "string" ? new RegExp(this.options.name.source,this.options.name.flags).test(normalize(value)) : this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
     });
-    const matches: LocatorMatch[] = [];
     if (!this.scope && this.cssScope) {
       const snapshot=await this.cssScope.snapshot();
       for (const node of candidates) for (const scopeId of snapshot.ids) {
@@ -3006,6 +3026,7 @@ export class OpenBrowserUseRoleLocator {
           matches.push({node,path:[...scope.path,scope.node.index],filters:[...scope.filters],...(scope.css ? {css:scope.css} : {})}); break;
         }
       }
+    }
     }
     const apply = async (items: typeof matches, filters: TextFilter[]) => {
       if (!filters.length) return items;

@@ -719,7 +719,12 @@ export declare class OpenBrowserUseRoleLocator {
     private filtersAfter;
     private framePath?;
     private cssScope?;
-    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[], framePath?: readonly string[] | undefined, cssScope?: OpenBrowserUseCssLocator | undefined);
+    private combination?;
+    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[], framePath?: readonly string[] | undefined, cssScope?: OpenBrowserUseCssLocator | undefined, combination?: {
+        kind: "and" | "or";
+        left: OpenBrowserUseRoleLocator;
+        right: OpenBrowserUseRoleLocator;
+    } | undefined);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
     last(): OpenBrowserUseRoleLocator;
@@ -739,6 +744,9 @@ export declare class OpenBrowserUseRoleLocator {
     getByPlaceholder(text: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
+    private combine;
+    and(other: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator;
+    or(other: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator;
     filter(options: {
         hasText?: TextMatcher;
         hasNotText?: TextMatcher;

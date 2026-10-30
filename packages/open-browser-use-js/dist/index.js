@@ -3584,7 +3584,8 @@ export class OpenBrowserUseRoleLocator {
     filtersAfter;
     framePath;
     cssScope;
-    constructor(tab, roles, options, position, textMatch = false, field = "name", scope, filtersBefore = [], filtersAfter = [], framePath, cssScope) {
+    combination;
+    constructor(tab, roles, options, position, textMatch = false, field = "name", scope, filtersBefore = [], filtersAfter = [], framePath, cssScope, combination) {
         this.tab = tab;
         this.roles = roles;
         this.options = options;
@@ -3596,25 +3597,26 @@ export class OpenBrowserUseRoleLocator {
         this.filtersAfter = filtersAfter;
         this.framePath = framePath;
         this.cssScope = cssScope;
+        this.combination = combination;
     }
     /** @internal */
     withinFrame(path) {
-        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, [...path], this.cssScope);
+        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, [...path], this.cssScope, this.combination);
     }
     /** @internal */
     withinCss(scope) {
-        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath ?? scope.getFramePath(), scope);
+        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath ?? scope.getFramePath(), scope, this.combination);
     }
     nth(index) {
         if (!Number.isSafeInteger(index) || index < 0)
             throw new Error("Locator index must be a non-negative integer");
         if (this.position !== undefined)
-            return index === 0 ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, Number.MAX_SAFE_INTEGER, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, this.cssScope);
-        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, index, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, this.cssScope);
+            return index === 0 ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, Number.MAX_SAFE_INTEGER, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, this.cssScope, this.combination);
+        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, index, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, this.cssScope, this.combination);
     }
     first() { return this.nth(0); }
     last() {
-        return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, -1, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, this.cssScope);
+        return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, -1, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter, this.framePath, this.cssScope, this.combination);
     }
     locator(selector, options) { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab, selector, this.framePath, undefined, [], [], [], undefined, this), options); }
     getByTestId(testId) { return this.locator(testIdSelector(testId)); }
@@ -3626,6 +3628,16 @@ export class OpenBrowserUseRoleLocator {
     getByText(text, options = {}) { return this.child(this.tab.playwright.getByText(text, options)); }
     getByAltText(text, options = {}) { return this.child(this.tab.playwright.getByAltText(text, options)); }
     getByPlaceholder(text, options = {}) { return this.child(this.tab.playwright.getByPlaceholder(text, options)); }
+    combine(kind, other) {
+        if (!(other instanceof OpenBrowserUseRoleLocator) || other.tab.browser !== this.tab.browser || other.tab.id !== this.tab.id || JSON.stringify(other.framePath ?? null) !== JSON.stringify(this.framePath ?? null))
+            throw new Error("Combined locators must belong to the same tab and frame");
+        const depth = (locator) => locator.combination ? 1 + Math.max(depth(locator.combination.left), depth(locator.combination.right)) : 1;
+        if (Math.max(depth(this), depth(other)) >= 8)
+            throw new Error("Locator combination nesting exceeds 8 levels");
+        return new OpenBrowserUseRoleLocator(this.tab, [], {}, undefined, false, "name", undefined, [], [], this.framePath, undefined, { kind, left: this, right: other });
+    }
+    and(other) { return this.combine("and", other); }
+    or(other) { return this.combine("or", other); }
     filter(options) {
         if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText", "has", "hasNot", "visible"].includes(key)) ||
             (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined && options.visible === undefined) ||
@@ -3647,6 +3659,10 @@ export class OpenBrowserUseRoleLocator {
                 throw new Error("Semantic filter locator cannot use a CSS scope yet");
             if (locator.scope)
                 check(locator.scope, level);
+            if (locator.combination) {
+                check(locator.combination.left, level + 1);
+                check(locator.combination.right, level + 1);
+            }
             for (const filter of [...locator.filtersBefore, ...locator.filtersAfter]) {
                 if (filter.has)
                     check(filter.has, level + 1);
@@ -3659,10 +3675,10 @@ export class OpenBrowserUseRoleLocator {
         if (options.hasNot !== undefined)
             check(options.hasNot, 2);
         const filter = { ...(options.visible !== undefined ? { visible: options.visible } : {}), ...(options.hasText !== undefined ? { hasText: copyMatcher(options.hasText) } : {}), ...(options.hasNotText !== undefined ? { hasNotText: copyMatcher(options.hasNotText) } : {}), ...(options.has !== undefined ? { has: options.has } : {}), ...(options.hasNot !== undefined ? { hasNot: options.hasNot } : {}) };
-        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.position === undefined ? [...this.filtersBefore, filter] : this.filtersBefore, this.position === undefined ? this.filtersAfter : [...this.filtersAfter, filter], this.framePath, this.cssScope);
+        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.position === undefined ? [...this.filtersBefore, filter] : this.filtersBefore, this.position === undefined ? this.filtersAfter : [...this.filtersAfter, filter], this.framePath, this.cssScope, this.combination);
     }
     needsText() {
-        return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText();
+        return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText() || !!this.combination && (this.combination.left.needsText() || this.combination.right.needsText());
     }
     async matches(observation, baseIndex) {
         const frameId = this.framePath ? await this.tab.resolveFramePath(this.framePath, undefined, observation.frames) : undefined;
@@ -3677,42 +3693,61 @@ export class OpenBrowserUseRoleLocator {
         if (this.field === "altText" && observation.nodes.some(node => inFrame(node) && this.roles.includes(node.role) && node.altTextTruncated))
             throw new Error("Some alt text was truncated; locator results are incomplete");
         const normalize = (value) => this.textMatch ? value.replace(/\s+/g, " ").trim() : value;
-        const candidates = observation.nodes.filter(node => {
-            const value = node[this.field];
-            return inFrame(node) && this.roles.includes(node.role) && typeof value === "string" &&
-                (this.options.level === undefined || node.level === this.options.level) &&
-                (this.options.checked === undefined || node.checked === this.options.checked) &&
-                (this.options.disabled === undefined || !!node.disabled === this.options.disabled) &&
-                (this.options.pressed === undefined || node.pressed === this.options.pressed) &&
-                (this.options.selected === undefined || node.selected === this.options.selected) &&
-                (this.options.expanded === undefined || node.expanded === this.options.expanded) &&
-                (this.options.name === undefined || (typeof this.options.name !== "string" ? new RegExp(this.options.name.source, this.options.name.flags).test(normalize(value)) : this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
-        });
         const matches = [];
-        if (!this.scope && this.cssScope) {
-            const snapshot = await this.cssScope.snapshot();
-            for (const node of candidates)
-                for (const scopeId of snapshot.ids) {
-                    if (await this.tab.cssScopeContains(observation, snapshot, scopeId, node.index)) {
-                        matches.push({ node, path: [], filters: [], css: { snapshot, scopeId } });
-                        break;
-                    }
+        if (this.combination) {
+            const left = await this.combination.left.matches(observation, baseIndex), right = await this.combination.right.matches(observation, baseIndex);
+            const byIndex = new Map(right.map(item => [item.node.index, item]));
+            if (this.combination.kind === 'and')
+                matches.push(...left.filter(item => byIndex.has(item.node.index)));
+            else {
+                const merged = new Map(left.map(item => [item.node.index, item]));
+                for (const item of right)
+                    if (!merged.has(item.node.index))
+                        merged.set(item.node.index, item);
+                for (const node of observation.nodes) {
+                    const item = merged.get(node.index);
+                    if (item)
+                        matches.push(item);
                 }
-        }
-        else if (!this.scope) {
-            for (const node of candidates)
-                if (!base || await this.tab.scopeContains(observation, base.index, node.index))
-                    matches.push({ node, path: [], filters: [] });
+            }
         }
         else {
-            const scopes = await this.scope.matches(observation, baseIndex);
-            for (const node of candidates)
-                for (const scope of scopes) {
-                    if (await this.tab.scopeContains(observation, scope.node.index, node.index)) {
-                        matches.push({ node, path: [...scope.path, scope.node.index], filters: [...scope.filters], ...(scope.css ? { css: scope.css } : {}) });
-                        break;
+            const candidates = observation.nodes.filter(node => {
+                const value = node[this.field];
+                return inFrame(node) && this.roles.includes(node.role) && typeof value === "string" &&
+                    (this.options.level === undefined || node.level === this.options.level) &&
+                    (this.options.checked === undefined || node.checked === this.options.checked) &&
+                    (this.options.disabled === undefined || !!node.disabled === this.options.disabled) &&
+                    (this.options.pressed === undefined || node.pressed === this.options.pressed) &&
+                    (this.options.selected === undefined || node.selected === this.options.selected) &&
+                    (this.options.expanded === undefined || node.expanded === this.options.expanded) &&
+                    (this.options.name === undefined || (typeof this.options.name !== "string" ? new RegExp(this.options.name.source, this.options.name.flags).test(normalize(value)) : this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
+            });
+            if (!this.scope && this.cssScope) {
+                const snapshot = await this.cssScope.snapshot();
+                for (const node of candidates)
+                    for (const scopeId of snapshot.ids) {
+                        if (await this.tab.cssScopeContains(observation, snapshot, scopeId, node.index)) {
+                            matches.push({ node, path: [], filters: [], css: { snapshot, scopeId } });
+                            break;
+                        }
                     }
-                }
+            }
+            else if (!this.scope) {
+                for (const node of candidates)
+                    if (!base || await this.tab.scopeContains(observation, base.index, node.index))
+                        matches.push({ node, path: [], filters: [] });
+            }
+            else {
+                const scopes = await this.scope.matches(observation, baseIndex);
+                for (const node of candidates)
+                    for (const scope of scopes) {
+                        if (await this.tab.scopeContains(observation, scope.node.index, node.index)) {
+                            matches.push({ node, path: [...scope.path, scope.node.index], filters: [...scope.filters], ...(scope.css ? { css: scope.css } : {}) });
+                            break;
+                        }
+                    }
+            }
         }
         const apply = async (items, filters) => {
             if (!filters.length)

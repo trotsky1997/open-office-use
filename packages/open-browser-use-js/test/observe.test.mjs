@@ -929,6 +929,19 @@ test("role locators reobserve, reject ambiguous matches and honor explicit posit
   assert.throws(()=>locator.nth(-1),/non-negative/);
 });
 
+test('semantic locator combinations preserve order, positions, and scope',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  let nodes=[{index:1,role:'button',name:'Save draft'},{index:2,role:'button',name:'Save final'},{index:3,role:'link',name:'Help'}];
+  tab.observe=async()=>({snapshotId:'1',nodes,unavailableFrames:[],text:'',textMode:'full',truncated:false});
+  tab.currentObservation=id=>({id,nodes,unindexedText:[],guards:new Map()});tab.bindLocatorScope=()=>{};
+  const clicked=[];tab.click=async index=>clicked.push(index);tab.scopeText=async(_observation,index)=>nodes.find(node=>node.index===index).name;
+  const save=tab.playwright.getByRole('button',{name:'Save'}), final=tab.playwright.getByRole('button',{name:'final'}), help=tab.playwright.getByRole('link',{name:'Help'});
+  assert.equal(await save.and(final).count(),1);await save.and(final).click();assert.deepEqual(clicked,[2]);
+  const combined=help.or(save).or(final);assert.equal(await combined.count(),3);await combined.first().click();await combined.last().click();assert.deepEqual(clicked,[2,1,3]);
+  assert.equal(await combined.filter({hasText:'final'}).count(),1);assert.equal(await combined.nth(1).filter({hasText:'final'}).count(),1);
+  assert.throws(()=>save.and(new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1).playwright.getByRole('button')),/same tab and frame/);
+});
+
 test("role locator waits for a missing target but never retries an issued action", async () => {
   const tab = new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
   let nodes=[], observations=0, clicks=0;
