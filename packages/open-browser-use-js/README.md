@@ -18,6 +18,8 @@ open-browser-use info
 
 ## Installation
 
+To use the current fork's source build, follow the [repository source setup](../../README.md#run-this-branch-from-source). The REPL entry point is `dist/repl-cli.js` in this package directory; configure its absolute path as shown there. The following npm command installs the published upstream package, whose feature set may differ.
+
 ```sh
 npm install open-browser-use-sdk
 ```
@@ -414,8 +416,10 @@ Electron may show a hidden host window when a native dialog opens.
 
 ## Persistent JavaScript MCP
 
-The SDK package also provides `obu-repl-mcp`, an MCP stdio server for trusted
-local agents. Install the SDK, then configure the executable as an MCP server:
+The source build provides `dist/repl-cli.js`, an MCP stdio server for trusted
+local agents. Configure it using the absolute-path example in the
+[source setup](../../README.md#run-this-branch-from-source). When using a
+published package that includes the `obu-repl-mcp` executable, its config is:
 
 ```toml
 [mcp_servers.open_browser_use_repl]

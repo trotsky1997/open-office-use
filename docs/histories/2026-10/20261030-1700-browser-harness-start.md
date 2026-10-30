@@ -193,3 +193,5 @@ Linux ARM64 更新验证：隔离 Chromium 150 使用真实原生消息清单、
 新增 tab.dev.watch()/logs()：按标签捕获控制台调用及未捕获异常，支持级别、文本和条数筛选；动态跨进程 frame 启用 Runtime 域，断连、调试器分离或标签关闭清理记录。每标签最多保留 500 条，消息和来源 URL 各限 4096 字符；较早历史取决于浏览器 Runtime.enable 的缓存。SDK 58 项通过；macOS 隔离 Chromium 原生链路与 Electron 44 验证主页面和动态跨进程 frame 日志，Linux ARM64 Electron/Xvfb 经授权 socket 验证主页面和 frame 日志，使用 no-sandbox、禁用 GPU。
 
 页面开发日志增加 CDP Log 域，记录资源加载失败等浏览器日志；Electron 授权页面 CDP 白名单增加 Log.enable/disable。重新启用时恢复采集，动态 frame 延续作用域。SDK 58 项、Electron 45 项通过；macOS 隔离 Chromium 原生链路及 Electron 44 实测主页面和跨进程 frame 的 404 日志及来源 URL，Linux ARM64 Electron/Xvfb 原生 socket 实测主页面 404，使用 no-sandbox、禁用 GPU。
+
+首页与 SDK 文档新增本 fork 的源码接入路径，区分上游已发布包：构建 SDK 和 Go host、加载源码扩展、使用扩展 ID 注册 host、以绝对路径配置持久 REPL；说明注册会更新已有 host 链接。pnpm 8.15.9 离线验证 frozen lockfile，SDK/Go 构建与 MCP initialize 通过；真实用户浏览器注册未改动，Windows 安装仍待端到端验证。

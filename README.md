@@ -1,5 +1,7 @@
 # Open Browser Use
 
+> This branch is the [open-office-use fork](https://github.com/trotsky1997/open-office-use/tree/codex/browser-harness), based on [iFurySt/open-browser-use](https://github.com/iFurySt/open-browser-use). Its newer browser harness is available from this source tree. The npm, PyPI, Homebrew and Chrome Web Store links below refer to upstream releases and may contain different code.
+
 [![English](https://img.shields.io/badge/English-Click-yellow)](./README.md)
 [![简体中文](https://img.shields.io/badge/简体中文-点击查看-orange)](./README.zh-CN.md)
 [![Release](https://img.shields.io/github/v/release/iFurySt/open-browser-use)](https://github.com/iFurySt/open-browser-use/releases)
@@ -30,7 +32,53 @@ Electron integration checks. This source feature is not yet published to npm.
 
 https://github.com/user-attachments/assets/bcfba878-f6a8-44b9-b84b-29c7e0285687
 
-## Quick Start
+## Run this branch from source
+
+Requirements: Node.js 22+, pnpm 8.15.9, Go 1.25.10+ and a native C++ build
+toolchain for the Electron workspace dependency. From a checkout of the
+`codex/browser-harness` branch:
+
+```bash
+git clone --branch codex/browser-harness https://github.com/trotsky1997/open-office-use.git
+cd open-office-use
+pnpm install --frozen-lockfile
+pnpm --filter open-browser-use-sdk build
+mkdir -p build
+go build -o build/open-browser-use ./cmd/open-browser-use
+```
+
+For Chrome, open `chrome://extensions`, enable Developer mode, choose **Load
+unpacked**, and select this checkout's `apps/chrome-extension` directory.
+Copy the resulting extension ID and register the source-built native host:
+
+```bash
+./build/open-browser-use install-manifest --extension-id YOUR_EXTENSION_ID --path "$PWD/build/open-browser-use"
+```
+
+Reload the unpacked extension and check `./build/open-browser-use ping`. The
+registration updates the browser's Open Browser Use native-host manifest and
+stable host link, so an existing installation using that host name will use
+this binary and extension ID. Keep the checkout and binary at their paths; if
+the unpacked extension ID changes, register it again. Use `--browser` to
+select a supported non-default browser. Windows registration is present in
+the source and has not yet received end-to-end validation.
+
+Configure the persistent JavaScript MCP with the absolute path to the built
+file:
+
+```toml
+[mcp_servers.open_browser_use_repl]
+command = "node"
+args = ["/absolute/path/to/open-office-use/packages/open-browser-use-js/dist/repl-cli.js"]
+```
+
+Use the [local skill](skills/open-browser-use/SKILL.md) and the
+[SDK guide](packages/open-browser-use-js/README.md) for browser discovery,
+interaction and cleanup. For embedded Electron, follow the
+[host integration guide](packages/open-browser-use-electron/README.md); it
+provides its own authorized REPL connection.
+
+## Upstream published packages
 
 ```bash
 npm i -g open-browser-use

@@ -1,5 +1,7 @@
 # Open Browser Use
 
+> 本分支是基于 [iFurySt/open-browser-use](https://github.com/iFurySt/open-browser-use) 的 [open-office-use fork](https://github.com/trotsky1997/open-office-use/tree/codex/browser-harness)。新版 browser harness 从本分支源码构建；下方 npm、PyPI、Homebrew 和 Chrome Web Store 链接指向上游发布版本，代码可能不同。
+
 [![English](https://img.shields.io/badge/English-Click-yellow)](./README.md)
 [![简体中文](https://img.shields.io/badge/简体中文-点击查看-orange)](./README.zh-CN.md)
 [![Release](https://img.shields.io/github/v/release/iFurySt/open-browser-use)](https://github.com/iFurySt/open-browser-use/releases)
@@ -24,7 +26,45 @@ Electron app 可以接入仓库中的
 
 https://github.com/user-attachments/assets/bcfba878-f6a8-44b9-b84b-29c7e0285687
 
-## Quick Start
+## 从本分支源码运行
+
+需要 Node.js 22+、pnpm 8.15.9、Go 1.25.10+ 和用于 Electron 工作区依赖的本地 C++ 构建工具。在 `codex/browser-harness`
+分支的工作目录中执行：
+
+```bash
+git clone --branch codex/browser-harness https://github.com/trotsky1997/open-office-use.git
+cd open-office-use
+pnpm install --frozen-lockfile
+pnpm --filter open-browser-use-sdk build
+mkdir -p build
+go build -o build/open-browser-use ./cmd/open-browser-use
+```
+
+打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，
+加载本工作目录的 `apps/chrome-extension`。复制扩展 ID，注册源码构建的 host：
+
+```bash
+./build/open-browser-use install-manifest --extension-id YOUR_EXTENSION_ID --path "$PWD/build/open-browser-use"
+```
+
+重新加载扩展，再用 `./build/open-browser-use ping` 检查连接。注册会更新浏览器的
+Open Browser Use 原生 host 清单和稳定链接，使用同一 host 名称的已有安装会切换到
+此二进制文件和扩展 ID。请保留工作目录与二进制文件路径；扩展 ID 变化后重新注册。
+可通过 `--browser` 选择受支持的其他浏览器。Windows 注册代码已有实现，端到端验证待完成。
+
+持久 JavaScript MCP 可使用构建产物的绝对路径配置：
+
+```toml
+[mcp_servers.open_browser_use_repl]
+command = "node"
+args = ["/absolute/path/to/open-office-use/packages/open-browser-use-js/dist/repl-cli.js"]
+```
+
+浏览器发现、操作和清理方法见 [SDK 指南](packages/open-browser-use-js/README.md)
+与[本地 skill](skills/open-browser-use/SKILL.md)。Electron 内嵌场景使用
+[宿主接入指南](packages/open-browser-use-electron/README.md)配置授权连接。
+
+## 上游发布版本
 第一次安装可以无脑运行：
 ```bash
 npm i -g open-browser-use
