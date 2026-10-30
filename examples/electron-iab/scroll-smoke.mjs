@@ -186,6 +186,8 @@ app.whenReady().then(async () => {
     await sdkTab.playwright.getByRole('checkbox',{name:'Notifications',checked:true,disabled:false}).nth(1).check({timeoutMs:0});
     assert.equal(await evaluate('window.crossMessages.length'),stateMessageCount);
     assert.equal(await sdkTab.playwright.getByRole('tab',{name:'Period',selected:true}).count(),1);
+    const periods=sdkTab.playwright.getByRole('tab',{name:'Period'}), periodItems=await periods.all();
+    assert.equal(periodItems.length,2);assert.equal(await periodItems[0].innerText(),'One');assert.equal(await periods.last().innerText(),'Two');
     assert.equal(await sdkTab.playwright.getByRole('button',{name:'Details',expanded:false}).count(),1);
     await sdkTab.playwright.getByRole('button',{name:'View mode',pressed:true}).click();
     await new Promise(resolve=>setTimeout(resolve,100));

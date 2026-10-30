@@ -176,6 +176,9 @@ tree, so elements omitted from that tree cannot be detected by this method.
 `getAttribute(name)` reads the raw attribute from one match and returns `null`
 when absent; it applies the same size limit. Text-node matches do not have
 attributes; select their containing element to read its attributes.
+`last()` selects the last current match. `all()` returns positional locators
+for the current match count; each locator resolves again when used, so page
+changes can alter which element occupies a position.
 
 This locator covers the interactive roles exposed by `observe`, including
 accessible frames, plus headings, accessible text, images, dialogs and

@@ -35,7 +35,7 @@ to replace a text field's contents. For semantic selection, use
 `tab.playwright.getByRole(role, {name, exact:true}).click()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()` or `.fill(text)`;
 `tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
 binary controls without toggling an already-correct state. `getByRole` accepts boolean `checked`, `disabled`, `pressed`, `selected` and `expanded` filters when the accessibility tree exposes those states. Disabled controls remain observable and can be hovered; actions that modify them require an enabled target. Actions require a
-unique match. Chain locators, such as `dialog.getByRole("button", {name:"Save"})`, to select descendants within a container, including nested frames. Accessible lists, list items, groups, tables and rows also support scoped queries. Use `.filter({hasText:"Apples"})` or `.filter({hasNotText:"Sold out"})` to select by accessible descendant text. For a native select use `.selectOption(value)` or
+unique match. Use `.last()` for the final match; `await locator.all()` returns positional locators that resolve again when used. Chain locators, such as `dialog.getByRole("button", {name:"Save"})`, to select descendants within a container, including nested frames. Accessible lists, list items, groups, tables and rows also support scoped queries. Use `.filter({hasText:"Apples"})` or `.filter({hasNotText:"Sold out"})` to select by accessible descendant text. For a native select use `.selectOption(value)` or
 `.selectOption({label})`; its DOM-dispatched events have `isTrusted === false`.
 `fill` handles native number and date/time inputs; date/time events are
 DOM-dispatched with `isTrusted === false`.

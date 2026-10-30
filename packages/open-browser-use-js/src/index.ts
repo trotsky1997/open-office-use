@@ -1474,6 +1474,9 @@ export class OpenBrowserUseRoleLocator {
   }
 
   first(): OpenBrowserUseRoleLocator { return this.nth(0); }
+  last(): OpenBrowserUseRoleLocator {
+    return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,-1,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter);
+  }
 
   private child(locator: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator {
     return new OpenBrowserUseRoleLocator(this.tab,locator.roles,locator.options,locator.position,locator.textMatch,locator.field,this,locator.filtersBefore,locator.filtersAfter);
@@ -1533,7 +1536,7 @@ export class OpenBrowserUseRoleLocator {
       return accepted;
     };
     const before = await apply(matches,this.filtersBefore);
-    return apply(this.position === undefined ? before : before.slice(this.position,this.position + 1),this.filtersAfter);
+    return apply(this.position === undefined ? before : this.position === -1 ? before.slice(-1) : before.slice(this.position,this.position + 1),this.filtersAfter);
   }
 
   private async find(): Promise<{state: InteractiveState; matches: Array<{node:InteractiveNode; path:number[]; filters:FilterGuard[]}>}> {
@@ -1543,6 +1546,7 @@ export class OpenBrowserUseRoleLocator {
   }
 
   async count(): Promise<number> { return (await this.find()).matches.length; }
+  async all(): Promise<OpenBrowserUseRoleLocator[]> { return Array.from({length:await this.count()},(_,index)=>this.nth(index)); }
 
   async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs); }
   async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs); }

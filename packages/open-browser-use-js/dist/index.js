@@ -1626,6 +1626,9 @@ export class OpenBrowserUseRoleLocator {
         return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, index, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter);
     }
     first() { return this.nth(0); }
+    last() {
+        return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, -1, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter);
+    }
     child(locator) {
         return new OpenBrowserUseRoleLocator(this.tab, locator.roles, locator.options, locator.position, locator.textMatch, locator.field, this, locator.filtersBefore, locator.filtersAfter);
     }
@@ -1687,7 +1690,7 @@ export class OpenBrowserUseRoleLocator {
             return accepted;
         };
         const before = await apply(matches, this.filtersBefore);
-        return apply(this.position === undefined ? before : before.slice(this.position, this.position + 1), this.filtersAfter);
+        return apply(this.position === undefined ? before : this.position === -1 ? before.slice(-1) : before.slice(this.position, this.position + 1), this.filtersAfter);
     }
     async find() {
         const state = await this.tab.observe({ includeFrames: true, ...(this.needsText() ? { includeText: true } : {}) });
@@ -1696,6 +1699,7 @@ export class OpenBrowserUseRoleLocator {
         return { state, matches: await this.matches(state) };
     }
     async count() { return (await this.find()).matches.length; }
+    async all() { return Array.from({ length: await this.count() }, (_, index) => this.nth(index)); }
     async innerText(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "innerText")), options.timeoutMs); }
     async textContent(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "textContent")), options.timeoutMs); }
     async isEnabled() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "enabled"))); }

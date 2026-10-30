@@ -173,3 +173,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 定位器新增 isEnabled() 和 setChecked(boolean)。isEnabled 结合可访问状态、原生 :disabled 与跨 Shadow DOM 的 aria-disabled 祖先；setChecked 复用已有幂等可信输入路径。SDK 54 项通过；macOS 隔离 Chromium 原生消息和 Electron 44 验证可用控件、跨进程 frame 禁用祖先及可信勾选。
 
 语义定位器新增 isVisible()：检查匹配节点的 CSS visibility、非零尺寸和各级 frame 宿主，缺少可访问匹配时返回 false，重复匹配报错。SDK 54 项通过；macOS 隔离 Chromium 原生链路验证主页面、跨进程 frame 与零尺寸 frame，Electron 44 页面验证主页面和跨进程 frame。遮挡和视口外位置不影响该状态；可访问树未收录的节点不可由语义定位器查询。
+
+语义定位器新增 last() 与 all()；last 在过滤和位置操作的既定顺序中选择最后一项，all 按当前数量返回位置定位器，各定位器使用时重新观察。SDK 54 项通过，覆盖过滤顺序与列表重排；macOS 隔离 Chromium 原生链路和 Electron 44 实测跨进程 frame 列表读取。

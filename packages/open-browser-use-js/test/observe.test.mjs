@@ -628,6 +628,12 @@ test("role locators reobserve, reject ambiguous matches and honor explicit posit
   nodes=[{index:4,role:'button',name:'Save final'}];
   await locator.click();assert.deepEqual(calls.at(-1),{index:4,snapshotId:'6'});
   assert.equal(await tab.playwright.getByRole('button',{name:'save final',exact:true}).count(),0);
+  nodes=[{index:10,role:'button',name:'Save first'},{index:11,role:'button',name:'Save last'}];
+  const all=await locator.all();assert.equal(all.length,2);
+  await locator.last().click();assert.equal(calls.at(-1).index,11);
+  nodes.reverse();await all[0].click();assert.equal(calls.at(-1).index,11);
+  assert.equal(await locator.nth(0).last().count(),1);
+  nodes=[];assert.equal(await locator.last().count(),0);assert.deepEqual(await locator.all(),[]);
   unavailableFrames=['unknown'];await assert.rejects(locator.count(),/incomplete/);
   assert.throws(()=>locator.nth(-1),/non-negative/);
 });
@@ -970,6 +976,8 @@ test('text filters select unnamed containers and recheck changing text before in
   assert.equal(await items.filter({hasNotText:'pears'}).count(),2);
   assert.equal(await items.nth(0).filter({hasText:'pears'}).count(),0);
   assert.equal(await items.filter({hasText:'pears'}).nth(0).count(),1);
+  assert.equal(await items.last().filter({hasText:'pears'}).count(),0);
+  assert.equal(await items.filter({hasText:'pears'}).last().count(),1);
   const button=items.filter({hasText:'Apples'}).getByRole('button',{name:'Add'});
   await button.click(); assert.equal(mouse,2);
   changeOnMeasure=true;

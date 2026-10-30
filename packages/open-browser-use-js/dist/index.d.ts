@@ -284,6 +284,7 @@ export declare class OpenBrowserUseRoleLocator {
     constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[]);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
+    last(): OpenBrowserUseRoleLocator;
     private child;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: string, options?: {
@@ -306,6 +307,7 @@ export declare class OpenBrowserUseRoleLocator {
     private matches;
     private find;
     count(): Promise<number>;
+    all(): Promise<OpenBrowserUseRoleLocator[]>;
     innerText(options?: {
         timeoutMs?: number;
     }): Promise<string>;

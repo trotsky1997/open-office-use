@@ -238,6 +238,8 @@ try {
  await tab.playwright.getByRole('checkbox',{name:'Notifications',checked:true,disabled:false}).nth(1).check({timeoutMs:0});
  assert.equal(await tab.evaluate('window.frameMessages.length'),stateMessageCount);
  assert.equal(await tab.playwright.getByRole('tab',{name:'Period',selected:true}).count(),1);
+ const periods=tab.playwright.getByRole('tab',{name:'Period'}), periodItems=await periods.all();
+ assert.equal(periodItems.length,2);assert.equal(await periodItems[0].innerText(),'One');assert.equal(await periods.last().innerText(),'Two');
  assert.equal(await tab.playwright.getByRole('button',{name:'Details',expanded:false}).count(),1);
  await tab.playwright.getByRole('button',{name:'View mode',pressed:true}).click();await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'state-pressed',index:0,trusted:true});
