@@ -733,6 +733,13 @@ nodeRepl.write(await tab.getAXState());
 nodeRepl.emitImage(await tab.getScreenshot());
 ```
 
+The `js` tool accepts `timeout_ms` (1–600,000 ms; default 30,000) and an
+optional `title`. A timed-out asynchronous execution can continue and have
+side effects. Further JavaScript calls are rejected until it settles; inspect
+the browser before retrying. Restart the MCP process if it never settles. A
+synchronous infinite loop blocks the Node event loop and cannot be interrupted
+by this timer.
+
 `agent.browsers.list()` reports available browser IDs, types and capabilities.
 `agent.browsers.get(id)` selects a listed ID or the unique `extension` / `iab`
 type and reuses the REPL session connection. Ambiguous or unresponsive matches

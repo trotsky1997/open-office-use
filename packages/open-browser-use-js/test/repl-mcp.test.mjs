@@ -49,7 +49,7 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     assert.equal(response.error, undefined);
     return response.result;
   }
-  const js = (code) => call("tools/call", { name: "js", arguments: { code } });
+  const js = (code, options = {}) => call("tools/call", { name: "js", arguments: { code, ...options } });
   try {
     assert.equal((await call("tools/list")).tools[0].name, "js");
     assert.equal((await js("nodeRepl.write((await discoverBrowsers()).length)")).content[0].text, "2");
@@ -95,6 +95,11 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     const isolated = await js("await new Promise(resolve => setTimeout(resolve, 30)); nodeRepl.write('current output')");
     assert.deepEqual(isolated.content, [{ type: "text", text: "current output" }]);
     assert.equal((await js("nodeRepl.write(tab.id)")).content[0].text, "42");
+    const timed=await js("nodeRepl.write('before'); await new Promise(resolve => setTimeout(resolve, 200)); nodeRepl.write('after')",{timeout_ms:20,title:'Timed work'});
+    assert.equal(timed.isError,true);assert.equal(timed.content[0].text,'before');assert.match(timed.content[1].text,/timed out/);
+    const busy=await js("nodeRepl.write('must not run')");assert.equal(busy.isError,true);assert.match(busy.content[0].text,/still running/);
+    await new Promise(resolve=>setTimeout(resolve,250));const recovered=await js("nodeRepl.write(tab.id)");assert.deepEqual(recovered.content,[{type:'text',text:'42'}]);
+    assert.equal((await js("1",{timeout_ms:-1})).isError,true);
     assert.equal(new Set(requests.map((request) => request.params.session_id)).size, 1);
   } finally {
     child.stdin.end();

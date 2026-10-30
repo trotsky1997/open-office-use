@@ -395,3 +395,5 @@ waitForURL 支持 waitUntil:commit，匹配当前主文档 URL 后无需等待 D
 networkidle 实测：隔离 Linux ARM64 Chromium 在已加载页面发起 4 秒 fetch 后再启用 Network 与生命周期事件，浏览器重放旧 networkIdle，未重放进行中请求的 requestWillBeSent，随后仅出现 loadingFinished。因此单独使用 lifecycle 或延迟启用 Network 会提前判定空闲；SDK 继续拒绝该状态，错误和文档明确说明。后续实现需从可确认的基线持续跟踪请求、处理连接与 frame 生命周期，并对无法确定的既有请求保持明确状态。
 
 URL 与加载状态检查改用主 frame 的隔离 world，避免页面脚本篡改 document.readyState 使等待提前返回；连接代次在 frame 查询后固定。SDK 88 项通过；隔离 Linux ARM64 Chromium 分段加载并伪造 complete 的实测确认加载前拒绝、加载后通过，完整原生扩展 smoke 与 macOS Electron 44.7 socket smoke 通过。完整 smoke 中同步更新已支持 force 的旧断言。Windows 未测。
+
+持久 JavaScript MCP 的 js 工具支持 timeout_ms（默认 30 秒、上限 10 分钟）和 title；异步执行超时后提示可能仍有副作用，在其完成前拒绝新执行，完成后保留会话并隔离迟到输出。SDK 88 项通过；隔离 Linux ARM64 Chromium 原生扩展通过真实浏览器连接、超时、忙碌保护及恢复操作。同步无限循环阻塞 Node 事件循环，需要重启进程；Electron 与 Windows 本轮未测。
