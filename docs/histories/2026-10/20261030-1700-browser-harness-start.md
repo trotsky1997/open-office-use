@@ -397,3 +397,5 @@ networkidle 实测：隔离 Linux ARM64 Chromium 在已加载页面发起 4 秒 
 URL 与加载状态检查改用主 frame 的隔离 world，避免页面脚本篡改 document.readyState 使等待提前返回；连接代次在 frame 查询后固定。SDK 88 项通过；隔离 Linux ARM64 Chromium 分段加载并伪造 complete 的实测确认加载前拒绝、加载后通过，完整原生扩展 smoke 与 macOS Electron 44.7 socket smoke 通过。完整 smoke 中同步更新已支持 force 的旧断言。Windows 未测。
 
 持久 JavaScript MCP 的 js 工具支持 timeout_ms（默认 30 秒、上限 10 分钟）和 title；异步执行超时后提示可能仍有副作用，在其完成前拒绝新执行，完成后保留会话并隔离迟到输出。SDK 88 项通过；隔离 Linux ARM64 Chromium 原生扩展通过真实浏览器连接、超时、忙碌保护及恢复操作。同步无限循环阻塞 Node 事件循环，需要重启进程；Electron 与 Windows 本轮未测。
+
+持久 JavaScript MCP 新增 js_reset，清空绑定并恢复浏览器帮助对象，已连接的浏览器会话与标签保留；执行仍活跃时拒绝重置。SDK 88 项通过；隔离 Linux ARM64 Chromium 原生扩展通过绑定清除、重新发现同一标签及继续操作。后台任务不会被取消，同步阻塞仍需重启 MCP；Electron 与 Windows 本轮未测。

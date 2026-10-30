@@ -51,7 +51,7 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
   }
   const js = (code, options = {}) => call("tools/call", { name: "js", arguments: { code, ...options } });
   try {
-    assert.equal((await call("tools/list")).tools[0].name, "js");
+    assert.deepEqual((await call("tools/list")).tools.map(tool=>tool.name),["js","js_reset"]);
     assert.equal((await js("nodeRepl.write((await discoverBrowsers()).length)")).content[0].text, "2");
     assert.equal((await js("nodeRepl.write((await agent.browsers.list()).length)")).content[0].text,"2");
     assert.equal((await js("await agent.browsers.get('extension')")).isError,true);
@@ -98,8 +98,12 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     const timed=await js("nodeRepl.write('before'); await new Promise(resolve => setTimeout(resolve, 200)); nodeRepl.write('after')",{timeout_ms:20,title:'Timed work'});
     assert.equal(timed.isError,true);assert.equal(timed.content[0].text,'before');assert.match(timed.content[1].text,/timed out/);
     const busy=await js("nodeRepl.write('must not run')");assert.equal(busy.isError,true);assert.match(busy.content[0].text,/still running/);
+    const busyReset=await call('tools/call',{name:'js_reset',arguments:{}});assert.equal(busyReset.isError,true);assert.match(busyReset.content[0].text,/still running/);
     await new Promise(resolve=>setTimeout(resolve,250));const recovered=await js("nodeRepl.write(tab.id)");assert.deepEqual(recovered.content,[{type:'text',text:'42'}]);
     assert.equal((await js("1",{timeout_ms:-1})).isError,true);
+    const reset=await call('tools/call',{name:'js_reset',arguments:{}});assert.equal(reset.isError,undefined);assert.equal((await js("typeof tab")).content[0].text,"'undefined'");
+    assert.equal((await js("nodeRepl.write((await agent.browsers.get('extension')).browserId)")).content[0].text,socketPath);
+    assert.equal((await js("nodeRepl.write((await getBrowserState()).sessions.some(s => s.tabs?.some(t => t.id === 42)))")).content[0].text,'true');
     assert.equal(new Set(requests.map((request) => request.params.session_id)).size, 1);
   } finally {
     child.stdin.end();

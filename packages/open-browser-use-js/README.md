@@ -740,6 +740,11 @@ the browser before retrying. Restart the MCP process if it never settles. A
 synchronous infinite loop blocks the Node event loop and cannot be interrupted
 by this timer.
 
+The `js_reset` tool clears JavaScript bindings and restores the built-in
+helpers while retaining connected browser sessions and their tabs. Reacquire a
+browser with `agent.browsers.get(...)` after reset. Reset is rejected while an
+execution remains active; previously scheduled background work is not cancelled.
+
 `agent.browsers.list()` reports available browser IDs, types and capabilities.
 `agent.browsers.get(id)` selects a listed ID or the unique `extension` / `iab`
 type and reuses the REPL session connection. Ambiguous or unresponsive matches
