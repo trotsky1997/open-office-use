@@ -1,0 +1,83 @@
+"""Bounded worksheet inspection and explicit LibreOffice recalculation."""
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from openpyxl import load_workbook
+from openpyxl.utils.cell import range_boundaries
+
+
+def read_range(file, sheet, cell_range):
+    if Path(file).suffix.lower() != '.xlsx':
+        raise ValueError('Worksheet reading requires an .xlsx file')
+    try:
+        min_col, min_row, max_col, max_row = range_boundaries(cell_range)
+        if min_col is None or min_row is None or max_col is None or max_row is None:
+            raise ValueError
+        if (min_col < 1 or min_row < 1
+                or max_col > 16384 or max_row > 1048576 or min_col > max_col or min_row > max_row
+                or (max_col - min_col + 1) * (max_row - min_row + 1) > 10000):
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError('Specify a valid rectangular cell range of at most 10,000 cells') from None
+    formulas = load_workbook(file, read_only=True, data_only=False)
+    values = None
+    try:
+        values = load_workbook(file, read_only=True, data_only=True)
+        if sheet not in formulas.sheetnames:
+            raise ValueError(f'Worksheet not found: {sheet}')
+        f_rows = formulas[sheet].iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col)
+        v_rows = values[sheet].iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col)
+        rows = []
+        for _ in range(max_row - min_row + 1):
+            f_row = next(f_rows, ())
+            v_row = next(v_rows, ())
+            row = []
+            for col in range(max_col - min_col + 1):
+                f = f_row[col] if col < len(f_row) else None
+                v = v_row[col] if col < len(v_row) else None
+                if f is not None and f.data_type == 'f':
+                    formula = f.value
+                    if not isinstance(formula, str):
+                        formula = {'text': getattr(formula, 'text', None), 'ref': getattr(formula, 'ref', None)}
+                    row.append({'formula': formula, 'value': v.value if v else None, 'type': v.data_type if v else 'n'})
+                else:
+                    row.append({'value': f.value if f else None, 'type': f.data_type if f else 'n'})
+            rows.append(row)
+        return {'sheet': sheet, 'range': cell_range, 'rows': rows, 'cache_freshness': 'unknown'}
+    finally:
+        formulas.close()
+        if values:
+            values.close()
+
+
+def recalculate(source, output):
+    source = Path(source).resolve(strict=True)
+    output = Path(output).absolute()
+    if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx':
+        raise ValueError('Recalculation requires .xlsx input and output')
+    if output.exists() or output.is_symlink():
+        raise FileExistsError(f'Output already exists: {output}')
+    executable = shutil.which('soffice') or shutil.which('libreoffice')
+    if not executable:
+        raise RuntimeError('LibreOffice (soffice) is required for recalculation')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-calc-') as tmp:
+        root = Path(tmp)
+        inputs = root / 'input'; inputs.mkdir()
+        results = root / 'result'; results.mkdir()
+        copy = inputs / 'workbook.xlsx'
+        shutil.copyfile(source, copy)
+        profile = (root / 'profile').as_uri()
+        result = subprocess.run([executable, '-env:UserInstallation=' + profile, '--headless',
+                                 '--convert-to', 'xlsx', '--outdir', str(results), str(copy)],
+                                capture_output=True, text=True, timeout=120, check=False)
+        candidate = results / copy.name
+        if result.returncode or not candidate.is_file():
+            raise RuntimeError(f'LibreOffice recalculation failed: {result.stderr or result.stdout}')
+        check = load_workbook(candidate, read_only=True, data_only=False)
+        check.close()
+        os.link(candidate, output)
+    return str(output)

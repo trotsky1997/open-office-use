@@ -7,3 +7,5 @@ Reference review: documented GenOffice and OfficeCLI capabilities and licensing 
 Added optional OfficeCLI structured reads and isolated batch authoring, with exclusive output publication and session closure. Added per-page PNG preview through LibreOffice and Poppler. Verified basic paths for all three formats, including failures and source preservation.
 
 Added optional MCP stdio access to the office workbench with image delivery for page inspection. Verified discovery, authoring, structured reads, visual output and error propagation with the official MCP client.
+
+Added bounded spreadsheet formula/cache inspection and explicit LibreOffice recalculation through CLI and MCP. Verified basic formulas, errors, empty ranges and source protection with a real local calculation engine.

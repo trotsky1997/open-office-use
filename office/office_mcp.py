@@ -5,6 +5,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP, Image
 
 import officecli_backend
+import spreadsheet
 from open_office_use import inspect, preview, render
 
 server = FastMCP(
@@ -33,6 +34,18 @@ def structured_read(file: str, mode: Literal['outline', 'get', 'query'], target:
 def apply_batch(output: str, operations: list[dict[str, Any]], source: str | None = None) -> dict[str, Any]:
     """Apply OfficeCLI operations to a new file or a saved source copy. Existing output is protected."""
     return officecli_backend.batch(operations, output, source)
+
+
+@server.tool()
+def read_cells(file: str, sheet: str, cell_range: str) -> dict[str, Any]:
+    """Read up to 10,000 cells, including formulas and stored cached values; freshness is unknown."""
+    return spreadsheet.read_range(file, sheet, cell_range)
+
+
+@server.tool()
+def recalculate_workbook(file: str, output: str) -> dict[str, str]:
+    """Recalculate an XLSX with LibreOffice and write a new file; conversion may affect fidelity."""
+    return {'output': spreadsheet.recalculate(file, output)}
 
 
 @server.tool()

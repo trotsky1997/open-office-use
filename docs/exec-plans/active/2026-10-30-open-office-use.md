@@ -20,3 +20,7 @@ Added optional OfficeCLI-backed outline, get, query and atomic copy-based batche
 ## MCP access
 
 The optional stdio MCP server exposes structured reads, isolated batch edits, PDF rendering, page previews and image delivery. Tested with Python MCP SDK 1.30.0. It has local filesystem access; session sharing, rich in-app review, and cross-platform validation remain open work.
+
+## Formula workflow
+
+Added bounded cell reads with formula text, cached values and errors, plus explicit LibreOffice recalculation to a protected copy. Verified basic arithmetic, error results and empty ranges through CLI, and calculation through MCP. Advanced formula compatibility, external links and workbook fidelity remain unverified.

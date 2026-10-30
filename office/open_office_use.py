@@ -13,6 +13,7 @@ from openpyxl import Workbook, load_workbook
 from pptx import Presentation
 
 import officecli_backend
+import spreadsheet
 
 
 def kind(path):
@@ -140,6 +141,8 @@ def main():
     images = commands.add_parser('preview'); images.add_argument('file'); images.add_argument('--out-dir', required=True)
     structured = commands.add_parser('structured'); structured.add_argument('file'); structured.add_argument('mode', choices=['outline', 'get', 'query']); structured.add_argument('target', nargs='?')
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
+    cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
+    calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
     commands.add_parser('mcp', help='Start the local MCP stdio server (requires the mcp extra)')
     args = parser.parse_args()
     try:
@@ -162,6 +165,10 @@ def main():
             result = {'pdf': render(args.file, args.out_dir)}
         elif args.command == 'preview':
             result = {'pages': preview(args.file, args.out_dir)}
+        elif args.command == 'cells':
+            result = spreadsheet.read_range(args.file, args.sheet, args.cell_range)
+        elif args.command == 'recalculate':
+            result = {'output': spreadsheet.recalculate(args.file, args.out)}
         elif args.command == 'structured':
             if (args.mode == 'outline') != (args.target is None):
                 raise ValueError('get and query require a target; outline takes no target')

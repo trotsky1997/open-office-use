@@ -65,6 +65,17 @@ Operations run on a temporary file. A successful batch is closed before the comp
 
 `preview` creates a new directory containing one PNG per rendered page. It refuses an existing directory. Inspect the images, since a successful render or schema validation alone does not establish visual quality or Office fidelity.
 
+## Spreadsheet calculation
+
+Inspect a bounded rectangular range (at most 10,000 cells):
+
+```sh
+office-use cells budget.xlsx --sheet Forecast --range A1:D20
+office-use recalculate budget.xlsx --out budget-calculated.xlsx
+```
+
+`cells` reports formulas, their stored cached values, and cell types, including formula errors. Cache freshness is always `unknown`; a missing cached result is returned as `null`. Rows include blank cells in the requested rectangle. `recalculate` opens a copy in a fresh LibreOffice profile, saves a new XLSX, and refuses an existing output. Read the output again to inspect calculated values and errors. LibreOffice uses its own calculation engine and may change layout or unsupported workbook features; review the resulting file against the source. External links, advanced Excel functions, complex workbooks and fidelity have not been comprehensively validated. Use a saved, closed source and review workbooks containing external links before conversion.
+
 ## MCP for agents
 
 Install the optional MCP dependency from the repository root:
@@ -81,12 +92,13 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, and `view_page`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, and `recalculate_workbook`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 
 ```sh
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
+python3 office/spreadsheet_smoke.py # requires LibreOffice
 python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
 ```

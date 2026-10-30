@@ -302,3 +302,5 @@ route 的既有能力和访问边界不变。Electron 包仍待单独配置发�
 The optional OfficeCLI integration exposes structured outline/get/query and batch operations. Batches operate on temporary copies and publish exclusively after closing the engine session; PNG page previews use LibreOffice and Poppler. See `office/README.md` for installation and source-session constraints.
 
 `office-use mcp` exposes the same local operations over MCP stdio with the optional Python MCP SDK. The MCP server runs with its caller’s filesystem access and returns page PNG images for visual inspection.
+
+The spreadsheet module provides bounded formula/cache inspection and explicit LibreOffice recalculation into a new XLSX. Cached values carry no freshness guarantee. The source remains unchanged; LibreOffice conversion can alter unsupported features.
