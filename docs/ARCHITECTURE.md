@@ -277,10 +277,11 @@ SDK browser/tab helper。
 MCP EOF 只断开连接并保留页面；lease 到期和撤销仍由 runtime 逐请求执行。
 现有 `obu mcp` 保持 Chrome route，不共享 IAB endpoint 或授权。
 
-本地验证覆盖 Electron 44.7.0 / macOS arm64；Go 命令交叉编译 Linux/Windows。
-Windows socket adapter 尚未实现，私有描述符路径也需要实机验证。首版不暴露
-global/child-target CDP、文件上传下载、clipboard、history 或 WebMCP；Chrome
-route 的既有能力和访问边界不变。Electron 包仍待单独配置发布流水线。
+Electron 的页面和 iframe CDP 受 scope 限制；文件上传、下载及 Electron 44
+剪贴板由宿主显式授权，具体能力与限制见包的 README。剪贴板属于宿主系统，
+读取和写入分别授权。浏览器全局 CDP、history 和 WebMCP 未开放。
+macOS arm64 和 Linux ARM64/Xvfb 已有 Electron 44 实页验证；Windows socket
+adapter 尚未实现，私有描述符路径需要实机验证。Electron 包仍待发布。
 
 可选 `visualFeedback` 在 guest isolated world 显示现有 Browser Use 鼠标和
 内侧渐变边缘。主进程标记 scope 内目标 tab 的操作生命周期；CDP 输入驱动

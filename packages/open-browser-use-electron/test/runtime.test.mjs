@@ -104,6 +104,11 @@ test('clipboard socket grant supports SDK text and structured data', {skip:!['da
   await clipboard.writeText('socket fixture');assert.equal(await clipboard.readText(),'socket fixture');
   await clipboard.write([{entries:[{mimeType:'text/plain',text:'text'},{mimeType:'image/png',base64:'AQID'}]}]);
   assert.deepEqual((await clipboard.read())[0].entries,[{mimeType:'text/plain',text:'text'},{mimeType:'image/png',base64:'AQID'}]);
+  const readGrant=runtime.connections.grant('a','socket',{ttlMs:5000,operations:['page.control','clipboard.read']},process.pid);
+  const reader=await connectSocketIab(readGrant);t.after(()=>reader.close());const readClipboard=reader.browser().tab(tab.id).clipboard;
+  assert.equal(await readClipboard.readText(),'text');
+  await assert.rejects(readClipboard.writeText('unauthorized'),/DENIED/);
+  assert.equal(await clipboard.readText(),'text');
 });
 
 function fakeDownload(filename='fixture.txt',total=10) {
