@@ -105,6 +105,14 @@ For basic Excel authoring, `sheet_options` can format a workbook in the same req
 
 Options apply to existing worksheets after values are written. Freeze panes accepts a single cell or `null`; auto-filter accepts a range of at most 10,000,000 cells or `null` and rejects replacement when existing filter criteria or sort state are present. Column widths use Excel character units (greater than 0 and at most 255); row heights use points (greater than 0 and at most 409.5). Format entries accept `bold`, `italic`, `font_size`, six-digit RGB `font_color` and `fill`, `number_format`, `horizontal` (`general`, `left`, `center`, `right`) and boolean `wrap`. Omitted properties retain their existing direct settings. Each format covers up to 10,000 cells; all formats together cover up to 20,000 cells, with at most 100 format entries per sheet and 200 dimension entries of each kind. Merged-cell placeholders are rejected. Formulas are stored without calculation; formula caches may be missing and LibreOffice previews may recalculate them. When modifying an existing workbook, library round-tripping can change unsupported features and formula caches; use the targeted session grid when preserving those matters.
 
+Create a native Excel table with `tables` in `sheet_options`:
+
+```json
+{"sheets":{"Sales":{"A1":"Quarter","B1":"Revenue","A2":"Q1","B2":120,"A3":"Q2","B3":140}},"sheet_options":{"Sales":{"tables":[{"name":"SalesTable","range":"A1:B3","style":"TableStyleMedium2","row_stripes":true}]}}}
+```
+
+Each table requires a workbook-unique name, a rectangular range with a header and at least one data row, and unique nonempty literal text headers. Names use ASCII letters, digits, underscores and periods, start with a letter or underscore, and cannot be cell references. Built-in `TableStyleLight1`–`21`, `TableStyleMedium1`–`28`, and `TableStyleDark1`–`11` are supported. Boolean `row_stripes`, `column_stripes`, `first_column` and `last_column` control style flags. Tables may not overlap merged cells, other tables or the sheet auto-filter. Limits are 1,000,000 cells per range, 20 tables per sheet and 100 per request. Source-based cell authoring, targeted grid editing and text replacement protect table header and totals cells because their metadata needs a table-aware edit; ordinary data cells remain editable. Generic OfficeCLI operations can change table structures and require independent review. Source-based authoring can alter unsupported workbook features and caches.
+
 Add a local image as an editable worksheet drawing with `images` in `sheet_options`:
 
 ```json

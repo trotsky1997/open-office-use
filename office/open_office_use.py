@@ -34,7 +34,8 @@ from openpyxl.styles import PatternFill
 from openpyxl.cell.cell import MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.properties import PageSetupProperties
-from openpyxl.utils.cell import column_index_from_string, range_boundaries
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
@@ -556,7 +557,7 @@ def append_slides(presentation, slides):
 def format_workbook(workbook, options):
     """Apply bounded presentation settings to an authored workbook."""
     if not isinstance(options, dict) or len(options) > 100: raise ValueError('Sheet options must be an object with at most 100 sheets')
-    total_cells = 0; chart_cache_bytes = 0; chart_cache_points = 0; image_bytes = 0; image_count = 0
+    total_cells = 0; chart_cache_bytes = 0; chart_cache_points = 0; image_bytes = 0; image_count = 0; table_count = 0
     # shortcut: cache bounded, nonempty literal text or finite numbers; calculated and ambiguous values require recalculation.
     def chart_cache(cells, text):
         nonlocal chart_cache_bytes, chart_cache_points
@@ -597,7 +598,7 @@ def format_workbook(workbook, options):
         return 'FF' + value.upper()
     for name, setting in options.items():
         if name not in workbook.sheetnames: raise ValueError(f'Worksheet not found: {name}')
-        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options', 'images'}: raise ValueError('Invalid worksheet options')
+        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options', 'images', 'tables'}: raise ValueError('Invalid worksheet options')
         sheet = workbook[name]
         if not isinstance(sheet, Worksheet): raise ValueError('Sheet options require a worksheet')
         if 'freeze_panes' in setting:
@@ -701,6 +702,40 @@ def format_workbook(workbook, options):
                         if 'wrap' in style: alignment.wrap_text = style['wrap']
                         cell.alignment = alignment
                     if 'number_format' in style: cell.number_format = style['number_format']
+        tables = setting.get('tables', [])
+        if not isinstance(tables, list) or len(tables) > 20: raise ValueError('Tables must be a list of at most 20 entries per sheet')
+        for spec in tables:
+            table_count += 1
+            if table_count > 100: raise ValueError('At most 100 workbook tables are supported per request')
+            if not isinstance(spec, dict) or set(spec) - {'name', 'range', 'style', 'row_stripes', 'column_stripes', 'first_column', 'last_column'}: raise ValueError('Invalid worksheet table specification')
+            table_name = spec.get('name')
+            if not isinstance(table_name, str) or len(table_name) > 255 or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', table_name) or table_name.casefold() in ('r', 'c') or re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]*', table_name) or re.fullmatch(r'R[1-9][0-9]*C[1-9][0-9]*', table_name, re.I): raise ValueError('Invalid worksheet table name')
+            names = {key.casefold() for key in workbook.defined_names}
+            for ws in workbook.worksheets:
+                names.update(key.casefold() for key in ws.defined_names)
+                names.update(key.casefold() for key in ws.tables)
+            if table_name.casefold() in names: raise ValueError('Table name conflicts with an existing table or defined name')
+            c1, r1, c2, r2 = bounds(spec.get('range'), 1000000)
+            if r2 <= r1: raise ValueError('A table requires a header and at least one data row')
+            def overlaps(other):
+                a,b,c,d = other
+                return c1 <= c and a <= c2 and r1 <= d and b <= r2
+            if any(overlaps((item.min_col,item.min_row,item.max_col,item.max_row)) for item in sheet.merged_cells.ranges): raise ValueError('Tables cannot overlap merged cells')
+            if any(overlaps(range_boundaries(item.ref)) for item in sheet.tables.values()): raise ValueError('Tables cannot overlap existing tables')
+            if sheet.auto_filter.ref and overlaps(bounds(sheet.auto_filter.ref, 10000000)): raise ValueError('Table cannot overlap the worksheet auto-filter')
+            headers = [sheet.cell(row=r1, column=column) for column in range(c1,c2+1)]
+            if any(not isinstance(cell.value, str) or isinstance(cell.value, spreadsheet.UnverifiedSharedString) or cell.data_type == 'f' or not cell.value.strip() or cell.value != cell.value.strip() or len(cell.value.encode('utf-16-le'))//2 > 255 or any(ord(ch) < 32 for ch in cell.value) or re.search(r'_x[0-9a-fA-F]{4}_', cell.value) for cell in headers): raise ValueError('Table headers require nonempty literal text of at most 255 characters')
+            if len({cell.value.casefold() for cell in headers}) != len(headers): raise ValueError('Table headers must be unique')
+            style = spec.get('style', 'TableStyleMedium2')
+            match = re.fullmatch(r'TableStyle(Light|Medium|Dark)([1-9][0-9]?)', style) if isinstance(style, str) else None
+            if match is None or int(match[2]) > {'Light':21,'Medium':28,'Dark':11}[match[1]]: raise ValueError('Invalid built-in table style')
+            for key in ('row_stripes','column_stripes','first_column','last_column'):
+                if key in spec and not isinstance(spec[key], bool): raise ValueError(f'{key} must be a boolean')
+            reference = f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}'
+            table = Table(displayName=table_name, ref=reference); table._initialise_columns()
+            for column, cell in zip(table.tableColumns, headers): column.name = cell.value
+            table.tableStyleInfo = TableStyleInfo(name=style, showRowStripes=spec.get('row_stripes', True), showColumnStripes=spec.get('column_stripes', False), showFirstColumn=spec.get('first_column', False), showLastColumn=spec.get('last_column', False))
+            sheet.add_table(table)
         images = setting.get('images', []); added_images = []
         if not isinstance(images, list) or len(images) > 20: raise ValueError('Images must be a list of at most 20 entries per sheet')
         for spec in images:
@@ -832,6 +867,15 @@ def author(spec, output, source=None):
             for name, cells in spec.get('sheets', {}).items():
                 ws = obj[name] if name in obj.sheetnames else obj.create_sheet(name)
                 for address, value in cells.items():
+                    if ws.tables:
+                        try:
+                            c1, r1, c2, r2 = range_boundaries(address)
+                            if None in (c1, r1, c2, r2) or c1 != c2 or r1 != r2: raise ValueError
+                        except (TypeError, ValueError): raise ValueError('Worksheet cell address must be a single cell') from None
+                        for table in ws.tables.values():
+                            a, b, c, d = range_boundaries(table.ref)
+                            if a <= c1 <= c and ((r1 == b and table.headerRowCount != 0) or (r1 == d and (table.totalsRowCount or table.totalsRowShown))):
+                                raise ValueError('Table header and totals cells require a table-aware edit')
                     if not isinstance(value, str) or not value.startswith('='): spreadsheet.validate_cell_value(value)
                     ws[address] = value
             if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:

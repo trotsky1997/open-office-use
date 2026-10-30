@@ -75,6 +75,7 @@ def replace_text(source, output, path, find, replacement):
         if reason == 'formula_range': raise ValueError('Array, data-table or shared formula ranges cannot be edited')
         if reason in ('merged_placeholder', 'overlapping_merges'): raise ValueError('Merged-cell placeholders or overlapping merges cannot be edited')
         if reason == 'locked_cell': raise ValueError('Locked cells on protected worksheets cannot be edited')
+        if reason in ('table_header', 'table_totals'): raise ValueError('Table header and totals cells require a table-aware edit')
         return part
 
     def edit(tree, archive):

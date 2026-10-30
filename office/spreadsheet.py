@@ -650,7 +650,7 @@ def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=Fals
             raise ValueError('Worksheet part is referenced by multiple sheets')
     finally:
         workbook.close()
-    ranges = []; merges = []; sheet_protected = False; protection_seen = False
+    ranges = []; merges = []; table_ids = []; sheet_protected = False; protection_seen = False
     shared_ranges, shared_uses = {}, set()
     seen_columns, seen_rows, dimension_issues = set(), set(), set()
     dimensions = {'columns': {}, 'rows': {}, 'defaults': {}}; defaults_seen = False
@@ -698,6 +698,9 @@ def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=Fals
                         seen_rows.add(number)
                         dimensions['rows'][str(number)] = dimension_attrs(element, ('ht', 'customHeight', 'hidden', 'outlineLevel', 'collapsed'))
                 except (ValueError, TypeError): dimension_issues.add('invalid_row_index')
+            if element.tag == '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}tablePart':
+                table_ids.append(element.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'))
+                if len(table_ids) > 1000 or not table_ids[-1] or table_ids.count(table_ids[-1]) > 1: raise ValueError('Invalid worksheet table relationships')
             if element.tag == '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}mergeCell':
                 try:
                     bounds = range_boundaries(element.get('ref'))
@@ -734,8 +737,36 @@ def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=Fals
             element.clear()
     if shared_uses - shared_ranges.keys():
         raise ValueError('Shared formula has no protected range')
+    table_headers = []; table_totals = []
+    if table_ids:
+        rel_ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+        table_type = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
+        rel_path = posixpath.join(posixpath.dirname(path), '_rels', posixpath.basename(path) + '.rels')
+        with zipfile.ZipFile(file) as archive:
+            if rel_path not in archive.namelist() or archive.getinfo(rel_path).file_size > 4 * 1024 * 1024: raise ValueError('Worksheet table relationships unavailable')
+            rel_root = ET.fromstring(archive.read(rel_path))
+            if rel_root.tag != rel_ns + 'Relationships': raise ValueError('Invalid worksheet relationships')
+            rels = rel_root.findall(rel_ns + 'Relationship'); ids = [rel.get('Id') for rel in rels]
+            if any(not value for value in ids) or len(ids) != len(set(ids)): raise ValueError('Invalid worksheet relationship IDs')
+            for table_id in table_ids:
+                rel = next((item for item in rels if item.get('Id') == table_id), None)
+                if rel is None or rel.get('Type') != table_type or rel.get('TargetMode', 'Internal') != 'Internal': raise ValueError('Invalid table relationship')
+                target = rel.get('Target', '')
+                if not target or any(char in target for char in ('\\', '%', '?', '#', ':')): raise ValueError('Unsupported table relationship')
+                table_path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(path), target))
+                if not table_path.startswith('xl/') or table_path not in archive.namelist() or archive.getinfo(table_path).file_size > 4 * 1024 * 1024: raise ValueError('Invalid table part')
+                table = ET.fromstring(archive.read(table_path))
+                if table.tag != '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}table': raise ValueError('Invalid table XML')
+                try:
+                    c1, r1, c2, r2 = range_boundaries(table.get('ref'))
+                    if not (1 <= c1 <= c2 <= 16384 and 1 <= r1 <= r2 <= 1048576): raise ValueError
+                except (TypeError, ValueError): raise ValueError('Invalid table range') from None
+                header, totals = table.get('headerRowCount', '1'), table.get('totalsRowCount', '0')
+                if header not in ('0', '1') or totals not in ('0', '1') or table.get('totalsRowShown') not in (None, '0', '1', 'true', 'false'): raise ValueError('Unsupported table header or total rows')
+                if header == '1': table_headers.append((c1, r1, c2, r1))
+                if totals == '1' or table.get('totalsRowShown') in ('1', 'true'): table_totals.append((c1, r2, c2, r2))
     dimensions['issues'] = sorted(dimension_issues)
-    return {'formula_ranges': ranges, 'merged_ranges': merges, 'sheet_protected': sheet_protected, 'dimension_issues': dimensions['issues'], 'dimensions': dimensions}
+    return {'formula_ranges': ranges, 'merged_ranges': merges, 'table_headers': table_headers, 'table_totals': table_totals, 'sheet_protected': sheet_protected, 'dimension_issues': dimensions['issues'], 'dimensions': dimensions}
 
 
 
@@ -809,6 +840,8 @@ def cell_constraint(constraints, col, row, locked, complex_formula=False):
     anchor = f'{get_column_letter(ranges[0][0])}{ranges[0][1]}' if len(ranges) == 1 else None
     reason = ('overlapping_merges' if len(ranges) > 1 else
               'merged_placeholder' if ranges and (col, row) != ranges[0][:2] else
+              'table_header' if any(c1 <= col <= c2 and r1 <= row <= r2 for c1, r1, c2, r2 in constraints.get('table_headers', [])) else
+              'table_totals' if any(c1 <= col <= c2 and r1 <= row <= r2 for c1, r1, c2, r2 in constraints.get('table_totals', [])) else
               'formula_range' if complex_formula or any(c1 <= col <= c2 and r1 <= row <= r2 for c1, r1, c2, r2 in constraints['formula_ranges']) else
               'locked_cell' if constraints['sheet_protected'] and locked else None)
     return reason, anchor

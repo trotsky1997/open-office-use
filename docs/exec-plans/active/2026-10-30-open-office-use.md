@@ -204,3 +204,5 @@ Workbook authoring supports bounded local PNG/JPEG drawings with pixel-preservin
 Positioned slide textboxes support rich runs, links, multiple paragraphs, bullet levels and paragraph spacing. Validated OOXML, targeted paragraph editing, CLI/MCP and LibreOffice rendering; native PowerPoint and complex text formatting remain open.
 
 Slide textbox authoring supports margins, vertical alignment, wrapping and none/shrink/resize auto-fit. LibreOffice shrink was compared with a clipped baseline; resize can render beyond saved shape bounds and remains a review candidate.
+
+Workbook authoring supports named, styled native tables with verified headers and bounded ranges. Targeted grid/text edits protect table headers and totals while permitting data edits; generic OfficeCLI operations require separate review. Native Excel and table-aware header editing remain open.

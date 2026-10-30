@@ -16,3 +16,5 @@ For basic workbook creation, `author_file` supports `sheet_options` for freeze p
 For printable authored sheets, `sheet_options.print_options` sets paper, orientation, print area, repeating rows/columns, margins, and default/odd-page header/footer with optional page number. Inspect every rendered page; small margins can suppress running text.
 
 Use `author_file` with `sheet_options.images` to embed a local PNG or JPEG as a cell-anchored drawing. Provide pixel width and a useful `description`; inspect rendered pages and print-area coverage.
+
+`author_file` can create native styled/filterable Excel tables using `sheet_options.tables`. Table headers and totals are read-only in the targeted grid and text replacement workflows; use a table-aware operation and review table metadata for changes there.

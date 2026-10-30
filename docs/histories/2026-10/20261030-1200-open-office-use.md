@@ -295,3 +295,7 @@ Added multiple formatted paragraphs, bullet levels and hyperlinks to positioned 
 ### Slide textbox layout controls
 
 Added textbox insets, vertical alignment, wrapping and auto-fit settings, including rich text. Verified schema and compared clipped versus shrink rendering; resize may extend beyond saved bounds. Native PowerPoint remains unverified.
+
+### Native Excel table authoring
+
+Added bounded named Excel tables with built-in styles and filter controls, and protected table header and total cells in targeted grid/text edits. Validated data edits, totals, invalid inputs, schema, CLI/MCP and LibreOffice render; table-aware header editing and native Excel remain open.

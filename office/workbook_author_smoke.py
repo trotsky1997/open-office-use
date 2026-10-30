@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from openpyxl import load_workbook
 from PIL import Image
+import xlsxwriter
 import open_office_use
 import officecli_backend
 import chart_cache
@@ -93,6 +94,55 @@ with tempfile.TemporaryDirectory() as tmp:
         except (ValueError, OSError): pass
         else: raise AssertionError('Invalid worksheet image accepted')
         assert not invalid.exists()
+    table_file=root/'table.xlsx'
+    table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
+    table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))
+    result=subprocess.run([sys.executable,str(cli),'author','--spec',str(table_json),'--out',str(table_file)],capture_output=True,text=True,check=True)
+    assert json.loads(result.stdout)['output']==str(table_file.resolve())
+    table_sheet=load_workbook(table_file)['Sales']; table=table_sheet.tables['SalesTable']
+    assert table.ref=='A1:B3' and [column.name for column in table.tableColumns]==['Quarter','Revenue'] and table.autoFilter.ref=='A1:B3' and table.tableStyleInfo.showRowStripes
+    code, validation, _=officecli_backend.invoke('validate',table_file); assert code==0 and validation['success'],validation
+    try: open_office_use.author({'sheets':{'Sales':{'A1':'Period'}}},root/'unsafe-table-header.xlsx',table_file)
+    except ValueError as exc: assert 'table' in str(exc).lower()
+    else: raise AssertionError('Table header authoring edit accepted')
+    assert not (root/'unsafe-table-header.xlsx').exists()
+    copied_table=root/'copied-table.xlsx'
+    open_office_use.author({'sheets':{'Sales':{'B2':160}}},copied_table,table_file)
+    copied_sheet=load_workbook(copied_table)['Sales']; assert copied_sheet['B2'].value==160 and copied_sheet.tables['SalesTable'].tableColumns[0].name=='Quarter'
+    table_draft=root/'table-draft';session.start(table_draft,source=table_file)
+    grid=session.read_grid(table_draft,0,'Sales','A1:B2');assert grid['rows'][0][0]['read_only_reason']=='table_header' and grid['rows'][1][1]['editable']
+    try: session.replace_text(table_draft,0,'/Sales/A1','Quarter','Period')
+    except ValueError as exc: assert 'table' in str(exc).lower()
+    else: raise AssertionError('Table header replacement accepted')
+    try: session.edit(table_draft,0,'/Sales/A1','literal','Period')
+    except ValueError as exc: assert 'table_header' in str(exc)
+    else: raise AssertionError('Table header element edit accepted')
+    try: session.edit_grid(table_draft,0,'Sales','A1',[{'cell':'A1','value':'Period'}])
+    except ValueError as exc: assert 'table_header' in str(exc)
+    else: raise AssertionError('Table header grid edit accepted')
+    changed=session.edit_grid(table_draft,0,'Sales','B2',[{'cell':'B2','value':'150'}]);updated=load_workbook(changed['file'])['Sales']
+    assert updated['B2'].value==150 and updated.tables['SalesTable'].tableColumns[0].name=='Quarter'
+    assert Path(open_office_use.render(table_file,root/'table-render')).read_bytes().startswith(b'%PDF')
+    for index, options in enumerate([{'tables':[{'name':'A1','range':'A1:B3'}]}, {'tables':[{'name':'T','range':'A1:B1'}]}, {'tables':[{'name':'T','range':'A1:B3','style':'Invalid'}]}, {'tables':[{'name':'T','range':'A1:B3'},{'name':'t','range':'D1:E3'}]}, {'tables':[{'name':'T','range':'A1:B3'},{'name':'U','range':'B2:C3'}]}, {'auto_filter':'A1:B3','tables':[{'name':'T','range':'A1:B3'}]}]):
+        target=root/f'bad-structured-table-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':10,'D1':'X','E1':'Y'}},'sheet_options':{'Sales':options}},target)
+        except ValueError: pass
+        else: raise AssertionError(f'Invalid table accepted: {options}')
+        assert not target.exists()
+    for index, headers in enumerate([['Name','name'],['Name',''],['=1','Value']]):
+        target=root/f'bad-table-headers-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Sales':{'A1':headers[0],'B1':headers[1],'A2':'x','B2':1}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}},target)
+        except ValueError: pass
+        else: raise AssertionError('Invalid table headers accepted')
+        assert not target.exists()
+    totals_file=root/'totals.xlsx';book=xlsxwriter.Workbook(str(totals_file));ws=book.add_worksheet('Data')
+    ws.add_table('A1:B4',{'name':'TotalsTable','total_row':True,'columns':[{'header':'Item','total_string':'Total'},{'header':'Amount','total_function':'sum'}],'data':[['A',10],['B',20]]});book.close()
+    totals_draft=root/'totals-draft';session.start(totals_draft,source=totals_file)
+    totals_grid=session.read_grid(totals_draft,0,'Data','A4:B4')
+    assert all(cell['read_only_reason']=='table_totals' for cell in totals_grid['rows'][0]),totals_grid
+    try: session.edit_grid(totals_draft,0,'Data','A4',[{'cell':'A4','value':'Other'}])
+    except ValueError: pass
+    else: raise AssertionError('Table total edit accepted')
     before = output.read_bytes(); revised = root/'revised.xlsx'
     open_office_use.author({'sheet_options':{'Forecast':{'formats':[{'range':'A1','italic':True}]}}}, revised, output)
     revised_sheet = load_workbook(revised)['Forecast']; assert revised_sheet['A1'].font.bold and revised_sheet['A1'].font.italic and output.read_bytes() == before
