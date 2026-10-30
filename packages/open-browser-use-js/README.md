@@ -902,7 +902,8 @@ intersection is propagated through axis-aligned frame bounds. Rotated or skewed
 frames make the snapshot fail explicitly. Browser intersection observations also
 filter nodes clipped by overflow ancestors. If the document is hidden or an
 intersection observation takes over three seconds, the result sets
-`visibility_incomplete: true` and uses geometry without overflow clipping.
+`visibility_incomplete: true` and applies conservative rectangular overflow clipping.
+Complex clipping and occlusion can remain unrepresented.
 Occlusion is checked before input.
 The underlying match set is limited to 1000 elements across frames. Names use
 `aria-labelledby`, `aria-label`, associated labels and common text attributes;
