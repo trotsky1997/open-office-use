@@ -48,3 +48,7 @@ Added page rectangle selection in the local viewer, persisted with revision and 
 ## Selected text
 
 Added PDF word-geometry extraction for saved visual selections via CLI and MCP. Verified selected text for DOCX, XLSX and PPTX, a bounded DOCX region and historical revision behavior. OCR, exact visual-to-element mapping and complex layout fidelity remain open.
+
+## Selection candidate paths
+
+Added text-based candidate lookup for visual selections via CLI and MCP. Tests cover duplicate text across DOCX, XLSX and PPTX, an empty selection and stale revision handling. The result requires verification; geometric mapping, editable text ranges, OCR and direct editor integration remain open.

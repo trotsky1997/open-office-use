@@ -18,7 +18,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates'}
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
@@ -42,6 +42,8 @@ async def main():
                 assert not selected.isError and selected.structuredContent['stale'] is False, selected
                 selected_text = await session.call_tool('session_selection_text', {'directory': str(directory)})
                 assert not selected_text.isError and 'Session edit' in selected_text.structuredContent['text'], selected_text
+                matches = await session.call_tool('session_selection_candidates', {'directory': str(directory)})
+                assert not matches.isError and matches.structuredContent['requires_verification'] and matches.structuredContent['candidates'], matches
                 cropped = await session.call_tool('session_selection_image', {'directory': str(directory)})
                 assert not cropped.isError and cropped.content[0].type == 'image', cropped
                 advanced = await session.call_tool('session_apply', {'directory': str(directory), 'base_revision': 1, 'operations': []})

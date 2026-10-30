@@ -17,6 +17,7 @@ import spreadsheet
 import review
 import session
 import selection_text
+import selection_candidates
 
 
 def kind(path):
@@ -153,6 +154,7 @@ def main():
     state = sub.add_parser('info'); state.add_argument('directory')
     selection = sub.add_parser('selection'); selection.add_argument('directory')
     selected_text = sub.add_parser('selection-text'); selected_text.add_argument('directory')
+    candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
     watcher = commands.add_parser('watch'); watcher.add_argument('directory'); watcher.add_argument('--port', type=int, default=0)
@@ -181,6 +183,8 @@ def main():
                 result = session.get_selection(args.directory)
             elif args.action == 'selection-text':
                 result = selection_text.extract(args.directory, render)
+            elif args.action == 'selection-candidates':
+                result = selection_candidates.candidates(args.directory, render)
             elif args.action == 'apply':
                 with open(args.spec, encoding='utf-8') as f:
                     operations = json.load(f)

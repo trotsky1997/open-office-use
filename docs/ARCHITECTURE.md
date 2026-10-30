@@ -314,3 +314,5 @@ Local draft sessions store saved revision files in a caller-chosen directory. Ea
 `office-use watch` serves a local browser preview of the latest draft revision. It binds to loopback, uses a random URL token and exact Host checking, and renders page images in a temporary directory. The preview polls for committed revisions and can save a revision-bound visual selection. MCP exposes selection metadata and a crop from that exact revision; document edits remain in the batch workflow.
 
 Selected visual regions can be rendered to PDF and queried for word-center text geometry with Poppler. Results carry the selected revision and current staleness; they are visual text evidence and require structured lookup for editing targets.
+
+Selection candidate lookup searches bounded text fragments against an OfficeCLI snapshot, returns candidate paths and requires verification. It is text-based and provides no geometric identity guarantee.

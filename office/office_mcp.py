@@ -14,6 +14,7 @@ import spreadsheet
 import review
 import session
 import selection_text
+import selection_candidates
 from open_office_use import inspect, preview, render
 
 server = FastMCP(
@@ -66,6 +67,12 @@ def session_selection(directory: str) -> dict[str, Any]:
 def session_selection_text(directory: str) -> dict[str, Any]:
     """Extract PDF text whose word centers fall in the saved visual selection, including revision and bounds."""
     return selection_text.extract(directory, render)
+
+
+@server.tool()
+def session_selection_candidates(directory: str) -> dict[str, Any]:
+    """Find textual candidate element paths for the visual selection; verify each target before editing."""
+    return selection_candidates.candidates(directory, render)
 
 
 @server.tool()

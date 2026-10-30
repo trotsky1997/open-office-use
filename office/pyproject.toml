@@ -16,4 +16,4 @@ mcp = ["mcp>=1.30,<2"]
 office-use = "open_office_use:main"
 
 [tool.setuptools]
-py-modules = ["open_office_use", "officecli_backend", "office_mcp", "spreadsheet", "review", "session", "watch", "selection_text"]
+py-modules = ["open_office_use", "officecli_backend", "office_mcp", "spreadsheet", "review", "session", "watch", "selection_text", "selection_candidates"]
