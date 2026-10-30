@@ -348,3 +348,5 @@ Reference evidence (OfficeCLI Git blob IDs, retrieved without copying fixtures i
 Existing numeric literal slide chart points can be updated by one-based series and point through snapshot-bound CLI/MCP session revisions. Shared chart placement reporting and direct-part preservation apply. The OfficeCLI budget-review reference was edited and rendered; its chart labels have low contrast in LibreOffice both before and after editing. Native PowerPoint remains unverified.
 
 Direct literal series names and categories can be edited via snapshot-bound CLI/MCP; category edits require matching literal category arrays across all series. A reference deck rendered the updated category and legend in LibreOffice. Native PowerPoint remains unverified.
+
+Slide charts support explicit text color during authoring and snapshot-bound session edits. The OfficeCLI budget-review reference showed readable white chart labels on a dark background in LibreOffice; only its chart part changed and pre-existing validation warnings were unchanged. Native PowerPoint remains unverified.

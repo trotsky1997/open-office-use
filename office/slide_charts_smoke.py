@@ -29,6 +29,25 @@ with tempfile.TemporaryDirectory() as tmp:
     assert chart['series'][0]['references']['val']['formula']=='Sheet1!$B$2:$B$3' and chart['workbook']['status']=='embedded'
     assert chart['reconciliation']['status']=='match' and chart['reconciliation']['complete']
     assert chart['reconciliation']['formula_freshness']=='unknown'
+    color_draft=root/'chart-color-draft'; session.start(color_draft,source=source)
+    for color in ('bad', 'XXXXXX', '', 42):
+        try: session.set_slide_chart_text_color(color_draft,0,chart['chart_part'],color)
+        except ValueError: pass
+        else: raise AssertionError('Invalid chart color accepted')
+    try: session.set_slide_chart_text_color(color_draft,0,chart['chart_part'],'FFFFFF','0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale chart color snapshot accepted')
+    colored=session.set_slide_chart_text_color(color_draft,0,chart['chart_part'],'abcdef',result['snapshot_sha256'])
+    colored_deck=Presentation(colored['output']); colored_chart=next(item.chart for item in colored_deck.slides[0].shapes if item.has_chart)
+    assert str(colored_chart.value_axis.tick_labels.font.color.rgb)=='ABCDEF' and str(colored_chart.category_axis.tick_labels.font.color.rgb)=='ABCDEF'
+    assert session.inspect_slide_charts(color_draft,1)['charts'][0]['reconciliation']['status']=='match'
+    with zipfile.ZipFile(source) as before,zipfile.ZipFile(colored['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name != chart['chart_part'].lstrip('/'))
+    code,validation,_=officecli_backend.invoke('validate',colored['output']); assert code==0 and validation['success'],validation
+    cli=Path(__file__).with_name('open_office_use.py')
+    command=[sys.executable,str(cli),'session','set-slide-chart-text-color',str(color_draft),'--base','1','--part',chart['chart_part'],'--color','445566']
+    assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2
+    assert str(next(item.chart for item in Presentation(color_draft/'revision-000002.pptx').slides[0].shapes if item.has_chart).value_axis.tick_labels.font.color.rgb)=='445566'
     literal = root/'literal-chart.pptx'
     with zipfile.ZipFile(source) as src, zipfile.ZipFile(literal,'w') as dst:
         for entry in src.infolist():

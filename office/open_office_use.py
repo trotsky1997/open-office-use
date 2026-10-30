@@ -447,7 +447,7 @@ def append_slides(presentation, slides):
             allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
                        'rectangle': geometry | {'fill'}, 'shape': geometry | {'id', 'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'connector': {'type', 'start', 'end', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
-                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values', 'show_percent', 'point_colors', 'value_axis_min', 'value_axis_max'}}
+                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values', 'show_percent', 'point_colors', 'value_axis_min', 'value_axis_max', 'text_color'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - (allowed[kind] | {'description', 'target_slide'}): raise ValueError('Unsupported slide element or property')
             if 'description' in element and (not isinstance(element['description'], str) or len(element['description']) > 1000): raise ValueError('Slide description must be text of at most 1,000 characters')
             if 'target_slide' in element and (isinstance(element['target_slide'], bool) or not isinstance(element['target_slide'], int) or not 1 <= element['target_slide'] <= final_slide_count): raise ValueError('Target slide must be a valid one-based slide number in the final deck')
@@ -700,6 +700,7 @@ def append_slides(presentation, slides):
                     if 'value_axis_max' in element: chart.value_axis.maximum_scale = element['value_axis_max']
                     for key, axis in (('x_axis_title', chart.value_axis), ('y_axis_title', chart.category_axis)) if chart_type == 'bar' else (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
                         if key in element: axis.has_title = True; axis.axis_title.text_frame.text = element[key]
+                if 'text_color' in element: slide_charts.apply_text_color(chart, color(element['text_color']))
                 if point_colors is not None:
                     for point, value in zip(chart.series[0].points, point_colors):
                         point.format.fill.solid(); point.format.fill.fore_color.rgb = color(value)
@@ -1451,6 +1452,7 @@ def main():
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_nav = sub.add_parser('inspect-slide-navigation'); session_nav.add_argument('directory'); session_nav.add_argument('--revision', type=int, required=True)
     session_charts = sub.add_parser('inspect-slide-charts'); session_charts.add_argument('directory'); session_charts.add_argument('--revision', type=int, required=True)
+    chart_color = sub.add_parser('set-slide-chart-text-color'); chart_color.add_argument('directory'); chart_color.add_argument('--base', type=int, required=True); chart_color.add_argument('--part', required=True); chart_color.add_argument('--color', required=True); chart_color.add_argument('--expected-sha256')
     literal_text = sub.add_parser('set-slide-chart-literal-text'); literal_text.add_argument('directory'); literal_text.add_argument('--base', type=int, required=True); literal_text.add_argument('--part', required=True); literal_text.add_argument('--kind', choices=('series_name','category'), required=True); literal_text.add_argument('--text', required=True); literal_text.add_argument('--series', type=int); literal_text.add_argument('--point', type=int); literal_text.add_argument('--expected-sha256')
     literal_edit = sub.add_parser('set-slide-chart-literal-value'); literal_edit.add_argument('directory'); literal_edit.add_argument('--base', type=int, required=True); literal_edit.add_argument('--part', required=True); literal_edit.add_argument('--series', type=int, required=True); literal_edit.add_argument('--point', type=int, required=True); literal_edit.add_argument('--value', type=float, required=True); literal_edit.add_argument('--expected-sha256')
     axis_edit = sub.add_parser('set-slide-chart-axis-bounds'); axis_edit.add_argument('directory'); axis_edit.add_argument('--base', type=int, required=True); axis_edit.add_argument('--part', required=True); axis_edit.add_argument('--axis-id', required=True); axis_edit.add_argument('--minimum', type=lambda value: None if value == 'auto' else float(value), required=True, help='Number or auto'); axis_edit.add_argument('--maximum', type=lambda value: None if value == 'auto' else float(value), required=True, help='Number or auto'); axis_edit.add_argument('--expected-sha256')
@@ -1576,6 +1578,8 @@ def main():
                 result = session.inspect_slide_navigation(args.directory, args.revision)
             elif args.action == 'inspect-slide-charts':
                 result = session.inspect_slide_charts(args.directory, args.revision)
+            elif args.action == 'set-slide-chart-text-color':
+                result = session.set_slide_chart_text_color(args.directory, args.base, args.part, args.color, args.expected_sha256)
             elif args.action == 'set-slide-chart-literal-text':
                 result = session.set_slide_chart_literal_text(args.directory, args.base, args.part, args.kind, args.text, args.series, args.point, args.expected_sha256)
             elif args.action == 'set-slide-chart-literal-value':

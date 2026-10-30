@@ -61,3 +61,5 @@ Chart inspection also reads directly embedded literal category and numeric serie
 For a numeric literal chart series, `session_set_slide_chart_literal_value` updates an existing point by one-based series and point positions from chart inspection. It edits the chart part directly, with no embedded workbook update; inspect affected paths and render the slide.
 
 Use `session_set_slide_chart_literal_text` to edit a direct literal series name or shared category. Series category arrays must match; the operation updates every series and does not update an embedded workbook. Inspect shared chart placements and render after editing.
+
+For dark or light backgrounds, set a chart `text_color` at authoring, or use `session_set_slide_chart_text_color` on an inspected chart part and snapshot. It applies to titles, axis labels, legend and default data labels in a simple chart; per-point formatting can override it. Render and review contrast.

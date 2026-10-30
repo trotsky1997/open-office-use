@@ -10,6 +10,7 @@ from pathlib import Path
 
 from lxml import etree
 from pptx import Presentation
+from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.opc.constants import RELATIONSHIP_TYPE
 
@@ -302,6 +303,45 @@ def inspect(file):
         if len(slides) > 200: issue(None, None, 'slide_limit')
         result['issues_truncated'] = result['issue_count'] > len(result['issues'])
         return result
+
+
+def apply_text_color(chart, rgb):
+    """Color chart title, axis labels and titles, legend and default data labels."""
+    if len(chart.plots) != 1 or chart.plots[0]._element.tag not in (C + 'barChart', C + 'lineChart', C + 'pieChart'): raise ValueError('Chart text color supports one bar, column, line or pie plot')
+    def color_title(title):
+        rich = title._element.find(C + 'tx/' + C + 'rich')
+        if rich is None or any(node.tag == '{http://schemas.openxmlformats.org/drawingml/2006/main}fld' for node in rich.iter()): raise ValueError('Chart title text is not a supported rich-text title')
+        for paragraph in title.text_frame.paragraphs:
+            paragraph.font.color.rgb = rgb
+            for run in paragraph.runs: run.font.color.rgb = rgb
+    if chart.has_title: color_title(chart.chart_title)
+    if chart.has_legend: chart.legend.font.color.rgb = rgb
+    if chart.plots[0].has_data_labels: chart.plots[0].data_labels.font.color.rgb = rgb
+    if chart.plots[0]._element.tag != C + 'pieChart':
+        for axis in (chart.value_axis, chart.category_axis):
+            axis.tick_labels.font.color.rgb = rgb
+            if axis.has_title: color_title(axis.axis_title)
+
+
+def set_text_color(source, output, part, color, expected_sha256=None):
+    """Set chart text color while preserving every other Office package part."""
+    if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from inspection')
+    if not isinstance(color, str) or len(color) != 6 or any(char not in '0123456789abcdefABCDEF' for char in color): raise ValueError('Chart text color must be six hexadecimal RGB digits')
+    selected = {}
+    def select(file):
+        inventory = inspect(file); charts = [item for item in inventory['charts'] if item.get('chart_part') == part]
+        if not charts or any(item.get('plot_count') != 1 or not item.get('axis_inventory', {}).get('complete') for item in charts): raise ValueError('Chart inventory or axes are unavailable or incomplete')
+        axes = charts[0]['axis_inventory']['axes']
+        if axes and (len(axes) != 2 or sorted(axis['type'] for axis in axes) != ['catAx', 'valAx']): raise ValueError('Unsupported chart axis structure')
+        presentation = Presentation(file); parts = [item for item in presentation.part.package.iter_parts() if str(item.partname) == part]
+        if len(parts) != 1 or not hasattr(parts[0], 'chart'): raise ValueError('Chart part is unavailable')
+        chart = parts[0].chart; apply_text_color(chart, RGBColor.from_string(color.upper()))
+        selected['root'] = copy.deepcopy(chart.part._element); selected['paths'] = [item['path'] for item in charts]; selected['complete'] = inventory['complete']
+        return part.lstrip('/')
+    def edit(tree, _archive):
+        tree._setroot(selected['root'])
+    ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+    return {'output': str(output), 'chart_part': part, 'color': color.upper(), 'affected_paths': selected['paths'], 'affected_paths_complete': selected['complete']}
 
 
 def set_axis_bounds(source, output, part, axis_id, minimum, maximum, expected_sha256=None):

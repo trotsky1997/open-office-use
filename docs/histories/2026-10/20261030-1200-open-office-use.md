@@ -449,3 +449,5 @@ Probed OfficeCLI reference artifacts and added PowerPoint literal chart category
 Added snapshot-bound editing of existing numeric literal chart points, with shared-placement reporting and preservation checks.
 
 Added direct literal chart series-name and shared-category editing, and fixed inspection of literal series names.
+
+Added simple slide-chart text color authoring and targeted revision edits after a reference deck exposed low-contrast axis, title and legend text.
