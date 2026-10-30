@@ -207,3 +207,7 @@ Extended basic CLI/MCP PPTX authoring with explicit slide dimensions, blank layo
 ### Slide image fitting
 
 Added aspect-preserving contain and centered cover modes to CLI/MCP slide image authoring. Verified horizontal and vertical images, PPTX frame/crop values, EXIF orientation rejection, MCP operation and LibreOffice previews. Native PowerPoint rendering remains unverified.
+
+### Editable PowerPoint table authoring
+
+Added positioned native table elements to basic CLI/MCP slide authoring, with bounded text grids, headers, colors, fonts and proportional column widths. Verified PPTX structure, invalid input, real MCP creation and LibreOffice rendering. Native PowerPoint rendering remains unverified.

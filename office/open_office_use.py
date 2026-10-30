@@ -188,7 +188,8 @@ def append_slides(presentation, slides):
             if not isinstance(element, dict): raise ValueError('Slide elements must be objects')
             kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
             allowed = {'textbox': geometry | {'text', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill'},
-                       'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description', 'fit'}}
+                       'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description', 'fit'},
+                       'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
             x = Inches(number(element.get('x'), 'x', -100, 100)); y = Inches(number(element.get('y'), 'y', -100, 100))
             width = Inches(number(element.get('width'), 'width', 0.01, 100)); height = Inches(number(element.get('height'), 'height', 0.01, 100))
@@ -216,6 +217,42 @@ def append_slides(presentation, slides):
                 if 'fill' not in element: raise ValueError('Rectangle requires a fill color')
                 shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, width, height)
                 shape.fill.solid(); shape.fill.fore_color.rgb = color(element['fill']); shape.line.fill.background()
+            elif kind == 'table':
+                rows = element.get('rows'); header = element.get('header', False)
+                if not isinstance(rows, list) or not 1 <= len(rows) <= 50 or any(not isinstance(row, list) for row in rows): raise ValueError('Slide table requires 1 to 50 rows')
+                columns = len(rows[0])
+                if not 1 <= columns <= 20 or len(rows) * columns > 500 or any(len(row) != columns for row in rows): raise ValueError('Slide table must be rectangular with at most 500 cells and 20 columns')
+                if any(not isinstance(value, str) or len(value) > 10000 for row in rows for value in row): raise ValueError('Slide table cells must be text of at most 10,000 characters')
+                if not isinstance(header, bool): raise ValueError('Table header must be a boolean')
+                if not header and ('header_fill' in element or 'header_color' in element): raise ValueError('Header colors require a header row')
+                if 'font_size' in element: number(element['font_size'], 'font_size', 1, 400)
+                if 'font' in element and (not isinstance(element['font'], str) or not 1 <= len(element['font']) <= 100): raise ValueError('Font must be a name of at most 100 characters')
+                for key in ('color', 'header_fill', 'header_color'):
+                    if key in element: color(element[key])
+                weights = element.get('column_weights')
+                if weights is not None:
+                    if not isinstance(weights, list) or len(weights) != columns: raise ValueError('Provide one column weight per column')
+                    weights = [number(value, 'column weight', 0.01, 1000) for value in weights]
+                table = slide.shapes.add_table(len(rows), columns, x, y, width, height).table
+                table.first_row = header
+                if weights is not None:
+                    total = sum(weights); previous = 0; cumulative = 0
+                    for index, weight in enumerate(weights):
+                        cumulative += weight; end = width if index == columns - 1 else round(width * cumulative / total)
+                        if end <= previous: raise ValueError('Column weights produce a zero-width column')
+                        table.columns[index].width = end - previous; previous = end
+                for row_index, values in enumerate(rows):
+                    for column_index, text in enumerate(values):
+                        cell = table.cell(row_index, column_index); cell.text = text; cell.text_frame.word_wrap = True
+                        is_header = header and row_index == 0
+                        if is_header and 'header_fill' in element: cell.fill.solid(); cell.fill.fore_color.rgb = color(element['header_fill'])
+                        for paragraph in cell.text_frame.paragraphs:
+                            for run in paragraph.runs:
+                                if 'font_size' in element: run.font.size = Pt(element['font_size'])
+                                if 'font' in element: run.font.name = element['font']
+                                ink = element.get('header_color') if is_header and 'header_color' in element else element.get('color')
+                                if ink is not None: run.font.color.rgb = color(ink)
+                                if is_header: run.font.bold = True
             else:
                 path = element.get('path'); description = element.get('description', ''); fit = element.get('fit', 'stretch')
                 if fit not in ('stretch', 'contain', 'cover'): raise ValueError('Image fit must be stretch, contain or cover')

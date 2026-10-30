@@ -44,9 +44,9 @@ async def main():
                 authored_blocks = await session.call_tool('author_file', {'spec':{'blocks':blocks}, 'output':str(structured_word)})
                 assert not authored_blocks.isError and Document(structured_word).paragraphs[1].runs[1].bold and Document(structured_word).tables[0].cell(1,1).text == '18%', authored_blocks
                 positioned = root / 'positioned.pptx'
-                slide_spec = {'slide_size':{'width':13.333,'height':7.5}, 'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':5,'height':1,'text':'Positioned title','font_size':32}]}]}
+                slide_spec = {'slide_size':{'width':13.333,'height':7.5}, 'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':5,'height':1,'text':'Positioned title','font_size':32}, {'type':'table','x':1,'y':2,'width':5,'height':1,'rows':[['Metric','Value'],['Growth','18%']],'header':True}]}]}
                 authored_slide = await session.call_tool('author_file', {'spec':slide_spec, 'output':str(positioned)})
-                assert not authored_slide.isError and Presentation(positioned).slides[0].shapes[0].text == 'Positioned title', authored_slide
+                assert not authored_slide.isError and Presentation(positioned).slides[0].shapes[0].text == 'Positioned title' and Presentation(positioned).slides[0].shapes[1].table.cell(1,1).text == '18%', authored_slide
                 diagnostics = await session.call_tool('office_doctor', {})
                 assert not diagnostics.isError and diagnostics.structuredContent['capabilities']['mcp_server'] is True, diagnostics
                 word_source = root / 'search.docx'; search_doc = Document(); search_doc.add_paragraph('find needle'); search_doc.save(word_source)

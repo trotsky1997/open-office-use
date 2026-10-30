@@ -5,6 +5,7 @@ from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
 import open_office_use
+import session
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); image = root/'picture.png'; Image.new('RGB', (32, 20), '#2b8a91').save(image)
@@ -39,6 +40,27 @@ with tempfile.TemporaryDirectory() as tmp:
     try: open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'image','path':str(oriented),'x':0,'y':0,'width':1,'height':1,'fit':'contain'}]}]}, root/'rotated.pptx')
     except ValueError as exc: assert 'orientation' in str(exc)
     else: raise AssertionError('Image with unresolved orientation accepted')
+    table_spec = {'slide_size':{'width':13.333,'height':7.5}, 'slides':[{'layout':'blank','elements':[{'type':'table','x':1,'y':1,'width':8,'height':2,'rows':[['Metric','Current','Prior'],['Revenue','18%','12%'],['Retention','92%','90%']],'header':True,'font':'Arial','font_size':18,'color':'14283F','header_fill':'236B8E','header_color':'FFFFFF','column_weights':[2,1,1]}]}]}
+    table_file = root/'table.pptx'; open_office_use.author(table_spec, table_file)
+    shape = Presentation(table_file).slides[0].shapes[0]; table = shape.table
+    assert table.cell(1,0).text == 'Revenue' and table.cell(0,1).text == 'Current' and table.first_row
+    assert [column.width for column in table.columns] == [Inches(4), Inches(2), Inches(2)]
+    assert table.cell(0,0).fill.fore_color.rgb == (0x23,0x6b,0x8e)
+    assert table.cell(0,0).text_frame.paragraphs[0].runs[0].font.bold
+    assert table.cell(1,0).text_frame.paragraphs[0].runs[0].font.size.pt == 18
+    assert Path(open_office_use.render(table_file, root/'table-render')).read_bytes().startswith(b'%PDF')
+    draft = root/'table-draft'; session.start(draft, source=table_file)
+    edited = session.replace_text(draft, 0, f'/slide[1]/table[@id={shape.shape_id}]/tr[2]/tc[2]', '18%', '21%')
+    updated = Presentation(edited['file']).slides[0].shapes[0].table
+    assert updated.cell(1,1).text == '21%' and updated.cell(1,1).text_frame.paragraphs[0].runs[0].font.size.pt == 18
+    for index, bad_table in enumerate([
+        {'rows':[['x'],['y','z']]}, {'rows':[['x','y']],'column_weights':[1]},
+        {'rows':[['x']],'header_fill':'000000'}, {'rows':[['x']],'header':1}]):
+        bad = {'slides':[{'layout':'blank','elements':[{'type':'table','x':0,'y':0,'width':4,'height':1,**bad_table}]}]}; bad_path=root/f'bad-table{index}.pptx'
+        try: open_office_use.author(bad, bad_path)
+        except ValueError: pass
+        else: raise AssertionError('Invalid slide table accepted')
+        assert not bad_path.exists()
     original = out.read_bytes(); appended = root/'appended.pptx'
     open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':4,'height':1,'text':'Append'}]}]}, appended, out)
     assert out.read_bytes() == original and len(Presentation(appended).slides) == 2
