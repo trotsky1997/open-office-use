@@ -655,12 +655,13 @@ test("coordinate input is bounded to the CSS viewport and invalidates observatio
 test("drag sends a pointer path and releases the button after failure", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
   const events = [];
-  let failMove = false;
+  let failMove = false, failPress = false;
   client.request = async (method, params) => {
     if (method === "attach") return {};
     if (params.method === "Page.getLayoutMetrics") return { cssVisualViewport: { clientWidth: 100, clientHeight: 80 } };
     if (params.method === "Input.dispatchMouseEvent") {
       events.push(params.commandParams);
+      if (failPress && params.commandParams.type === "mousePressed") throw new Error("press outcome unknown");
       if (failMove && params.commandParams.type === "mouseMoved" && params.commandParams.buttons === 1) throw new Error("move failed");
     }
     return {};
@@ -672,18 +673,22 @@ test("drag sends a pointer path and releases the button after failure", async ()
   failMove = true;
   await assert.rejects(tab.drag([10,10], [50,30]), /move failed/);
   assert.equal(events.at(-1).type, "mouseReleased");
+  failMove=false;failPress=true;
+  await assert.rejects(tab.drag([10,10], [50,30]), /press outcome unknown/);
+  assert.deepEqual([events.at(-1).type,events.at(-1).x,events.at(-1).y],["mouseReleased",10,10]);
   const count = events.length;
   await assert.rejects(tab.drag([10,10], [100,30]), /outside/);
   assert.equal(events.length, count);
 });
 
 test("CUA routes pointer paths, modifiers and screenshot images", async () => {
-  const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let fail=false,wheelTimeout=false;
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let fail=false,wheelTimeout=false,iabTimeout=false;
   client.request=async(method,params)=>{
     if(method==='attach')return {};
     if(params.method==='Page.getLayoutMetrics')return {cssVisualViewport:{clientWidth:100,clientHeight:80}};
+    if(params.method==='Input.synthesizeScrollGesture' && wheelTimeout)throw new Error('Timed out after 10000ms waiting for CDP command.');
     if(params.method==='Page.captureScreenshot')return {data:Buffer.from('png').toString('base64')};
-    if(params.method==='Input.dispatchMouseEvent') {events.push(params.commandParams);if(fail && params.commandParams.type==='mouseMoved' && params.commandParams.buttons===1)throw new Error('move failed');if(wheelTimeout && params.commandParams.type==='mouseWheel')throw new Error('Timed out after 10000ms waiting for CDP command.');}
+    if(params.method==='Input.dispatchMouseEvent') {events.push(params.commandParams);if(fail && params.commandParams.type==='mouseMoved' && params.commandParams.buttons===1)throw new Error('move failed');if(wheelTimeout && params.commandParams.type==='mouseWheel')throw new Error('Timed out after 10000ms waiting for CDP command.');if(iabTimeout && params.commandParams.type==='mouseWheel')throw new Error('IAB_BACKGROUND_SCROLL_TIMEOUT');}
     return {};
   };
   const tab=new OpenBrowserUseBrowser({client}).tab(1);
@@ -693,7 +698,7 @@ test("CUA routes pointer paths, modifiers and screenshot images", async () => {
   await tab.cua.drag({path:[{x:10,y:10},{x:20,y:15},{x:30,y:25}],keys:['Alt']});
   assert.deepEqual(events.filter(event=>event.type==='mouseMoved' && event.buttons===1).map(event=>[event.x,event.y,event.modifiers]),[[20,15,1],[30,25,1]]);
   await tab.cua.scroll({x:10,y:10,scrollX:2,scrollY:5,keypress:['Shift']});assert.deepEqual([events.at(-1).type,events.at(-1).deltaY,events.at(-1).modifiers],['mouseWheel',5,8]);
-  wheelTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);wheelTimeout=false;
+  wheelTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5}),/Wheel outcome unknown/);wheelTimeout=false;iabTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);iabTimeout=false;
   const image=await tab.cua.get_visible_screenshot();assert.ok(image instanceof Uint8Array);assert.equal(image.toBase64(),Buffer.from('png').toString('base64'));
   fail=true;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:2,y:2}]}),/move failed/);assert.equal(events.at(-1).type,'mouseReleased');
   const count=events.length;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:100,y:2}]}),/outside/);assert.equal(events.length,count);

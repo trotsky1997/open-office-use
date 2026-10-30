@@ -1790,8 +1790,8 @@ export class OpenBrowserUseTab {
     let x = from[0], y = from[1], pressed = false;
     await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
     try {
-      await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
       pressed = true;
+      await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
       for (let step = 1; step <= 5; step++) {
         x = from[0] + (to[0] - from[0]) * step / 5;
         y = from[1] + (to[1] - from[1]) * step / 5;
@@ -1812,11 +1812,13 @@ export class OpenBrowserUseTab {
     const options={...(expectedGeneration === undefined ? {} : {expectedGeneration}),...(frame ? {sessionId:frame.sessionId,visualPoint:{x,y}} : {})};
     if(frame) ({x,y}=frame.inputPoint);
     await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers },options);
-    if (modifiers || frame) {
-      try { await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseWheel",x,y,deltaX,deltaY,modifiers},options); }
-      catch (error) { if (error instanceof Error && /Timed out after \d+ms waiting for CDP command/.test(error.message)) throw new Error("Wheel outcome unknown after timeout; inspect the page before retrying",{cause:error}); throw error; }
+    try {
+      if (modifiers || frame) await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseWheel",x,y,deltaX,deltaY,modifiers},options);
+      else await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true },options);
+    } catch (error) {
+      if (error instanceof Error && /Timed out after \d+ms waiting for CDP command|IAB_BACKGROUND_SCROLL_TIMEOUT|IAB_INPUT_OUTCOME_UNKNOWN/.test(error.message)) throw new Error("Wheel outcome unknown after timeout; inspect the page before retrying",{cause:error});
+      throw error;
     }
-    else await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true },options);
     if (frame) {
       try { const result=await this.browser.cdp.call(this.id,"Runtime.evaluate",{contextId:frame.contextId,expression:"Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))),new Promise(r=>setTimeout(r,1000))])",awaitPromise:true},{sessionId:frame.sessionId,timeoutMs:3000,...(expectedGeneration === undefined ? {} : {expectedGeneration})}); if(isObject(result) && result.exceptionDetails) throw new Error("Frame rendering wait failed"); }
       catch (error) { throw new Error("Wheel was sent but its completion could not be observed; inspect the page before retrying",{cause:error}); }

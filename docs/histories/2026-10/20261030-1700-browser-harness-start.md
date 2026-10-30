@@ -329,3 +329,5 @@ DOM CUA 后台几何回退沿祖先滚动容器边界做保守矩形裁剪；处
 CSS 与语义定位器新增 inputValue，使用隔离 world 读取 input、textarea 和 select 的当前值，密码字段明确拒绝，单值限制 30000 字符；多选 select 返回浏览器 value 属性。SDK 70 项通过；Linux ARM64 Electron 44 实页验证跨进程文本框、文本域、下拉框、密码及不支持的控件；macOS Electron 44 和 Linux ARM64 Chromium 原生扩展验证跨进程文本框及拒绝情况。Windows 未测。
 
 Playwright 风格入口新增 evaluate，接受函数和单个 JSON 参数或表达式字符串，等待 Promise 并返回页面结果；函数执行于页面上下文，可修改页面且不能访问调用侧闭包。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44，以及 Linux ARM64 Chromium 原生扩展实页验证异步返回、特殊字符参数与错误传播。Windows 未测。
+
+直线拖拽在鼠标按下请求结果未知时尝试释放按钮，保留原错误；普通滚动、修饰键滚动和 Electron 后台滚动超时统一提示结果未知并要求观察后再操作，不重发滚轮。SDK 70 项通过，覆盖按下失败、普通滚动与 Electron 超时；Linux ARM64 Chromium 原生扩展和 Electron 44 完整实页回归通过。释放请求本身可能失败；macOS 和 Windows 本轮未测。
