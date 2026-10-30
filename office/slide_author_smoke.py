@@ -12,6 +12,8 @@ import open_office_use
 import officecli_backend
 import slide_text_check
 import session
+import notes
+import slides
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); image = root/'picture.png'; Image.new('RGB', (32, 20), '#2b8a91').save(image)
@@ -27,6 +29,25 @@ with tempfile.TemporaryDirectory() as tmp:
     assert slide.shapes[1].text_frame.paragraphs[0].runs[0].font.size.pt == 32
     assert slide.shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Teal illustration'
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    notes_file=root/'notes-authored.pptx'
+    notes_spec={'slides':[{'title':'First','notes':'Opening detail\nSecond paragraph'}, {'layout':'blank','notes':'Blank slide speaker notes'}, {'title':'No notes'}, {'title':'Empty notes','notes':''}]}
+    notes_spec_file=root/'notes-spec.json';notes_spec_file.write_text(json.dumps(notes_spec))
+    cli=Path(__file__).with_name('open_office_use.py')
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(notes_spec_file),'--out',str(notes_file)],capture_output=True,text=True,check=True)
+    assert notes.read(notes_file,1)['text']=='Opening detail\nSecond paragraph' and notes.read(notes_file,2)['text']=='Blank slide speaker notes'
+    assert not notes.read(notes_file,3)['has_notes_slide'] and notes.read(notes_file,4)['has_notes_slide']
+    code, validation, _=officecli_backend.invoke('validate',notes_file); assert code==0 and validation['success'],validation
+    found=slides.search_text(notes_file,'Second',scope='notes');assert len(found['matches'])==1 and found['matches'][0]['notes_paragraph']==2
+    notes_draft=root/'authored-notes-draft';session.start(notes_draft,source=notes_file)
+    session.replace_notes_text(notes_draft,0,1,2,'Second','Updated');assert session.read_notes(notes_draft,1,1)['text']=='Opening detail\nUpdated paragraph'
+    extended=root/'notes-extended.pptx';open_office_use.author({'slides':[{'title':'Added','notes':'Added speaker notes'}]},extended,notes_file)
+    assert notes.read(extended,1)['text']=='Opening detail\nSecond paragraph' and notes.read(extended,5)['text']=='Added speaker notes'
+    for index, bad in enumerate([12,'bad\rtext','bad\x00text','bad\ud800text','x'*100001]):
+        bad_file=root/f'bad-slide-notes-{index}.pptx'
+        try: open_office_use.author({'slides':[{'title':'Bad','notes':bad}]},bad_file)
+        except ValueError: pass
+        else: raise AssertionError('Invalid slide notes accepted')
+        assert not bad_file.exists()
     rich_spec={'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':7,'height':3,'font':'Arial','font_size':24,'color':'14283F','margins':{'left':0.2,'right':0.15,'top':0.1,'bottom':0.1},'vertical_align':'middle','auto_fit':'shrink','wrap':True,'paragraphs':[{'runs':[{'text':'Revenue '},{'text':'+18%','bold':True,'color':'236B8E','url':'https://example.com/report'}]},{'text':'Retention 92%','bullet':True,'level':0,'space_after':8},{'text':'Renewals improved','bullet':True,'level':1}]}]}]}
     rich=root/'rich.pptx'; rich_spec_path=root/'rich.json'; rich_spec_path.write_text(json.dumps(rich_spec))
     cli=Path(__file__).with_name('open_office_use.py'); call=subprocess.run([sys.executable,str(cli),'author','--spec',str(rich_spec_path),'--out',str(rich)],capture_output=True,text=True,check=True)

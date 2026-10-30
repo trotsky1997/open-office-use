@@ -319,3 +319,5 @@ Added authoring of fixed-list and same-sheet range-based spreadsheet dropdown va
 Added native workbook conditional-format authoring for numeric thresholds, formulas, color scales and data bars, preserving valid existing priority order. OfficeCLI validation and LibreOffice rendering covered representative rules; native Excel remains unverified.
 
 Word table authoring now supports rich runs, links and multiple paragraphs in cells using the same run validation as body text. Checked CLI, OOXML validation and LibreOffice rendering; native Word remains unverified.
+
+Added editable speaker notes to newly authored slides, including source-based appended slides. Verified notes search, targeted session edits, saved parts and OfficeCLI validation; native PowerPoint remains unverified.

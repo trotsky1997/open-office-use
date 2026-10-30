@@ -100,11 +100,15 @@ def replace_text(source, output, number, paragraph, find, replacement):
     return ooxml.edit_xml(source, output, part, edit)
 
 
+def validate_text(text):
+    if not isinstance(text, str) or len(text) > 100000: raise ValueError('Notes must be text of at most 100,000 characters')
+    if any((ord(c) < 32 and c not in '\n\t') or 0xd800 <= ord(c) <= 0xdfff or ord(c) in (0xfffe, 0xffff) for c in text): raise ValueError('Notes contain unsupported characters')
+
+
 def replace(source, output, number, text):
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
     if output.suffix.lower() != '.pptx': raise ValueError('Output must be a PPTX file')
-    if not isinstance(text, str) or len(text) > 100000: raise ValueError('Notes must be text of at most 100,000 characters')
-    if any(ord(c) < 32 and c not in '\n\t' for c in text): raise ValueError('Notes contain unsupported control characters')
+    validate_text(text)
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
     if not zipfile.is_zipfile(source): raise ValueError('Invalid PowerPoint package')
     if output.exists() or output.is_symlink(): raise FileExistsError(f'Output already exists: {output}')

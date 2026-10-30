@@ -167,7 +167,7 @@ The same `sheet_options` can create editable column or line charts:
 PowerPoint authoring also supports positioned elements and a custom slide size for new files:
 
 ```json
-{"slide_size":{"width":13.333,"height":7.5},"slides":[{"layout":"blank","background":"F5F8FC","elements":[
+{"slide_size":{"width":13.333,"height":7.5},"slides":[{"layout":"blank","background":"F5F8FC","notes":"Discuss the quarterly trend.\nHighlight the next steps.","elements":[
   {"type":"textbox","x":1,"y":0.7,"width":10,"height":1,"text":"Quarterly review","font_size":32,"font":"Arial","bold":true,"color":"14283F"},
   {"type":"rectangle","x":1,"y":2,"width":2,"height":0.1,"fill":"236B8E"},
   {"type":"table","x":1,"y":3,"width":7,"height":1.5,"rows":[["Metric","Value"],["Growth","18%"]],"header":true,"font_size":18,"header_fill":"236B8E","header_color":"FFFFFF","column_weights":[2,1]},
@@ -176,6 +176,8 @@ PowerPoint authoring also supports positioned elements and a custom slide size f
 ]}]}
 ```
 
+
+Each new slide can include a `notes` string for its editable speaker-notes body. Newlines create separate paragraphs; tabs are preserved. Notes may contain up to 100,000 characters, with control characters other than newline and tab rejected. Omitting `notes` leaves the new slide without a notes slide; an empty string creates an empty notes body. Notes are available through the existing notes read, search and session edit operations. Source-based authoring appends slides and uses a PowerPoint library round trip, so inspect existing presentation features after saving.
 
 For rich slide text, use `paragraphs` instead of `text` on a textbox:
 

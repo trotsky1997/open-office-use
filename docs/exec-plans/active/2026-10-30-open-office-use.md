@@ -216,3 +216,5 @@ Workbook authoring now creates bounded literal or same-sheet range dropdown vali
 Workbook authoring supports threshold and formula conditional fills, color scales and data bars. LibreOffice rendering shows representative styles; native Excel rendering remains unverified.
 
 Word table cells support formatted runs, hyperlinks and multiple aligned paragraphs. CLI and OfficeCLI validation and LibreOffice page rendering are covered; native Word remains unverified.
+
+Slide authoring now accepts speaker notes on each new slide; authored notes work with the existing read, search and targeted revision workflows.

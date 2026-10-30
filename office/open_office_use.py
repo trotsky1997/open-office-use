@@ -334,7 +334,8 @@ def append_slides(presentation, slides):
         return RGBColor.from_string(value.upper())
     image_bytes = 0; chart_count = 0; chart_points = 0
     for item in slides:
-        if not isinstance(item, dict) or set(item) - {'layout', 'title', 'body', 'background', 'elements'}: raise ValueError('Invalid slide properties')
+        if not isinstance(item, dict) or set(item) - {'layout', 'title', 'body', 'background', 'elements', 'notes'}: raise ValueError('Invalid slide properties')
+        if 'notes' in item: notes.validate_text(item['notes'])
         layout_name = item.get('layout', 'title_content')
         if layout_name == 'blank':
             matches = [layout for layout in presentation.slide_layouts if layout.name.casefold() == 'blank']
@@ -348,6 +349,10 @@ def append_slides(presentation, slides):
             if slide.shapes.title is None or 1 not in [placeholder.placeholder_format.idx for placeholder in slide.placeholders]: raise ValueError('Title and Content placeholders are unavailable')
             slide.shapes.title.text = item['title']; slide.placeholders[1].text = item.get('body', '')
         else: raise ValueError('Slide layout must be blank or title_content')
+        if 'notes' in item:
+            notes_frame = slide.notes_slide.notes_text_frame
+            if notes_frame is None: raise ValueError('Notes slide has no speaker notes placeholder')
+            notes_frame.text = item['notes']
         if 'background' in item:
             fill = slide.background.fill; fill.solid(); fill.fore_color.rgb = color(item['background'])
         elements = item.get('elements', [])
