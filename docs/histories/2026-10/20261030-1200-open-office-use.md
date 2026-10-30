@@ -323,3 +323,5 @@ Word table authoring now supports rich runs, links and multiple paragraphs in ce
 Added editable speaker notes to newly authored slides, including source-based appended slides. Verified notes search, targeted session edits, saved parts and OfficeCLI validation; native PowerPoint remains unverified.
 
 Grid reads and the viewer now report bounded conditional-format rule metadata and affected cells, including incomplete coverage. Rules are not evaluated and complete style details are not included.
+
+PowerPoint table authoring now supports rich cell paragraphs, styled runs and hyperlinks using the same logic as textboxes. Validated CLI, OfficeCLI, rendered output, text search and paragraph-specific editing; native PowerPoint remains unverified.

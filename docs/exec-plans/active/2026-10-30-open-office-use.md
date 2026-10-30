@@ -220,3 +220,5 @@ Word table cells support formatted runs, hyperlinks and multiple aligned paragra
 Slide authoring now accepts speaker notes on each new slide; authored notes work with the existing read, search and targeted revision workflows.
 
 Grid inspection now summarizes intersecting conditional-format rules and coverage, and the viewer warns when direct styles may differ from evaluated formatting.
+
+PowerPoint table cells accept formatted paragraphs and hyperlinks, and support search and targeted paragraph edits. LibreOffice rendering and OfficeCLI validation passed; native PowerPoint remains unverified.

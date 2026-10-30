@@ -332,6 +332,53 @@ def append_slides(presentation, slides):
     def color(value):
         if not isinstance(value, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', value): raise ValueError('Colors must be six-digit RGB values')
         return RGBColor.from_string(value.upper())
+    alignment = {'left': PP_ALIGN.LEFT, 'center': PP_ALIGN.CENTER, 'right': PP_ALIGN.RIGHT}
+    def validate_slide_paragraphs(paragraphs):
+        if not isinstance(paragraphs, list) or not 1 <= len(paragraphs) <= 100: raise ValueError('Slide paragraphs must contain 1 to 100 entries')
+        for para in paragraphs:
+            if not isinstance(para, dict) or set(para) - {'text', 'runs', 'align', 'bullet', 'level', 'space_after'} or ('text' in para) == ('runs' in para): raise ValueError('Each slide paragraph requires text or runs')
+            if 'align' in para and (not isinstance(para['align'], str) or para['align'] not in alignment): raise ValueError('Invalid slide paragraph alignment')
+            if 'bullet' in para and not isinstance(para['bullet'], bool): raise ValueError('Slide bullet must be a boolean')
+            if 'level' in para and (isinstance(para['level'], bool) or not isinstance(para['level'], int) or not 0 <= para['level'] <= 8): raise ValueError('Slide paragraph level must be 0 to 8')
+            if 'space_after' in para: number(para['space_after'], 'space_after', 0, 400)
+            runs = [{'text': para['text']}] if 'text' in para else para['runs']
+            if not isinstance(runs, list) or not 1 <= len(runs) <= 100: raise ValueError('Slide paragraph requires 1 to 100 runs')
+            for run in runs:
+                if not isinstance(run, dict) or set(run) - {'text', 'font', 'font_size', 'color', 'bold', 'italic', 'underline', 'url'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(c in run['text'] for c in '\r\n'): raise ValueError('Invalid slide text run')
+                for key in ('bold', 'italic', 'underline'):
+                    if key in run and not isinstance(run[key], bool): raise ValueError(f'{key} must be a boolean')
+                if 'font' in run and (not isinstance(run['font'], str) or not 1 <= len(run['font']) <= 100): raise ValueError('Font must be a name of at most 100 characters')
+                if 'font_size' in run: number(run['font_size'], 'font_size', 1, 400)
+                if 'color' in run: color(run['color'])
+                if 'url' in run:
+                    url = run['url']
+                    if not isinstance(url, str) or len(url) > 2048 or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url): raise ValueError('Invalid hyperlink URL')
+                    try: parsed = urlsplit(url)
+                    except ValueError: raise ValueError('Invalid hyperlink URL') from None
+                    if parsed.scheme.lower() not in ('http', 'https', 'mailto') or parsed.scheme.lower() in ('http', 'https') and not parsed.hostname or parsed.scheme.lower() == 'mailto' and not parsed.path: raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
+    def write_slide_paragraphs(frame, paragraphs, defaults):
+        frame.clear()
+        for index, spec in enumerate(paragraphs):
+            paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+            if 'align' in spec or 'align' in defaults: paragraph.alignment = alignment[spec.get('align', defaults.get('align'))]
+            level = spec.get('level', 0); paragraph.level = level
+            if 'space_after' in spec: paragraph.space_after = Pt(spec['space_after'])
+            properties = paragraph._p.get_or_add_pPr()
+            if spec.get('bullet', False):
+                properties.set('marL', str(Inches(0.3 * (level + 1)))); properties.set('indent', str(-Inches(0.18)))
+                bullet = PptxElement('a:buChar'); bullet.set('char', '•'); properties.append(bullet)
+            else: properties.append(PptxElement('a:buNone'))
+            runs = [{'text': spec['text']}] if 'text' in spec else spec['runs']
+            for run_spec in runs:
+                run = paragraph.add_run(); run.text = run_spec['text']; font = run.font
+                for key in ('font_size', 'font', 'color', 'bold', 'italic', 'underline'):
+                    value = run_spec.get(key, defaults.get(key))
+                    if value is None: continue
+                    if key == 'font_size': font.size = Pt(value)
+                    elif key == 'font': font.name = value
+                    elif key == 'color': font.color.rgb = color(value)
+                    else: setattr(font, key, value)
+                if 'url' in run_spec: run.hyperlink.address = run_spec['url']
     image_bytes = 0; chart_count = 0; chart_points = 0
     for item in slides:
         if not isinstance(item, dict) or set(item) - {'layout', 'title', 'body', 'background', 'elements', 'notes'}: raise ValueError('Invalid slide properties')
@@ -388,29 +435,7 @@ def append_slides(presentation, slides):
                 if 'margins' in element:
                     if not isinstance(margins, dict) or set(margins) - {'left', 'right', 'top', 'bottom'}: raise ValueError('Invalid textbox margins')
                     for key, value in margins.items(): number(value, 'margin ' + key, 0, 5)
-                if paragraphs is not None:
-                    if not isinstance(paragraphs, list) or not 1 <= len(paragraphs) <= 100: raise ValueError('Textbox paragraphs must contain 1 to 100 entries')
-                    for para in paragraphs:
-                        if not isinstance(para, dict) or set(para) - {'text', 'runs', 'align', 'bullet', 'level', 'space_after'} or ('text' in para) == ('runs' in para): raise ValueError('Each slide paragraph requires text or runs')
-                        if 'align' in para and (not isinstance(para['align'], str) or para['align'] not in alignment): raise ValueError('Invalid slide paragraph alignment')
-                        if 'bullet' in para and not isinstance(para['bullet'], bool): raise ValueError('Slide bullet must be a boolean')
-                        if 'level' in para and (isinstance(para['level'], bool) or not isinstance(para['level'], int) or not 0 <= para['level'] <= 8): raise ValueError('Slide paragraph level must be 0 to 8')
-                        if 'space_after' in para: number(para['space_after'], 'space_after', 0, 400)
-                        runs = [{'text': para['text']}] if 'text' in para else para['runs']
-                        if not isinstance(runs, list) or not 1 <= len(runs) <= 100: raise ValueError('Slide paragraph requires 1 to 100 runs')
-                        for run in runs:
-                            if not isinstance(run, dict) or set(run) - {'text', 'font', 'font_size', 'color', 'bold', 'italic', 'underline', 'url'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(c in run['text'] for c in '\r\n'): raise ValueError('Invalid slide text run')
-                            for key in ('bold', 'italic', 'underline'):
-                                if key in run and not isinstance(run[key], bool): raise ValueError(f'{key} must be a boolean')
-                            if 'font' in run and (not isinstance(run['font'], str) or not 1 <= len(run['font']) <= 100): raise ValueError('Font must be a name of at most 100 characters')
-                            if 'font_size' in run: number(run['font_size'], 'font_size', 1, 400)
-                            if 'color' in run: color(run['color'])
-                            if 'url' in run:
-                                url = run['url']
-                                if not isinstance(url, str) or len(url) > 2048 or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url): raise ValueError('Invalid hyperlink URL')
-                                try: parsed = urlsplit(url)
-                                except ValueError: raise ValueError('Invalid hyperlink URL') from None
-                                if parsed.scheme.lower() not in ('http', 'https', 'mailto') or parsed.scheme.lower() in ('http', 'https') and not parsed.hostname or parsed.scheme.lower() == 'mailto' and not parsed.path: raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
+                if paragraphs is not None: validate_slide_paragraphs(paragraphs)
                 elif 'paragraphs' in element: raise ValueError('Textbox paragraphs must be a list')
                 shape = slide.shapes.add_textbox(x, y, width, height); frame = shape.text_frame
                 frame.word_wrap = element.get('wrap', True)
@@ -432,29 +457,7 @@ def append_slides(presentation, slides):
                                     elif key == 'font': target.name = value
                                     elif key == 'color': target.color.rgb = color(value)
                                     else: setattr(target, key, value)
-                else:
-                    shape.text_frame.clear()
-                    for index, spec in enumerate(paragraphs):
-                        paragraph = shape.text_frame.paragraphs[0] if index == 0 else shape.text_frame.add_paragraph()
-                        if 'align' in spec or 'align' in element: paragraph.alignment = alignment[spec.get('align', element.get('align'))]
-                        level = spec.get('level', 0); paragraph.level = level
-                        if 'space_after' in spec: paragraph.space_after = Pt(spec['space_after'])
-                        properties = paragraph._p.get_or_add_pPr()
-                        if spec.get('bullet', False):
-                            properties.set('marL', str(Inches(0.3 * (level + 1)))); properties.set('indent', str(-Inches(0.18)))
-                            bullet = PptxElement('a:buChar'); bullet.set('char', '•'); properties.append(bullet)
-                        else: properties.append(PptxElement('a:buNone'))
-                        runs = [{'text': spec['text']}] if 'text' in spec else spec['runs']
-                        for run_spec in runs:
-                            run = paragraph.add_run(); run.text = run_spec['text']; font = run.font
-                            for key in ('font_size', 'font', 'color', 'bold', 'italic', 'underline'):
-                                value = run_spec.get(key, element.get(key))
-                                if value is None: continue
-                                if key == 'font_size': font.size = Pt(value)
-                                elif key == 'font': font.name = value
-                                elif key == 'color': font.color.rgb = color(value)
-                                else: setattr(font, key, value)
-                            if 'url' in run_spec: run.hyperlink.address = run_spec['url']
+                else: write_slide_paragraphs(shape.text_frame, paragraphs, element)
             elif kind == 'rectangle':
                 if 'fill' not in element: raise ValueError('Rectangle requires a fill color')
                 shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, width, height)
@@ -464,7 +467,13 @@ def append_slides(presentation, slides):
                 if not isinstance(rows, list) or not 1 <= len(rows) <= 50 or any(not isinstance(row, list) for row in rows): raise ValueError('Slide table requires 1 to 50 rows')
                 columns = len(rows[0])
                 if not 1 <= columns <= 20 or len(rows) * columns > 500 or any(len(row) != columns for row in rows): raise ValueError('Slide table must be rectangular with at most 500 cells and 20 columns')
-                if any(not isinstance(value, str) or len(value) > 10000 for row in rows for value in row): raise ValueError('Slide table cells must be text of at most 10,000 characters')
+                for row in rows:
+                    for value in row:
+                        if isinstance(value, str):
+                            if len(value) > 10000: raise ValueError('Slide table text exceeds 10,000 characters')
+                        elif isinstance(value, dict) and set(value) == {'paragraphs'}:
+                            validate_slide_paragraphs(value['paragraphs'])
+                        else: raise ValueError('Slide table cells require text or paragraphs')
                 if not isinstance(header, bool): raise ValueError('Table header must be a boolean')
                 if not header and ('header_fill' in element or 'header_color' in element): raise ValueError('Header colors require a header row')
                 if 'font_size' in element: number(element['font_size'], 'font_size', 1, 400)
@@ -485,16 +494,24 @@ def append_slides(presentation, slides):
                         table.columns[index].width = end - previous; previous = end
                 for row_index, values in enumerate(rows):
                     for column_index, text in enumerate(values):
-                        cell = table.cell(row_index, column_index); cell.text = text; cell.text_frame.word_wrap = True
+                        cell = table.cell(row_index, column_index); cell.text_frame.word_wrap = True
                         is_header = header and row_index == 0
+                        if isinstance(text, dict):
+                            defaults = {key:element[key] for key in ('font_size','font','color') if key in element}
+                            if is_header:
+                                defaults['bold'] = True
+                                if 'header_color' in element: defaults['color'] = element['header_color']
+                            write_slide_paragraphs(cell.text_frame, text['paragraphs'], defaults)
+                        else: cell.text = text
                         if is_header and 'header_fill' in element: cell.fill.solid(); cell.fill.fore_color.rgb = color(element['header_fill'])
-                        for paragraph in cell.text_frame.paragraphs:
-                            for run in paragraph.runs:
-                                if 'font_size' in element: run.font.size = Pt(element['font_size'])
-                                if 'font' in element: run.font.name = element['font']
-                                ink = element.get('header_color') if is_header and 'header_color' in element else element.get('color')
-                                if ink is not None: run.font.color.rgb = color(ink)
-                                if is_header: run.font.bold = True
+                        if isinstance(text, str):
+                            for paragraph in cell.text_frame.paragraphs:
+                                for run in paragraph.runs:
+                                    if 'font_size' in element: run.font.size = Pt(element['font_size'])
+                                    if 'font' in element: run.font.name = element['font']
+                                    ink = element.get('header_color') if is_header and 'header_color' in element else element.get('color')
+                                    if ink is not None: run.font.color.rgb = color(ink)
+                                    if is_header: run.font.bold = True
             elif kind == 'chart':
                 chart_count += 1
                 if chart_count > 20: raise ValueError('At most 20 slide charts are supported per request')

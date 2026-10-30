@@ -107,9 +107,24 @@ with tempfile.TemporaryDirectory() as tmp:
     edited = session.replace_text(draft, 0, f'/slide[1]/table[@id={shape.shape_id}]/tr[2]/tc[2]', '18%', '21%')
     updated = Presentation(edited['file']).slides[0].shapes[0].table
     assert updated.cell(1,1).text == '21%' and updated.cell(1,1).text_frame.paragraphs[0].runs[0].font.size.pt == 18
+    rich_table_spec={'slides':[{'layout':'blank','elements':[{'type':'table','x':1,'y':1,'width':8,'height':2,'header':True,'header_fill':'236B8E','header_color':'FFFFFF','font':'Arial','font_size':18,'rows':[[{'paragraphs':[{'runs':[{'text':'Metric'},{'text':' detail','italic':True}]}]},'Value'],['Growth',{'paragraphs':[{'runs':[{'text':'18%','bold':True,'color':'14804A'},{'text':' source','url':'https://example.com/source'}]},{'text':'Year over year','align':'right'}]}]]}]}]}
+    rich_table=root/'rich-table.pptx';rich_table_json=root/'rich-table.json';rich_table_json.write_text(json.dumps(rich_table_spec))
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(rich_table_json),'--out',str(rich_table)],capture_output=True,text=True,check=True)
+    rich_shape=Presentation(rich_table).slides[0].shapes[0];rich_header=rich_shape.table.cell(0,0).text_frame.paragraphs[0];rich_cell=rich_shape.table.cell(1,1).text_frame
+    assert rich_header.text=='Metric detail' and all(run.font.bold and str(run.font.color.rgb)=='FFFFFF' for run in rich_header.runs) and rich_header.runs[1].font.italic
+    assert [paragraph.text for paragraph in rich_cell.paragraphs]==['18% source','Year over year']
+    assert rich_cell.paragraphs[0].runs[0].font.bold and str(rich_cell.paragraphs[0].runs[0].font.color.rgb)=='14804A'
+    assert rich_cell.paragraphs[0].runs[1].hyperlink.address=='https://example.com/source' and rich_cell.paragraphs[0].runs[1].font.name=='Arial'
+    code, validation, _=officecli_backend.invoke('validate',rich_table); assert code==0 and validation['success'],validation
+    rich_table_pdf=open_office_use.render(rich_table,root/'rich-table-render');rich_table_text=subprocess.run(['pdftotext',rich_table_pdf,'-'],capture_output=True,text=True,check=True).stdout
+    assert 'Metric detail' in rich_table_text and 'Year over year' in rich_table_text
+    found=slides.search_text(rich_table,'Year over year');assert len(found['matches'])==1
+    rich_table_draft=root/'rich-table-draft';session.start(rich_table_draft,source=rich_table)
+    edited=session.replace_text(rich_table_draft,0,f'/slide[1]/table[@id={rich_shape.shape_id}]/tr[2]/tc[2]/paragraph[2]','Year over year','Annual comparison')
+    assert Presentation(edited['file']).slides[0].shapes[0].table.cell(1,1).text_frame.paragraphs[1].text=='Annual comparison'
     for index, bad_table in enumerate([
         {'rows':[['x'],['y','z']]}, {'rows':[['x','y']],'column_weights':[1]},
-        {'rows':[['x']],'header_fill':'000000'}, {'rows':[['x']],'header':1}]):
+        {'rows':[['x']],'header_fill':'000000'}, {'rows':[['x']],'header':1}, {'rows':[[{'paragraphs':[{'runs':[{'text':'x','url':'javascript:x'}]}]}]]}]):
         bad = {'slides':[{'layout':'blank','elements':[{'type':'table','x':0,'y':0,'width':4,'height':1,**bad_table}]}]}; bad_path=root/f'bad-table{index}.pptx'
         try: open_office_use.author(bad, bad_path)
         except ValueError: pass

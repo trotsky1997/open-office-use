@@ -23,3 +23,5 @@ Positioned textboxes support rich paragraphs and runs with bullets, levels, font
 Textbox margins, vertical alignment, wrapping and auto-fit modes can be set during authoring. Inspect rendered slides: auto-fit behavior depends on the application, and text beyond saved shape bounds may be flagged.
 
 When authoring new slides, set `notes` on each slide to create editable speaker notes; newlines separate paragraphs. Use notes read/search and session edits for review.
+
+Slide table cells accept strings or `{"paragraphs":[...]}` with the same rich runs, links and paragraph settings as textboxes. Inspect wrapping and use a paragraph-specific path for targeted edits.
