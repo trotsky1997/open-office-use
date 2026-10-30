@@ -80,3 +80,7 @@ Added a side-by-side rendered comparison of a selected revision and latest revis
 ## Viewer change details
 
 Added on-demand text and OOXML part change details to the visual comparison viewer. The request identifies both revisions and the UI clears old results when the pair changes. Tested real Chrome display, version updates and invalid revision requests. Text views remain bounded and omit some semantics.
+
+## Worksheet grid
+
+Added bounded XLSX worksheet listing and grid editing through the local viewer and MCP. Real OfficeCLI and Chrome checks cover multiple cells, formulas, clearing cells, stale updates, retained unsaved input and origin restriction. Declared array, data-table and shared formula ranges are protected from grid edits. Rich formatting, other advanced formula structures, large sheets and live Office interoperability remain open.

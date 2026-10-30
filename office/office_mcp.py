@@ -99,6 +99,24 @@ def session_selection_image(directory: str) -> Image:
 
 
 @server.tool()
+def session_sheets(directory: str, base_revision: int) -> dict[str, Any]:
+    """List worksheet names in the latest saved XLSX session revision."""
+    return session.sheet_names(directory, base_revision)
+
+
+@server.tool()
+def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range: str) -> dict[str, Any]:
+    """Read up to 200 cells for version-bound grid editing."""
+    return session.read_grid(directory, base_revision, sheet, cell_range)
+
+
+@server.tool()
+def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
+    """Apply changed cell values or formulas atomically in a new revision."""
+    return session.edit_grid(directory, base_revision, sheet, cell_range, changes)
+
+
+@server.tool()
 def session_edit_target(directory: str, base_revision: int, path: str) -> dict[str, Any]:
     """Read one editable element in the latest revision before editing it."""
     return session.edit_target(directory, base_revision, path)

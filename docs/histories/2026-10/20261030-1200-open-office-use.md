@@ -37,3 +37,7 @@ Added range-based spreadsheet formula, value and cache comparison through CLI an
 Added side-by-side visual review of a historical and latest revision in the viewer, with live latest-side refresh. Verified browser interaction and two-tab updates.
 
 Connected bounded text and OOXML part comparison to the side-by-side viewer; verified browser display and clearing on a newer revision.
+
+Added version-bound XLSX grid editing in viewer and MCP. Verified real formula and cell changes, stale input retention and origin checks.
+
+Added formula-range protection for array, data-table and shared formula spans during grid editing, including anchors outside the displayed range.

@@ -28,7 +28,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
 #comparison-text,#comparison-parts{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
-input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}
+input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
 #edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
@@ -48,6 +48,12 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <button type="submit" id="edit-save" disabled>Save as new revision</button>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
+<details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
+<button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
+<label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
+<div id="grid-output" class="grid-scroll"></div><button type="submit" id="grid-save" disabled>Save changed cells</button>
+<p>Up to 200 cells. Enter formulas beginning with =. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
+<p id="grid-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
 <label>Left % <input name="left" type="number" min="0" max="100" step="0.1" required value="10"></label>
@@ -62,7 +68,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -103,6 +109,69 @@ document.getElementById('candidate-search').addEventListener('click', async () =
   document.getElementById('candidate-status').textContent = result.candidates.length ? `${result.candidates.length} candidate(s). Verify the target; matches may be incomplete.` : 'No candidates found. Try a different selection or enter a path.';
  } catch (error) { if (epoch === selectionEpoch) document.getElementById('candidate-status').textContent=`Candidate error: ${error.message}`; }
  finally { if (epoch === selectionEpoch && pinned === null && savedSelection) button.disabled=false; }
+});
+function invalidateGrid(message) {
+ gridLoaded=null; document.getElementById('grid-save').disabled=true;
+ document.querySelectorAll('#grid-output input').forEach(input=>input.readOnly=true);
+ if (message) document.getElementById('grid-status').textContent=message;
+}
+for (const id of ['grid-sheet','grid-range']) document.getElementById(id).addEventListener('change', () => invalidateGrid('Reload the range before saving.'));
+document.getElementById('grid-sheets').addEventListener('click', async () => {
+ const button=document.getElementById('grid-sheets'); button.disabled=true; invalidateGrid('Loading sheets…'); const revision=current;
+ try {
+  const response=await fetch('sheets', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
+  const data=await response.json(); if (!response.ok) throw new Error(data.error || 'Could not list sheets');
+  if (data.revision !== current || pinned !== null) throw new Error('Version changed; list sheets again.');
+  const select=document.getElementById('grid-sheet'); select.replaceChildren(...data.sheets.map(name=>{const option=document.createElement('option');option.value=name;option.textContent=name;return option;}));
+  document.getElementById('grid-status').textContent=`${data.sheets.length} sheet(s) available at revision ${revision}.`;
+ } catch(error) { document.getElementById('grid-status').textContent=`Sheet error: ${error.message}`; }
+ finally { button.disabled=pinned !== null; }
+});
+document.getElementById('grid-load').addEventListener('click', async () => {
+ const button=document.getElementById('grid-load'); button.disabled=true; invalidateGrid('Loading range…');
+ const revision=current, sheet=document.getElementById('grid-sheet').value, cell_range=document.getElementById('grid-range').value;
+ try {
+  const response=await fetch('grid', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,sheet,cell_range})});
+  const data=await response.json(); if (!response.ok) throw new Error(data.error || 'Could not load range');
+  if (data.revision !== current || pinned !== null || sheet !== document.getElementById('grid-sheet').value || cell_range !== document.getElementById('grid-range').value) throw new Error('Version or range changed; load again.');
+  const table=document.createElement('table'); const head=document.createElement('thead'), header=document.createElement('tr');
+  header.appendChild(document.createElement('th'));
+  for (const cell of data.rows[0]) { const th=document.createElement('th'); th.scope='col'; th.textContent=cell.cell.replace(/[0-9]+$/, ''); header.appendChild(th); }
+  head.appendChild(header); table.appendChild(head); const body=document.createElement('tbody');
+  for (const row of data.rows) {
+   const tr=document.createElement('tr'); const th=document.createElement('th'); th.scope='row'; th.textContent=row[0].cell.match(/[0-9]+$/)[0]; tr.appendChild(th);
+   for (const cell of row) {
+    const td=document.createElement('td'), input=document.createElement('input'); input.type='text'; input.maxLength=4000;
+    const formula=cell.formula, value=typeof formula==='string' ? formula : (formula && typeof formula==='object' ? (formula.text || '[complex formula]') : (cell.value == null ? '' : String(cell.value)));
+    input.value=value; input.dataset.baseline=value; input.dataset.cell=cell.cell; input.dataset.editable=String(cell.editable);
+    input.readOnly=!cell.editable; input.setAttribute('aria-label', `${sheet} ${cell.cell}`);
+    if (typeof formula==='string') input.title=`Cached result: ${cell.value == null ? 'unknown' : cell.value}`;
+    if (!cell.editable) input.title='Protected formula range: use a supported workflow';
+    td.appendChild(input); tr.appendChild(td);
+   }
+   body.appendChild(tr);
+  }
+  table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range};
+  document.getElementById('grid-save').disabled=false; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.`;
+ } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
+ finally { button.disabled=pinned !== null; }
+});
+document.getElementById('grid-form').addEventListener('submit', async event => {
+ event.preventDefault(); if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
+ const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output input')];
+ const changes=inputs.filter(input=>input.dataset.editable==='true' && input.value!==input.dataset.baseline).map(input=>({cell:input.dataset.cell,value:input.value}));
+ if (!changes.length) { document.getElementById('grid-status').textContent='No changed cells.'; return; }
+ const body=JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,changes});
+ if (new TextEncoder().encode(body).length > 20000) { document.getElementById('grid-status').textContent='Changes exceed 20 KB; save fewer cells at a time.'; return; }
+ const button=document.getElementById('grid-save'); button.disabled=true; inputs.forEach(input=>input.readOnly=true);
+ try {
+  const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
+  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}.`); await refresh();
+ } catch(error) {
+  document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
+  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; }
+ }
 });
 function invalidateEdit(message) {
  loaded=null; document.getElementById('edit-save').disabled=true;
@@ -190,7 +259,8 @@ function display(state, live) {
  }
  document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; viewKey=key; clearCandidates();
  document.getElementById('selection').textContent = live ? 'Drag on a page to save a selection for the agent.' : 'Selections are available on the latest revision.';
- document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load').forEach(element => element.disabled=!live);
+ document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load, #grid-sheets, #grid-sheet, #grid-range, #grid-load').forEach(element => element.disabled=!live);
+ if (!live) invalidateGrid('Return to the latest revision to edit cells.');
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
@@ -211,7 +281,8 @@ function displayComparison(state) {
  document.getElementById('changes-status').textContent='';
  document.getElementById('comparison-text').textContent=''; document.getElementById('comparison-parts').textContent='';
  document.getElementById('selection').textContent='Selections are available on the latest revision.';
- document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load').forEach(element => element.disabled=true);
+ document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load, #grid-sheets, #grid-sheet, #grid-range, #grid-load').forEach(element => element.disabled=true);
+ invalidateGrid('Return to the latest revision to edit cells.');
  invalidateEdit('Return to the latest revision to edit.');
 }
 document.getElementById('load-changes').addEventListener('click', async () => {
@@ -256,7 +327,9 @@ async function refresh() {
   const response = await fetch('state', {cache:'no-store'});
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
+  document.getElementById('grid-panel').hidden=state.format !== 'xlsx';
   if (state.revision !== current) {
+   if (gridLoaded) invalidateGrid('Version changed; copy unsaved edits and reload the range.');
    if (loaded) invalidateEdit('Version changed; load the element again.');
    const select=document.getElementById('restore-revision'); const previous=select.value;
    select.replaceChildren(...state.revisions.map(revision => {const option=document.createElement('option'); option.value=revision; option.textContent=`Revision ${revision}`; return option;}));
@@ -319,7 +392,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
@@ -357,11 +430,23 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path'}:
                                 raise ValueError('Element requires base_revision and path')
                             saved = session.edit_target(directory, payload['base_revision'], payload['path'])
+                        elif route.endswith('/sheets'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision'}:
+                                raise ValueError('Sheet listing requires base_revision')
+                            saved = session.sheet_names(directory, payload['base_revision'])
+                        elif route.endswith('/grid'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range'}:
+                                raise ValueError('Grid requires base_revision, sheet and cell_range')
+                            saved = session.read_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'])
+                        elif route.endswith('/grid-edit'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'changes'}:
+                                raise ValueError('Grid edit requires base_revision, sheet, cell_range and changes')
+                            saved = session.edit_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['changes'])
                         else:
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'mode', 'value'}:
                                 raise ValueError('Edit requires base_revision, path, mode and value')
                             saved = session.edit(directory, payload['base_revision'], payload['path'], payload['mode'], payload['value'])
-                    self.send(200, json.dumps(saved).encode(), 'application/json')
+                    self.send(200, json.dumps(saved, default=str).encode(), 'application/json')
                 except (ValueError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
                     self.send(400, json.dumps({'error': str(exc)}).encode(), 'application/json')
 
@@ -410,7 +495,7 @@ def serve(directory, preview, port=0, render=None):
                                 if index >= len(pages):
                                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                                 self.send(200, Path(pages[index]).read_bytes(), 'image/png'); return
-                            data = {'revision': rev, 'pages': len(pages),
+                            data = {'revision': rev, 'pages': len(pages), 'format': state['format'],
                                     'revisions': [item['revision'] for item in state['revisions']]}
                             if comparison:
                                 latest = state['latest_revision']

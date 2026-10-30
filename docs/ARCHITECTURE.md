@@ -322,3 +322,5 @@ The viewer can search a saved visual selection for text-based element candidates
 XLSX `compare-cells` and MCP `compare_cells` compare bounded saved-cell ranges, returning formula, value and type changes with unknown cache freshness. Styling and workbook-wide structure remain outside this view.
 
 The comparison viewer can request bounded text and OOXML part differences for its explicit revision pair; the client clears those results when the displayed pair changes.
+
+XLSX sessions expose worksheet listing and bounded 200-cell grid reads and atomic edits through the viewer and MCP. Only changed cells are submitted; stale edits are rejected and the viewer retains unsaved text in read-only inputs. Complex formulas and format fidelity need separate review.

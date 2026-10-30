@@ -18,7 +18,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_edit_target', 'session_edit', 'compare_cells'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_edit_target', 'session_edit', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid'}
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
@@ -76,6 +76,15 @@ async def main():
                 calculated = root / 'calculated.xlsx'
                 calc = await session.call_tool('recalculate_workbook', {'file': str(original), 'output': str(calculated)})
                 assert not calc.isError, calc
+                grid_draft = root / 'grid-draft'
+                grid_started = await session.call_tool('start_session', {'directory': str(grid_draft), 'source': str(original)})
+                assert not grid_started.isError, grid_started
+                sheets = await session.call_tool('session_sheets', {'directory': str(grid_draft), 'base_revision': 0})
+                assert not sheets.isError and sheets.structuredContent['sheets'] == ['Sheet'], sheets
+                grid = await session.call_tool('session_read_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2'})
+                assert not grid.isError and grid.structuredContent['rows'][1][0]['formula'] == '=A1*3', grid
+                saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
+                assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1, saved_grid
                 cells = await session.call_tool('read_cells', {'file': str(calculated), 'sheet': 'Sheet', 'cell_range': 'A1:A2'})
                 assert not cells.isError and cells.structuredContent['rows'][1][0]['value'] == 12, cells
                 diff = await session.call_tool('compare_cells', {'before': str(original), 'after': str(calculated), 'sheet': 'Sheet', 'cell_range': 'A1:A2'})

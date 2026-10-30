@@ -6,7 +6,11 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from openpyxl import load_workbook
+from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
+
 import officecli_backend
+import spreadsheet
 
 FORMATS = ('.docx', '.xlsx', '.pptx')
 
@@ -213,3 +217,95 @@ def edit(directory, base_revision, path, mode, value):
     if mode == 'formula' and (not value.startswith('=') or len(value) < 2):
         raise ValueError('A formula must start with = and contain an expression')
     return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])
+
+
+def grid_bounds(cell_range):
+    try:
+        min_col, min_row, max_col, max_row = range_boundaries(cell_range)
+        if min_col is None or min_row is None or max_col is None or max_row is None:
+            raise ValueError
+        if (min_col < 1 or min_row < 1 or max_col > 16384 or max_row > 1048576
+                or min_col > max_col or min_row > max_row
+                or (max_col - min_col + 1) * (max_row - min_row + 1) > 200):
+            raise ValueError
+        return min_col, min_row, max_col, max_row
+    except (TypeError, ValueError):
+        raise ValueError('Specify a valid rectangular range of at most 200 cells') from None
+
+
+def read_grid(directory, base_revision, sheet, cell_range):
+    if not isinstance(sheet, str) or not sheet or '/' in sheet or '\x00' in sheet:
+        raise ValueError('Invalid sheet name')
+    min_col, min_row, _, _ = grid_bounds(cell_range)
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx':
+        raise ValueError('Grid editing requires an XLSX session')
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    result = spreadsheet.read_range(source, sheet, cell_range)
+    protected = spreadsheet.protected_formula_ranges(source, sheet)
+    rows = []
+    for row_index, row in enumerate(result['rows']):
+        cells = []
+        for col_index, cell in enumerate(row):
+            col, row_number = min_col + col_index, min_row + row_index
+            inside = any(c1 <= col <= c2 and r1 <= row_number <= r2 for c1, r1, c2, r2 in protected)
+            cells.append({'cell': f'{get_column_letter(col)}{row_number}', **cell,
+                          'editable': not inside and not isinstance(cell.get('formula'), dict)})
+        rows.append(cells)
+    latest = info(directory)['latest_revision']
+    if base_revision != latest:
+        raise ValueError(f'Revision conflict: latest revision is {latest}')
+    return {'revision': base_revision, 'sheet': sheet, 'range': cell_range,
+            'rows': rows, 'cache_freshness': 'unknown'}
+
+
+def edit_grid(directory, base_revision, sheet, cell_range, changes):
+    if not isinstance(changes, list) or not changes or len(changes) > 200:
+        raise ValueError('Provide 1 to 200 changed cells')
+    grid = read_grid(directory, base_revision, sheet, cell_range)
+    min_col, min_row, max_col, max_row = grid_bounds(cell_range)
+    original = {cell['cell']: cell for row in grid['rows'] for cell in row}
+    seen, operations = set(), []
+    for change in changes:
+        if not isinstance(change, dict) or set(change) != {'cell', 'value'}:
+            raise ValueError('Each change requires cell and value')
+        address, value = change['cell'], change['value']
+        match = re.fullmatch(r'([A-Za-z]{1,3})([1-9][0-9]{0,6})', address) if isinstance(address, str) else None
+        if match is None:
+            raise ValueError('Invalid cell address')
+        col, row = column_index_from_string(match.group(1)), int(match.group(2))
+        address = match.group(1).upper() + str(row)
+        if not (min_col <= col <= max_col and min_row <= row <= max_row) or address in seen:
+            raise ValueError('Cell is outside the range or repeated')
+        if not original[address]['editable']:
+            raise ValueError('Array, data-table or shared formula ranges are not supported by grid editing')
+        if not isinstance(value, str) or len(value) > 4000:
+            raise ValueError('Cell values must be text of at most 4,000 characters')
+        if value.lstrip().startswith('=') and not value.startswith('='):
+            raise ValueError('Formula expressions must begin with =')
+        if value == '=':
+            raise ValueError('A formula requires an expression')
+        seen.add(address)
+        mode = 'formula' if value.startswith('=') else 'value'
+        operations.append({'command': 'set', 'path': f'/{sheet}/{address}', 'props': {mode: value}})
+    return apply(directory, base_revision, operations)
+
+
+def sheet_names(directory, base_revision):
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx':
+        raise ValueError('Worksheet listing requires an XLSX session')
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    workbook = load_workbook(source, read_only=True, data_only=False)
+    try:
+        names = workbook.sheetnames
+    finally:
+        workbook.close()
+    latest = info(directory)['latest_revision']
+    if base_revision != latest:
+        raise ValueError(f'Revision conflict: latest revision is {latest}')
+    return {'revision': base_revision, 'sheets': names}

@@ -81,3 +81,49 @@ def recalculate(source, output):
         check.close()
         os.link(candidate, output)
     return str(output)
+
+
+def protected_formula_ranges(file, sheet):
+    """Find multi-cell formula ranges in the saved worksheet without rewriting it."""
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    workbook = load_workbook(file, read_only=True, data_only=False)
+    try:
+        if sheet not in workbook.sheetnames:
+            raise ValueError(f'Worksheet not found: {sheet}')
+        # openpyxl resolves workbook relationships to this package-relative path.
+        path = getattr(workbook[sheet], '_worksheet_path', None)
+        if not isinstance(path, str):
+            raise RuntimeError('Cannot locate worksheet XML for formula protection')
+    finally:
+        workbook.close()
+    ranges = []
+    shared_ranges, shared_uses = {}, set()
+    with zipfile.ZipFile(file) as archive, archive.open(path) as stream:
+        for _, element in ET.iterparse(stream, events=('end',)):
+            if element.tag.rsplit('}', 1)[-1] == 'f':
+                kind, ref, shared_id = element.get('t'), element.get('ref'), element.get('si')
+                if kind == 'shared':
+                    if shared_id is None:
+                        raise ValueError('Shared formula has no identifier')
+                    shared_uses.add(shared_id)
+                if kind in ('array', 'dataTable', 'shared') and ref:
+                    try:
+                        bounds = range_boundaries(ref)
+                        if any(value is None for value in bounds):
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        raise ValueError('Invalid multi-cell formula range') from None
+                    if kind == 'shared':
+                        assert shared_id is not None
+                        if shared_id in shared_ranges and shared_ranges[shared_id] != bounds:
+                            raise ValueError('Conflicting shared formula ranges')
+                        shared_ranges[shared_id] = bounds
+                    ranges.append(bounds)
+                elif kind in ('array', 'dataTable') and not ref:
+                    raise ValueError('Multi-cell formula has no protected range')
+            element.clear()
+    if shared_uses - shared_ranges.keys():
+        raise ValueError('Shared formula has no protected range')
+    return ranges
