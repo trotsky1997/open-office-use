@@ -383,6 +383,11 @@ def list_stories(directory, revision):
     return {'revision': revision, **word.list_stories(source)}
 
 
+def search_body(directory, revision, query, offset=0, snapshot_sha256=None):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **word.search_body(source, query, offset, snapshot_sha256)}
+
+
 def compare_notes(directory, before_revision, after_revision, before_slide, after_slide):
     state = info(directory)
     before = revision_file(state, before_revision); after = revision_file(state, after_revision)

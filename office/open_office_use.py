@@ -186,6 +186,7 @@ def main():
     read = commands.add_parser('inspect'); read.add_argument('file')
     comments = commands.add_parser('comments'); comments.add_argument('file')
     stories = commands.add_parser('stories'); stories.add_argument('file')
+    word_search = commands.add_parser('search-word'); word_search.add_argument('file'); word_search.add_argument('--query', required=True); word_search.add_argument('--offset', type=int, default=0); word_search.add_argument('--snapshot-sha256')
     note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
@@ -237,6 +238,7 @@ def main():
     session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     session_search = sub.add_parser('search-cells'); session_search.add_argument('directory'); session_search.add_argument('--revision', type=int, required=True); session_search.add_argument('--query', required=True)
     session_search.add_argument('--sheet'); session_search.add_argument('--offset', type=int, default=0); session_search.add_argument('--snapshot-sha256')
+    session_word_search = sub.add_parser('search-word'); session_word_search.add_argument('directory'); session_word_search.add_argument('--revision', type=int, required=True); session_word_search.add_argument('--query', required=True); session_word_search.add_argument('--offset', type=int, default=0); session_word_search.add_argument('--snapshot-sha256')
     restore = sub.add_parser('restore'); restore.add_argument('directory'); restore.add_argument('--base', type=int, required=True); restore.add_argument('--revision', type=int, required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
     watcher = commands.add_parser('watch'); watcher.add_argument('directory'); watcher.add_argument('--port', type=int, default=0)
@@ -313,6 +315,8 @@ def main():
                 result = session.inspect_workbook(args.directory, args.revision)
             elif args.action == 'search-cells':
                 result = session.search_cells(args.directory, args.revision, args.query, args.sheet, args.offset, args.snapshot_sha256)
+            elif args.action == 'search-word':
+                result = session.search_body(args.directory, args.revision, args.query, args.offset, args.snapshot_sha256)
             elif args.action == 'restore':
                 result = session.restore(args.directory, args.base, args.revision)
             elif args.action == 'apply':
@@ -329,6 +333,8 @@ def main():
             result = word.list_comments(args.file)
         elif args.command == 'stories':
             result = word.list_stories(args.file)
+        elif args.command == 'search-word':
+            result = word.search_body(args.file, args.query, args.offset, args.snapshot_sha256)
         elif args.command == 'notes':
             result = notes.read(args.file, args.slide)
         elif args.command == 'inspect-layout':

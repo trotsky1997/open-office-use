@@ -1,6 +1,9 @@
 """Conservative, targeted text replacement in a saved Word document."""
 import re
+import hashlib
 import posixpath
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 from lxml import etree
@@ -24,6 +27,85 @@ def paragraph_path(path):
 
 def replacement_path(path):
     return paragraph_path(path) or isinstance(path, str) and len(path) <= 512 and STORY_PATH.fullmatch(path) is not None
+
+
+def search_body(source, query, offset=0, snapshot_sha256=None):
+    """Search body and table paragraphs, returning paths usable for targeted edits."""
+    if not isinstance(query, str) or not query or len(query) > 200 or any(ord(c) < 32 for c in query):
+        raise ValueError('Search text must contain 1 to 200 characters without control characters')
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0: raise ValueError('Offset must be a nonnegative integer')
+    if offset and snapshot_sha256 is None: raise ValueError('Continuing a search requires the prior snapshot SHA-256')
+    if snapshot_sha256 is not None and (not isinstance(snapshot_sha256, str) or not re.fullmatch(r'[0-9a-f]{64}', snapshot_sha256)):
+        raise ValueError('Invalid snapshot SHA-256')
+    source = Path(source).resolve(strict=True)
+    if source.suffix.lower() != '.docx': raise ValueError('Body search requires a DOCX file')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
+    with tempfile.TemporaryDirectory(prefix='office-word-search-') as tmp:
+        snapshot = Path(tmp) / 'document.docx'; shutil.copyfile(source, snapshot)
+        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
+        digest = hashlib.sha256()
+        with snapshot.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
+        digest = digest.hexdigest()
+        if snapshot_sha256 is not None and digest != snapshot_sha256: raise ValueError('Document snapshot changed; restart the search')
+        try:
+            with zipfile.ZipFile(snapshot) as archive:
+                entries = archive.infolist(); names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Document exceeds package limits or contains duplicate parts')
+                root = ooxml.parse_xml(archive.read('word/document.xml')).getroot()
+                if root.tag != W + 'document': raise ValueError('Document XML has an invalid root')
+                body = root.find(W + 'body')
+                if body is None: raise ValueError('Document has no body')
+                unsupported = set()
+                def paragraphs(container, path, depth):
+                    if depth > 8:
+                        unsupported.add('table_depth'); return
+                    counts = {'p': 0, 'tbl': 0}
+                    for child in container:
+                        tag = child.tag
+                        if tag == W + 'p':
+                            counts['p'] += 1
+                            yield f"{path}/p[{counts['p']}]", child
+                        elif tag == W + 'tbl':
+                            counts['tbl'] += 1
+                            for table_child in child:
+                                if table_child.tag not in (W + 'tr', W + 'tblPr', W + 'tblGrid'): unsupported.add('table_structure')
+                            for row_index, row in enumerate(child.findall(W + 'tr'), 1):
+                                for row_child in row:
+                                    if row_child.tag not in (W + 'tc', W + 'trPr'): unsupported.add('row_structure')
+                                for cell_index, cell in enumerate(row.findall(W + 'tc'), 1):
+                                    yield from paragraphs(cell, f"{path}/tbl[{counts['tbl']}]/tr[{row_index}]/tc[{cell_index}]", depth + 1)
+                        elif tag not in (W + 'sectPr', W + 'tcPr'):
+                            unsupported.add('container_structure')
+                matches, scanned, skipped, uncertain = [], 0, 0, 0
+                scan_complete = True; stop_reason = None
+                complex_tags = {W + name for name in ('fldChar', 'fldSimple', 'instrText', 'drawing', 'object', 'del', 'ins', 'sdt', 'tab', 'br', 'cr', 'sym', 'softHyphen', 'noBreakHyphen', 'footnoteReference', 'endnoteReference')}
+                for path, paragraph in paragraphs(body, '/body', 0):
+                    if skipped < offset: skipped += 1; continue
+                    if scanned >= 10000 or len(matches) >= 100:
+                        scan_complete = False; stop_reason = 'match_limit' if len(matches) >= 100 else 'paragraph_limit'; break
+                    scanned += 1
+                    text_nodes = [node for node in paragraph.iter(W + 't') if next(node.iterancestors(W + 'p'), None) is paragraph]
+                    text = ''.join(node.text or '' for node in text_nodes)
+                    text_complete = not any(node.tag in complex_tags or node.tag == W + 'p' and node is not paragraph for node in paragraph.iter())
+                    if not text_complete: uncertain += 1
+                    if query in text:
+                        index = text.index(query); start = max(0, index - 100); end = min(len(text), index + len(query) + 100)
+                        matches.append({'path': path, 'excerpt': text[start:end], 'excerpt_start': start, 'text_length': len(text),
+                                        'occurrences': sum(1 for _ in re.finditer('(?=' + re.escape(query) + ')', text)), 'text_complete': text_complete,
+                                        'replace_text_path_supported': paragraph_path(path)})
+                if skipped < offset: raise ValueError('Search offset exceeds the body paragraph count')
+                return {'query': query, 'case_sensitive': True, 'snapshot_sha256': digest, 'offset': offset,
+                        'next_offset': offset + scanned if not scan_complete else None, 'stop_reason': stop_reason,
+                        'paragraphs_scanned': scanned, 'matches': matches, 'unverified_paragraphs': uncertain,
+                        'unsupported_structure': sorted(unsupported), 'scan_complete': scan_complete,
+                        'complete': offset == 0 and scan_complete and not uncertain and not unsupported,
+                        'limits': {'paragraphs': 10000, 'matches': 100},
+                        'notes': ['Search covers body and supported table paragraphs; headers, footers, notes and text boxes are excluded.',
+                                  'Paths are candidates: inspect paragraph structure and use targeted editing validation before replacing text.']}
+        except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
+            raise ValueError(f'Invalid Word document: {exc}') from exc
 
 
 def story_relationships(archive):

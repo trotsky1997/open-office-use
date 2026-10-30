@@ -238,6 +238,18 @@ def list_word_stories(file: str) -> dict[str, Any]:
 
 
 @server.tool()
+def search_word_body(file: str, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search Word body and table paragraphs; continue with next_offset and snapshot_sha256 using the same query."""
+    return word.search_body(file, query, offset, snapshot_sha256)
+
+
+@server.tool()
+def session_search_word_body(directory: str, revision: int, query: str, offset: int = 0, snapshot_sha256: str | None = None) -> dict[str, Any]:
+    """Search an exact Word revision; check coverage and validate paths before editing."""
+    return session.search_body(directory, revision, query, offset, snapshot_sha256)
+
+
+@server.tool()
 def session_list_word_stories(directory: str, revision: int) -> dict[str, Any]:
     """List header and footer paragraph targets from an exact DOCX session revision."""
     return session.list_stories(directory, revision)
