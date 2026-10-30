@@ -46,6 +46,12 @@ try {
  const confirmResult=tab.evaluate(`confirm('Continue?')`);void confirmResult.catch(()=>{});
  nativeDialog=await nativeDialogWait;assert.equal(nativeDialog.info.type,'confirm');
  await nativeDialog.dismiss();assert.equal(await confirmResult,false);
+ await tab.evaluate("setTimeout(()=>history.pushState({},'', '/?route=ready'),75)");
+ await tab.playwright.waitForURL(`http://127.0.0.1:${http.address().port}/?route=ready`,{timeoutMs:5000});
+ await tab.evaluate("setTimeout(()=>location.assign('/frame?navigation=ready'),75)");
+ await tab.waitForURL(/\?navigation=ready$/,{timeoutMs:5000});
+ await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
+
  await tab.evaluate(`(()=>{document.body.style.height='3000px';const box=document.createElement('div');box.id='screenshot-fixture';Object.assign(box.style,{position:'fixed',left:'20px',top:'30px',width:'100px',height:'80px',background:'rgb(255, 0, 0)',zIndex:'999999'});document.body.append(box);window.scrollTo(0,500)})()`);
  await new Promise(resolve=>setTimeout(resolve,200));
  const crop=await tab.getScreenshot({clip:{x:40,y:45,width:30,height:20}});
@@ -277,6 +283,7 @@ try {
  try {
    await call(`const inventory = await getBrowserState(); const browser = await connectBrowser({browserId:inventory.available[0].id}); const tab = await browser.newTab(); await tab.goto(${JSON.stringify(`http://127.0.0.1:${http.address().port}/`)})`);
    assert.equal((await call('nodeRepl.write((await getBrowserState()).sessions.some(session => session.tabs.some(item => item.id === tab.id)))')).content[0].text,'true');
+   await call('await tab.playwright.waitForURL(/127\\.0\\.0\\.1/, {timeoutMs:1000})');
    await call('const state = await tab.observe(); const button = state.nodes.find(n => n.role === "button" && n.name === "Save"); await tab.click(button.index,state.snapshotId)');
    assert.equal((await call('nodeRepl.write(await tab.evaluate("window.trusted"))')).content[0].text,'true');
    assert.equal((await call('nodeRepl.emitImage(await tab.getScreenshot())')).content[0].type,'image');

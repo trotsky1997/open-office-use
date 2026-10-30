@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OpenBrowserUseBrowser, OpenBrowserUseClient } from "../dist/index.js";
@@ -74,6 +75,25 @@ test("hover sends one mouse move after target validation", async () => {
   point = {x:10,y:20,width:10,height:10}; fail = true;
   await assert.rejects(tab.playwright.getByRole("button",{name:"Menu"}).hover({timeoutMs:1000}),/input outcome unknown/);
   assert.equal(events.length,2);
+});
+
+test('URL wait checks the matching document state and propagates transport errors', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'});
+  let step=0, calls=0;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    calls++;
+    if(step++===0)throw new Error('Execution context was destroyed');
+    return {result:{value:{href:'https://example.test/done',readyState:step===2?'loading':'complete'}}};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1), pattern=/\/done$/g;
+  await tab.playwright.waitForURL(pattern,{timeoutMs:1000});
+  assert.equal(calls,3);assert.equal(pattern.lastIndex,0);
+  await tab.waitForURL(runInNewContext('/done$/'),{timeoutMs:0});
+  await assert.rejects(tab.waitForURL('https://example.test/missing',{timeoutMs:0}),/Timed out/);
+  await assert.rejects(tab.waitForURL(/done/,{timeoutMs:-1}),/Invalid URL timeout/);
+  client.request=async()=>{throw new Error('scope revoked');};
+  await assert.rejects(tab.waitForURL(/done/),/scope revoked/);
 });
 
 test('screenshot clips use viewport coordinates and reject invalid regions', async () => {

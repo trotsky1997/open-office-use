@@ -28,6 +28,13 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    await evaluate("setTimeout(()=>history.pushState({},'', '/?route=ready'),75)");
+    await sdkTab.playwright.waitForURL(`${fixture.url}/?route=ready`,{timeoutMs:5000});
+    await evaluate("setTimeout(()=>location.assign('/?navigation=ready'),75)");
+    await sdkTab.waitForURL(/\?navigation=ready$/,{timeoutMs:5000});
+    await sdkTab.goto(fixture.url);
+    await evaluate(`document.body.style.height='3000px'; window.wheels=[]; addEventListener('wheel',e=>wheels.push({trusted:e.isTrusted,delta:e.deltaY}))`);
+
     await evaluate(`(()=>{const box=document.createElement('div');box.id='screenshot-fixture';Object.assign(box.style,{position:'fixed',left:'20px',top:'30px',width:'100px',height:'80px',background:'rgb(255, 0, 0)',zIndex:'999999'});document.body.append(box);window.scrollTo(0,500)})()`);
     await new Promise(resolve=>setTimeout(resolve,200));
     const cropped=nativeImage.createFromBuffer(await sdkTab.getScreenshot({clip:{x:40,y:45,width:30,height:20}}));

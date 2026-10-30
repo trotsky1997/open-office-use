@@ -127,3 +127,5 @@ getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察�
 加入 JavaScript 原生对话框监听与显式处理；Electron 对话框处理绕过阻塞的页面命令队列，仍检查作用域权限。断线重连会使旧句柄失效。Linux ARM64 Chromium 原生消息链路验证 prompt、confirm、跨进程 frame 与持久 REPL；macOS Electron 验证 alert、confirm 与跨进程 frame。Electron 的 prompt 不受支持，原生对话框可能显示隐藏宿主窗口。Linux 使用隔离浏览器与 --no-sandbox。
 
 截图支持以 CSS 视口坐标指定裁剪矩形；按当前可视视口偏移转换到页面坐标并拒绝越界区域。macOS Electron 与 macOS/Linux Chromium 实页验证页面滚动后裁剪像素；Linux 使用隔离浏览器与 --no-sandbox。截图期间页面滚动或窗口尺寸变化时需重新截图。
+
+新增 waitForURL：精确字符串或正则匹配主文档 URL，同时检查所需加载状态；支持 history API 路由和跨文档跳转。仅在执行上下文被导航销毁时重试，权限和连接错误直接返回；REPL 的跨上下文正则可使用。macOS Electron 与 macOS/Linux Chromium 实页验证两种导航；Linux 使用隔离浏览器与 --no-sandbox。该方法以约 100 ms 间隔采样，短暂中间 URL 可能错过。

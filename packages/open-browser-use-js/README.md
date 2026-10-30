@@ -295,6 +295,16 @@ host platform. `+` is supported alone; use `Shift+=` with other modifiers.
 For arbitrary Unicode text, use `typeText`. Pressing a key invalidates the previous
 observation.
 
+## Waiting for a URL
+
+`await tab.waitForURL("https://example.com/done")` waits for an exact URL.
+`await tab.playwright.waitForURL(/\/done(?:\?|$)/, {waitUntil: "domcontentloaded", timeoutMs: 15000})`
+accepts a regular expression. Both forms inspect the current main document and
+work with history API route changes as well as document navigation. The default
+load state is `load` and the default timeout is 10 seconds; `timeoutMs: 0`
+checks once. URLs are sampled roughly every 100 ms, so transient intermediate
+URLs can be missed. A slow browser request can finish after the timeout.
+
 ## JavaScript dialogs
 
 Call `watchDialogs()` before triggering a JavaScript dialog. Start the action

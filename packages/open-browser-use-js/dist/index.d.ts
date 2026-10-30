@@ -146,6 +146,10 @@ export declare class OpenBrowserUseTab {
     constructor(browser: OpenBrowserUseBrowser, id: number);
     goto(url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
+    waitForURL(url: string | RegExp, options?: {
+        waitUntil?: OpenBrowserUseLoadState;
+        timeoutMs?: number;
+    }): Promise<void>;
     domSnapshot(): Promise<string>;
     getAXState(): Promise<JsonValue>;
     observe(options?: {
@@ -205,6 +209,10 @@ export declare class OpenBrowserUseTabPlaywright {
     readonly tab: OpenBrowserUseTab;
     constructor(tab: OpenBrowserUseTab);
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
+    waitForURL(url: string | RegExp, options?: {
+        waitUntil?: OpenBrowserUseLoadState;
+        timeoutMs?: number;
+    }): Promise<void>;
     domSnapshot(): Promise<string>;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: string, options?: {

@@ -1,6 +1,7 @@
 import { Socket, createConnection } from "node:net";
 import { endianness } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
+import { types } from "node:util";
 
 export type JsonValue =
   | null
@@ -427,6 +428,31 @@ export class OpenBrowserUseTab {
 
   waitForLoadState(options: OpenBrowserUseWaitForLoadStateOptions = {}): Promise<void> {
     return this.browser.cdp.waitForLoadState(this.id, options);
+  }
+
+  async waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {
+    if (typeof url !== "string" && !types.isRegExp(url)) throw new Error("URL matcher must be a string or RegExp");
+    const matcher = typeof url === "string" ? url : new RegExp(url.source, url.flags);
+    const waitUntil = options.waitUntil ?? "load";
+    assertSupportedLoadState(waitUntil);
+    const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid URL timeout");
+    const deadline = performance.now() + timeoutMs;
+    while (true) {
+      let state: JsonValue = null;
+      try { state = await this.browser.cdp.evaluate(this.id, "({ href: window.location.href, readyState: document.readyState })"); }
+      catch (error) {
+        if (!(error instanceof Error) || !/Execution context was destroyed|Cannot find context with specified id/i.test(error.message)) throw error;
+      }
+      if (isObject(state) && typeof state.href === "string") {
+        if (matcher instanceof RegExp) matcher.lastIndex = 0;
+        const matches = typeof matcher === "string" ? state.href === matcher : matcher.test(state.href);
+        if (matches && documentStateMatches({readyState:stringValue(state.readyState)},waitUntil)) return;
+      }
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw new Error(`Timed out waiting for URL after ${timeoutMs} ms`);
+      await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
+    }
   }
 
   domSnapshot(): Promise<string> {
@@ -1219,6 +1245,10 @@ export class OpenBrowserUseTabPlaywright {
 
   waitForLoadState(options: OpenBrowserUseWaitForLoadStateOptions = {}): Promise<void> {
     return this.tab.waitForLoadState(options);
+  }
+
+  waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {
+    return this.tab.waitForURL(url, options);
   }
 
   domSnapshot(): Promise<string> {
