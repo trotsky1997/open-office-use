@@ -126,7 +126,7 @@ def apply(directory, base_revision, operations):
         result = officecli_backend.batch(operations, output, source)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result']}
+    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], **({'formula_cache_effect': result['formula_cache_effect']} if 'formula_cache_effect' in result else {})}
 
 
 def restore(directory, base_revision, revision):
@@ -450,6 +450,12 @@ def search_body(directory, revision, query, offset=0, snapshot_sha256=None):
 def search_stories(directory, revision, query, offset=0, snapshot_sha256=None):
     state = info(directory); source = revision_file(state, revision)
     return {'revision': revision, **word.search_stories(source, query, offset, snapshot_sha256)}
+
+
+def compare_cells(directory, before_revision, after_revision, sheet, cell_range):
+    state = info(directory)
+    before = revision_file(state, before_revision); after = revision_file(state, after_revision)
+    return {'before_revision': before_revision, 'after_revision': after_revision, **review.compare_cells(before, after, sheet, cell_range)}
 
 def compare_notes(directory, before_revision, after_revision, before_slide, after_slide):
     state = info(directory)

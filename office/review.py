@@ -99,6 +99,33 @@ def compare_notes(before, after, before_slide, after_slide):
             'text_changed': text_changed, 'diff': lines, 'truncated': True}
 
 
+
+def compare_dimensions(before, after, sheet, cell_range):
+    """Compare saved row, column and sheet-default attributes in a bounded range."""
+    bounds = range_boundaries(cell_range)
+    old = spreadsheet.worksheet_constraints(before, sheet, bounds, True, True)['dimensions']
+    new = spreadsheet.worksheet_constraints(after, sheet, bounds, True, True)['dimensions']
+    changes = []; count = 0
+    def record(kind, target, left, right):
+        nonlocal count
+        fields = sorted(key for key in left.keys() | right.keys() if left.get(key) != right.get(key))
+        if not fields: return
+        count += 1
+        if len(changes) < 500: changes.append({'kind': kind, 'target': target, 'changed_fields': fields, 'before': left, 'after': right})
+    record('defaults', sheet, old['defaults'], new['defaults'])
+    c1, r1, c2, r2 = bounds
+    for col in range(c1, c2 + 1):
+        key = get_column_letter(col)
+        left = {k: v for k, v in old['columns'].get(key, {}).items() if k not in ('min', 'max')}
+        right = {k: v for k, v in new['columns'].get(key, {}).items() if k not in ('min', 'max')}
+        record('column', key, left, right)
+    for row in range(r1, r2 + 1):
+        key = str(row); record('row', key, old['rows'].get(key, {}), new['rows'].get(key, {}))
+    return {'status': 'completed', 'changed_count': count, 'changes': changes, 'truncated': count > len(changes),
+            'complete': not old['issues'] and not new['issues'], 'before_issues': old['issues'], 'after_issues': new['issues'],
+            'notes': ['Comparison uses stored XML attributes; equivalent numeric encodings and explicit defaults can be reported as changes.',
+                      'Column span boundaries are excluded; row and column changes affect the entire worksheet dimension.']}
+
 def compare_cells(before, after, sheet, cell_range):
     """Compare formulas, values and direct cell formatting in a bounded XLSX range."""
     before, after = Path(before).resolve(strict=True), Path(after).resolve(strict=True)
@@ -110,6 +137,9 @@ def compare_cells(before, after, sheet, cell_range):
         shutil.copyfile(after, right)
         left_rows = spreadsheet.read_range(left, sheet, cell_range, include_style='review')['rows']
         right_rows = spreadsheet.read_range(right, sheet, cell_range, include_style='review')['rows']
+        try: dimensions = compare_dimensions(left, right, sheet, cell_range)
+        except Exception as exc:
+            dimensions = {'status': 'error', 'complete': False, 'error_type': type(exc).__name__, 'error': str(exc)[:1000]}
     min_col, min_row, _, _ = range_boundaries(cell_range)
     if min_col is None or min_row is None:
         raise ValueError('A bounded cell range is required')
@@ -126,4 +156,4 @@ def compare_cells(before, after, sheet, cell_range):
                     address = f'{get_column_letter(min_col + col_index)}{min_row + row_index}'
                     result.append({'cell': address, 'changed_fields': fields, 'before': old, 'after': new})
     return {'sheet': sheet, 'range': cell_range, 'changed_count': total, 'changes': result, 'text_comparison_complete': text_comparison_complete,
-            'truncated': total > len(result), 'cache_freshness': 'unknown'}
+            'truncated': total > len(result), 'cache_freshness': 'unknown', 'dimensions': dimensions}

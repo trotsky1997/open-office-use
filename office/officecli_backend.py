@@ -176,4 +176,4 @@ def batch(operations, output, source=None):
                     call('close', candidate)
                 except (RuntimeError, OSError, subprocess.SubprocessError):
                     pass
-    return {'output': str(output), 'result': result}
+    return {'output': str(output), 'result': result, **({'formula_cache_effect': 'may_change'} if output.suffix.lower() == '.xlsx' else {})}

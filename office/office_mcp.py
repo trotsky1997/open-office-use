@@ -432,8 +432,14 @@ def compare_files(before: str, after: str) -> dict[str, Any]:
 
 
 @server.tool()
+def session_compare_cells(directory: str, before_revision: int, after_revision: int, sheet: str, cell_range: str) -> dict[str, Any]:
+    """Compare cell values, formulas, styles and stored dimensions across two session revisions."""
+    return session.compare_cells(directory, before_revision, after_revision, sheet, cell_range)
+
+
+@server.tool()
 def compare_cells(before: str, after: str, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Compare formulas, cached values and direct formatting; check text_comparison_complete."""
+    """Compare formulas, cached values, direct formatting and stored dimensions; check completeness fields."""
     return review.compare_cells(before, after, sheet, cell_range)
 
 

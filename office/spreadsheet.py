@@ -3,6 +3,7 @@ import os
 import hashlib
 import re
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -523,8 +524,17 @@ def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=Fals
         for key in names:
             value = element.get(key)
             if value is not None:
-                if len(value) > 64: dimension_issues.add('oversized_dimension_attribute')
-                else: attrs[key] = value
+                if len(value) > 64: dimension_issues.add('oversized_dimension_attribute'); continue
+                if key in ('width', 'ht', 'defaultColWidth', 'baseColWidth', 'defaultRowHeight'):
+                    try:
+                        number = float(value)
+                        if not math.isfinite(number) or number < 0: raise ValueError
+                    except ValueError: dimension_issues.add('invalid_dimension_attribute')
+                if key in ('customWidth', 'customHeight', 'hidden', 'bestFit', 'collapsed', 'zeroHeight') and value not in ('0', '1', 'false', 'true'):
+                    dimension_issues.add('invalid_dimension_attribute')
+                if key == 'outlineLevel' and (not value.isdecimal() or len(value) > 1 or int(value) > 7):
+                    dimension_issues.add('invalid_dimension_attribute')
+                attrs[key] = value
         return attrs
     with zipfile.ZipFile(file) as archive, archive.open(path) as stream:
         for _, element in ET.iterparse(stream, events=('end',)):

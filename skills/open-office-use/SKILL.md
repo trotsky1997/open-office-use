@@ -40,3 +40,5 @@ For PowerPoint deliverables, use `inspect_slide_text` or `session_inspect_slide_
 For worksheet presentation, `session_format_grid` applies font, color, alignment, wrap, fill and number formatting to a supported loaded range; inspect the resulting revision and rendered workbook.
 
 To size worksheet rows or columns, inspect the grid dimension metadata and use `session_resize_grid`; changes affect complete rows or columns, including cells outside the selected range.
+
+Use `session_compare_cells` to review formulas, cached values, direct formatting and stored row/column dimensions between revisions. OfficeCLI XLSX batches may update formula caches even for layout or formatting edits.

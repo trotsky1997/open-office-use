@@ -54,8 +54,10 @@ with tempfile.TemporaryDirectory() as tmp:
     assert cached['changes'][0]['before']['value'] is None and cached['changes'][0]['after']['value'] == 12, cached
     assert 'formula' not in cached['changes'][0]['changed_fields'], cached
     assert 'not found' in run('compare-cells', before, after, '--sheet', 'Absent', '--range', 'A1', ok=False)
-    for row in range(1, 503): ws.cell(row, 3, row)
+    for row in range(1, 503):
+        ws.cell(row, 3, row); ws.row_dimensions[row].height = 24
     workbook.save(after)
     capped = run('compare-cells', before, after, '--sheet', 'Forecast', '--range', 'C1:C502')
     assert capped['changed_count'] == 502 and len(capped['changes']) == 500 and capped['truncated'], capped
+    assert capped['dimensions']['changed_count'] == 502 and len(capped['dimensions']['changes']) == 500 and capped['dimensions']['truncated'], capped
 print('Cell comparison smoke passed: formulas, cache, values, missing sheet and truncation')

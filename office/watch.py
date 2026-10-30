@@ -155,7 +155,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <label>Latest revision page <input id="visual-after-page" type="number" min="1" step="1" value="1" required></label><button id="visual-diff-button" type="submit">Compare pages visually</button></form>
 <p id="visual-diff-status" role="status"></p><a id="visual-diff-open" hidden target="_blank" rel="noopener">Open comparison at full size</a><img id="visual-diff-image" hidden alt="Visual comparison of the selected and latest revisions"></section>
 <section id="cell-comparison" hidden><h2>Worksheet changes</h2>
-<p>Compare values, formulas and direct formatting. Cached formula results may be stale; conditional formatting and theme changes need separate review.</p>
+<p>Compare values, formulas, direct formatting, and stored row and column dimensions. Cached formula results may be stale; conditional formatting and theme changes need separate review.</p>
 <form id="cell-comparison-form"><label>Worksheet <input id="compare-sheet" required maxlength="31"></label>
 <label>Cell range <input id="compare-range" required value="A1:D10" maxlength="32"></label>
 <button id="compare-cells" type="submit">Compare cells</button></form>
@@ -431,7 +431,7 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
   const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
   inputs.forEach(input=>input.dataset.baseline=input.value);
-  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}.`); await refresh();
+  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Review formula caches.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; }
@@ -457,7 +457,7 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  try {
   const response=await fetch('grid-format', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,style_range:document.getElementById('grid-style-range').value,properties})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Formatting failed');
-  invalidateGrid(`Formatting saved as revision ${result.revision}.`); await refresh();
+  invalidateGrid(`Formatting saved as revision ${result.revision}. Review formula caches.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false; }
@@ -474,7 +474,7 @@ document.getElementById('grid-resize').addEventListener('click', async () => {
  try {
   const response=await fetch('grid-resize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,target_range:document.getElementById('grid-size-range').value,column_width:width ? Number(width) : null,row_height:height ? Number(height) : null})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Sizing failed');
-  invalidateGrid(`Sizing saved as revision ${result.revision}.`); await refresh();
+  invalidateGrid(`Sizing saved as revision ${result.revision}. Review formula caches.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded===loaded && current===loaded.revision && pinned===null) {inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false;}
@@ -1105,6 +1105,14 @@ document.getElementById('cell-comparison-form').addEventListener('submit', async
    body.appendChild(row);
   }
   table.appendChild(body); if (result.changes.length) output.appendChild(table);
+  const dimensions=result.dimensions, heading=document.createElement('h3'); heading.textContent='Stored row and column dimensions'; output.appendChild(heading);
+  if (dimensions.status==='error') {const message=document.createElement('p'); message.textContent=`Dimension comparison unavailable: ${dimensions.error}`; output.appendChild(message);}
+  else {
+   const message=document.createElement('p'); message.textContent=`${dimensions.changed_count} changed dimension(s). ${dimensions.complete ? '' : 'Some dimension metadata needs review. '}${dimensions.truncated ? 'Showing first 500. ' : ''}Stored attributes may differ from effective display; changes affect entire rows or columns.`; output.appendChild(message);
+   const list=document.createElement('ul');
+   for (const change of dimensions.changes) {const item=document.createElement('li'); item.textContent=`${change.kind} ${change.target}: ${change.changed_fields.join(', ')} · ${JSON.stringify(change.before)} → ${JSON.stringify(change.after)}`; list.appendChild(item);}
+   output.appendChild(list);
+  }
   document.getElementById('cell-comparison-status').textContent=`Revision ${before} → ${after}: ${result.changed_count} changed cell(s). ${result.truncated ? 'Showing the first 500 cells. ' : ''}${result.text_comparison_complete ? '' : 'Some text values could not be verified. '}`;
  } catch(error) { if (epoch === cellComparisonEpoch && comparing && pinned === before && comparedLatest === after) document.getElementById('cell-comparison-status').textContent=`Cell comparison error: ${error.message}`; }
  finally { button.disabled=false; }
