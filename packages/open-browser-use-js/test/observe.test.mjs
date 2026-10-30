@@ -950,7 +950,8 @@ test('CSS and semantic intersection tracks backend identities',async()=>{
   const role=tab.playwright.getByRole('button',{name:'Save'}),css=tab.playwright.locator('.primary');let ids=[102];
   css.snapshot=async()=>({documentId:9,frames,frame:frames[0],ids});
   assert.equal(await role.and(css).count(),1);assert.equal(await css.and(role).count(),1);
-  ids=[];assert.equal(await role.and(css).count(),0);
+  const observation=tab.currentObservation('1');tab.freshFilterObservation=async()=>observation;const mixed=role.and(css);await mixed.verifyMatches(observation,[{backendNodeId:102,frameId:'main'}]);
+  ids=[];await assert.rejects(mixed.verifyMatches(observation,[{backendNodeId:102,frameId:'main'}]),/matches changed/);assert.equal(await mixed.count(),0);
   assert.throws(()=>role.and(tab.browser.tab(2).playwright.locator('button')),/same tab and frame/);
 });
 
