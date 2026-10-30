@@ -15,6 +15,11 @@ function selectSpecs(values) {
         return { ...value, either: false };
     });
 }
+function testIdSelector(testId) {
+    if (typeof testId !== "string" || testId.length > 500 || /[\u0000\ud800-\udfff]/u.test(testId))
+        throw new Error("Invalid test id");
+    return `[data-testid="${Array.from(testId, char => `\\${char.codePointAt(0).toString(16)} `).join("")}"]`;
+}
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 class RetryablePreflightError extends Error {
 }
@@ -2340,6 +2345,7 @@ export class OpenBrowserUseTabPlaywright {
         return new OpenBrowserUseFrameLocator(this.tab, []).frameLocator(selector);
     }
     locator(selector) { return new OpenBrowserUseCssLocator(this.tab, selector); }
+    getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     getByRole(role, options = {}) {
         if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
             Object.keys(options).some(key => !["name", "exact", "level", "checked", "disabled", "pressed", "selected", "expanded"].includes(key)) ||
@@ -2383,6 +2389,7 @@ export class OpenBrowserUseFrameLocator {
         return new OpenBrowserUseFrameLocator(this.tab, [...this.path, selector]);
     }
     locator(selector) { return new OpenBrowserUseCssLocator(this.tab, selector, this.path); }
+    getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     getByRole(role, options = {}) { return this.tab.playwright.getByRole(role, options).withinFrame(this.path); }
     getByLabel(name, options = {}) { return this.tab.playwright.getByLabel(name, options).withinFrame(this.path); }
     getByText(text, options = {}) { return this.tab.playwright.getByText(text, options).withinFrame(this.path); }
@@ -2416,6 +2423,7 @@ export class OpenBrowserUseCssLocator {
             throw new Error("CSS locator nesting exceeds 32 levels");
         return new OpenBrowserUseCssLocator(this.tab, selector, this.framePath, undefined, [...this.scopes, { selector: this.selector, ...(this.position !== undefined ? { position: this.position } : {}) }]);
     }
+    getByTestId(testId) { return this.locator(testIdSelector(testId)); }
     select(ids) { return this.position === undefined ? ids : this.position === -1 ? ids.slice(-1) : ids.slice(this.position, this.position + 1); }
     async count() { return this.select((await this.tab.queryCss(this.selector, this.framePath, this.scopes)).ids).length; }
     async all() { return Array.from({ length: await this.count() }, (_, i) => this.nth(i)); }

@@ -243,3 +243,5 @@ CSS locator 增加 dblclick 与 allTextContents，双击第一次输入后重新
 CSS locator 增加 isChecked、check、uncheck 和 setChecked，支持原生 checkbox/radio 及二态 ARIA 控件；检查已有状态避免重复输入，点击后复核目标与最终状态。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证 shadow root 中可信变更、重复操作、ARIA switch、radio 限制、混合状态拒绝、事件回调改回状态时停止，以及跨进程 checkbox；Electron 44/Xvfb socket 验证跨进程勾选和取消。macOS/Windows 本轮未测。
 
 CSS locator 增加 selectOption，支持原生单选/多选及按值和标签选择，修改前复核定位、选项身份和唯一性，修改后检查结果；input/change 为合成事件。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证 shadow root 链式选择、重复选项拒绝、跨进程单选/多选、禁用选项、事件回调覆盖结果和不重复修改；Electron 44/Xvfb socket 验证跨进程单选。macOS/Windows 本轮未测。
+
+新增 getByTestId 精确匹配 data-testid，支持 tab、frame 和 CSS 链式作用域，特殊字符按 CSS 转义，限制长度并拒绝 NUL 与未配对代理项。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证空值、引号、反斜杠、换行、emoji、shadow root 可信点击与跨进程 frame；Electron 44/Xvfb socket 验证跨进程 frame。语义定位器作用域下的混合链仍待实现；macOS/Windows 本轮未测。

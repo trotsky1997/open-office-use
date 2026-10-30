@@ -261,6 +261,8 @@ Native CSS element queries are available for reading DOM content:
 ```js
 const items = tab.playwright.locator("[data-item]");
 console.log(await items.count(), await items.first().textContent());
+await tab.playwright.getByTestId("save-button").click();
+await tab.playwright.locator(".product").getByTestId("price").textContent();
 await tab.playwright.locator(".product").first().locator("button.buy").click();
 console.log(await payment.locator("input[name=card]").getAttribute("name"));
 ```

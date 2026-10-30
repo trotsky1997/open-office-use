@@ -211,9 +211,13 @@ try {
  await tab.evaluate(`(()=>{const host=document.createElement('div');host.id='css-host';const shadow=host.attachShadow({mode:'open'});shadow.innerHTML='<span data-test="first">First</span><span data-test="second" hidden>Second</span>';document.body.append(host);window.savedQuery=Document.prototype.querySelectorAll;Document.prototype.querySelectorAll=()=>[]})()`);
  assert.equal(await tab.playwright.locator('[data-test="second"]').isVisible(),false);assert.equal(await tab.playwright.locator('#absent').isVisible(),false);await tab.playwright.locator('[data-test="second"]').waitFor({state:'attached',timeoutMs:0});await tab.playwright.locator('#absent').waitFor({state:'hidden',timeoutMs:0});await tab.playwright.locator('#absent').waitFor({state:'detached',timeoutMs:0});
  await assert.rejects(tab.playwright.locator('[data-test]').waitFor({state:'visible',timeoutMs:0}),/matched 2 elements/);
+ const strangeId='quoted"\\] ,\n🙂';
+ await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const b=document.createElement('button');b.setAttribute('data-testid',${JSON.stringify(strangeId)});b.textContent='Test id target';b.onclick=e=>window.testIdTrusted=e.isTrusted;r.append(b);const empty=document.createElement('span');empty.setAttribute('data-testid','');r.append(empty)})()`);
+ assert.equal(await tab.playwright.getByTestId(strangeId).count(),1);assert.equal(await tab.playwright.locator('#css-host').getByTestId(strangeId).innerText(),'Test id target');assert.equal(await tab.playwright.getByTestId('').count(),1);assert.throws(()=>tab.playwright.getByTestId('bad\0id'),/Invalid test id/);assert.throws(()=>tab.playwright.getByTestId('\ud800'),/Invalid test id/);
+ await tab.playwright.getByTestId(strangeId).click();assert.equal(await tab.evaluate('window.testIdTrusted'),true);
  const css=tab.playwright.locator('[data-test]');assert.deepEqual(await css.allTextContents(),['First','Second']);assert.equal(await css.count(),2);assert.equal(await css.first().innerText(),'First');assert.equal(await css.last().textContent(),'Second');assert.equal(await css.nth(1).getAttribute('data-test'),'second');assert.equal(await css.nth(9).count(),0);
  await assert.rejects(css.textContent({timeoutMs:0}),/matched 2 elements/);await assert.rejects(tab.playwright.locator('[').count(),/Invalid CSS selector/);
- await tab.evaluate(`(()=>{Document.prototype.querySelectorAll=window.savedQuery;const h=document.querySelector('#css-host');h.shadowRoot.innerHTML+='<button id="css-action">Act</button>';const b=h.shadowRoot.querySelector('button');b.onmouseenter=e=>window.cssHover=e.isTrusted;b.onclick=e=>window.cssClick=e.isTrusted})()`);
+ await tab.evaluate(`(()=>{Document.prototype.querySelectorAll=window.savedQuery;const h=document.querySelector('#css-host');h.shadowRoot.innerHTML+='<button id="css-action">Act</button>';const b=h.shadowRoot.querySelector('#css-action');b.onmouseenter=e=>window.cssHover=e.isTrusted;b.onclick=e=>window.cssClick=e.isTrusted})()`);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;for(const n of [1,2]){const e=document.createElement('section');e.className='css-group';e.innerHTML='<span class="css-child">Group '+n+'</span>';r.append(e)}})()`);
  const groups=tab.playwright.locator('#css-host').locator('.css-group');assert.equal(await groups.count(),2);assert.equal(await groups.last().locator('.css-child').textContent(),'Group 2');assert.equal(await groups.locator('.css-child').count(),2);assert.equal(await tab.playwright.locator('#missing').locator('.css-child').count(),0);await assert.rejects(tab.playwright.locator('#missing').locator('[').count(),/Invalid CSS selector/);
  assert.equal(await tab.playwright.locator('#css-host').locator('#css-action').count(),1);
@@ -249,10 +253,10 @@ try {
  await tab.evaluate(`(()=>{const input=document.querySelector('#css-host').shadowRoot.querySelector('#changed-on-select');input.id='css-input';input.onkeydown=e=>window.cssKey={key:e.key,trusted:e.isTrusted}})()`);
  await tab.evaluate(`(()=>{window.cssKey=null;const input=document.querySelector('#css-host').shadowRoot.querySelector('#css-input');input.blur();input.onfocus=()=>input.id='css-renamed'})()`);
  await assert.rejects(tab.playwright.locator('#css-input').press('Enter',{timeoutMs:0}),/changed after focus/i);assert.equal(await tab.evaluate('window.cssKey'),null);
- await tab.evaluate(`(()=>{window.cssClick=false;document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=true})()`);
+ await tab.evaluate(`(()=>{window.cssClick=false;document.querySelector('#css-host').shadowRoot.querySelector('#css-action').disabled=true})()`);
  assert.equal(await tab.playwright.locator('#css-action').isEnabled(),false);
  await assert.rejects(tab.playwright.locator('#css-action').click({timeoutMs:0}),/target unavailable/i);assert.equal(await tab.evaluate('window.cssClick'),false);
- await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=false`);
+ await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('#css-action').disabled=false`);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const group=r.querySelector('.css-group');group.append(r.querySelector('#css-action'));window.cssClick=false;setTimeout(()=>{group.className='changed-group'},30)})()`);
  await assert.rejects(tab.playwright.locator('.css-group').first().locator('#css-action').click({timeoutMs:0}),/target unavailable|target changed/i);assert.equal(await tab.evaluate('window.cssClick'),false);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;r.append(r.querySelector('#css-action'))})()`);
@@ -334,6 +338,7 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('button').setAttribute('data-testid','cross-target')`},{sessionId:crossSession});assert.equal(await crossFrame.getByTestId('cross-target').textContent(),'Cross-process action');
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`console.warn('cross-log-fixture')`},{sessionId:crossSession});await new Promise(r=>setTimeout(r,100));
  assert.ok((await tab.dev.logs({levels:['warning'],filter:'cross-log-fixture'})).length);
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const img=document.createElement('img');img.src='/missing-log';document.body.append(img)})()`},{sessionId:crossSession});await new Promise(r=>setTimeout(r,150));

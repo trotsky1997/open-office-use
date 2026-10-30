@@ -375,6 +375,7 @@ export declare class OpenBrowserUseTabPlaywright {
     domSnapshot(): Promise<string>;
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
     locator(selector: string): OpenBrowserUseCssLocator;
+    getByTestId(testId: string): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -395,6 +396,7 @@ export declare class OpenBrowserUseFrameLocator {
     constructor(tab: OpenBrowserUseTab, path: readonly string[]);
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
     locator(selector: string): OpenBrowserUseCssLocator;
+    getByTestId(testId: string): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -420,6 +422,7 @@ export declare class OpenBrowserUseCssLocator {
     first(): OpenBrowserUseCssLocator;
     last(): OpenBrowserUseCssLocator;
     locator(selector: string): OpenBrowserUseCssLocator;
+    getByTestId(testId: string): OpenBrowserUseCssLocator;
     private select;
     count(): Promise<number>;
     all(): Promise<OpenBrowserUseCssLocator[]>;
