@@ -48,6 +48,15 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.equal(await sdkTab.playwright.getByTitle('action').count(),2);
   assert.equal(await sdkTab.playwright.locator('#bulk-text-test').getByTitle(/^Another/i).count(),1);
   assert.equal(await sdkTab.playwright.getByRole('button',{name:'Bulk first'}).getByTitle('Nested Tip',{exact:true}).count(),1);
+  const unicodeId='save 😀 "\\ path';
+  await evaluate(a.id,`document.querySelector('#bulk-text-test button').setAttribute('data-testid',${JSON.stringify(unicodeId)})`);
+  assert.equal(await sdkTab.playwright.getByTestId(unicodeId).count(),1);
+  assert.equal(await sdkTab.playwright.locator('#bulk-text-test').getByTestId(unicodeId).count(),1);
+  assert.throws(()=>sdkTab.playwright.getByTestId('bad\uD800'),/Invalid test id/);
+  const changingTitle=sdkTab.playwright.getByTitle('Helpful Action',{exact:true});
+  await evaluate(a.id,"document.querySelector('#bulk-text-test button').title='Updated title'");
+  assert.equal(await changingTitle.count(),0);
+  assert.equal(await sdkTab.playwright.getByTitle('Updated title',{exact:true}).count(),1);
   const cssFirst=cssBulk.first(),roleFirst=roleBulk.first();
   for (const locator of [cssFirst,roleFirst]) { await locator.waitFor({state:'visible',timeoutMs:1000});assert.equal(await locator.isHidden(),false);assert.equal(await locator.isDisabled(),false); }
   await evaluate(a.id,"document.querySelector('#bulk-text-test button').disabled=true");

@@ -423,3 +423,5 @@ CSS 与语义定位器 waitFor 的正数期限覆盖浏览器只读请求；零�
 CSS 与语义定位器的 allTextContents/allInnerTexts 正数期限覆盖查询、观察和逐项读取；零期限仍执行一次读取，超时的只读请求可能继续完成。SDK 90 项测试通过，覆盖卡住的查询和文本读取；macOS Electron 44.7 完整 smoke 通过真实页面批量读取。Linux 与 Windows 本轮未测。
 
 新增 getByTitle，支持页面、frame、CSS 和语义作用域；字符串支持空白归一化、忽略大小写的子串与区分大小写的精确匹配，正则保留标志。SDK 90 项测试和 macOS Electron 44.7 完整 smoke 通过；真实页面验证四类作用域、正则及精确匹配。Linux 和 Windows 本轮未测。
+
+macOS Electron 44.7 完整 smoke 补充验证：测试 ID 包含 emoji、引号与反斜杠时可在页面和 CSS 作用域中匹配，孤立代理项被拒绝；title 属性变化后原定位器重新查询并反映新值。Linux 和 Windows 本轮未测。
