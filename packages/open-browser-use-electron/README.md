@@ -95,7 +95,10 @@ preload that initializes the page bridge before page scripts run. Custom
 `IabRuntime` adapters must supply `webMcpPreload` and honor the `webmcp`
 argument to `createView` to provide the same popup behavior. The preload uses
 Electron's experimental `contextBridge.executeInMainWorld`; Electron 44 is
-covered by the real-page check. The bridge reports tools from the main document;
+covered by real-page checks on macOS and Linux ARM64. Run the focused check with
+`packages/open-browser-use-electron/node_modules/.bin/electron examples/electron-iab/webmcp-smoke.mjs`
+from the repository root. Set `OBU_IAB_PACKAGE_DIR` to an unpacked package to
+check its distribution files. The bridge reports tools from the main document;
 child-frame tools are not included. Tool errors are reduced to scoped error
 codes across the socket.
 

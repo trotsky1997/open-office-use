@@ -311,3 +311,5 @@ JS SDK 增加 browser/tab capabilities.list/get 和 WebMCP 高层工具列表/�
 Electron scope 新增默认关闭的 webmcp 选项，复用 Chrome 页面桥接源码，在新建标签导航前安装；page.control 授权的 scope 可发现并调用当前页面工具，注册快照变化或导航后旧 ID 失效，排队调用在授权撤销后不执行。SDK 70 项和 Electron 50 项检查通过；Linux ARM64 Electron 44/Xvfb 实页验证启动脚本注册、调用、重新列举和导航失效。Popup 在初次使用时安装桥，初始加载注册的工具可能不可用；子 frame 工具、macOS/Windows 本轮未测。
 
 Electron WebMCP opt-in scope 为标准 adapter 的标签和 popup 配置 sandbox preload，在页面脚本前通过 contextBridge 初始化桥；未启用的 scope 不配置 preload。Electron 51 项检查通过，Linux ARM64 Electron 44/Xvfb 实测 popup 初始脚本注册工具、发现及调用。使用实验性 executeInMainWorld，自定义 adapter 需接入 preload，子 frame 工具及 macOS/Windows 本轮未测。
+
+Electron WebMCP 增加独立可复跑 smoke；pnpm pack 确认分发包含 preload，macOS ARM64 对解包产物本机重建原生 addon 后验证主页面与 popup 初始化、发现和调用，Linux ARM64 使用既有原生 addon 验证相同解包产物。Electron 51 项检查通过。macOS 完整 upload smoke 两次在首个 CUA move 返回 IAB_INPUT_OUTCOME_UNKNOWN，鼠标输入结果和原因仍待排查；Windows 未测。
