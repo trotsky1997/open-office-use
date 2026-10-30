@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP, Image
 from mcp.types import CallToolResult, TextContent
-from pydantic import StrictInt
+from pydantic import StrictFloat, StrictInt
 
 import officecli_backend
 import chart_cache
@@ -114,6 +114,12 @@ def session_scan_chart_caches(directory: str, revision: int) -> dict[str, Any]:
 def session_sync_chart_cache(directory: str, base_revision: int, part: str, reference: int, allow_formula_caches: bool = False, expected_sha256: str | None = None) -> dict[str, Any]:
     """Sync one fully comparable chart reference in a new revision; formula source caches require explicit opt-in."""
     return session.sync_chart_cache(directory, base_revision, part, reference, allow_formula_caches, expected_sha256)
+
+
+@server.tool()
+def session_set_slide_chart_axis_bounds(directory: str, base_revision: int, part: str, axis_id: str, minimum: StrictFloat | None, maximum: StrictFloat | None, expected_sha256: str | None = None) -> dict[str, Any]:
+    """Set both value-axis bounds in a slide chart; null clears a bound to automatic. Use an inspected chart part, axis ID and snapshot."""
+    return session.set_slide_chart_axis_bounds(directory, base_revision, part, axis_id, minimum, maximum, expected_sha256)
 
 
 @server.tool()

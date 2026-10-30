@@ -1,6 +1,10 @@
 """Create editable PowerPoint charts with matching embedded data."""
 import io
+import copy
 import tempfile
+import zipfile
+import subprocess
+import sys
 from pathlib import Path
 from openpyxl import load_workbook
 from pptx import Presentation
@@ -52,6 +56,42 @@ with tempfile.TemporaryDirectory() as tmp:
     malformed_report = slide_charts.inspect(malformed)
     assert not malformed_report['complete'] and 'invalid_axis_maximum' in malformed_report['charts'][0]['axis_inventory']['issues']
     assert inventory['charts'][0]['description'] == 'Revenue compared with target' and not inventory['charts'][0]['description_truncated']
+    axis_draft = root/'axis-draft'; session.start(axis_draft,source=out)
+    chart_info = inventory['charts'][0]; axis_id = next(axis['id'] for axis in column_axis['axes'] if axis['type'] == 'valAx')
+    for minimum, maximum in [(True,150), (0,float('inf')), (100,100), (200,100)]:
+        try: session.set_slide_chart_axis_bounds(axis_draft,0,chart_info['chart_part'],axis_id,minimum,maximum)
+        except ValueError: pass
+        else: raise AssertionError('Invalid axis bounds accepted')
+    try: session.set_slide_chart_axis_bounds(axis_draft,0,chart_info['chart_part'],axis_id,0,200,'0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale axis snapshot accepted')
+    assert session.info(axis_draft)['latest_revision'] == 0
+    edited = session.set_slide_chart_axis_bounds(axis_draft,0,chart_info['chart_part'],axis_id,0,200,inventory['snapshot_sha256'])
+    current = session.inspect_slide_charts(axis_draft,1); changed_axis = next(axis for axis in current['charts'][0]['axis_inventory']['axes'] if axis['id'] == axis_id)
+    assert changed_axis['minimum'] == 0 and changed_axis['maximum'] == 200 and edited['affected_paths'] == [chart_info['path']]
+    assert current['charts'][0]['reconciliation']['status'] == 'match'
+    with zipfile.ZipFile(out) as before, zipfile.ZipFile(edited['output']) as after:
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name != chart_info['chart_part'].lstrip('/'))
+    code, validation, _ = officecli_backend.invoke('validate',edited['output']); assert code == 0 and validation['success'], validation
+    cli = Path(open_office_use.__file__); subprocess.run([sys.executable,str(cli),'session','set-slide-chart-axis-bounds',str(axis_draft),'--base','1','--part',chart_info['chart_part'],'--axis-id',axis_id,'--minimum','auto','--maximum','auto'],capture_output=True,text=True,check=True)
+    cleared = session.inspect_slide_charts(axis_draft,2); cleared_axis = next(axis for axis in cleared['charts'][0]['axis_inventory']['axes'] if axis['id'] == axis_id)
+    assert cleared_axis['minimum'] is None and cleared_axis['maximum'] is None
+    shared_source = root/'shared-axis.pptx'; shared_deck = Presentation(out); original = shared_deck.slides[0].shapes[0]
+    duplicate = copy.deepcopy(original._element); duplicate.nvGraphicFramePr.cNvPr.set('id','1000'); original._element.addnext(duplicate); shared_deck.save(shared_source)
+    shared_inventory = slide_charts.inspect(shared_source); shared_charts = [item for item in shared_inventory['charts'] if item.get('chart_part') == chart_info['chart_part']]
+    assert len(shared_charts) == 2
+    shared_draft = root/'shared-axis-draft'; session.start(shared_draft,source=shared_source)
+    shared_edit = session.set_slide_chart_axis_bounds(shared_draft,0,chart_info['chart_part'],axis_id,0,175,shared_inventory['snapshot_sha256'])
+    assert len(shared_edit['affected_paths']) == 2 and shared_edit['affected_paths_complete']
+    log_source = root/'log-axis.pptx'; log_deck = Presentation(out); scaling = log_deck.slides[0].shapes[0].chart.value_axis._element.find('{http://schemas.openxmlformats.org/drawingml/2006/chart}scaling')
+    from lxml import etree
+    scaling.insert(0,etree.Element('{http://schemas.openxmlformats.org/drawingml/2006/chart}logBase',val='10'))
+    scaling.find('{http://schemas.openxmlformats.org/drawingml/2006/chart}min').set('val','1'); log_deck.save(log_source)
+    log_draft = root/'log-axis-draft'; session.start(log_draft,source=log_source)
+    try: session.set_slide_chart_axis_bounds(log_draft,0,chart_info['chart_part'],axis_id,0,100)
+    except ValueError: pass
+    else: raise AssertionError('Nonpositive logarithmic bound accepted')
+    assert session.info(log_draft)['latest_revision'] == 0
     chart_draft = root/'chart-description'; session.start(chart_draft,source=out)
     chart_target = inventory['charts'][0]
     result = session.set_slide_description(chart_draft,0,chart_target['path'],'Updated chart',inventory['snapshot_sha256'])

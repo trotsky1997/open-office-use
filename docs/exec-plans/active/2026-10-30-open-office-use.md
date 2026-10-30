@@ -334,3 +334,5 @@ Added a reproducible cross-format quarterly review example using a shared illust
 PowerPoint column, bar and line charts support explicit minimum and maximum numeric-axis bounds, including horizontal bar charts. LibreOffice PDF previews showed the requested line and bar axis ranges. Inspect clipping and application-specific rendering; native PowerPoint remains unverified.
 
 PowerPoint chart inventory reports saved axis positions, explicit bounds, orientation and logarithmic base with per-inventory coverage and malformed-structure issues. Automatic rendered bounds depend on the application.
+
+Existing PowerPoint value-axis bounds can be set or cleared through snapshot-bound CLI/MCP session revisions. Shared chart parts report affected inspected paths; incomplete inventory is flagged. Native PowerPoint remains unverified.

@@ -266,6 +266,48 @@ def inspect(file):
         return result
 
 
+def set_axis_bounds(source, output, part, axis_id, minimum, maximum, expected_sha256=None):
+    """Set or clear both explicit bounds on one inspected chart value axis."""
+    if not isinstance(part, str) or not part.startswith('/') or not isinstance(axis_id, str) or not axis_id.isdecimal() or len(axis_id) > 10 or int(axis_id) > 4294967295:
+        raise ValueError('Provide a chart part and numeric axis ID from inspection')
+    for value in (minimum, maximum):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value)):
+            raise ValueError('Axis bounds must be finite numbers within ±1e100 or null')
+    if minimum is not None and maximum is not None and minimum >= maximum: raise ValueError('Axis minimum must be less than maximum')
+    selected = {}
+    def select(file):
+        inventory = inspect(file)
+        charts = [item for item in inventory['charts'] if item.get('chart_part') == part]
+        if not charts or any(not item['axis_inventory']['complete'] for item in charts): raise ValueError('Chart axis inventory is unavailable or incomplete')
+        axes = [item for item in charts[0]['axis_inventory']['axes'] if item['id'] == axis_id and item['type'] == 'valAx']
+        if len(axes) != 1: raise ValueError('Axis ID must identify one value axis in the chart')
+        if axes[0]['log_base'] is not None and any(value is not None and value <= 0 for value in (minimum, maximum)): raise ValueError('Logarithmic axis bounds must be positive')
+        selected['paths'] = [item['path'] for item in charts]; selected['complete'] = inventory['complete']
+        return part.lstrip('/')
+    def edit(tree, _archive):
+        areas = tree.getroot().findall(C + 'chart/' + C + 'plotArea')
+        if len(areas) != 1: raise ValueError('Chart plot area is ambiguous')
+        axes = [node for node in areas[0].findall(C + 'valAx') if len(node.findall(C + 'axId')) == 1 and node.find(C + 'axId').get('val') == axis_id]
+        if len(axes) != 1: raise ValueError('Value axis changed')
+        scales = axes[0].findall(C + 'scaling')
+        if len(scales) != 1: raise ValueError('Axis scaling is ambiguous')
+        scale = scales[0]; order = {C + name: index for index, name in enumerate(('logBase', 'orientation', 'max', 'min', 'extLst'))}
+        ranks = [order.get(child.tag, -1) for child in scale]
+        if -1 in ranks or ranks != sorted(ranks) or len(ranks) != len(set(ranks)): raise ValueError('Unsupported axis scaling structure')
+        for name, value in (('max', maximum), ('min', minimum)):
+            tag = C + name; node = scale.find(tag)
+            if node is not None:
+                if set(node.attrib) != {'val'} or len(node): raise ValueError('Unsupported axis bound structure')
+                scale.remove(node)
+            if value is not None:
+                node = etree.Element(tag, val=str(value))
+                following = next((child for child in scale if order[child.tag] > order[tag]), None)
+                if following is None: scale.append(node)
+                else: scale.insert(scale.index(following), node)
+    ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+    return {'output': str(output), 'chart_part': part, 'axis_id': axis_id, 'minimum': minimum, 'maximum': maximum, 'affected_paths': selected['paths'], 'affected_paths_complete': selected['complete']}
+
+
 def sync(source, output, part, reference, allow_formula_caches=False, expected_sha256=None):
     """Synchronize one verified chart reference from its saved embedded workbook."""
     if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from slide chart inspection')

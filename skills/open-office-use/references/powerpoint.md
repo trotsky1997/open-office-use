@@ -51,3 +51,5 @@ For a flowchart node, use `type: "shape"`, `shape_kind` (`rectangle`, `rounded_r
 To attach an arrow to shape nodes, give each earlier `shape` a unique `id` and use `type: "connector"` with `start` and `end` objects, each containing `shape` and `side` (`top`, `left`, `bottom`, `right`). This writes native shape connection references; it supports the four documented node shapes and straight lines. Inspect behavior after moving nodes in the destination app.
 
 Slide chart inspection returns `axis_inventory` with saved standard-axis bounds, positions, orientations and log bases. Null bounds are automatic; check `complete` and `issues` and inspect the rendered chart.
+
+Use `session_set_slide_chart_axis_bounds` with an inspected chart part, value-axis ID and snapshot hash to set both explicit bounds in an existing revision; pass null for an automatic bound. Check `affected_paths` and `affected_paths_complete` for shared chart parts, then re-inspect and render.

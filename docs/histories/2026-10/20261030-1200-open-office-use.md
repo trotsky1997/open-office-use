@@ -437,3 +437,5 @@ Added a runnable quarterly review example that generates a report, workbook, pre
 Added validated numeric-axis bounds for authored PowerPoint column, bar and line charts, and applied them in the cross-format example.
 
 Extended slide chart inspection to report standard-axis settings and incomplete or malformed axis coverage.
+
+Added targeted session edits for PowerPoint value-axis bounds, including automatic bounds, logarithmic validation, shared chart reporting and preservation checks.

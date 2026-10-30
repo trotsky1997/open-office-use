@@ -191,6 +191,17 @@ def inspect_slide_charts(directory, revision):
     return {'revision': revision, **slide_charts.inspect(source)}
 
 
+def set_slide_chart_axis_bounds(directory, base_revision, part, axis_id, minimum, maximum, expected_sha256=None):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'pptx': raise ValueError('Slide chart axis editing requires a PPTX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
+    try: result = slide_charts.set_axis_bounds(source, output, part, axis_id, minimum, maximum, expected_sha256)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, **result}
+
+
 def sync_slide_chart_cache(directory, base_revision, part, reference, allow_formula_caches=False, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Slide chart cache sync requires a PPTX session')
