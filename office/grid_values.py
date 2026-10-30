@@ -395,7 +395,7 @@ def apply(source, output, sheet, changes, operations):
                 old_formula = (formula.text or '') if formula is not None else None
                 old_is_text = formula is None and cell.get('t') in ('s', 'str', 'inlineStr')
                 new_is_text = new_formula is None and kind == 'inlineStr'
-                if old_formula is not None or new_formula is not None or old_is_text != new_is_text: string_count_uncertain = True
+                if old_formula is not None or new_formula is not None or old_is_text != new_is_text or (cell.get('t') == 's') != (kind == 's'): string_count_uncertain = True
                 if old_formula != new_formula or old_is_dynamic != (address in dynamic): formula_changed = True
                 old_style = cell.get('s', '0')
                 if not re.fullmatch(r'[0-9]{1,10}', old_style) or original_xfs is None or int(old_style) >= len(original_xfs): raise ValueError('Invalid source style index')

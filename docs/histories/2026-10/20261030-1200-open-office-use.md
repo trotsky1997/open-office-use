@@ -299,3 +299,7 @@ Added textbox insets, vertical alignment, wrapping and auto-fit settings, includ
 ### Native Excel table authoring
 
 Added bounded named Excel tables with built-in styles and filter controls, and protected table header and total cells in targeted grid/text edits. Validated data edits, totals, invalid inputs, schema, CLI/MCP and LibreOffice render; table-aware header editing and native Excel remain open.
+
+### Excel table column rename
+
+Added revision-bound table column renaming with consistent header/metadata updates and conservative reference checks. Verified standard formulas, encoded structured references, shared relationships, collisions, stale revisions, CLI and MCP. Structured references are not rewritten; caches need review. Corrected shared-string count handling when grid edits change shared text to inline text.

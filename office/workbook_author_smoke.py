@@ -109,6 +109,88 @@ with tempfile.TemporaryDirectory() as tmp:
     copied_table=root/'copied-table.xlsx'
     open_office_use.author({'sheets':{'Sales':{'B2':160}}},copied_table,table_file)
     copied_sheet=load_workbook(copied_table)['Sales']; assert copied_sheet['B2'].value==160 and copied_sheet.tables['SalesTable'].tableColumns[0].name=='Quarter'
+    rename_draft=root/'rename-draft';session.start(rename_draft,source=table_file)
+    renamed=session.rename_table_column(rename_draft,0,'Sales','SalesTable','Revenue','Net Revenue')
+    renamed_sheet=load_workbook(renamed['file'])['Sales']
+    assert renamed['revision']==1 and renamed_sheet['B1'].value=='Net Revenue' and renamed_sheet.tables['SalesTable'].tableColumns[1].name=='Net Revenue'
+    assert load_workbook(table_file)['Sales']['B1'].value=='Revenue' and session.info(rename_draft)['latest_revision']==1
+    with zipfile.ZipFile(table_file) as before,zipfile.ZipFile(renamed['file']) as after:
+        changes={name for name in before.namelist() if before.read(name)!=after.read(name)}
+        assert {'xl/worksheets/sheet1.xml','xl/tables/table1.xml'} <= changes
+        assert changes <= {'xl/worksheets/sheet1.xml','xl/tables/table1.xml','xl/workbook.xml','xl/styles.xml','xl/sharedStrings.xml'}, changes
+
+    code, validation, _=officecli_backend.invoke('validate',renamed['file']); assert code==0 and validation['success'],validation
+    try: session.rename_table_column(rename_draft,0,'Sales','SalesTable','Revenue','Other')
+    except ValueError as exc: assert 'conflict' in str(exc).lower()
+    else: raise AssertionError('Stale table rename accepted')
+    try: session.rename_table_column(rename_draft,1,'Sales','SalesTable','Net Revenue','Quarter')
+    except ValueError: pass
+    else: raise AssertionError('Duplicate table column name accepted')
+    assert session.info(rename_draft)['latest_revision']==1
+    cli_draft=root/'rename-cli';session.start(cli_draft,source=table_file)
+    command=[sys.executable,str(cli),'session','rename-table-column',str(cli_draft),'--base','0','--sheet','Sales','--table','SalesTable','--old','Revenue','--new','Amount']
+    assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['new_name']=='Amount'
+    for index, expression in enumerate(['=SUM(SalesTable[Revenue])','=INDIRECT(A2)']):
+        dependent=root/f'dependent-{index}.xlsx'
+        open_office_use.author({'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C1':expression}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}},dependent)
+        blocked=root/f'dependent-draft-{index}';session.start(blocked,source=dependent)
+        try: session.rename_table_column(blocked,0,'Sales','SalesTable','Revenue','Amount')
+        except ValueError: pass
+        else: raise AssertionError('Unsafe table rename accepted')
+        assert session.info(blocked)['latest_revision']==0
+    encoded_source=root/'dependent-0.xlsx'; encoded=root/'encoded-reference.xlsx'
+    with zipfile.ZipFile(encoded_source) as before, zipfile.ZipFile(encoded,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/worksheets/sheet1.xml': data=data.replace(b'[',b'&#91;').replace(b']',b'&#93;')
+            after.writestr(entry,data)
+    encoded_draft=root/'encoded-draft';session.start(encoded_draft,source=encoded)
+    try: session.rename_table_column(encoded_draft,0,'Sales','SalesTable','Revenue','Amount')
+    except ValueError as exc: assert 'structured' in str(exc)
+    else: raise AssertionError('Encoded structured reference accepted')
+    shared=root/'shared-table.xlsx'
+    with zipfile.ZipFile(table_file) as before, zipfile.ZipFile(shared,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/_rels/workbook.xml.rels':
+                tree=etree.fromstring(data); rel=etree.SubElement(tree,'{http://schemas.openxmlformats.org/package/2006/relationships}Relationship')
+                rel.set('Id','rIdSharedTable'); rel.set('Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'); rel.set('Target','/xl/tables/table1.xml'); data=etree.tostring(tree)
+            after.writestr(entry,data)
+    shared_draft=root/'shared-table-draft';session.start(shared_draft,source=shared)
+    try: session.rename_table_column(shared_draft,0,'Sales','SalesTable','Revenue','Amount')
+    except ValueError as exc: assert 'shared' in str(exc)
+    else: raise AssertionError('Shared table part accepted')
+    assert session.info(shared_draft)['latest_revision']==0
+    rich_header=root/'rich-header.xlsx'
+    with zipfile.ZipFile(table_file) as before,zipfile.ZipFile(rich_header,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/worksheets/sheet1.xml':
+                tree=etree.fromstring(data);ns='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                cell=next(node for node in tree.iter(ns+'c') if node.get('r')=='B1');inline=cell.find(ns+'is'); inline.clear()
+                for text in ('Rev','enue'):
+                    run=etree.SubElement(inline,ns+'r'); etree.SubElement(run,ns+'t').text=text
+                data=etree.tostring(tree)
+            after.writestr(entry,data)
+    rich_draft=root/'rich-header-draft';session.start(rich_draft,source=rich_header)
+    try: session.rename_table_column(rich_draft,0,'Sales','SalesTable','Revenue','Amount')
+    except ValueError as exc: assert 'Rich' in str(exc)
+    else: raise AssertionError('Rich table header rename accepted')
+    assert session.info(rich_draft)['latest_revision']==0
+    shared_text=root/'shared-text-table.xlsx'; book=xlsxwriter.Workbook(str(shared_text));ws=book.add_worksheet('Data')
+    ws.add_table('A1:B3',{'name':'SharedTable','columns':[{'header':'Quarter'},{'header':'Revenue'}],'data':[['Q1',120],['Q2',140]]});book.close()
+    shared_text_draft=root/'shared-text-draft';session.start(shared_text_draft,source=shared_text)
+    shared_text_result=session.rename_table_column(shared_text_draft,0,'Data','SharedTable','Revenue','Amount')
+    shared_text_sheet=load_workbook(shared_text_result['file'])['Data']
+    assert shared_text_sheet['B1'].value=='Amount' and shared_text_sheet.tables['SharedTable'].tableColumns[1].name=='Amount'
+    with zipfile.ZipFile(shared_text_result['file']) as archive:
+        shared_root=etree.fromstring(archive.read('xl/sharedStrings.xml'))
+        assert shared_root.get('count') is None and shared_root.get('uniqueCount') is None
+    normal_formula=root/'normal-formula.xlsx'
+    open_office_use.author({'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'C1':'=B2*2'}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B2'}]}}},normal_formula)
+    formula_draft=root/'normal-formula-draft';session.start(formula_draft,source=normal_formula)
+    formula_renamed=session.rename_table_column(formula_draft,0,'Sales','SalesTable','Revenue','Amount')
+    assert load_workbook(formula_renamed['file'])['Sales']['C1'].value=='=B2*2' and formula_renamed['formula_cache_effect']=='may_be_stale'
     table_draft=root/'table-draft';session.start(table_draft,source=table_file)
     grid=session.read_grid(table_draft,0,'Sales','A1:B2');assert grid['rows'][0][0]['read_only_reason']=='table_header' and grid['rows'][1][1]['editable']
     try: session.replace_text(table_draft,0,'/Sales/A1','Quarter','Period')

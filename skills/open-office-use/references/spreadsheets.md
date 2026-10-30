@@ -18,3 +18,5 @@ For printable authored sheets, `sheet_options.print_options` sets paper, orienta
 Use `author_file` with `sheet_options.images` to embed a local PNG or JPEG as a cell-anchored drawing. Provide pixel width and a useful `description`; inspect rendered pages and print-area coverage.
 
 `author_file` can create native styled/filterable Excel tables using `sheet_options.tables`. Table headers and totals are read-only in the targeted grid and text replacement workflows; use a table-aware operation and review table metadata for changes there.
+
+Use `session_rename_table_column` to update a supported table header and column metadata together. Structured or indirect references and other opaque dependencies cause a refusal; inspect formula and chart caches afterward.

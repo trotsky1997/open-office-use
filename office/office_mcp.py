@@ -213,6 +213,12 @@ def session_edit_slide_chart_grid(directory: str, base_revision: int, part: str,
 
 
 @server.tool()
+def session_rename_table_column(directory: str, base_revision: int, sheet: str, table_name: str, old_name: str, new_name: str) -> dict[str, Any]:
+    """Rename a table header and its column metadata in one revision; structured or indirect references are rejected."""
+    return session.rename_table_column(directory, base_revision, sheet, table_name, old_name, new_name)
+
+
+@server.tool()
 def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
     """Edit grid values; each change may set type to text. Unrelated caches are retained; dynamic formula anchors are returned for spill review, validation rules are not evaluated, and recalculation is requested."""
     return session.edit_grid(directory, base_revision, sheet, cell_range, changes)

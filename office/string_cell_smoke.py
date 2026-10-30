@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert set(before.namelist())==set(after.namelist())
         assert all(before.read(n)==after.read(n) for n in before.namelist() if n!='xl/worksheets/sheet1.xml')
         sheet_xml=etree.fromstring(after.read('xl/worksheets/sheet1.xml')); ns={'x':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-        assert sheet_xml.xpath('string(//x:c[@r="A1"]/@t)',namespaces=ns)=='str' and sheet_xml.xpath('string(//x:c[@r="A1"]/x:v)',namespaces=ns)==' α  beta'
+        assert sheet_xml.xpath('string(//x:c[@r="A1"]/@t)',namespaces=ns)=='inlineStr' and sheet_xml.xpath('string(//x:c[@r="A1"]/x:is/x:t)',namespaces=ns)==' α  beta'
     code, validation, _=officecli_backend.invoke('validate',result); assert code==0 and validation['success'],validation
     converted=root/'roundtrip.xlsx'; spreadsheet.recalculate(result,converted)
     assert load_workbook(converted)['Sheet']['A1'].value==' α  beta'

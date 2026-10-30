@@ -737,7 +737,7 @@ def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=Fals
             element.clear()
     if shared_uses - shared_ranges.keys():
         raise ValueError('Shared formula has no protected range')
-    table_headers = []; table_totals = []
+    table_headers = []; table_totals = []; table_parts = []
     if table_ids:
         rel_ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
         table_type = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
@@ -763,10 +763,11 @@ def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=Fals
                 except (TypeError, ValueError): raise ValueError('Invalid table range') from None
                 header, totals = table.get('headerRowCount', '1'), table.get('totalsRowCount', '0')
                 if header not in ('0', '1') or totals not in ('0', '1') or table.get('totalsRowShown') not in (None, '0', '1', 'true', 'false'): raise ValueError('Unsupported table header or total rows')
+                table_parts.append({'part': table_path, 'name': table.get('name'), 'display_name': table.get('displayName'), 'ref': table.get('ref'), 'header_rows': int(header), 'totals_rows': int(totals)})
                 if header == '1': table_headers.append((c1, r1, c2, r1))
                 if totals == '1' or table.get('totalsRowShown') in ('1', 'true'): table_totals.append((c1, r2, c2, r2))
     dimensions['issues'] = sorted(dimension_issues)
-    return {'formula_ranges': ranges, 'merged_ranges': merges, 'table_headers': table_headers, 'table_totals': table_totals, 'sheet_protected': sheet_protected, 'dimension_issues': dimensions['issues'], 'dimensions': dimensions}
+    return {'formula_ranges': ranges, 'merged_ranges': merges, 'table_headers': table_headers, 'table_totals': table_totals, 'table_parts': table_parts, 'sheet_protected': sheet_protected, 'dimension_issues': dimensions['issues'], 'dimensions': dimensions}
 
 
 

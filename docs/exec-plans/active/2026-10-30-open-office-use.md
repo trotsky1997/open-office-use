@@ -206,3 +206,5 @@ Positioned slide textboxes support rich runs, links, multiple paragraphs, bullet
 Slide textbox authoring supports margins, vertical alignment, wrapping and none/shrink/resize auto-fit. LibreOffice shrink was compared with a clipped baseline; resize can render beyond saved shape bounds and remains a review candidate.
 
 Workbook authoring supports named, styled native tables with verified headers and bounded ranges. Targeted grid/text edits protect table headers and totals while permitting data edits; generic OfficeCLI operations require separate review. Native Excel and table-aware header editing remain open.
+
+A revision-bound table column rename updates the header and column metadata together after conservative dependency inspection; structured/indirect references, opaque features and shared parts are rejected. Formula and chart caches remain potentially stale.

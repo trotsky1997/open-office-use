@@ -103,7 +103,9 @@ with tempfile.TemporaryDirectory() as tmp:
     same_count = root / 'same-count'; session.start(same_count, source=shared_source)
     one_text = session.edit_grid(same_count, 0, 'Sheet', 'A1', [{'cell': 'A1', 'value': 'different'}])
     with zipfile.ZipFile(shared_source) as before, zipfile.ZipFile(one_text['file']) as after:
-        assert before.read('xl/sharedStrings.xml') == after.read('xl/sharedStrings.xml')
+        old = etree.fromstring(before.read('xl/sharedStrings.xml')); new = etree.fromstring(after.read('xl/sharedStrings.xml'))
+        assert new.get('count') is None and new.get('uniqueCount') is None
+        assert [etree.tostring(item) for item in old] == [etree.tostring(item) for item in new]
     shared_audit = officecli_backend.audit(changed['file']); assert shared_audit['validation']['exit_code'] == 0 and shared_audit['validation']['result']['success'], shared_audit
     cli_draft = root / 'cli'; session.start(cli_draft, source=source)
     cli = Path(__file__).with_name('open_office_use.py')

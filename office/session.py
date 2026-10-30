@@ -896,6 +896,112 @@ def read_grid(directory, base_revision, sheet, cell_range):
             'rows': rows, 'data_validation': validations, 'cache_freshness': 'unknown'}
 
 
+def rename_table_column(directory, base_revision, sheet, table_name, old_name, new_name):
+    """Rename one table header and its column metadata in one revision."""
+    if not isinstance(sheet, str) or not sheet or '/' in sheet or '\x00' in sheet: raise ValueError('Invalid sheet name')
+    for value in (table_name, old_name, new_name):
+        if not isinstance(value, str) or not value or value != value.strip() or len(value.encode('utf-16-le')) // 2 > 255 or re.search(r'[\x00-\x1f\ud800-\udfff\ufffe\uffff\[\]]|_x[0-9a-fA-F]{4}_', value): raise ValueError('Invalid table or column name')
+    if old_name == new_name: raise ValueError('The new column name must differ')
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx': raise ValueError('Table column rename requires an XLSX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
+    with tempfile.TemporaryDirectory(dir=state['directory'], prefix='.office-table-column-') as tmp:
+        snapshot, digest = snapshots.copy(source, tmp)
+        constraints = spreadsheet.worksheet_constraints(snapshot, sheet)
+        if constraints['sheet_protected']: raise ValueError('Protected worksheets cannot be edited')
+        matches = [table for table in constraints['table_parts'] if table['name'] == table_name and table['display_name'] == table_name]
+        if len(matches) != 1 or matches[0]['header_rows'] != 1: raise ValueError('A unique table with a header row is required')
+        table = matches[0]; c1, r1, c2, r2 = range_boundaries(table['ref'])
+        if c2 - c1 + 1 > 200: raise ValueError('Table exceeds 200 columns')
+        if any(a <= c2 and c1 <= c and b <= r1 <= d for a,b,c,d in constraints['merged_ranges'] + constraints['formula_ranges']): raise ValueError('Table header overlaps a merged or formula range')
+        with zipfile.ZipFile(snapshot) as archive:
+            parts = archive.namelist()
+            if any(name.startswith(('customXml/', 'xl/pivotTables/', 'xl/pivotCache/', 'xl/slicers/', 'xl/slicerCaches/', 'xl/queryTables/', 'xl/externalLinks/', 'xl/embeddings/', 'xl/webextensions/', 'xl/activeX/', 'xl/model/', 'xl/richData/')) or name == 'xl/connections.xml' or name.startswith('xl/') and name.endswith('.bin') for name in parts): raise ValueError('Workbook contains unsupported dependent features')
+            sheet_part = grid_styles.sheet_part(snapshot, sheet); table_owners = []
+            for rel_path in (name for name in parts if name.endswith('.rels')):
+                if archive.getinfo(rel_path).file_size > 4 * 1024 * 1024: raise ValueError('Relationship part exceeds table rename inspection limit')
+                rel_root = ooxml.parse_xml(archive.read(rel_path)).getroot()
+                if rel_root.tag != grid_styles.REL+'Relationships': raise ValueError('Invalid package relationships')
+                if rel_path != '_rels/.rels' and '/_rels/' not in rel_path: raise ValueError('Unsupported package relationship path')
+                owner = posixpath.join(posixpath.dirname(posixpath.dirname(rel_path)), posixpath.basename(rel_path)[:-5])
+                relationships = rel_root.findall(grid_styles.REL+'Relationship'); ids = [rel.get('Id') for rel in relationships]
+                if len(relationships) != len(rel_root) or any(not value for value in ids) or len(ids) != len(set(ids)): raise ValueError('Invalid package relationship IDs')
+                for rel in relationships:
+                    mode = rel.get('TargetMode', 'Internal')
+                    if mode not in ('Internal', 'External'): raise ValueError('Invalid package relationship mode')
+                    if mode == 'External': continue
+                    target = rel.get('Target', '')
+                    if not target or any(char in target for char in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported package relationship for table rename')
+                    resolved = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(owner), target))
+                    if resolved == table['part']: table_owners.append((owner, rel.get('Type')))
+            if table_owners != [(sheet_part, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table')]: raise ValueError('Table part has shared or unsupported relationships')
+            xml_parts = [name for name in parts if name.startswith('xl/') and name.endswith('.xml')]
+            if len(xml_parts) > 1000: raise ValueError('Workbook has too many XML parts to inspect')
+            table_declarations = []
+            for name in xml_parts:
+                if archive.getinfo(name).file_size > 8 * 1024 * 1024: raise ValueError('Workbook XML part exceeds table rename inspection limit')
+                root = ooxml.parse_xml(archive.read(name)).getroot()
+                if root.tag == grid_styles.X+'table' and any((root.get(key) or '').casefold() == table_name.casefold() for key in ('name','displayName')): table_declarations.append(name)
+                for node in root.iter():
+                    if not isinstance(node.tag, str): continue
+                    values = [node.text or '', node.tail or '', *node.attrib.values()]
+                    if any('[' in value or ']' in value or re.search(r'_x005[bBdD]_', value) for value in values): raise ValueError('Workbook contains possible structured references; rename requires separate review')
+                    if node.tag.rsplit('}',1)[-1].lower() in ('f','formula','formula1','formula2','definedname','calculatedcolumnformula','totalsrowformula') and re.search(r'(?i)\b(?:INDIRECT|EVALUATE)\s*\(', node.text or ''):
+                        raise ValueError('Workbook contains indirect references; rename requires separate review')
+            if table_declarations != [table['part']]: raise ValueError('Table name is duplicated or ambiguous')
+            tree = ooxml.parse_xml(archive.read(table['part'])); root = tree.getroot(); ns = grid_styles.X
+            columns = root.findall(ns+'tableColumns')
+            if len(columns) != 1 or root.get('tableType') not in (None, 'worksheet') or root.get('connectionId') not in (None, '0') or len(list(root.iter(ns+'extLst'))) or root.find('.//'+ns+'sortState') is not None: raise ValueError('Unsupported table structure')
+            filter_node = root.find(ns+'autoFilter')
+            if filter_node is not None and len(filter_node): raise ValueError('Table filter criteria require separate review')
+            nodes = columns[0].findall(ns+'tableColumn')
+            if len(nodes) != c2-c1+1 or len(nodes) != len(columns[0]) or columns[0].get('count') not in (None, str(len(nodes))): raise ValueError('Table columns are inconsistent')
+            names = [node.get('name') for node in nodes]
+            ids = [node.get('id') for node in nodes]
+            if any(not name for name in names) or len({name.casefold() for name in names}) != len(names) or any(not value or not value.isdecimal() or len(value) > 8 or not 1 <= int(value) <= 2147483647 for value in ids) or len({int(value) for value in ids}) != len(ids): raise ValueError('Table column metadata is ambiguous')
+            if sum(name == old_name for name in names) != 1 or any(name.casefold() == new_name.casefold() and name != old_name for name in names): raise ValueError('Column missing or new name conflicts')
+            if any(len(node) or node.get('uniqueName') is not None or node.get('queryTableFieldId') is not None for node in nodes): raise ValueError('Calculated or linked table columns require separate review')
+        first = f'{get_column_letter(c1)}{r1}'; last = f'{get_column_letter(c2)}{r1}'
+        cells = spreadsheet.read_range(snapshot, sheet, f'{first}:{last}')['rows'][0]
+        if len(cells) != len(names) or any(cell.get('value') != name or 'formula' in cell or cell.get('text_complete') is False for cell,name in zip(cells,names)): raise ValueError('Table headers and column metadata do not match')
+        index = names.index(old_name); address = f'{get_column_letter(c1 + index)}{r1}'
+        with zipfile.ZipFile(snapshot) as archive:
+            worksheet = ooxml.parse_xml(archive.read(sheet_part)).getroot()
+            matches = [cell for cell in worksheet.findall(ns+'sheetData/'+ns+'row/'+ns+'c') if cell.get('r') == address]
+            if len(matches) != 1: raise ValueError('Table header cell is unavailable or ambiguous')
+            cell = matches[0]; kind = cell.get('t')
+            if kind == 'inlineStr':
+                inline = cell.findall(ns+'is')
+                if len(inline) != 1 or len(inline[0]) != 1 or inline[0][0].tag != ns+'t': raise ValueError('Rich or unsupported table header text requires separate review')
+            elif kind == 's':
+                values = cell.findall(ns+'v')
+                if len(values) != 1 or not re.fullmatch(r'[0-9]{1,10}', values[0].text or ''): raise ValueError('Invalid table header shared string')
+                manifest = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
+                ct = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+                shared = [item.get('PartName', '') for item in manifest.findall(ct+'Override') if item.get('ContentType') == grid_values.SHARED]
+                if len(shared) != 1 or not shared[0].startswith('/') or shared[0][1:] not in archive.namelist() or archive.getinfo(shared[0][1:]).file_size > 8 * 1024 * 1024: raise ValueError('Shared string table is unavailable')
+                strings = ooxml.parse_xml(archive.read(shared[0][1:])).getroot()
+                if strings.tag != ns+'sst': raise ValueError('Invalid shared string table')
+                items = strings.findall(ns+'si'); number = int(values[0].text)
+                if number >= len(items) or len(items[number]) != 1 or items[number][0].tag != ns+'t': raise ValueError('Rich or unsupported table header text requires separate review')
+            elif kind != 'str' or len(cell.findall(ns+'v')) != 1:
+                raise ValueError('Unsupported table header cell storage')
+        candidate = Path(tmp) / 'cell.xlsx'
+        change = {'cell': address, 'value': new_name, 'type': 'text'}
+        operation = {'command': 'set', 'path': f'/{sheet}/{address}', 'props': {'value': 'office-use-literal-text'}}
+        result = grid_values.apply(snapshot, candidate, sheet, [change], [operation])
+        def edit(tree, _archive):
+            current = tree.getroot().findall(ns+'tableColumns/'+ns+'tableColumn')
+            if len(current) != len(names) or [item.get('name') for item in current] != names: raise ValueError('Table column metadata changed')
+            current[index].set('name', new_name)
+        try: ooxml.edit_xml(candidate, output, lambda _: table['part'], edit)
+        except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'table': table_name, 'cell': address,
+            'old_name': old_name, 'new_name': new_name, 'snapshot_sha256': digest, 'formula_cache_effect': result['formula_cache_effect'], 'chart_cache_effect': 'may_be_stale'}
+
+
 def edit_grid(directory, base_revision, sheet, cell_range, changes):
     if not isinstance(changes, list) or not changes or len(changes) > 200:
         raise ValueError('Provide 1 to 200 changed cells')
