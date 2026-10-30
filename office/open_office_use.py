@@ -162,6 +162,7 @@ def main():
     bundle = commands.add_parser('review-bundle'); bundle.add_argument('file'); bundle.add_argument('--out-dir', required=True)
     audit = commands.add_parser('audit'); audit.add_argument('file')
     comparison = commands.add_parser('compare'); comparison.add_argument('before'); comparison.add_argument('after')
+    note_diff = commands.add_parser('compare-notes'); note_diff.add_argument('before'); note_diff.add_argument('after'); note_diff.add_argument('--before-slide', type=int, required=True); note_diff.add_argument('--after-slide', type=int, required=True)
     cell_diff = commands.add_parser('compare-cells'); cell_diff.add_argument('before'); cell_diff.add_argument('after'); cell_diff.add_argument('--sheet', required=True); cell_diff.add_argument('--range', required=True, dest='cell_range')
     draft = commands.add_parser('session'); sub = draft.add_subparsers(dest='action', required=True)
     start = sub.add_parser('start'); start.add_argument('directory'); group = start.add_mutually_exclusive_group(required=True); group.add_argument('--source'); group.add_argument('--format', choices=['docx', 'xlsx', 'pptx'])
@@ -172,6 +173,7 @@ def main():
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
     note_session = sub.add_parser('notes'); note_session.add_argument('directory'); note_session.add_argument('--revision', type=int, required=True); note_session.add_argument('--slide', type=int, required=True)
+    note_compare = sub.add_parser('compare-notes'); note_compare.add_argument('directory'); note_compare.add_argument('--before', type=int, required=True); note_compare.add_argument('--after', type=int, required=True); note_compare.add_argument('--before-slide', type=int, required=True); note_compare.add_argument('--after-slide', type=int, required=True)
     note_write = sub.add_parser('replace-notes'); note_write.add_argument('directory'); note_write.add_argument('--base', type=int, required=True); note_write.add_argument('--slide', type=int, required=True); note_write.add_argument('--text-file', required=True)
     note_edit = sub.add_parser('replace-notes-text'); note_edit.add_argument('directory'); note_edit.add_argument('--base', type=int, required=True); note_edit.add_argument('--slide', type=int, required=True); note_edit.add_argument('--paragraph', type=int, required=True); note_edit.add_argument('--find', required=True); note_edit.add_argument('--replace', required=True, dest='replacement')
     reply = sub.add_parser('reply-comment'); reply.add_argument('directory'); reply.add_argument('--base', type=int, required=True); reply.add_argument('--parent-id', required=True); reply.add_argument('--text', required=True); reply.add_argument('--author', required=True)
@@ -217,6 +219,8 @@ def main():
                 result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
             elif args.action == 'notes':
                 result = session.read_notes(args.directory, args.revision, args.slide)
+            elif args.action == 'compare-notes':
+                result = session.compare_notes(args.directory, args.before, args.after, args.before_slide, args.after_slide)
             elif args.action == 'replace-notes':
                 if Path(args.text_file).stat().st_size > 400000: raise ValueError('Notes text file exceeds 400,000 bytes')
                 result = session.replace_notes(args.directory, args.base, args.slide, Path(args.text_file).read_text(encoding='utf-8'))
@@ -283,6 +287,8 @@ def main():
             result = review.compare_cells(args.before, args.after, args.sheet, args.cell_range)
         elif args.command == 'compare':
             result = review.compare(args.before, args.after)
+        elif args.command == 'compare-notes':
+            result = review.compare_notes(args.before, args.after, args.before_slide, args.after_slide)
         elif args.command == 'cells':
             result = spreadsheet.read_range(args.file, args.sheet, args.cell_range)
         elif args.command == 'scan-formulas':

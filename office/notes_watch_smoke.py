@@ -26,10 +26,13 @@ with tempfile.TemporaryDirectory() as tmp:
         assert post('notes-read', {'revision': 1, 'slide': 1})['text'] == 'Notes'
         assert post('notes-replace-text', {'base_revision': 1, 'slide': 1, 'paragraph': 1, 'find': 'Notes', 'replacement': 'Edited'})['revision'] == 2
         assert post('notes-read', {'revision': 2, 'slide': 1})['text'] == 'Edited'
+        diff = post('notes-comparison', {'before': 1, 'after': 2, 'before_slide': 1, 'after_slide': 1})
+        assert diff['text_changed'] and '-Notes' in diff['diff'] and '+Edited' in diff['diff']
         for route, data, request_origin, code in [
             ('notes-replace', {'base_revision': 0, 'slide': 1, 'text': 'Stale'}, origin, 400),
             ('notes-replace', {'base_revision': 2, 'slide': 1, 'text': 'Forbidden'}, 'http://evil.test', 403),
             ('notes-read', {'revision': 1, 'slide': 0}, origin, 400),
+            ('notes-comparison', {'before': 0, 'after': 1, 'before_slide': 1, 'after_slide': 1}, origin, 400),
         ]:
             try: post(route, data, request_origin)
             except urllib.error.HTTPError as exc: assert exc.code == code, exc

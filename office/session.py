@@ -13,6 +13,7 @@ import cell_text
 import layout
 import notes
 import officecli_backend
+import review
 import spreadsheet
 import slides
 import word
@@ -293,6 +294,13 @@ def read_notes(directory, revision, slide):
     state = info(directory); source = revision_file(state, revision)
     result = notes.read(source, slide); result['revision'] = revision
     return result
+
+
+def compare_notes(directory, before_revision, after_revision, before_slide, after_slide):
+    state = info(directory)
+    before = revision_file(state, before_revision); after = revision_file(state, after_revision)
+    result = review.compare_notes(before, after, before_slide, after_slide)
+    return {'before_revision': before_revision, 'after_revision': after_revision, **result}
 
 
 def replace_notes(directory, base_revision, slide, text):

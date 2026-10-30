@@ -141,6 +141,18 @@ def session_read_slide_notes(directory: str, revision: int, slide: int) -> dict[
 
 
 @server.tool()
+def compare_slide_notes(before: str, after: str, before_slide: int, after_slide: int) -> dict[str, Any]:
+    """Compare speaker notes from explicitly corresponding slides in two saved decks."""
+    return review.compare_notes(before, after, before_slide, after_slide)
+
+
+@server.tool()
+def session_compare_slide_notes(directory: str, before_revision: int, after_revision: int, before_slide: int, after_slide: int) -> dict[str, Any]:
+    """Compare speaker notes from explicitly corresponding slides in two session revisions."""
+    return session.compare_notes(directory, before_revision, after_revision, before_slide, after_slide)
+
+
+@server.tool()
 def session_replace_slide_notes(directory: str, base_revision: int, slide: int, text: str) -> dict[str, Any]:
     """Replace all speaker notes on one slide in a new revision; notes formatting is reset."""
     return session.replace_notes(directory, base_revision, slide, text)

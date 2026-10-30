@@ -11,6 +11,7 @@ from openpyxl.utils.cell import get_column_letter, range_boundaries
 
 import officecli_backend
 import spreadsheet
+import notes
 
 
 def part_hashes(file):
@@ -70,6 +71,32 @@ def changes(before, after):
     return {'added': sorted(after.keys() - before.keys()),
             'removed': sorted(before.keys() - after.keys()),
             'modified': sorted(name for name in before.keys() & after.keys() if before[name] != after[name])}
+
+
+def compare_notes(before, after, before_slide, after_slide):
+    """Compare speaker notes on two explicitly corresponding slides."""
+    before, after = Path(before).resolve(strict=True), Path(after).resolve(strict=True)
+    if before.suffix.lower() != '.pptx' or after.suffix.lower() != '.pptx':
+        raise ValueError('Notes comparison requires two PPTX files')
+    if any(file.stat().st_size > 128 * 1024 * 1024 for file in (before, after)):
+        raise ValueError('Document exceeds the 128 MiB size limit')
+    with tempfile.TemporaryDirectory(prefix='office-notes-review-') as tmp:
+        left, right = Path(tmp) / 'before.pptx', Path(tmp) / 'after.pptx'
+        shutil.copyfile(before, left); shutil.copyfile(after, right)
+        old, new = notes.read(left, before_slide), notes.read(right, after_slide)
+    text_changed = old['text'] != new['text'] or (None if old['truncated'] or new['truncated'] else False)
+    old_lines, new_lines = old['text'].split('\n'), new['text'].split('\n')
+    # shortcut: diff at most 2,000 lines and 500 output lines; use individual notes reads for larger changes.
+    diff = difflib.unified_diff(old_lines[:2000], new_lines[:2000], fromfile=f'before slide {before_slide}', tofile=f'after slide {after_slide}', lineterm='')
+    lines = []
+    for line in diff:
+        if len(lines) == 500: break
+        lines.append(line)
+    else:
+        return {'before_slide': before_slide, 'after_slide': after_slide, 'before_has_notes': old['has_notes_slide'], 'after_has_notes': new['has_notes_slide'],
+                'text_changed': text_changed, 'diff': lines, 'truncated': old['truncated'] or new['truncated'] or len(old_lines) > 2000 or len(new_lines) > 2000}
+    return {'before_slide': before_slide, 'after_slide': after_slide, 'before_has_notes': old['has_notes_slide'], 'after_has_notes': new['has_notes_slide'],
+            'text_changed': text_changed, 'diff': lines, 'truncated': True}
 
 
 def compare_cells(before, after, sheet, cell_range):

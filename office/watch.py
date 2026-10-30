@@ -112,6 +112,11 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Text is a bounded view; file-part changes may include formatting or metadata. Compare page appearance separately.</p>
 <button type="button" id="load-changes">Load changes</button><p id="changes-status" role="status"></p>
 <h2>Text</h2><pre id="comparison-text"></pre><h2>Changed file parts</h2><pre id="comparison-parts"></pre>
+<section id="notes-comparison" hidden><h2>Speaker notes changes</h2>
+<p>Choose corresponding slide numbers in each revision. Slide numbers include hidden slides and may change when slides are reordered.</p>
+<form id="notes-comparison-form"><label>Selected revision slide <input id="notes-before-slide" type="number" min="1" step="1" value="1" required></label>
+<label>Latest revision slide <input id="notes-after-slide" type="number" min="1" step="1" value="1" required></label><button id="compare-notes" type="submit">Compare notes</button></form>
+<p id="notes-comparison-status" role="status"></p><pre id="notes-comparison-output"></pre></section>
 <section id="visual-comparison"><h2>Visual page changes</h2>
 <p>Choose corresponding rendered pages. Red highlights show RGB differences of at least 16/255; page insertions and hidden slides can change numbering.</p>
 <form id="visual-diff-form"><label>Selected revision page <input id="visual-before-page" type="number" min="1" step="1" value="1" required></label>
@@ -127,7 +132,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
-let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false;
+let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -685,6 +690,7 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
  } finally { notesBusy=false; }
 });
 function display(state, live) {
+ notesComparisonEpoch++;
  clearNotesFor(state.revision, live);
  clearCommentsFor(state.revision);
  if (!document.getElementById('comparison-details').hidden) clearVisualDiff();
@@ -712,6 +718,7 @@ function displayComparison(state) {
  clearLayoutFor(state.revision);
  const key=`compare:${state.revision}:${state.latest_revision}`;
  if (key === viewKey) return;
+ notesComparisonEpoch++; document.getElementById('notes-comparison-output').textContent=''; document.getElementById('notes-comparison-status').textContent='';
  clearVisualDiff(); document.getElementById('visual-before-page').max=state.pages; document.getElementById('visual-after-page').max=state.latest_pages;
  const grid=document.createElement('div'); grid.className='comparison';
  for (const [revision, count, label] of [[state.revision,state.pages,'Selected'], [state.latest_revision,state.latest_pages,'Latest']]) {
@@ -751,6 +758,23 @@ document.getElementById('load-changes').addEventListener('click', async () => {
 });
 for (const id of ['compare-sheet','compare-range']) document.getElementById(id).addEventListener('input', () => {
  cellComparisonEpoch++; document.getElementById('cell-comparison-output').replaceChildren(); document.getElementById('cell-comparison-status').textContent='Inputs changed; compare again.';
+});
+for (const id of ['notes-before-slide','notes-after-slide']) document.getElementById(id).addEventListener('input', () => {
+ notesComparisonEpoch++; document.getElementById('notes-comparison-output').textContent=''; document.getElementById('notes-comparison-status').textContent='Inputs changed; compare again.';
+});
+document.getElementById('notes-comparison-form').addEventListener('submit', async event => {
+ event.preventDefault(); if (!comparing || pinned===null || comparedLatest<0) return;
+ const before=pinned, after=comparedLatest, before_slide=Number(document.getElementById('notes-before-slide').value), after_slide=Number(document.getElementById('notes-after-slide').value), epoch=++notesComparisonEpoch;
+ const button=document.getElementById('compare-notes'), status=document.getElementById('notes-comparison-status'), output=document.getElementById('notes-comparison-output'); button.disabled=true; output.textContent=''; status.textContent='Comparing speaker notes…';
+ try {
+  const response=await fetch('notes-comparison',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({before,after,before_slide,after_slide})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Comparison unavailable');
+  if (epoch!==notesComparisonEpoch || !comparing || pinned!==before || comparedLatest!==after) return;
+  const changed=result.text_changed===null ? 'Text equality is unknown because notes were truncated.' : result.text_changed ? 'Text changed.' : 'Text is identical.';
+  status.textContent=`Revision ${before} slide ${before_slide} → revision ${after} slide ${after_slide}. ${changed} Notes part: ${result.before_has_notes ? 'present' : 'absent'} → ${result.after_has_notes ? 'present' : 'absent'}. ${result.truncated ? 'Diff is truncated.' : ''}`;
+  output.textContent=result.diff.length ? result.diff.join('\\n') : 'No differences in the compared text view.';
+ } catch(error) { if (epoch===notesComparisonEpoch && comparing && pinned===before && comparedLatest===after) status.textContent=`Notes comparison error: ${error.message}`; }
+ finally { button.disabled=false; }
 });
 document.getElementById('cell-comparison-form').addEventListener('submit', async event => {
  event.preventDefault(); if (!comparing || pinned === null || comparedLatest < 0) return;
@@ -806,6 +830,7 @@ async function refresh() {
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   document.getElementById('comments-panel').hidden=state.format !== 'docx';
   document.getElementById('notes-panel').hidden=state.format !== 'pptx';
+  document.getElementById('notes-comparison').hidden=state.format !== 'pptx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
   document.getElementById('formula-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
@@ -874,7 +899,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -882,6 +907,17 @@ def serve(directory, preview, port=0, render=None):
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/notes-comparison'):
+                        if not isinstance(payload, dict) or set(payload) != {'before', 'after', 'before_slide', 'after_slide'}:
+                            raise ValueError('Notes comparison requires revisions and slide numbers')
+                        with lock:
+                            if payload['after'] != session.info(directory)['latest_revision']:
+                                raise ValueError('Latest revision changed; compare again')
+                        result = session.compare_notes(directory, payload['before'], payload['after'], payload['before_slide'], payload['after_slide'])
+                        with lock:
+                            if payload['after'] != session.info(directory)['latest_revision']:
+                                raise ValueError('Latest revision changed; compare again')
+                        self.send(200, json.dumps(result).encode(), 'application/json'); return
                     if route.endswith('/notes-read'):
                         if not isinstance(payload, dict) or set(payload) != {'revision', 'slide'}:
                             raise ValueError('Notes reading requires revision and slide')
