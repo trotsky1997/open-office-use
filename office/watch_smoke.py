@@ -71,6 +71,9 @@ with tempfile.TemporaryDirectory() as tmp:
             assert error.code == 400
         history = json.loads(get(url + 'revision/0/state'))
         assert history['revision'] == 0 and history['pages'] > 0
+        comparison = json.loads(get(url + 'comparison/0/state'))
+        assert comparison['revision'] == 0 and comparison['latest_revision'] == 1
+        assert comparison['pages'] > 0 and comparison['latest_pages'] > 0
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
         try:
             get(url + 'revision/999/state')

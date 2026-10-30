@@ -33,3 +33,5 @@ Added limited version-bound element editing in the local viewer and MCP. Verifie
 Connected viewer selection to candidate lookup and explicit element loading. Verified access checks, stale/changed selection handling and browser interaction.
 
 Added range-based spreadsheet formula, value and cache comparison through CLI and MCP. Verified real recalculation and bounded output.
+
+Added side-by-side visual review of a historical and latest revision in the viewer, with live latest-side refresh. Verified browser interaction and two-tab updates.

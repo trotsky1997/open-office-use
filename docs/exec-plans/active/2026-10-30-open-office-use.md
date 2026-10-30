@@ -72,3 +72,7 @@ Connected selection-based candidate lookup to the local viewer. The user chooses
 ## Spreadsheet change review
 
 Added bounded cell comparison via CLI and MCP, with formula/value/type differences, unknown cache freshness, full change count and 500-item output cap. Verified formula changes, recalculated cache, missing sheets and truncation. Formatting and workbook-wide semantic diff remain open.
+
+## Visual revision comparison
+
+Added a side-by-side rendered comparison of a selected revision and latest revision to the viewer. The latest side updates after commits; editing and selection remain disabled while comparing. Tested two Chrome tabs with a new commit and restoration. Automatic visual change detection and pagination-aware alignment remain open.

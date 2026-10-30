@@ -27,12 +27,14 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
 input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}
+.comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
+@media(max-width:700px){.comparison{grid-template-columns:1fr}}
 #edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
 
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
 <details><summary>Restore a previous revision</summary><form id="restore-form">
 <label for="restore-revision">Revision</label> <select id="restore-revision" required></select>
-<button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
+<button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="compare-revision">Compare with latest</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
 <details id="candidate-panel"><summary>Find selected elements</summary>
 <p>Matches use text and may be incomplete or ambiguous. Verify the target before editing.</p>
 <button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul></details>
@@ -53,7 +55,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <button type="submit">Save selection</button></form></details>
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
-let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null;
+let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
 let savedSelection = null, selectionEpoch = 0;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
@@ -135,7 +137,7 @@ document.getElementById('restore-form').addEventListener('submit', async event =
   const response = await fetch('restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:current, revision})});
   const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Restore failed');
   document.getElementById('restore-status').textContent = `Restored revision ${revision} as revision ${result.revision}`;
-  pinned=null; viewKey=''; await refresh();
+  pinned=null; comparing=false; viewKey=''; await refresh();
  } catch (error) { document.getElementById('restore-status').textContent = `Restore error: ${error.message}`; }
  finally { button.disabled = false; }
 });
@@ -184,16 +186,46 @@ function display(state, live) {
  document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load').forEach(element => element.disabled=!live);
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
+function displayComparison(state) {
+ const key=`compare:${state.revision}:${state.latest_revision}`;
+ if (key === viewKey) return;
+ const grid=document.createElement('div'); grid.className='comparison';
+ for (const [revision, count, label] of [[state.revision,state.pages,'Selected'], [state.latest_revision,state.latest_pages,'Latest']]) {
+  const section=document.createElement('section'); const title=document.createElement('h2');
+  title.textContent=`${label} · revision ${revision} · ${count} page(s)`; section.appendChild(title);
+  for (let i=0; i<count; i++) {
+   const image=document.createElement('img'); image.src=`page/${revision}/${i}`; image.loading='lazy';
+   image.alt=`${label} revision ${revision}, page ${i+1}`; section.appendChild(image);
+  }
+  grid.appendChild(section);
+ }
+ document.getElementById('pages').replaceChildren(grid); displayed=state.revision; viewKey=key; clearCandidates();
+ document.getElementById('selection').textContent='Selections are available on the latest revision.';
+ document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load').forEach(element => element.disabled=true);
+ invalidateEdit('Return to the latest revision to edit.');
+}
+async function loadComparison(revision) {
+ const response=await fetch(`comparison/${revision}/state`, {cache:'no-store'}); const state=await response.json();
+ if (!response.ok) throw new Error(state.error || 'Comparison unavailable');
+ if (!comparing || pinned !== revision || state.latest_revision < current) return;
+ displayComparison(state); comparedLatest=state.latest_revision;
+ document.getElementById('status').textContent=`Comparing revision ${revision} with latest ${state.latest_revision}`;
+}
+document.getElementById('compare-revision').addEventListener('click', async () => {
+ const revision=Number(document.getElementById('restore-revision').value); pinned=revision; comparing=true; comparedLatest=-1;
+ try { await loadComparison(revision); }
+ catch (error) { if (comparing && pinned === revision) { comparing=false; pinned=null; document.getElementById('restore-status').textContent=`Comparison error: ${error.message}`; refresh(); } }
+});
 document.getElementById('preview-revision').addEventListener('click', async () => {
- const revision=Number(document.getElementById('restore-revision').value); pinned=revision;
+ const revision=Number(document.getElementById('restore-revision').value); pinned=revision; comparing=false;
  try {
   const response=await fetch(`revision/${revision}/state`, {cache:'no-store'}); const state=await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
-  if (pinned !== revision) return;
+  if (pinned !== revision || comparing) return;
   display(state, false); document.getElementById('status').textContent=`Viewing revision ${revision} · latest ${current} · ${state.pages} page(s)`;
- } catch (error) { pinned=null; document.getElementById('restore-status').textContent=`Preview error: ${error.message}`; refresh(); }
+ } catch (error) { if (!comparing && pinned === revision) { pinned=null; document.getElementById('restore-status').textContent=`Preview error: ${error.message}`; refresh(); } }
 });
-document.getElementById('show-latest').addEventListener('click', () => { pinned=null; viewKey=''; refresh(); });
+document.getElementById('show-latest').addEventListener('click', () => { pinned=null; comparing=false; viewKey=''; refresh(); });
 async function refresh() {
  if (busy) return; busy = true;
  try {
@@ -207,7 +239,9 @@ async function refresh() {
    if (state.revisions.some(revision => String(revision) === previous)) select.value=previous;
   }
   current=state.revision;
-  if (pinned === null) {
+  if (comparing && pinned !== null) {
+   if (comparedLatest !== current) await loadComparison(pinned);
+  } else if (pinned === null) {
    display(state, true); document.getElementById('status').textContent=`Revision ${current} · ${state.pages} page(s)`;
   } else if (displayed === pinned) {
    document.getElementById('status').textContent=`Viewing revision ${displayed} · latest ${current}`;
@@ -319,13 +353,16 @@ def serve(directory, preview, port=0, render=None):
                 if route == '':
                     self.send(200, PAGE.replace('NONCE', nonce).encode(), 'text/html; charset=utf-8'); return
                 history = re.fullmatch(r'revision/(\d{1,6})/state', route)
+                comparison = re.fullmatch(r'comparison/(\d{1,6})/state', route)
                 page_match = re.fullmatch(r'page/(\d{1,6})/(\d{1,6})', route)
-                if route == 'state' or history or page_match:
+                if route == 'state' or history or comparison or page_match:
                     try:
                         with lock:
                             state = session.info(directory)
                             if history:
                                 rev = int(history.group(1))
+                            elif comparison:
+                                rev = int(comparison.group(1))
                             elif page_match:
                                 rev = int(page_match.group(1))
                             else:
@@ -340,6 +377,9 @@ def serve(directory, preview, port=0, render=None):
                                 self.send(200, Path(pages[index]).read_bytes(), 'image/png'); return
                             data = {'revision': rev, 'pages': len(pages),
                                     'revisions': [item['revision'] for item in state['revisions']]}
+                            if comparison:
+                                latest = state['latest_revision']
+                                data.update(latest_revision=latest, latest_pages=len(pages_for(state, latest)))
                         self.send(200, json.dumps(data).encode(), 'application/json'); return
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                         self.send(500, json.dumps({'error': str(exc)}).encode(), 'application/json'); return
