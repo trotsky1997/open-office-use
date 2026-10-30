@@ -395,7 +395,7 @@ def replace_text(directory, base_revision, path, find, replacement):
         {'docx': word, 'pptx': slides, 'xlsx': cell_text}[state['format']].replace_text(source, output, path, find, replacement)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': str(output), 'path': path}
+    return {'revision': base_revision + 1, 'file': str(output), 'path': path, **({'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True} if state['format'] == 'xlsx' else {})}
 
 
 def track_replace_text(directory, base_revision, path, find, replacement, author):

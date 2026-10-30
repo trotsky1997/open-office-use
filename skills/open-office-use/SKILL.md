@@ -42,3 +42,5 @@ For worksheet presentation, `session_format_grid` applies font, color, alignment
 To size worksheet rows or columns, inspect the grid dimension metadata and use `session_resize_grid`; changes affect complete rows or columns, including cells outside the selected range.
 
 Use `session_compare_cells` to review formulas, cached values, direct formatting and stored row/column dimensions between revisions. OfficeCLI XLSX batches may update formula caches; `session_resize_grid` and `session_format_grid` preserve cached values.
+
+XLSX targeted text replacement requests sheet recalculation on load while retaining existing caches; inspect `session_scan_formulas` and use explicit recalculation when appropriate. LibreOffice uses its own formula engine and may alter workbook features.

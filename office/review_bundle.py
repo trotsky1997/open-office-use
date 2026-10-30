@@ -65,6 +65,8 @@ def create(source, destination, render, revision=None):
                 if not formulas['complete']: flags.append('formula_scan_incomplete')
                 if formulas['formula_errors'] or formulas['literal_errors']: flags.append('formula_or_cell_errors')
                 if formulas['empty_or_missing_cache']: flags.append('formula_cache_missing')
+                if formulas['recalculation_requests']: flags.append('sheet_recalculation_requested')
+                if not formulas['calculation_metadata_complete']: flags.append('sheet_calculation_metadata_incomplete')
             chart_results = check('chart_cache_scan', lambda: chart_cache.scan(snapshot))
             if chart_results is not None:
                 if not chart_results['complete']: flags.append('chart_cache_scan_incomplete')

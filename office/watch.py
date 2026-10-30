@@ -290,7 +290,7 @@ document.getElementById('formula-scan').addEventListener('click', async () => {
   const response=await fetch('formula-scan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Scan failed');
   if (current!==revision || pinned!==null) return;
-  document.getElementById('formula-status').textContent=`Revision ${revision}: ${result.formula_errors} formula error(s), ${result.literal_errors} literal error(s), ${result.empty_or_missing_cache} empty or missing cache(s). ${result.complete ? 'Scan complete.' : 'Scan incomplete.'}`;
+  document.getElementById('formula-status').textContent=`Revision ${revision}: ${result.formula_errors} formula error(s), ${result.literal_errors} literal error(s), ${result.empty_or_missing_cache} empty or missing cache(s), ${result.recalculation_requests} worksheet recalculation request(s). ${result.complete && result.calculation_metadata_complete ? 'Scan complete.' : 'Scan incomplete.'}`;
   document.getElementById('formula-scan-output').textContent=JSON.stringify(result, null, 2);
  } catch(error) { if (current===revision && pinned===null) document.getElementById('formula-status').textContent=`Scan error: ${error.message}`; }
  finally { scanBusy=false; button.disabled=pinned!==null; document.getElementById('formula-recalculate').disabled=pinned!==null || calcBusy; }
@@ -558,7 +558,7 @@ document.getElementById('word-replace').addEventListener('click', async () => {
  try {
   const response=await fetch('replace-text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:replacementPath,find:find.value,replacement:replacement.value})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Replacement failed');
-  invalidateEdit(`Replacement saved as revision ${result.revision}. Reload the element to see its updated content.`); await refresh();
+  invalidateEdit(`Replacement saved as revision ${result.revision}. ${result.recalculation_requested ? 'Formula caches may be stale; recalculation is requested on open. ' : ''}Reload the element to see its updated content.`); await refresh();
  } catch(error) {
   document.getElementById('edit-status').textContent=`Replacement error: ${error.message}`;
   if (loaded===target && current===target.revision && pinned===null) { const tableCell=target.format==='pptx' && target.type==='tc' || Boolean(target.replace_only || target.read_only_reason); value.readOnly=tableCell; mode.disabled=tableCell; document.getElementById('edit-save').disabled=tableCell; }

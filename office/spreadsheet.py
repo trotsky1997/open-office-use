@@ -403,6 +403,8 @@ def scan_formulas(file):
                 names = [entry.filename for entry in entries]
                 if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
                     raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+                try: _, workbook_mode = workbook_calculation(archive); workbook_mode_issue = None
+                except Exception as exc: workbook_mode = None; workbook_mode_issue = f'{type(exc).__name__}: {str(exc)[:300]}'
                 workbook = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
                 try:
                     sheets = [(sheet.title, getattr(sheet, '_worksheet_path', None)) for sheet in workbook.worksheets]
@@ -415,16 +417,26 @@ def scan_formulas(file):
                 for name, path in sheets:
                     if not isinstance(path, str) or path not in names:
                         raise ValueError(f'Cannot locate worksheet XML: {name}')
-                    sheet_complete = True
+                    sheet_complete = True; calculation_seen = False; calculation_value = None; calculation_issue = None
                     with archive.open(path) as stream:
-                        stack, sheet_data = [], None
+                        stack, sheet_data, data_seen = [], None, False
                         for event, element in ET.iterparse(stream, events=('start', 'end')):
                             tag = element.tag.rsplit('}', 1)[-1]
                             if event == 'start':
                                 if tag == 'sheetData' and stack[-1:] == ['worksheet']:
-                                    sheet_data = element
+                                    sheet_data = element; data_seen = True
                                 stack.append(tag)
                                 continue
+                            if element.tag == '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheetCalcPr' and stack != ['worksheet', 'sheetCalcPr']:
+                                calculation_issue = 'nested_sheet_calculation_properties'
+                            if stack == ['worksheet', 'sheetCalcPr'] and element.tag == '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheetCalcPr':
+                                if not data_seen: calculation_issue = 'out_of_order_sheet_calculation_properties'
+                                if calculation_seen: calculation_issue = 'duplicate_sheet_calculation_properties'; calculation_value = None
+                                else:
+                                    calculation_seen = True; value = element.get('fullCalcOnLoad')
+                                    if value in ('1', 'true'): calculation_value = True
+                                    elif value in ('0', 'false'): calculation_value = False
+                                    elif value is not None: calculation_issue = 'invalid_sheet_calculation_flag'
                             if stack[-3:] == ['sheetData', 'row', 'c']:
                                 if counts['scanned_cells'] >= FORMULA_SCAN_MAX_CELLS:
                                     sheet_complete = complete = False
@@ -452,16 +464,40 @@ def scan_formulas(file):
                                 if sheet_data is not None:
                                     sheet_data.remove(element)
                             stack.pop()
-                    scanned_sheets.append({'sheet': name, 'complete': sheet_complete})
+                    scanned_sheets.append({'sheet': name, 'complete': sheet_complete, 'recalculation_requested': calculation_value if sheet_complete and not calculation_issue else None,
+                                           'calculation_metadata_complete': sheet_complete and not calculation_issue, 'calculation_metadata_issue': calculation_issue})
                     if not complete:
                         break
                 return {**counts, 'sheets': scanned_sheets, 'total_sheets': len(sheets), 'complete': complete,
                         'errors': errors, 'errors_truncated': counts['formula_errors'] + counts['literal_errors'] > len(errors),
                         'empty_or_missing': missing, 'empty_or_missing_truncated': counts['empty_or_missing_cache'] > len(missing),
-                        'cache_freshness': 'unknown'}
+                        'cache_freshness': 'unknown', 'recalculation_requests': sum(item['recalculation_requested'] is True for item in scanned_sheets),
+                        'workbook_calculation_mode': workbook_mode, 'workbook_calculation_metadata_issue': workbook_mode_issue,
+                        'calculation_metadata_complete': complete and not workbook_mode_issue and all(item['calculation_metadata_complete'] for item in scanned_sheets)}
         except (zipfile.BadZipFile, ET.ParseError) as exc:
             raise ValueError(f'Invalid workbook package or worksheet XML: {exc}') from exc
 
+
+
+def workbook_calculation(archive):
+    """Locate the XLSX workbook part and its explicitly stored calculation mode."""
+    import ooxml
+    ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+    root = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
+    if root.tag != ns + 'Types': raise ValueError('Invalid package content types')
+    kind = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'
+    matches = [item.get('PartName', '').lstrip('/') for item in root.findall(ns + 'Override') if item.get('ContentType') == kind]
+    if not matches and any(item.get('Extension', '').lower() == 'xml' and item.get('ContentType') == kind for item in root.findall(ns + 'Default')):
+        matches = ['xl/workbook.xml']
+    if len(matches) != 1 or not matches[0] or '..' in matches[0].split('/') or matches[0] not in archive.namelist():
+        raise ValueError('Workbook part is missing or ambiguous')
+    path = matches[0]; tree = ooxml.parse_xml(archive.read(path)); x = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+    if tree.getroot().tag != x + 'workbook': raise ValueError('Invalid workbook XML')
+    props = tree.getroot().findall(x + 'calcPr')
+    if len(props) > 1 or len(list(tree.getroot().iter(x + 'calcPr'))) != len(props): raise ValueError('Ambiguous workbook calculation properties')
+    mode = props[0].get('calcMode') if props else None
+    if mode not in (None, 'auto', 'autoNoTable', 'manual'): raise ValueError('Invalid workbook calculation mode')
+    return path, mode
 
 def recalculate(source, output):
     source = Path(source).resolve(strict=True)
@@ -470,6 +506,7 @@ def recalculate(source, output):
         raise ValueError('Recalculation requires .xlsx input and output')
     if output.exists() or output.is_symlink():
         raise FileExistsError(f'Output already exists: {output}')
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
     executable = shutil.which('soffice') or shutil.which('libreoffice')
     if not executable:
         raise RuntimeError('LibreOffice (soffice) is required for recalculation')
@@ -480,15 +517,53 @@ def recalculate(source, output):
         results = root / 'result'; results.mkdir()
         copy = inputs / 'workbook.xlsx'
         shutil.copyfile(source, copy)
-        profile = (root / 'profile').as_uri()
+        if copy.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+        with zipfile.ZipFile(copy) as archive:
+            entries = archive.infolist(); names = [entry.filename for entry in entries]
+            if len(entries) > 5000 or len(set(names)) != len(names) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+            if any(name.startswith('_xmlsignatures/') for name in names): raise ValueError('Digitally signed workbooks cannot be recalculated')
+            _, original_mode = workbook_calculation(archive)
+        # A fresh default profile can reuse stale OOXML caches, including in manual mode.
+        profile_path = root / 'profile'; user_profile = profile_path / 'user'; user_profile.mkdir(parents=True)
+        (user_profile / 'registrymodifications.xcu').write_text(
+            '<oor:items xmlns:oor="http://openoffice.org/2001/registry">'
+            '<item oor:path="/org.openoffice.Office.Calc/Formula/Load">'
+            '<prop oor:name="OOXMLRecalcMode" oor:op="fuse"><value>0</value></prop>'
+            '</item></oor:items>', encoding='utf-8')
+        profile = profile_path.as_uri()
         result = subprocess.run([executable, '-env:UserInstallation=' + profile, '--headless',
                                  '--convert-to', 'xlsx', '--outdir', str(results), str(copy)],
                                 capture_output=True, text=True, timeout=120, check=False)
         candidate = results / copy.name
         if result.returncode or not candidate.is_file():
             raise RuntimeError(f'LibreOffice recalculation failed: {result.stderr or result.stdout}')
+        if candidate.stat().st_size > 128 * 1024 * 1024: raise ValueError('Recalculated workbook exceeds the 128 MiB size limit')
+        with zipfile.ZipFile(candidate) as archive:
+            entries = archive.infolist(); names = [entry.filename for entry in entries]
+            if len(entries) > 5000 or len(set(names)) != len(names) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                raise ValueError('Recalculated workbook exceeds package limits or contains duplicate parts')
+            workbook_part, result_mode = workbook_calculation(archive)
         check = load_workbook(candidate, read_only=True, data_only=False)
         check.close()
+        if result_mode != original_mode:
+            import ooxml
+            x = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+            adjusted = root / 'adjusted.xlsx'
+            def restore_mode(tree, archive):
+                document = tree.getroot(); nodes = document.findall(x + 'calcPr')
+                if len(nodes) > 1 or len(list(document.iter(x + 'calcPr'))) != len(nodes): raise ValueError('Ambiguous calculation properties')
+                if nodes: node = nodes[0]
+                else:
+                    node = ooxml.etree.Element(x + 'calcPr')
+                    following = {x + name for name in ('oleSize', 'customWorkbookViews', 'pivotCaches', 'smartTagPr', 'smartTagTypes', 'webPublishing', 'fileRecoveryPr', 'webPublishObjects', 'extLst')}
+                    successor = next((child for child in document if child.tag in following), None)
+                    if successor is None: document.append(node)
+                    else: document.insert(document.index(successor), node)
+                if original_mode is None: node.attrib.pop('calcMode', None)
+                else: node.set('calcMode', original_mode)
+            ooxml.edit_xml(candidate, adjusted, lambda _: workbook_part, restore_mode)
+            candidate = adjusted
         os.link(candidate, output)
     return str(output)
 

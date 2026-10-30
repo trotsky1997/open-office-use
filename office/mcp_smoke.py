@@ -315,6 +315,9 @@ async def main():
                 assert not chart_start.isError, chart_start
                 chart_edit = await session.call_tool('session_replace_text', {'directory': str(chart_draft), 'base_revision': 0, 'path': '/Sales/A1', 'find': 'Jan', 'replacement': 'March'})
                 assert not chart_edit.isError, chart_edit
+                assert chart_edit.structuredContent['formula_cache_effect'] == 'may_be_stale' and chart_edit.structuredContent['recalculation_requested'], chart_edit
+                chart_formula_scan = await session.call_tool('session_scan_formulas', {'directory': str(chart_draft), 'base_revision': 1})
+                assert not chart_formula_scan.isError and chart_formula_scan.structuredContent['recalculation_requests'] == 1, chart_formula_scan
                 chart_result = await session.call_tool('session_scan_chart_caches', {'directory': str(chart_draft), 'revision': 1})
                 assert not chart_result.isError and chart_result.structuredContent['mismatch_references'] == 1, chart_result
                 saved_chart_result = await session.call_tool('scan_chart_caches', {'file': str(chart_draft / 'revision-000001.xlsx')})

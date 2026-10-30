@@ -89,3 +89,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 工作表尺寸调整改为直接更新目标 XML，保留公式缓存和其他部件，并检查行列结构与并发冲突。
 
 - 网格格式使用 OfficeCLI 生成样式，并校验后将新增样式及目标引用合并回原文件，保留公式缓存和其他部件。
+
+- XLSX 定向文本修改请求工作表重新计算，公式扫描和审阅包暴露请求状态；修复手动计算模式下 LibreOffice 沿用旧缓存的问题，并恢复原计算模式。

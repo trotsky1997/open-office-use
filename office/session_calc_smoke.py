@@ -31,6 +31,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert session.info(draft)['latest_revision'] == 0
     result = session.recalculate(draft, 0)
     assert result['revision'] == 1 and result['engine'] == 'LibreOffice' and source.read_bytes() == original
+    assert load_workbook(result['file'], read_only=True).calculation.calcMode == book.calculation.calcMode
     values = load_workbook(result['file'], data_only=True).active
     assert values['A2'].value == 12 and values['A3'].value == '#DIV/0!'
     after = session.scan_formulas(draft, 1)
