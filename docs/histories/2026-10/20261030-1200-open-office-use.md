@@ -227,3 +227,7 @@ Added bounded literal title, category and numeric value caches to basic workbook
 ### Word links and images
 
 Extended CLI/MCP Word blocks with hyperlinked runs and bounded, snapshot-checked inline PNG/JPEG images with accessibility descriptions. Verified the link relationship, formatting-preserving replacement, image aspect ratio despite unusual DPI, invalid URLs, MCP and LibreOffice preview. Native Word rendering and non-normalized EXIF orientation remain unverified/unsupported.
+
+### PowerPoint native chart authoring
+
+Added positioned native column/line charts with literal embedded workbook data, cached chart values, optional title, legend, number formats and series colors. Validated embedded values and guarded formula/link conversion; checked invalid inputs, MCP creation and LibreOffice rendering. Targeted chart-data editing and native PowerPoint fidelity remain future work.

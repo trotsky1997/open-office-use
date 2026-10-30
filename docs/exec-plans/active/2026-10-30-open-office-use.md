@@ -166,3 +166,7 @@ CLI/MCP spreadsheet specs support same-sheet column and line charts, inferred or
 Basic chart authoring now writes bounded caches from verified literal source values; formula, blank, ambiguous or oversized ranges remain uncached and are reported by chart cache inspection. Subsequent grid edits may make caches stale.
 
 Basic Word blocks now support external HTTP(S)/mailto hyperlinks and aspect-preserving local PNG/JPEG images with accessible descriptions. Rendered pages and targeted hyperlink editing were verified; complex fields and existing-document round-tripping remain separate concerns.
+
+## PowerPoint chart creation
+
+Basic CLI/MCP slide specs support native column and line charts with bounded literal categories, series, colors, cached values and an embedded XLSX workbook. The generated workbook is checked for literal labels and preserved numbers. LibreOffice rendering and direct MCP authoring were verified; later chart-data editing and native PowerPoint fidelity remain open.

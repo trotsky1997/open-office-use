@@ -23,7 +23,7 @@ from docx.opc.constants import RELATIONSHIP_TYPE
 from docx.shared import Inches as DocxInches, RGBColor as DocxRGBColor
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.chart.data_source import AxDataSource, StrRef, StrData, StrVal, NumData, NumVal
 from openpyxl.styles import PatternFill
@@ -32,6 +32,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.utils.cell import column_index_from_string, range_boundaries
 from pptx import Presentation
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
@@ -212,7 +214,7 @@ def append_slides(presentation, slides):
     def color(value):
         if not isinstance(value, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', value): raise ValueError('Colors must be six-digit RGB values')
         return RGBColor.from_string(value.upper())
-    image_bytes = 0
+    image_bytes = 0; chart_count = 0; chart_points = 0
     for item in slides:
         if not isinstance(item, dict) or set(item) - {'layout', 'title', 'body', 'background', 'elements'}: raise ValueError('Invalid slide properties')
         layout_name = item.get('layout', 'title_content')
@@ -237,7 +239,8 @@ def append_slides(presentation, slides):
             kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
             allowed = {'textbox': geometry | {'text', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill'},
                        'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description', 'fit'},
-                       'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'}}
+                       'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
+                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
             x = Inches(number(element.get('x'), 'x', -100, 100)); y = Inches(number(element.get('y'), 'y', -100, 100))
             width = Inches(number(element.get('width'), 'width', 0.01, 100)); height = Inches(number(element.get('height'), 'height', 0.01, 100))
@@ -301,6 +304,53 @@ def append_slides(presentation, slides):
                                 ink = element.get('header_color') if is_header and 'header_color' in element else element.get('color')
                                 if ink is not None: run.font.color.rgb = color(ink)
                                 if is_header: run.font.bold = True
+            elif kind == 'chart':
+                chart_count += 1
+                if chart_count > 20: raise ValueError('At most 20 slide charts are supported per request')
+                chart_type = element.get('chart_type'); categories = element.get('categories'); series_specs = element.get('series')
+                if chart_type not in ('column', 'line'): raise ValueError('Chart type must be column or line')
+                if not isinstance(categories, list) or not 1 <= len(categories) <= 200 or any(not isinstance(value, str) or not value or len(value) > 255 for value in categories): raise ValueError('Chart categories require 1 to 200 nonempty text values')
+                if not isinstance(series_specs, list) or not 1 <= len(series_specs) <= 20 or len(series_specs) * len(categories) > 2000: raise ValueError('Chart requires at most 20 series and 2,000 data points')
+                chart_points += len(series_specs) * len(categories)
+                if chart_points > 10000: raise ValueError('Slide chart data exceeds 10,000 points per request')
+                title = element.get('title'); legend = element.get('legend', len(series_specs) > 1)
+                if title is not None and (not isinstance(title, str) or len(title) > 255): raise ValueError('Chart title must be text of at most 255 characters')
+                for key in ('x_axis_title', 'y_axis_title'):
+                    if key in element and (not isinstance(element[key], str) or len(element[key]) > 255): raise ValueError('Chart axis titles must be text of at most 255 characters')
+                if not isinstance(legend, bool): raise ValueError('Chart legend must be a boolean')
+                data = CategoryChartData(); data.categories = categories
+                for series in series_specs:
+                    if not isinstance(series, dict) or set(series) - {'name', 'values', 'color', 'number_format'}: raise ValueError('Invalid chart series')
+                    name, values = series.get('name'), series.get('values')
+                    if not isinstance(name, str) or not name or len(name) > 255 or not isinstance(values, list) or len(values) != len(categories): raise ValueError('Chart series needs a name and one value per category')
+                    if any(value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value)) for value in values): raise ValueError('Chart values must be finite numbers or null')
+                    number_format = series.get('number_format')
+                    if number_format is not None and (not isinstance(number_format, str) or not 1 <= len(number_format) <= 255): raise ValueError('Chart number format must be text of at most 255 characters')
+                    if 'color' in series: color(series['color'])
+                    data.add_series(name, values, number_format=number_format)
+                chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED if chart_type == 'column' else XL_CHART_TYPE.LINE, x, y, width, height, data).chart
+                embedded = load_workbook(io.BytesIO(chart.part.chart_workbook.xlsx_part.blob), data_only=False)
+                try:
+                    table = embedded.active
+                    for row, expected in enumerate(categories, 2):
+                        cell = table.cell(row=row, column=1)
+                        if cell.value != expected or cell.data_type == 'f' or cell.hyperlink is not None: raise ValueError('Chart category was not preserved as literal text')
+                    for column, spec in enumerate(series_specs, 2):
+                        header = table.cell(row=1, column=column)
+                        if header.value != spec['name'] or header.data_type == 'f' or header.hyperlink is not None: raise ValueError('Chart series name was not preserved as literal text')
+                        for row, expected in enumerate(spec['values'], 2):
+                            cell = table.cell(row=row, column=column)
+                            if cell.value != expected or cell.data_type == 'f': raise ValueError('Chart numeric value could not be preserved')
+                finally:
+                    embedded.close()
+                chart.has_legend = legend
+                if title is not None: chart.has_title = True; chart.chart_title.text_frame.text = title
+                for key, axis in (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
+                    if key in element: axis.has_title = True; axis.axis_title.text_frame.text = element[key]
+                for chart_series, spec in zip(chart.series, series_specs):
+                    if 'color' in spec:
+                        if chart_type == 'column': chart_series.format.fill.solid(); chart_series.format.fill.fore_color.rgb = color(spec['color'])
+                        else: chart_series.format.line.color.rgb = color(spec['color'])
             else:
                 path = element.get('path'); description = element.get('description', ''); fit = element.get('fit', 'stretch')
                 if fit not in ('stretch', 'contain', 'cover'): raise ValueError('Image fit must be stretch, contain or cover')
