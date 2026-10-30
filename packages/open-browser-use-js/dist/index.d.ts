@@ -410,7 +410,7 @@ export declare class OpenBrowserUseTab {
         suffix?: string;
         selectionType?: "text" | "cursor_before" | "cursor_after";
     }): Promise<void>;
-    press(index: number, snapshotId: string, key: string): Promise<void>;
+    press(index: number, snapshotId: string, key: string, expectedGeneration?: number): Promise<void>;
     hoverAt(x: number, y: number, modifiers?: number): Promise<void>;
     private dispatchClick;
     clickAt(x: number, y: number, options?: {
@@ -432,7 +432,12 @@ export declare class OpenBrowserUseTab {
         };
     }): Promise<void>;
     private parseKey;
-    pressKey(key: string): Promise<void>;
+    pressKey(key: string, expectedGeneration?: number): Promise<void>;
+    paste(index: number | null, text: string, options?: {
+        snapshotId?: string;
+        format?: "text" | "md" | "html";
+        plainText?: string;
+    }): Promise<void>;
     typeAtFocus(text: string): Promise<void>;
     private focusedInputFrame;
     private targetFrameFocused;

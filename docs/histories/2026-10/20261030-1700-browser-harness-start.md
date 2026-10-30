@@ -494,3 +494,5 @@ macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展对 fo
 同步分发给 agent 的 skill：修正页面求值权限说明，并补充组合观察、文本选择、逐字符输入和定位器求值的边界。skill 校验和打包通过。
 
 观察索引新增方向和页数滚动，复用目标、frame 与连接校验；macOS Electron 和隔离 Linux ARM64 Chromium 的主文档及跨进程 frame 验证可信滚轮和旧快照拒绝。Electron 仍要求宿主呈现 surface；后台 Chromium、Windows 尚未验收。
+
+新增索引与当前焦点粘贴，支持纯文本、Markdown 源码、HTML 及可选纯文本回退；写入后保持剪贴板，检查连接代际，并在错误后提示观察。Linux ARM64 隔离 Chromium 和 Electron 虚拟显示验证可信事件和跨 frame；Electron 私有通道修正连接状态并验证授权拒绝。富文本清空允许浏览器保留单个 BR 占位。真实 macOS Electron 粘贴与 Windows 尚未验证。

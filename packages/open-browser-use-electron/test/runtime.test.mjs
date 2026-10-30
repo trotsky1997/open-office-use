@@ -131,6 +131,7 @@ test('clipboard socket grant supports SDK text and structured data', {skip:!['da
   const reader=await connectSocketIab(readGrant);t.after(()=>reader.close());const readClipboard=reader.browser().tab(tab.id).clipboard;
   assert.equal(await readClipboard.readText(),'text');
   await assert.rejects(readClipboard.writeText('unauthorized'),/DENIED/);
+  await assert.rejects(reader.browser().tab(tab.id).paste(null,'unauthorized'),/DENIED/);
   assert.equal(await clipboard.readText(),'text');
 });
 

@@ -124,6 +124,13 @@ For subsequent observations, `tab.observe({diff:true})` reports text changes;
 always use the newly returned `nodes` and `snapshotId` for actions.
 Use `await tab.dev.watch()` before an action, then `await tab.dev.logs({levels:["error"]})` to inspect captured console errors, uncaught exceptions and browser resource-load errors.
 Tabs expose `tab.clipboard.readText()`, `writeText(text)`, `read()` and `write(items)` when permitted. Electron 44 requires explicit `clipboard.read` or `clipboard.write` grants with `page.control`.
+Use `tab.paste(index, text, {snapshotId, format})` for an observed target or
+`tab.paste(null, text, {format})` at the current focus. Formats are `text`,
+`md` and `html`; Markdown stays plain text. For HTML, provide `plainText` when
+the destination may need a text fallback. Paste replaces the system clipboard
+and does not restore it. Other processes can change the clipboard before the
+shortcut; inspect the page after an error before retrying. Electron requires
+`clipboard.write` and `page.control` for paste.
 When current field values are needed, request `includeValues:true`; native
 password values are redacted and truncated values are flagged.
 Use `tab.observe({includeFrames:true})` to include iframe controls. Chrome and

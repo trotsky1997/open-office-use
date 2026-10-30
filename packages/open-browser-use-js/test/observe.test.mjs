@@ -1733,3 +1733,18 @@ test('read-only evaluation timeout prevents dispatch after delayed attachment',a
   await assert.rejects(tab.playwright.evaluate('document.title',undefined,{timeoutMs:20}),/timed out/i);
   resume();await new Promise(resolve=>setImmediate(resolve));assert.equal(requests,0);
 });
+
+test('paste validates the target, preserves clipboard permissions and routes one shortcut',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1);let generation=3,connected=true,events=[];
+  Object.defineProperty(client,'isConnected',{get:()=>connected});Object.defineProperty(client,'connectionGeneration',{get:()=>generation});client.connect=async()=>client;
+  tab.currentObservation=id=>{if(id!=='fresh')throw new Error('stale');return {nodes:[{index:4}]};};
+  tab.clipboard.writeText=async text=>{events.push(['text',text]);};tab.clipboard.write=async items=>{events.push(['items',items]);};
+  tab.press=async (...args)=>{events.push(['target',...args]);};tab.pressKey=async (...args)=>{events.push(['focus',...args]);};
+  await assert.rejects(tab.paste(4,'x',{snapshotId:'stale'}),/stale/);assert.deepEqual(events,[]);
+  await tab.paste(4,'hello',{snapshotId:'fresh'});assert.deepEqual(events,[['text','hello'],['target',4,'fresh','ControlOrMeta+v',3]]);
+  events=[];await tab.paste(null,'<b>hi</b>',{format:'html',plainText:'hi'});assert.deepEqual(events,[['items',[{entries:[{mimeType:'text/html',text:'<b>hi</b>'},{mimeType:'text/plain',text:'hi'}]}]],['focus','ControlOrMeta+v',3]]);
+  events=[];await tab.paste(null,'**hi**',{format:'md'});assert.deepEqual(events,[['text','**hi**'],['focus','ControlOrMeta+v',3]]);
+  events=[];tab.clipboard.writeText=async()=>{throw new Error('denied');};await assert.rejects(tab.paste(null,'x'),/denied/);assert.deepEqual(events,[]);
+  tab.clipboard.writeText=async()=>{generation++;};await assert.rejects(tab.paste(null,'x'),/clipboard was updated/);assert.deepEqual(events,[]);
+  connected=false;await assert.rejects(tab.paste(4,'x',{snapshotId:'fresh'}),/Connection changed/);assert.deepEqual(events,[]);
+});

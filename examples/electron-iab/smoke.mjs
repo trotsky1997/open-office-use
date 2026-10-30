@@ -294,6 +294,11 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.equal(await evaluate(a.id,'window.trustedInput'),true);
   check('SDK locators: CSS and semantic clear preserve trusted input');
 
+  await evaluate(a.id,`(()=>{const e=document.createElement('div');e.id='clear-rich-test';e.contentEditable='true';e.setAttribute('role','textbox');e.setAttribute('aria-label','Clear rich test');document.body.append(e)})()`);
+  for(const locator of [sdkTab.playwright.locator('#clear-rich-test'),sdkTab.playwright.getByRole('textbox',{name:'Clear rich test',exact:true})]){await evaluate(a.id,"document.querySelector('#clear-rich-test').innerHTML='<b>formatted</b>'");await locator.clear();assert.equal(await evaluate(a.id,"document.querySelector('#clear-rich-test').textContent"),'');}
+  await evaluate(a.id,"document.querySelector('#clear-rich-test').remove()");await messageCss.focus();
+  check('SDK clear: empty rich text accepts Chromium placeholder');
+
   await evaluate(a.id,'document.querySelector("#message").addEventListener("keydown", e => window.sdkKey = {key:e.key, trusted:e.isTrusted})');
   await sdkTab.pressKey('Enter');
   assert.deepEqual(await evaluate(a.id,'window.sdkKey'), {key:'Enter', trusted:true});

@@ -1556,7 +1556,7 @@ export class OpenBrowserUseTab {
         if (!isObject(selected) || !isObject(selected.result) || selected.result.value!==true) throw new Error("Could not select the text field contents");
         if (text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId});
         else await this.sendKey("Backspace",sessionId);
-        const applied=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text}],functionDeclaration:`function(value) { return this.isConnected && (this.isContentEditable ? this.innerText : this.value)===value; }`},{sessionId});
+        const applied=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text}],functionDeclaration:`function(value) { return this.isConnected && (this.isContentEditable ? this.innerText===value || (value==='' && this.childNodes.length===1 && this.firstChild instanceof HTMLBRElement) : this.value===value); }`},{sessionId});
         if (!isObject(applied) || !isObject(applied.result) || applied.result.value!==true) throw new Error("Text field did not retain the requested value");
         return;
       }
@@ -2027,9 +2027,9 @@ export class OpenBrowserUseTab {
     } finally {await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});}
   }
 
-  async press(index: number, snapshotId: string, key: string): Promise<void> {
+  async press(index: number, snapshotId: string, key: string, expectedGeneration?:number): Promise<void> {
     this.parseKey(key);
-    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, key);
+    await this.act(index,snapshotId,undefined,false,undefined,undefined,false,key,false,undefined,false,undefined,undefined,undefined,undefined,false,undefined,undefined,undefined,undefined,expectedGeneration);
   }
 
   async hoverAt(x: number, y: number, modifiers = 0): Promise<void> {
@@ -2157,10 +2157,32 @@ export class OpenBrowserUseTab {
     return {name, modifiers, modifierBits, definition, printablePair};
   }
 
-  async pressKey(key: string): Promise<void> {
+  async pressKey(key: string, expectedGeneration?:number): Promise<void> {
     this.parseKey(key);
     this.#observation = undefined;
-    await this.sendKey(key,(await this.focusedInputFrame()).sessionId);
+    await this.sendKey(key,(await this.focusedInputFrame()).sessionId,undefined,expectedGeneration);
+  }
+
+  async paste(index:number | null,text:string,options:{snapshotId?:string;format?:"text" | "md" | "html";plainText?:string} = {}):Promise<void> {
+    if(typeof text!=="string" || !options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>!["snapshotId","format","plainText"].includes(key)) || (options.format!==undefined && !["text","md","html"].includes(options.format)) || (options.plainText!==undefined && (typeof options.plainText!=="string" || options.format!=="html")))throw new Error("Invalid paste options");
+    if(index===null){if(options.snapshotId!==undefined)throw new Error("Current-focus paste does not accept a snapshot ID");}
+    else {
+      if(!Number.isSafeInteger(index) || typeof options.snapshotId!=="string")throw new Error("Indexed paste requires a snapshot ID");
+      const observation=this.currentObservation(options.snapshotId);
+      if(!observation.nodes.some(node=>node.index===index))throw new RetryablePreflightError("Observation is stale or index is invalid; observe again");
+    }
+    const initialGeneration=this.browser.client.connectionGeneration;
+    if(index!==null && !this.browser.client.isConnected)throw new Error("Connection changed; observe again");
+    await this.browser.client.connect();
+    const generation=this.browser.client.connectionGeneration;
+    if(index!==null && generation!==initialGeneration)throw new Error("Connection changed; observe again");
+    if(options.format==="html")await this.clipboard.write([{entries:[{mimeType:"text/html",text},...(options.plainText===undefined ? [] : [{mimeType:"text/plain",text:options.plainText}])]}]);
+    else await this.clipboard.writeText(text);
+    if(this.browser.client.connectionGeneration!==generation)throw new Error("Connection changed before paste; clipboard was updated");
+    try {
+      if(index===null)await this.pressKey("ControlOrMeta+v",generation);
+      else await this.press(index,options.snapshotId!,"ControlOrMeta+v",generation);
+    } catch(error) {throw new Error(`Paste failed after clipboard update; inspect the page before retrying: ${error instanceof Error ? error.message : String(error)}`,{cause:error});}
   }
 
   async typeAtFocus(text: string): Promise<void> {
@@ -2224,7 +2246,7 @@ export class OpenBrowserUseTab {
     }
   }
 
-  private async sendKey(key: string, sessionId?: string, signal?:AbortSignal): Promise<void> {
+  private async sendKey(key: string, sessionId?: string, signal?:AbortSignal, expectedGeneration?:number): Promise<void> {
     const {name, modifiers, modifierBits, definition, printablePair} = this.parseKey(key);
     const modifierCodes: Record<string, [string, number]> = { Alt: ["AltLeft", 18], Control: ["ControlLeft", 17], Meta: ["MetaLeft", 91], Shift: ["ShiftLeft", 16] };
     let mask = 0;
@@ -2235,22 +2257,22 @@ export class OpenBrowserUseTab {
         mask |= modifierBits[modifier];
         const [code, windowsVirtualKeyCode] = modifierCodes[modifier];
         pressed.push(modifier);
-        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, {sessionId,signal});
+        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, {sessionId,signal,expectedGeneration});
       }
       const actualKey = name === "Space" ? " " : printablePair ? printablePair[mask & 8 ? 1 : 0] : /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
       const params = { key: actualKey, code: definition[0], windowsVirtualKeyCode: definition[1], modifiers: mask | (Object.hasOwn(modifierBits,name) ? modifierBits[name] : 0) };
       const selectAll = actualKey === "a" && (mask === 2 || mask === 4);
       const printable = (name === "Space" || !!printablePair || /^[a-zA-Z]$/.test(name)) && !(mask & 7);
       activeKey = params;
-      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? {text:actualKey, unmodifiedText:name === "Space" ? " " : printablePair ? printablePair[0] : name.toLowerCase()} : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, {sessionId,signal});
-      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, modifiers:mask, type: "keyUp" }, {sessionId});
+      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? {text:actualKey, unmodifiedText:name === "Space" ? " " : printablePair ? printablePair[0] : name.toLowerCase()} : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, {sessionId,signal,expectedGeneration});
+      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, modifiers:mask, type: "keyUp" }, {sessionId,expectedGeneration});
       activeKey = undefined;
     } finally {
-      if (activeKey) await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...activeKey, modifiers:mask, type: "keyUp" }, {sessionId}).catch(() => {});
+      if (activeKey) await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...activeKey, modifiers:mask, type: "keyUp" }, {sessionId,expectedGeneration}).catch(() => {});
       for (const modifier of pressed.reverse()) {
         mask &= ~modifierBits[modifier];
         const [code, windowsVirtualKeyCode] = modifierCodes[modifier];
-        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "keyUp", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, {sessionId}).catch(() => {});
+        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "keyUp", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, {sessionId,expectedGeneration}).catch(() => {});
       }
     }
   }
@@ -2296,7 +2318,7 @@ export class OpenBrowserUseTab {
     return result as string[];
   }
 
-  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}, sequential = false, sequenceMark:()=>AbortSignal | undefined = ()=>undefined, sequenceCheck:()=>void = ()=>{}, sequenceSignal?:AbortSignal, scroll?:{deltaX:number;deltaY:number;generation:number}): Promise<void | string[]> {
+  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}, sequential = false, sequenceMark:()=>AbortSignal | undefined = ()=>undefined, sequenceCheck:()=>void = ()=>{}, sequenceSignal?:AbortSignal, scroll?:{deltaX:number;deltaY:number;generation:number}, inputGeneration?:number): Promise<void | string[]> {
     const observation = this.#observation;
     this.#observation = undefined;
     const node = observation?.nodes.find((item) => item.index === index);
@@ -2373,6 +2395,7 @@ export class OpenBrowserUseTab {
       }
       const measure = async () => {
         checkClick();
+        if(inputGeneration!==undefined && this.browser.client.connectionGeneration!==inputGeneration)throw new Error("Connection changed; observe again");
         const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
           objectId, returnByValue: true, arguments:[{value:hover},{value:!!mouse.force}],
           functionDeclaration: `function(allowDisabled,force) {
@@ -2397,7 +2420,7 @@ export class OpenBrowserUseTab {
               target = root.host; root = target.getRootNode();
             }
           }`
-        }, { sessionId: targetSession, signal:clickSignal });
+        }, { sessionId: targetSession, signal:clickSignal, expectedGeneration:inputGeneration });
         let point = isObject(result) && isObject(result.result) ? result.result.value : null;
         if (!isObject(point) || typeof point.x !== "number" || !Number.isFinite(point.x) || typeof point.y !== "number" || !Number.isFinite(point.y) || typeof point.width !== "number" || !Number.isFinite(point.width) || point.width <= 0 || typeof point.height !== "number" || !Number.isFinite(point.height) || point.height <= 0) throw new RetryablePreflightError("Target is hidden, disabled, or covered; observe again");
         const geometry = {x:point.x, y:point.y, width:point.width, height:point.height};
@@ -2511,7 +2534,7 @@ export class OpenBrowserUseTab {
       }
       if (key !== undefined) {
         inputIssued = true;
-        await this.browser.cdp.call(this.id, "DOM.focus", {objectId}, {sessionId:targetSession});
+        await this.browser.cdp.call(this.id, "DOM.focus", {objectId}, {sessionId:targetSession,expectedGeneration:inputGeneration});
         const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
           objectId, returnByValue:true,
           functionDeclaration:`function() { return this.isConnected && this.getRootNode().activeElement === this; }`
@@ -2519,7 +2542,7 @@ export class OpenBrowserUseTab {
         if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true || await this.documentId() !== observation.documentId) throw new Error("Target lost focus; observe again");
         if (node.frameChain) await this.validateFrames(node.frameChain);
         await this.verifyLocatorScope(observation,node);
-        await this.sendKey(key,targetSession);
+        await this.sendKey(key,targetSession,undefined,inputGeneration);
         return;
       }
       const inputOptions = mouse.force ? {} : {sessionId: targetSession, ...(targetSession ? {visualPoint: {x: point.x as number, y: point.y as number}} : {})};
@@ -2588,7 +2611,7 @@ export class OpenBrowserUseTab {
         if (replace) {
           const check = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
             objectId, returnByValue:true, arguments:[{value:text}],
-            functionDeclaration:`function(value) { return this.isConnected && (this.isContentEditable ? this.innerText : this.value) === value; }`
+            functionDeclaration:`function(value) { return this.isConnected && (this.isContentEditable ? this.innerText===value || (value==='' && this.childNodes.length===1 && this.firstChild instanceof HTMLBRElement) : this.value===value); }`
           }, {sessionId:targetSession});
           if (!isObject(check) || !isObject(check.result) || check.result.value !== true) throw new Error("Text field did not retain the requested value");
         }

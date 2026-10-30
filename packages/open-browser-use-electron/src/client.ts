@@ -30,6 +30,7 @@ export class IabClient extends OpenBrowserUseClient {
     });
   }
   override get connectionGeneration(): number { return this.channel.stream.destroyed ? 1 : 0; }
+  override get isConnected(): boolean { return !this.channel.stream.destroyed; }
   override async connect(): Promise<this> { if (this.channel.stream.destroyed) throw new Error('IAB connection closed'); return this; }
   override close(): void { this.channel.close(); }
   override onNotification(handler: NotificationHandler): () => void { this.handlers.add(handler); return () => { this.handlers.delete(handler); }; }

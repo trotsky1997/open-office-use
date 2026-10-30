@@ -25,11 +25,12 @@ test('private directory and socket permissions, native peer plus scoped handshak
   assert.equal((await lstat(dirname(endpoint))).mode & 0o777, 0o700);
   assert.equal((await lstat(endpoint)).mode & 0o777, 0o600);
   const bootstrap = grant(); const client = await connectSocketIab(bootstrap); t.after(() => client.close());
-  assert.equal(client.bootstrap.secret, ''); assert.equal((await client.getInfo()).scope, 'a');
+  assert.equal(client.bootstrap.secret, ''); assert.equal(client.isConnected,true); assert.equal((await client.getInfo()).scope, 'a');
   await assert.rejects(client.request('getInfo', { session_id: 'b' }));
   assert.equal(calls.length, 1);
   connections.revoke(bootstrap.grantId);
   await assert.rejects(client.getInfo());
+  client.close();assert.equal(client.isConnected,false);
 });
 test('revoked socket interrupts an event wait', { skip: !supported }, async t => {
   const { connections, grant } = await setup(t);

@@ -746,6 +746,25 @@ await tab.clipboard.write([{entries: [{mimeType: "text/plain", text: "hello"}]}]
 const items = await tab.clipboard.read(); // entries contain text or base64
 ```
 
+To paste into an observed target, use its current index and snapshot ID:
+
+```js
+await tab.paste(field.index, "Hello", {snapshotId: state.snapshotId});
+await tab.paste(null, "**Markdown**", {format: "md"}); // current focus
+await tab.paste(null, "<b>Hello</b>", {format: "html", plainText: "Hello"});
+```
+
+`paste` writes the clipboard and sends a trusted platform paste shortcut.
+`text` and `md` use plain text; Markdown source is not converted to HTML.
+HTML can include `plainText` for applications that cannot accept rich text;
+without it those applications may ignore the paste. The clipboard is not
+restored. A different process can change it between write and paste, and an
+error after the write can leave the clipboard changed or the paste outcome
+unknown; inspect the page before retrying. Indexed paste checks the observation
+and connection before input. Electron requires `clipboard.write` as well as
+`page.control`; current-focus paste uses whichever element is focused when the
+shortcut is sent.
+
 Chrome pages must satisfy the browser's secure-context, focus and permission
 requirements. Electron 44 requires explicit host grants; see the
 [Electron guide](../open-browser-use-electron/README.md#explicit-clipboard-grants).
