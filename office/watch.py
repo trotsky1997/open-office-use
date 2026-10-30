@@ -111,7 +111,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
 <div id="grid-output" class="grid-scroll"></div><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
-<fieldset><legend>Format a range</legend>
+<fieldset id="grid-format-fields"><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
 <label>Italic <select id="grid-italic"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
@@ -457,6 +457,11 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; }
  } finally { gridBusy=false; }
 });
+function resetGridFormatting() {
+ for (const name of ['bold','italic','underline','horizontal','vertical','wrap','border','font-name','font-size','numberformat']) document.getElementById(`grid-${name}`).value='';
+ document.getElementById('grid-border-scope').value='all';
+ for (const name of ['font-color','fill','border-color']) document.getElementById(`grid-${name}-enabled`).checked=false;
+}
 document.getElementById('grid-format').addEventListener('click', async () => {
  if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
@@ -479,15 +484,15 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  }
  if (numberformat) properties.numberformat=numberformat;
  if (!Object.keys(properties).length) { document.getElementById('grid-status').textContent='Choose a formatting change.'; return; }
- gridBusy=true; const button=document.getElementById('grid-format'); button.disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-save').disabled=true; lockGridInputs(inputs,true);
+ gridBusy=true; const button=document.getElementById('grid-format'), fields=document.getElementById('grid-format-fields'); button.disabled=true; fields.disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-save').disabled=true; lockGridInputs(inputs,true);
  try {
   const response=await fetch('grid-format', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,style_range:document.getElementById('grid-style-range').value,properties})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Formatting failed');
-  invalidateGrid(`Formatting saved as revision ${result.revision}.`); await refresh();
+  resetGridFormatting(); invalidateGrid(`Formatting saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false; }
- } finally { gridBusy=false; }
+ } finally { fields.disabled=false; gridBusy=false; }
 });
 document.getElementById('grid-resize').addEventListener('click', async () => {
  if (gridBusy) return;
