@@ -266,7 +266,8 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 ```
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
-`textContent`, `getAttribute`, `click`, `hover`, `press` and `fill`. They search the selected document and its open
+`textContent`, `getAttribute`, `isVisible`, `isEnabled`, `waitFor`, `click`,
+`hover`, `press` and `fill`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a
 `frameLocator` is selected. Matches are limited to 1,000 elements and single
 reads require a unique match. Selector evaluation uses an isolated world, and
@@ -280,7 +281,9 @@ the native input parser; their `input` and `change` events are synthetic
 (`isTrusted` is false). `locator()` chains descendant queries, and `first`,
 `last` and `nth` can select an intermediate scope. Each chain is limited to
 32 selectors and 1,000 matched elements in total; the identity of each selected
-scope is rechecked along with the final matches before reads and input.
+scope is rechecked along with the final matches before reads and input. `waitFor`
+supports attached, detached, visible and hidden states. Visibility checks CSS
+visibility and nonzero element and frame bounds; it does not test occlusion.
 
 `filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
 locator by its accessible static-text descendants. Matching is a case-insensitive

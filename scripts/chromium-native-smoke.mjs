@@ -209,12 +209,16 @@ try {
  await tab.evaluate(`document.querySelector('[aria-label="Editable"]').remove()`);
  await tab.evaluate(`(()=>{const host=document.createElement('div');host.setAttribute('role','dialog');host.setAttribute('aria-label','Shadow container');document.body.append(host);const outer=host.attachShadow({mode:'open'});outer.innerHTML='<div></div>';const inner=outer.querySelector('div').attachShadow({mode:'closed'});inner.innerHTML='<button>Shadow Action</button>';inner.querySelector('button').onclick=e=>window.shadowTrusted=e.isTrusted})()`);
  await tab.evaluate(`(()=>{const host=document.createElement('div');host.id='css-host';const shadow=host.attachShadow({mode:'open'});shadow.innerHTML='<span data-test="first">First</span><span data-test="second" hidden>Second</span>';document.body.append(host);window.savedQuery=Document.prototype.querySelectorAll;Document.prototype.querySelectorAll=()=>[]})()`);
+ assert.equal(await tab.playwright.locator('[data-test="second"]').isVisible(),false);assert.equal(await tab.playwright.locator('#absent').isVisible(),false);await tab.playwright.locator('[data-test="second"]').waitFor({state:'attached',timeoutMs:0});await tab.playwright.locator('#absent').waitFor({state:'hidden',timeoutMs:0});await tab.playwright.locator('#absent').waitFor({state:'detached',timeoutMs:0});
+ await assert.rejects(tab.playwright.locator('[data-test]').waitFor({state:'visible',timeoutMs:0}),/matched 2 elements/);
  const css=tab.playwright.locator('[data-test]');assert.equal(await css.count(),2);assert.equal(await css.first().innerText(),'First');assert.equal(await css.last().textContent(),'Second');assert.equal(await css.nth(1).getAttribute('data-test'),'second');assert.equal(await css.nth(9).count(),0);
  await assert.rejects(css.textContent({timeoutMs:0}),/matched 2 elements/);await assert.rejects(tab.playwright.locator('[').count(),/Invalid CSS selector/);
  await tab.evaluate(`(()=>{Document.prototype.querySelectorAll=window.savedQuery;const h=document.querySelector('#css-host');h.shadowRoot.innerHTML+='<button id="css-action">Act</button>';const b=h.shadowRoot.querySelector('button');b.onmouseenter=e=>window.cssHover=e.isTrusted;b.onclick=e=>window.cssClick=e.isTrusted})()`);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;for(const n of [1,2]){const e=document.createElement('section');e.className='css-group';e.innerHTML='<span class="css-child">Group '+n+'</span>';r.append(e)}})()`);
  const groups=tab.playwright.locator('#css-host').locator('.css-group');assert.equal(await groups.count(),2);assert.equal(await groups.last().locator('.css-child').textContent(),'Group 2');assert.equal(await groups.locator('.css-child').count(),2);assert.equal(await tab.playwright.locator('#missing').locator('.css-child').count(),0);await assert.rejects(tab.playwright.locator('#missing').locator('[').count(),/Invalid CSS selector/);
  assert.equal(await tab.playwright.locator('#css-host').locator('#css-action').count(),1);
+ assert.equal(await tab.playwright.locator('#css-host').locator('#css-action').isVisible(),true);assert.equal(await tab.playwright.locator('#css-action').isEnabled(),true);
+ await tab.evaluate(`(()=>{const b=document.querySelector('#css-host').shadowRoot.querySelector('#css-action');b.hidden=true;setTimeout(()=>b.hidden=false,100)})()`);await tab.playwright.locator('#css-action').waitFor({state:'visible',timeoutMs:3000});
  await tab.playwright.locator('#css-host').locator('#css-action').hover();await tab.playwright.locator('#css-host').locator('#css-action').click();assert.equal(await tab.evaluate('window.cssHover'),true);assert.equal(await tab.evaluate('window.cssClick'),true);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const input=document.createElement('input');input.id='css-input';input.onkeydown=e=>window.cssKey={key:e.key,trusted:e.isTrusted};r.append(input)})()`);
  assert.throws(()=>tab.playwright.locator('#css-input').press(undefined),/Invalid key/);
@@ -232,6 +236,7 @@ try {
  await tab.evaluate(`(()=>{window.cssKey=null;const input=document.querySelector('#css-host').shadowRoot.querySelector('#css-input');input.blur();input.onfocus=()=>input.id='css-renamed'})()`);
  await assert.rejects(tab.playwright.locator('#css-input').press('Enter',{timeoutMs:0}),/changed after focus/i);assert.equal(await tab.evaluate('window.cssKey'),null);
  await tab.evaluate(`(()=>{window.cssClick=false;document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=true})()`);
+ assert.equal(await tab.playwright.locator('#css-action').isEnabled(),false);
  await assert.rejects(tab.playwright.locator('#css-action').click({timeoutMs:0}),/target unavailable/i);assert.equal(await tab.evaluate('window.cssClick'),false);
  await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=false`);
  await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const group=r.querySelector('.css-group');group.append(r.querySelector('#css-action'));window.cssClick=false;setTimeout(()=>{group.className='changed-group'},30)})()`);
@@ -266,8 +271,10 @@ try {
  assert.equal(await tab.playwright.getByPlaceholder(/type cross message/i).count(),1);
  assert.equal(await tab.playwright.getByAltText(/cross photo/i).count(),1);
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
+ assert.equal(await crossFrame.locator('button').first().isVisible(),true);
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).isVisible(),true);
  await tab.evaluate(`Object.assign(document.querySelector('#cross').style,{width:'0px',border:'0'})`);
+ assert.equal(await crossFrame.locator('button').first().isVisible(),false);await crossFrame.locator('button').first().waitFor({state:'hidden',timeoutMs:0});
  assert.equal(await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).isVisible(),false);
  await tab.evaluate(`Object.assign(document.querySelector('#cross').style,{width:'',border:''})`);
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).textContent(),'Cross-process action');

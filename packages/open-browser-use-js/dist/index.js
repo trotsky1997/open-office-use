@@ -886,16 +886,46 @@ export class OpenBrowserUseTab {
         if (typeof objectId !== "string")
             throw new RetryablePreflightError("Selector target is unavailable; observe again");
         try {
-            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; if(mode==='visible'){const r=this.getBoundingClientRect();return {value:getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0};} if(mode==='enabled'){for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return {value:false};return {value:true};} const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
-            if (!isObject(payload) || (typeof payload.value !== "string" && payload.value !== null))
+            if (!isObject(payload) || (["visible", "enabled"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
                 throw new RetryablePreflightError("Selector target is unavailable; observe again");
             if (typeof payload.value === "string" && payload.value.length > 30_000)
                 throw new Error("Locator value exceeds the 30000 character limit");
+            let frameVisible = true;
+            if (mode === "visible" && payload.value === true) {
+                const chain = frameAncestry(frame, snapshot.frames);
+                for (let i = 0; i < chain.length; i++) {
+                    const child = chain[i], ownerSession = chain[i + 1]?.sessionId;
+                    const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: child.id }, { sessionId: ownerSession });
+                    if (!isObject(owner) || typeof owner.backendNodeId !== "number")
+                        throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+                    const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: child.parentId, worldName: "open-browser-use-selector" }, { sessionId: ownerSession });
+                    if (!isObject(world) || typeof world.executionContextId !== "number")
+                        throw new RetryablePreflightError("Selector context is unavailable; observe again");
+                    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId, executionContextId: world.executionContextId }, { sessionId: ownerSession });
+                    const ownerId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+                    if (typeof ownerId !== "string")
+                        throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+                    try {
+                        const state = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId: ownerId, returnByValue: true, functionDeclaration: `function() { if(!this.isConnected)return null;const r=this.getBoundingClientRect();return getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0; }` }, { sessionId: ownerSession });
+                        const value = isObject(state) && isObject(state.result) ? state.result.value : undefined;
+                        if (typeof value !== "boolean")
+                            throw new RetryablePreflightError("Frame owner changed; observe again");
+                        if (!value) {
+                            frameVisible = false;
+                            break;
+                        }
+                    }
+                    finally {
+                        await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId: ownerId }, { sessionId: ownerSession }).catch(() => { });
+                    }
+                }
+            }
             const fresh = await this.queryCss(snapshot.selector, snapshot.framePath, snapshot.scopes);
             if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
                 throw new RetryablePreflightError("Selector target changed; observe again");
-            return payload.value;
+            return mode === "visible" && payload.value === true ? frameVisible : payload.value;
         }
         finally {
             await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
@@ -2321,7 +2351,42 @@ export class OpenBrowserUseCssLocator {
         }
     }
     read(mode, name = "", timeoutMs = 5000) {
-        return this.perform((snapshot, id) => this.tab.readCss(snapshot, id, mode, name), timeoutMs);
+        return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, mode, name), timeoutMs);
+    }
+    isEnabled() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "enabled")); }
+    async isVisible() {
+        const snapshot = await this.tab.queryCss(this.selector, this.framePath, this.scopes), ids = this.select(snapshot.ids);
+        if (!ids.length)
+            return false;
+        if (ids.length > 1)
+            throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
+        return await this.tab.readCss(snapshot, ids[0], "visible");
+    }
+    async waitFor(options) {
+        if (!options || !["attached", "detached", "visible", "hidden"].includes(options.state))
+            throw new Error("Invalid locator wait state");
+        const timeoutMs = options.timeoutMs ?? 5000;
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+            throw new Error("Invalid locator timeout");
+        const deadline = performance.now() + timeoutMs;
+        while (true) {
+            try {
+                const snapshot = await this.tab.queryCss(this.selector, this.framePath, this.scopes), ids = this.select(snapshot.ids);
+                if (ids.length > 1)
+                    throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
+                const matched = options.state === 'attached' || options.state === 'detached' ? ids.length > 0 : ids.length > 0 && await this.tab.readCss(snapshot, ids[0], "visible") === true;
+                if (matched === (options.state === 'attached' || options.state === 'visible'))
+                    return;
+            }
+            catch (error) {
+                if (!(error instanceof RetryablePreflightError))
+                    throw error;
+            }
+            const remaining = deadline - performance.now();
+            if (remaining <= 0)
+                throw new Error(`Timed out waiting for locator to become ${options.state}`);
+            await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
+        }
     }
     click(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false), options.timeoutMs); }
     hover(options = {}) { return this.perform((snapshot, id) => this.tab.actCss(snapshot, id, true), options.timeoutMs); }

@@ -425,6 +425,12 @@ export declare class OpenBrowserUseCssLocator {
     all(): Promise<OpenBrowserUseCssLocator[]>;
     private perform;
     private read;
+    isEnabled(): Promise<boolean>;
+    isVisible(): Promise<boolean>;
+    waitFor(options: {
+        state: "attached" | "detached" | "visible" | "hidden";
+        timeoutMs?: number;
+    }): Promise<void>;
     click(options?: {
         timeoutMs?: number;
     }): Promise<void>;
