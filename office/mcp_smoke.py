@@ -356,7 +356,7 @@ async def main():
                 oversized = await session.call_tool('read_cells', {'file': str(long_source), 'sheet': 'Sheet', 'cell_range': 'A1:A101'})
                 assert oversized.isError, oversized
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
-                assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1, saved_grid
+                assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1 and saved_grid.structuredContent['formula_cache_effect'] == 'may_be_stale' and saved_grid.structuredContent['recalculation_requested'], saved_grid
                 styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True, 'italic': True, 'font_color': '336699', 'horizontal': 'center', 'wrap': True}})
                 assert not styled.isError and styled.structuredContent['revision'] == 2 and styled.structuredContent['formula_cache_effect'] == 'preserved', styled
                 styled_cell = load_workbook(grid_draft / 'revision-000002.xlsx').active['A1']

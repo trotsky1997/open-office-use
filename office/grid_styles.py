@@ -95,6 +95,49 @@ def merge_styles(original, candidate):
     return ooxml.serialize_xml(before, original), len(xfs)
 
 
+def prepare_cells(root, addresses):
+    targets = set(addresses); found = {}
+    data = root.findall(X + 'sheetData')
+    if len(data) != 1 or len(list(root.iter(X + 'sheetData'))) != 1: raise ValueError('Ambiguous worksheet data')
+    rows = {}; previous_row = 0
+    for row in data[0]:
+        if row.tag != X + 'row' or not re.fullmatch(r'[0-9]{1,7}', row.get('r', '')): raise ValueError('Unsupported worksheet row')
+        index = int(row.get('r'))
+        if not 1 <= index <= 1048576 or index <= previous_row: raise ValueError('Duplicate or unordered rows')
+        previous_row = index; rows[index] = row; previous_col = 0
+        for cell in row:
+            if cell.tag != X + 'c': raise ValueError('Unsupported row content')
+            match = re.fullmatch(r'([A-Z]{1,3})([1-9][0-9]{0,6})', cell.get('r', ''))
+            if not match or int(match.group(2)) != index: raise ValueError('Invalid cell reference')
+            column = column_index_from_string(match.group(1))
+            if column > 16384 or column <= previous_col: raise ValueError('Duplicate or unordered cells')
+            previous_col = column
+            if cell.get('r') in targets: found[cell.get('r')] = cell
+    for address in addresses:
+        match = re.fullmatch(r'([A-Z]{1,3})([1-9][0-9]{0,6})', address)
+        if not match: raise ValueError('Invalid target cell')
+        col, row_number = column_index_from_string(match.group(1)), int(match.group(2))
+        row = rows.get(row_number)
+        if row is None:
+            row = etree.Element(X + 'row', r=str(row_number)); rows[row_number] = row
+        if not any(cell.get('r') == address for cell in row):
+            cell = etree.Element(X + 'c', r=address); found[address] = cell
+            row.append(cell); row[:] = sorted(row, key=lambda item: column_index_from_string(re.match(r'[A-Z]+', item.get('r')).group()))
+    data[0][:] = [rows[number] for number in sorted(rows)]
+    dimensions = root.findall(X + 'dimension')
+    if len(dimensions) > 1 or len(list(root.iter(X + 'dimension'))) != len(dimensions): raise ValueError('Ambiguous worksheet dimension')
+    dimension = dimensions[0] if dimensions else None
+    if dimension is not None:
+        try:
+            c1, r1, c2, r2 = range_boundaries(dimension.get('ref'))
+            if any(value is None for value in (c1, r1, c2, r2)) or not 1 <= c1 <= c2 <= 16384 or not 1 <= r1 <= r2 <= 1048576: raise ValueError
+        except (ValueError, TypeError): raise ValueError('Invalid worksheet dimension') from None
+        for address in addresses:
+            col, row = range_boundaries(address)[:2]; c1 = min(c1, col); c2 = max(c2, col); r1 = min(r1, row); r2 = max(r2, row)
+        dimension.set('ref', f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}')
+    return found
+
+
 def apply(source, output, sheet, addresses, operations):
     source = Path(source); output = Path(output)
     with zipfile.ZipFile(source) as archive:
@@ -129,44 +172,8 @@ def apply(source, output, sheet, addresses, operations):
             if tree.getroot().tag != X + 'worksheet': raise ValueError('Invalid worksheet')
             merged_styles, count = merge_styles(archive.read(style_name), candidate_styles)
             if any(not re.fullmatch(r'[0-9]{1,10}', value) or int(value) >= count for value in styles.values()): raise ValueError('Invalid target style index')
-            root = tree.getroot(); data = root.findall(X + 'sheetData')
-            if len(data) != 1 or len(list(root.iter(X + 'sheetData'))) != 1: raise ValueError('Ambiguous worksheet data')
-            rows = {}; previous_row = 0
-            for row in data[0]:
-                if row.tag != X + 'row' or not re.fullmatch(r'[0-9]{1,7}', row.get('r', '')): raise ValueError('Unsupported worksheet row')
-                index = int(row.get('r'))
-                if not 1 <= index <= 1048576 or index <= previous_row: raise ValueError('Duplicate or unordered rows')
-                previous_row = index; rows[index] = row; previous_col = 0
-                for cell in row:
-                    if cell.tag != X + 'c': raise ValueError('Unsupported row content')
-                    match = re.fullmatch(r'([A-Z]{1,3})([1-9][0-9]{0,6})', cell.get('r', ''))
-                    if not match or int(match.group(2)) != index: raise ValueError('Invalid cell reference')
-                    column = column_index_from_string(match.group(1))
-                    if column > 16384 or column <= previous_col: raise ValueError('Duplicate or unordered cells')
-                    previous_col = column
-                    if cell.get('r') in targets: cell.set('s', styles[cell.get('r')])
-            for address in addresses:
-                match = re.fullmatch(r'([A-Z]{1,3})([1-9][0-9]{0,6})', address)
-                if not match: raise ValueError('Invalid target cell')
-                col, row_number = column_index_from_string(match.group(1)), int(match.group(2))
-                row = rows.get(row_number)
-                if row is None:
-                    row = etree.Element(X + 'row', r=str(row_number)); rows[row_number] = row
-                if not any(cell.get('r') == address for cell in row):
-                    cell = etree.Element(X + 'c', r=address, s=styles[address])
-                    row.append(cell); row[:] = sorted(row, key=lambda item: column_index_from_string(re.match(r'[A-Z]+', item.get('r')).group()))
-            data[0][:] = [rows[number] for number in sorted(rows)]
-            dimensions = root.findall(X + 'dimension')
-            if len(dimensions) > 1 or len(list(root.iter(X + 'dimension'))) != len(dimensions): raise ValueError('Ambiguous worksheet dimension')
-            dimension = dimensions[0] if dimensions else None
-            if dimension is not None:
-                try:
-                    c1, r1, c2, r2 = range_boundaries(dimension.get('ref'))
-                    if any(value is None for value in (c1, r1, c2, r2)) or not 1 <= c1 <= c2 <= 16384 or not 1 <= r1 <= r2 <= 1048576: raise ValueError
-                except (ValueError, TypeError): raise ValueError('Invalid worksheet dimension') from None
-                for address in addresses:
-                    col, row = range_boundaries(address)[:2]; c1 = min(c1, col); c2 = max(c2, col); r1 = min(r1, row); r2 = max(r2, row)
-                dimension.set('ref', f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}')
+            targets_by_address = prepare_cells(tree.getroot(), addresses)
+            for address, cell in targets_by_address.items(): cell.set('s', styles[address])
             return {style_name: merged_styles}
         ooxml.edit_xml(source, output, lambda _: source_part, edit)
         return {'output': str(output), 'result': batch['result'], 'formula_cache_effect': 'preserved'}

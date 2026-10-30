@@ -1,0 +1,152 @@
+"""Transplant validated grid values into the original XLSX package."""
+import copy
+import math
+import re
+import tempfile
+import zipfile
+from pathlib import Path
+from lxml import etree
+import cell_text
+import grid_styles
+import officecli_backend
+import ooxml
+import spreadsheet
+
+X = grid_styles.X
+CT = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+SHARED = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml'
+
+
+def apply(source, output, sheet, changes, operations):
+    source = Path(source); output = Path(output); targets = {change['cell']: change['value'] for change in changes}
+    with zipfile.ZipFile(source) as archive:
+        if any(name.startswith('_xmlsignatures/') for name in archive.namelist()): raise ValueError('Digitally signed workbooks are not supported for grid edits')
+        style_name = grid_styles.style_part(archive)
+    with tempfile.TemporaryDirectory(prefix='office-grid-value-') as tmp:
+        candidate = Path(tmp) / 'candidate.xlsx'; batch = officecli_backend.batch(operations, candidate, source)
+        source_part = grid_styles.sheet_part(source, sheet)
+        with zipfile.ZipFile(candidate) as archive:
+            entries = archive.infolist(); names = [entry.filename for entry in entries]
+            if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                raise ValueError('OfficeCLI candidate exceeds package limits or contains duplicate parts')
+            candidate_part = grid_styles.sheet_part(candidate, sheet)
+            if grid_styles.style_part(archive) != style_name: raise ValueError('OfficeCLI changed styles relationship')
+            candidate_styles = archive.read(style_name); candidate_tree = ooxml.parse_xml(archive.read(candidate_part)); shared = None
+            root = candidate_tree.getroot(); data = root.findall(X + 'sheetData')
+            if root.tag != X + 'worksheet' or len(data) != 1 or len(list(root.iter(X + 'sheetData'))) != 1: raise ValueError('Invalid candidate worksheet')
+            cells = {}
+            for row in data[0].findall(X + 'row'):
+                for cell in row.findall(X + 'c'):
+                    address = cell.get('r')
+                    if address in targets:
+                        if address in cells or row.get('r') != re.fullmatch(r'[A-Z]{1,3}([1-9][0-9]{0,6})', address).group(1): raise ValueError('Duplicate or invalid candidate cell')
+                        cells[address] = cell
+            values = {}
+            for address, requested in targets.items():
+                cell = cells.get(address)
+                if cell is None:
+                    if requested: raise ValueError('OfficeCLI omitted a target cell')
+                    values[address] = (None, None, None); continue
+                if any(key not in ('r', 's', 't') for key in cell.attrib): raise ValueError('Candidate cell has unsupported metadata')
+                style = cell.get('s', '0'); kind = cell.get('t'); children = list(cell)
+                if requested.startswith('='):
+                    formulas = cell.findall(X + 'f')
+                    if len(formulas) != 1 or formulas[0].attrib or len(formulas[0]) or not formulas[0].text or any(child.tag not in (X + 'f', X + 'v') for child in children):
+                        raise ValueError('Candidate formula is unsupported')
+                    values[address] = (style, None, [copy.deepcopy(formulas[0])]); continue
+                if requested == '':
+                    if any(child.tag not in (X + 'v',) for child in children) or any((child.text or '') for child in children): raise ValueError('Candidate did not clear target cell')
+                    values[address] = (style, None, []); continue
+                if kind in ('str', 's', 'inlineStr'):
+                    if kind == 'str':
+                        if len(children) != 1 or children[0].tag != X + 'v' or len(children[0]): raise ValueError('Unsupported candidate text')
+                        text = children[0].text or ''
+                    elif kind == 's':
+                        if len(children) != 1 or children[0].tag != X + 'v' or not re.fullmatch(r'[0-9]{1,10}', children[0].text or ''): raise ValueError('Unsupported candidate shared string')
+                        if shared is None: shared = spreadsheet.search_shared_strings(archive)
+                        index = int(children[0].text)
+                        if shared is None or index >= len(shared) or not shared[index][1]: raise ValueError('Candidate shared string is unverified')
+                        text = shared[index][0]
+                    else:
+                        if len(children) != 1 or children[0].tag != X + 'is' or len(children[0]) != 1 or children[0][0].tag != X + 't' or len(children[0][0]): raise ValueError('Unsupported candidate inline text')
+                        text = children[0][0].text or ''
+                    if text != requested or cell_text.ESCAPED.search(text): raise ValueError('Candidate text differs from requested value')
+                    content = etree.Element(X + 'is'); node = etree.SubElement(content, X + 't'); node.text = text
+                    if text[0].isspace() or text[-1].isspace(): node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+                    values[address] = (style, 'inlineStr', [content]); continue
+                if kind not in (None, 'n', 'b', 'e', 'd') or len(children) != 1 or children[0].tag != X + 'v' or len(children[0]): raise ValueError('Unsupported candidate cell value')
+                text = children[0].text or ''
+                if kind in (None, 'n'):
+                    try:
+                        if not math.isfinite(float(text)): raise ValueError
+                    except ValueError: raise ValueError('Invalid candidate numeric value') from None
+                elif kind == 'b' and text not in ('0', '1'): raise ValueError('Invalid candidate boolean')
+                elif kind == 'e' and text not in ('#NULL!', '#DIV/0!', '#VALUE!', '#REF!', '#NAME?', '#NUM!', '#N/A'): raise ValueError('Invalid candidate error value')
+                values[address] = (style, kind, [copy.deepcopy(children[0])])
+        def edit(tree, archive):
+            root = tree.getroot()
+            if root.tag != X + 'worksheet': raise ValueError('Invalid worksheet')
+            original_styles = archive.read(style_name); merged, style_count = grid_styles.merge_styles(original_styles, candidate_styles)
+            original_xfs = ooxml.parse_xml(original_styles).getroot().find(X + 'cellXfs')
+            merged_xfs = ooxml.parse_xml(merged).getroot().find(X + 'cellXfs')
+            for style, _, _ in values.values():
+                if style is not None and (not re.fullmatch(r'[0-9]{1,10}', style) or int(style) >= style_count): raise ValueError('Invalid target style index')
+            existing = {cell.get('r') for data in root.findall(X + 'sheetData') for row in data.findall(X + 'row') for cell in row.findall(X + 'c')}
+            addresses = [address for address, value in targets.items() if value != '' or address in existing]
+            cells = grid_styles.prepare_cells(root, addresses); cell_text.request_recalculation(root)
+            formula_changed = False; string_count_uncertain = False
+            for address, cell in cells.items():
+                if any(key not in ('r', 's', 't') for key in cell.attrib): raise ValueError('Target cell contains unsupported metadata')
+                if any(child.tag not in (X + 'f', X + 'v', X + 'is') for child in cell): raise ValueError('Target cell contains unsupported content')
+                if len(cell.findall(X + 'f')) > 1 or len(cell.findall(X + 'v')) > 1 or len(cell.findall(X + 'is')) > 1: raise ValueError('Target cell content is ambiguous')
+                formula = cell.find(X + 'f')
+                if formula is not None and any(key != 't' or value != 'normal' for key, value in formula.attrib.items()): raise ValueError('Target formula has unsupported metadata')
+                inline = cell.find(X + 'is')
+                if inline is not None and any(node.tag in (X + 'rPh', X + 'phoneticPr') for node in inline.iter()): raise ValueError('Target text contains phonetic metadata')
+                style, kind, children = values[address]
+                new_formula = next((child.text or '' for child in children or () if child.tag == X + 'f'), None)
+                old_formula = (formula.text or '') if formula is not None else None
+                old_is_text = formula is None and cell.get('t') in ('s', 'str', 'inlineStr')
+                new_is_text = new_formula is None and kind == 'inlineStr'
+                if old_formula is not None or new_formula is not None or old_is_text != new_is_text: string_count_uncertain = True
+                if old_formula != new_formula: formula_changed = True
+                old_style = cell.get('s', '0')
+                if not re.fullmatch(r'[0-9]{1,10}', old_style) or original_xfs is None or int(old_style) >= len(original_xfs): raise ValueError('Invalid source style index')
+                if style is not None and int(style) != int(old_style):
+                    before_xf = copy.deepcopy(original_xfs[int(old_style)]); after_xf = copy.deepcopy(merged_xfs[int(style)])
+                    old_format = before_xf.get('numFmtId', '0'); new_format = after_xf.get('numFmtId', '0')
+                    if old_format != new_format and old_format != '0': raise ValueError('Candidate changed an existing number format')
+                    for xf in (before_xf, after_xf):
+                        xf.attrib.pop('numFmtId', None); xf.attrib.pop('applyNumberFormat', None)
+                        for key in ('xfId', 'pivotButton', 'quotePrefix'):
+                            if xf.get(key) in ('0', 'false'): xf.attrib.pop(key)
+                    if grid_styles.equivalent(before_xf) != grid_styles.equivalent(after_xf): raise ValueError('Candidate changed unrelated cell formatting')
+                if style is not None and int(style) != int(old_style): cell.set('s', style)
+                if kind is None: cell.attrib.pop('t', None)
+                else: cell.set('t', kind)
+                for child in list(cell): cell.remove(child)
+                for child in children or (): cell.append(child)
+            if formula_changed:
+                rels = ooxml.parse_xml(archive.read('xl/_rels/workbook.xml.rels')).getroot()
+                if rels.tag != grid_styles.REL + 'Relationships': raise ValueError('Invalid workbook relationships')
+                if any(item.get('Type', '').endswith('/calcChain') for item in rels.findall(grid_styles.REL + 'Relationship')):
+                    raise ValueError('Formula changes are unsupported while a calculation chain is present')
+            additional = {}
+            if grid_styles.equivalent(ooxml.parse_xml(original_styles).getroot()) != grid_styles.equivalent(ooxml.parse_xml(merged).getroot()): additional[style_name] = merged
+            manifest = ooxml.parse_xml(archive.read('[Content_Types].xml')).getroot()
+            if manifest.tag != CT + 'Types': raise ValueError('Invalid content types')
+            if formula_changed and any(item.get('ContentType', '').endswith('.calcChain+xml') for item in manifest.findall(CT + 'Override')):
+                raise ValueError('Formula changes are unsupported while a calculation chain is present')
+            shared_parts = [item.get('PartName', '').lstrip('/') for item in manifest.findall(CT + 'Override') if item.get('ContentType') == SHARED]
+            if len(shared_parts) > 1 or (shared_parts and (not shared_parts[0] or shared_parts[0] not in archive.namelist())): raise ValueError('Ambiguous shared string table')
+            if shared_parts:
+                path = shared_parts[0]
+                if path in (style_name, source_part): raise ValueError('Shared string part conflicts with a worksheet or stylesheet')
+                raw = archive.read(path); shared_tree = ooxml.parse_xml(raw); table = shared_tree.getroot()
+                if table.tag != X + 'sst': raise ValueError('Invalid shared string table')
+                if string_count_uncertain and (table.get('count') is not None or table.get('uniqueCount') is not None):
+                    table.attrib.pop('count', None); table.attrib.pop('uniqueCount', None)
+                    additional[path] = ooxml.serialize_xml(shared_tree, raw)
+            return additional
+        ooxml.edit_xml(source, output, lambda _: source_part, edit)
+        return {'output': str(output), 'result': batch['result'], 'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True}

@@ -32,6 +32,21 @@ def content_key(item):
     return etree.tostring(normalized, method='c14n', exclusive=True, with_tail=False)
 
 
+def request_recalculation(root):
+    sheet_data = root.findall(X + 'sheetData'); calc = root.findall(X + 'sheetCalcPr')
+    if len(sheet_data) != 1 or len(list(root.iter(X + 'sheetData'))) != 1 or len(calc) > 1 or len(list(root.iter(X + 'sheetCalcPr'))) != len(calc):
+        raise ValueError('Worksheet calculation metadata is ambiguous')
+    if calc:
+        marker = calc[0]
+        if root.index(marker) <= root.index(sheet_data[0]) or any(isinstance(item.tag, str) for item in root[root.index(sheet_data[0]) + 1:root.index(marker)]):
+            raise ValueError('Worksheet calculation metadata is out of order')
+        if len(marker): raise ValueError('Unsupported worksheet calculation metadata')
+        if marker.get('fullCalcOnLoad') not in (None, '0', '1', 'false', 'true'): raise ValueError('Invalid worksheet calculation flag')
+    else:
+        marker = etree.Element(X + 'sheetCalcPr'); sheet_data[0].addnext(marker)
+    marker.set('fullCalcOnLoad', '1')
+
+
 def replace_text(source, output, path, find, replacement):
     if not cell_path(path):
         raise ValueError('Target must be a worksheet cell path such as /Sheet/A1')
@@ -80,18 +95,7 @@ def replace_text(source, output, path, find, replacement):
                  for cell in row_node.findall(X + 'c') if cell.get('r', '').upper() == address]
         if len(cells) != 1:
             raise ValueError('Target cell must exist exactly once')
-        sheet_data = root.findall(X + 'sheetData'); calc = root.findall(X + 'sheetCalcPr')
-        if len(sheet_data) != 1 or len(list(root.iter(X + 'sheetData'))) != 1 or len(calc) > 1 or len(list(root.iter(X + 'sheetCalcPr'))) != len(calc):
-            raise ValueError('Worksheet calculation metadata is ambiguous')
-        if calc:
-            marker = calc[0]
-            if root.index(marker) <= root.index(sheet_data[0]) or any(isinstance(item.tag, str) for item in root[root.index(sheet_data[0]) + 1:root.index(marker)]):
-                raise ValueError('Worksheet calculation metadata is out of order')
-            if len(marker): raise ValueError('Unsupported worksheet calculation metadata')
-            if marker.get('fullCalcOnLoad') not in (None, '0', '1', 'false', 'true'): raise ValueError('Invalid worksheet calculation flag')
-        else:
-            marker = etree.Element(X + 'sheetCalcPr'); sheet_data[0].addnext(marker)
-        marker.set('fullCalcOnLoad', '1')
+        request_recalculation(root)
         cell = cells[0]
         if cell.get('cm') is not None or cell.get('vm') is not None or cell.get('ph') not in (None, '0', 'false'):
             raise ValueError('Cell metadata or phonetic content is not supported')

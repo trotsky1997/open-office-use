@@ -163,7 +163,7 @@ def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range
 
 @server.tool()
 def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
-    """Apply cell values or formulas in a new revision; literal Excel escape-like text is rejected."""
+    """Edit grid values while preserving unrelated caches and requesting recalculation; formula changes with a calculation chain are rejected."""
     return session.edit_grid(directory, base_revision, sheet, cell_range, changes)
 
 
