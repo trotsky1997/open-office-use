@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import zipfile
 from decimal import Decimal, InvalidOperation
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -35,6 +36,37 @@ def parse_reference(formula):
     return sheet, c1, r1, c2, r2
 
 
+TEMPORAL = (date, datetime, time, timedelta)
+
+
+def worksheet_numeric_values(archive, sheet):
+    """Return exact numeric XML values for a bounded worksheet, or no coverage."""
+    path = getattr(sheet, '_worksheet_path', None)
+    if not isinstance(path, str) or path not in archive.namelist() or archive.getinfo(path).file_size > 8 * 1024 * 1024: return {}
+    root = ooxml.parse_xml(archive.read(path)).getroot(); ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+    data = root.findall(ns+'sheetData')
+    if root.tag != ns+'worksheet' or len(data) != 1 or len(list(root.iter(ns+'sheetData'))) != 1: return {}
+    values = {}; seen = set()
+    for row in data[0].findall(ns+'row'):
+        row_number = row.get('r', '')
+        if not re.fullmatch(r'[1-9][0-9]{0,6}', row_number) or int(row_number) > 1048576: return {}
+        for cell in row.findall(ns+'c'):
+            address = cell.get('r', '')
+            match = re.fullmatch(r'[A-Z]{1,3}([1-9][0-9]{0,6})', address)
+            if not match or match[1] != row_number: return {}
+            if address in seen: values.pop(address, None); continue
+            seen.add(address)
+            if cell.get('t') not in (None, 'n'): continue
+            nodes = cell.findall(ns+'v')
+            if len(nodes) != 1 or len(nodes[0]): continue
+            raw = nodes[0].text or ''
+            if len(raw) > 256: continue
+            try:
+                if Decimal(raw).is_finite(): values[address] = raw
+            except InvalidOperation: pass
+    return values
+
+
 def scan(file):
     source = Path(file).resolve(strict=True)
     if source.suffix.lower() != '.xlsx': raise ValueError('Chart cache inspection requires an XLSX file')
@@ -60,7 +92,7 @@ def scan(file):
                 workbook = load_workbook(snapshot, read_only=True, data_only=True, keep_links=False)
                 try:
                     spreadsheet.prepare_shared_strings(workbook, archive)
-                    sheets = {sheet.title: sheet for sheet in workbook.worksheets}; results = []; complete = True; points_read = 0; limit_hit = False; constraints = {}
+                    sheets = {sheet.title: sheet for sheet in workbook.worksheets}; results = []; complete = True; points_read = 0; limit_hit = False; constraints = {}; raw_values = {}
                     # shortcut: inspect 50 chart parts, 100 references and 10,000 source cells; split or inspect larger workbooks separately.
                     for part, kind in chart_parts[:50]:
                         if kind != CHART_TYPE or archive.getinfo(part).file_size > 4 * 1024 * 1024:
@@ -130,7 +162,12 @@ def scan(file):
                                     if cached is not None: reason = 'extra_point'
                                 elif isinstance(value, bool) or getattr(source_cell, 'data_type', None) == 'e': unknown += 1; continue
                                 elif node.tag == C+'numRef':
-                                    if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value): unknown += 1; continue
+                                    if isinstance(value, TEMPORAL):
+                                        if name not in raw_values: raw_values[name] = worksheet_numeric_values(archive, sheets[name])
+                                        raw = raw_values[name].get(getattr(source_cell, 'coordinate', ''))
+                                        if raw is None: unknown += 1; continue
+                                        value = Decimal(raw)
+                                    if not isinstance(value, (int,float,Decimal)) or isinstance(value,float) and not math.isfinite(value): unknown += 1; continue
                                     if cached is None: reason = 'missing_point'
                                     elif len(cached) > 256: unknown += 1; continue
                                     else:
@@ -196,6 +233,12 @@ def sync(source, output, part, reference, allow_formula_caches=False):
         cell_range = f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}'
         rows = spreadsheet.read_range(snapshot, sheet, cell_range)['rows']
         cells = [cell for row in rows for cell in row]
+        raw_values = {}
+        if any(isinstance(cell.get('value'), TEMPORAL) for cell in cells):
+            workbook = load_workbook(snapshot, read_only=True, data_only=True, keep_links=False)
+            try:
+                with zipfile.ZipFile(snapshot) as archive: raw_values = worksheet_numeric_values(archive, workbook[sheet])
+            finally: workbook.close()
         formula_count = sum('formula' in cell for cell in cells)
         if formula_count and not allow_formula_caches:
             raise ValueError('Source contains formulas; recalculate if appropriate and explicitly allow stored formula caches')
@@ -227,7 +270,12 @@ def sync(source, output, part, reference, allow_formula_caches=False):
                 if isinstance(value, bool) or cell.get('type') == 'e' or cell.get('text_complete') is False: raise ValueError('Chart source contains unverified values')
                 old = (node_value.text or '') if node_value is not None else None
                 if node.tag == C+'numRef':
-                    if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value) or old is not None and len(old)>256:
+                    if isinstance(value, TEMPORAL):
+                        address = f'{get_column_letter(c1 + (index if r1 == r2 else 0))}{r1 + (index if c1 == c2 else 0)}'
+                        raw = raw_values.get(address)
+                        if raw is None: raise ValueError('Chart date source is unavailable as a stored numeric value')
+                        value = Decimal(raw)
+                    if not isinstance(value, (int,float,Decimal)) or isinstance(value,float) and not math.isfinite(value) or old is not None and len(old)>256:
                         raise ValueError('Chart source contains unsupported numeric values')
                     try:
                         left = Decimal(str(value)); right = Decimal(old) if old is not None else None

@@ -343,3 +343,5 @@ Enabled PowerPoint paragraph replacement inside a single hyperlink region, retai
 Speaker-note targeted replacement now shares the slide hyperlink boundary checks, retaining linked text formatting and package relationships.
 
 Connected speaker-note search paths to paragraph inspection and single or atomic batch replacements, including mixed slide/notes batches and rollback.
+
+Workbook chart authoring now caches date values, and chart cache scan/sync compares date-like cells using exact stored numeric XML values. Verified both workbook epochs, date edits, repair, schema and incomplete ISO-date storage.

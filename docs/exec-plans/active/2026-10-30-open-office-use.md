@@ -240,3 +240,5 @@ PowerPoint targeted paragraph replacement supports linked text within a single h
 Speaker-note paragraph edits can update text within one hyperlink region while preserving link metadata; cross-boundary edits are rejected.
 
 PowerPoint speaker-note search paths support target inspection and atomic batches combining note and slide paragraph replacements.
+
+Chart cache creation, inspection and synchronization now cover verifiable numeric date sources using their saved serial values and workbook epochs.

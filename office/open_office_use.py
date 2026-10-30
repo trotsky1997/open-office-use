@@ -38,6 +38,7 @@ from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
+from openpyxl.utils.datetime import to_excel
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
@@ -602,7 +603,7 @@ def format_workbook(workbook, options):
     """Apply bounded presentation settings to an authored workbook."""
     if not isinstance(options, dict) or len(options) > 100: raise ValueError('Sheet options must be an object with at most 100 sheets')
     total_cells = 0; chart_cache_bytes = 0; chart_cache_points = 0; image_bytes = 0; image_count = 0; table_count = 0
-    # shortcut: cache bounded, nonempty literal text or finite numbers; calculated and ambiguous values require recalculation.
+    # shortcut: cache bounded literal text, dates and finite numbers; calculated and ambiguous values require recalculation.
     def chart_cache(cells, text):
         nonlocal chart_cache_bytes, chart_cache_points
         if len(cells) > 2000 or chart_cache_points + len(cells) > 50000: return None
@@ -614,6 +615,10 @@ def format_workbook(workbook, options):
                 if not isinstance(value, str) or isinstance(value, spreadsheet.UnverifiedSharedString) or not value or len(value) > 1000 or re.search(r'_x[0-9a-fA-F]{4}_', value): return None
                 values.append(value)
             else:
+                if isinstance(value, (date, datetime)):
+                    if isinstance(value, datetime) and value.tzinfo is not None: return None
+                    try: value = to_excel(value, workbook.epoch)
+                    except (OverflowError, TypeError, ValueError): return None
                 if not isinstance(value, (int, float)): return None
                 try: numeric = float(value)
                 except (OverflowError, ValueError): return None

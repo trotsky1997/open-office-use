@@ -211,6 +211,33 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Ambiguous epoch date accepted')
     assert not bad_mac.exists()
+    for epoch in (None, CALENDAR_MAC_1904):
+        suffix='1904' if epoch else '1900'; source=None
+        if epoch:
+            source=root/f'date-chart-source-{suffix}.xlsx';book=load_workbook(dates_file);book.epoch=epoch;book.save(source)
+        date_chart=root/f'date-chart-{suffix}.xlsx'
+        chart_spec={'ranges':{'Chart':[{'start':'A1','values':[['Date','Revenue'],[{'type':'datetime','value':'2026-10-31T09:30:45.125'},100],[{'type':'date','value':'2026-11-01'},120]]}]},'sheet_options':{'Chart':{'column_widths':{'A':23},'charts':[{'type':'line','data':'B1:B3','categories':'A2:A3','anchor':'D1'}]}}}
+        open_office_use.author(chart_spec,date_chart,source)
+        report=chart_cache.scan(date_chart);assert report['complete'] and report['mismatch_references']==0,report
+        refs=report['charts'][0]['references']; assert next(item for item in refs if item['role']=='cat')['status']=='match'
+        code,validation,_=officecli_backend.invoke('validate',date_chart);assert code==0 and validation['success'],validation
+        if not epoch:
+            iso_chart=root/'date-chart-iso-storage.xlsx'
+            with zipfile.ZipFile(date_chart) as before,zipfile.ZipFile(iso_chart,'w') as after:
+                for entry in before.infolist():
+                    data=before.read(entry)
+                    if entry.filename=='xl/worksheets/sheet1.xml':
+                        tree=etree.fromstring(data); ns='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                        cell=next(item for item in tree.iter(ns+'c') if item.get('r')=='A2');cell.set('t','d');cell.find(ns+'v').text='2026-10-31T09:30:45.125';data=etree.tostring(tree)
+                    after.writestr(entry,data)
+            uncertain=chart_cache.scan(iso_chart);cat=next(item for item in uncertain['charts'][0]['references'] if item['role']=='cat')
+            assert not uncertain['complete'] and cat['unverified_points']==1,uncertain
+        draft=root/f'date-chart-draft-{suffix}';session.start(draft,source=date_chart)
+        session.edit_grid(draft,0,'Chart','A2',[{'cell':'A2','value':'2026-11-02T10:45:30.125'}])
+        mismatch=session.scan_chart_caches(draft,1);cat=next(item for item in mismatch['charts'][0]['references'] if item['role']=='cat')
+        assert cat['status']=='mismatch' and cat['unverified_points']==0 and cat['mismatch_count']==1,mismatch
+        repaired=session.sync_chart_cache(draft,1,mismatch['charts'][0]['part'],cat['index']);assert repaired['updated_points']==1
+        final=session.scan_chart_caches(draft,2);assert final['complete'] and final['mismatch_references']==0,final
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))
