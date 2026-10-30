@@ -942,7 +942,7 @@ def author(spec, output, source=None):
     if 'page_setup' in spec and suffix != '.docx': raise ValueError('Word page setup requires DOCX output')
     if 'blocks' in spec and suffix != '.docx': raise ValueError('Word blocks require DOCX output')
     if 'slide_size' in spec and suffix != '.pptx': raise ValueError('Slide size requires PPTX output')
-    if 'sheet_options' in spec and suffix != '.xlsx': raise ValueError('Sheet options require XLSX output')
+    if ('sheet_options' in spec or 'ranges' in spec) and suffix != '.xlsx': raise ValueError('Sheet options and ranges require XLSX output')
     if source and kind(source) != suffix:
         raise ValueError('Source and output formats must match')
     out = Path(output)
@@ -967,33 +967,69 @@ def author(spec, output, source=None):
             obj = doc
         elif suffix == '.xlsx':
             obj = spreadsheet.load_author_workbook(source) if source else Workbook()
-            for name, cells in spec.get('sheets', {}).items():
+            sheets = spec.get('sheets', {}); ranges = spec.get('ranges', {})
+            if not isinstance(sheets, dict) or not isinstance(ranges, dict) or len(ranges) > 100: raise ValueError('Workbook sheets and ranges must be objects with at most 100 range sheets')
+            def write_cell(ws, address, value):
+                if ws.tables:
+                    try:
+                        c1, r1, c2, r2 = range_boundaries(address)
+                        if None in (c1, r1, c2, r2) or c1 != c2 or r1 != r2: raise ValueError
+                    except (TypeError, ValueError): raise ValueError('Worksheet cell address must be a single cell') from None
+                    for table in ws.tables.values():
+                        a, b, c, d = range_boundaries(table.ref)
+                        if a <= c1 <= c and ((r1 == b and table.headerRowCount != 0) or (r1 == d and (table.totalsRowCount or table.totalsRowShown))):
+                            raise ValueError('Table header and totals cells require a table-aware edit')
+                literal = isinstance(value, dict)
+                if literal:
+                    if set(value) != {'type', 'value'} or value['type'] != 'text' or not isinstance(value['value'], str) or not value['value']: raise ValueError('Typed cell values require nonempty literal text')
+                    value = value['value']
+                formula = isinstance(value, str) and value.startswith('=') and not literal
+                if isinstance(value, str):
+                    if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value): raise ValueError('Cell text contains unsupported XML characters')
+                    if len(value.encode('utf-16-le')) // 2 > (8192 if formula else 32767): raise ValueError('Cell text or formula exceeds Excel length limits')
+                    if formula and value == '=': raise ValueError('Formula expression is empty')
+                elif value is not None and not isinstance(value, (int, float, bool)): raise ValueError('Cell value must be text, number, boolean or null')
+                elif isinstance(value, (int, float)) and not isinstance(value, bool) and (value > 1.7976931348623157e308 or value < -1.7976931348623157e308 or isinstance(value, float) and not math.isfinite(value)): raise ValueError('Cell number must be finite and within Excel numeric range')
+                if not formula: spreadsheet.validate_cell_value(value)
+                ws[address] = value
+                if literal: ws[address].data_type = 's'
+            def worksheet(name):
+                if not isinstance(name, str) or not name: raise ValueError('Worksheet name must be nonempty text')
                 ws = obj[name] if name in obj.sheetnames else obj.create_sheet(name)
+                if not isinstance(ws, Worksheet) or ws.title != name: raise ValueError('Worksheet name is unavailable or ambiguous')
+                return ws
+            occupied = {}; range_cells = 0
+            for name, cells in sheets.items():
+                if not isinstance(cells, dict): raise ValueError('Worksheet cells must be an object')
+                ws = worksheet(name)
+                occupied[name] = set()
                 for address, value in cells.items():
-                    if ws.tables:
-                        try:
-                            c1, r1, c2, r2 = range_boundaries(address)
-                            if None in (c1, r1, c2, r2) or c1 != c2 or r1 != r2: raise ValueError
-                        except (TypeError, ValueError): raise ValueError('Worksheet cell address must be a single cell') from None
-                        for table in ws.tables.values():
-                            a, b, c, d = range_boundaries(table.ref)
-                            if a <= c1 <= c and ((r1 == b and table.headerRowCount != 0) or (r1 == d and (table.totalsRowCount or table.totalsRowShown))):
-                                raise ValueError('Table header and totals cells require a table-aware edit')
-                    literal = isinstance(value, dict)
-                    if literal:
-                        if set(value) != {'type', 'value'} or value['type'] != 'text' or not isinstance(value['value'], str) or not value['value']: raise ValueError('Typed cell values require nonempty literal text')
-                        value = value['value']
-                    formula = isinstance(value, str) and value.startswith('=') and not literal
-                    if isinstance(value, str):
-                        if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value): raise ValueError('Cell text contains unsupported XML characters')
-                        if len(value.encode('utf-16-le')) // 2 > (8192 if formula else 32767): raise ValueError('Cell text or formula exceeds Excel length limits')
-                        if formula and value == '=': raise ValueError('Formula expression is empty')
-                    elif value is not None and not isinstance(value, (int, float, bool)): raise ValueError('Cell value must be text, number, boolean or null')
-                    elif isinstance(value, (int, float)) and not isinstance(value, bool) and (value > 1.7976931348623157e308 or value < -1.7976931348623157e308 or isinstance(value, float) and not math.isfinite(value)): raise ValueError('Cell number must be finite and within Excel numeric range')
-                    if not formula: spreadsheet.validate_cell_value(value)
-                    ws[address] = value
-                    if literal: ws[address].data_type = 's'
-            if not source and 'Sheet' not in spec.get('sheets', {}) and len(obj.sheetnames) > 1:
+                    try:
+                        c1, r1, c2, r2 = range_boundaries(address)
+                        if not all(isinstance(v, int) for v in (c1,r1,c2,r2)) or c1 != c2 or r1 != r2 or not (1 <= c1 <= 16384 and 1 <= r1 <= 1048576): raise ValueError()
+                    except (TypeError, ValueError): raise ValueError('Worksheet cell address must be a single cell') from None
+                    if (c1,r1) in occupied[name]: raise ValueError('Duplicate worksheet cell address')
+                    occupied[name].add((c1,r1)); write_cell(ws, address, value)
+            for name, blocks in ranges.items():
+                if not isinstance(blocks, list) or len(blocks) > 100: raise ValueError('Worksheet ranges must be a list of at most 100 blocks')
+                ws = worksheet(name)
+                seen = occupied.setdefault(name, set())
+                for block in blocks:
+                    if not isinstance(block, dict) or set(block) != {'start','values'}: raise ValueError('Each worksheet range requires start and values')
+                    address, rows = block['start'], block['values']
+                    if not isinstance(address, str) or not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', address): raise ValueError('Range start must be a single cell')
+                    c1, r1, _, _ = range_boundaries(address)
+                    if not isinstance(rows, list) or not rows or not all(isinstance(row, list) for row in rows): raise ValueError('Range values must be a nonempty rectangular array')
+                    width = len(rows[0])
+                    if not 1 <= width <= 200 or any(len(row) != width for row in rows) or c1 + width - 1 > 16384 or r1 + len(rows) - 1 > 1048576: raise ValueError('Range values have invalid dimensions')
+                    range_cells += len(rows) * width
+                    if range_cells > 100000: raise ValueError('Worksheet ranges exceed 100,000 cells per request')
+                    for row_index, row in enumerate(rows):
+                        for column_index, value in enumerate(row):
+                            col, number = c1 + column_index, r1 + row_index
+                            if (col,number) in seen: raise ValueError('Worksheet ranges overlap another authored cell')
+                            seen.add((col,number)); write_cell(ws, f'{get_column_letter(col)}{number}', value)
+            if not source and 'Sheet' not in sheets and 'Sheet' not in ranges and len(obj.sheetnames) > 1:
                 del obj['Sheet']
             if 'sheet_options' in spec: format_workbook(obj, spec['sheet_options'])
         else:

@@ -226,3 +226,5 @@ PowerPoint table cells accept formatted paragraphs and hyperlinks, and support s
 Workbook authoring supports explicit literal-text cells, preserving strings such as `=literal` and `#N/A` without changing formula behavior for ordinary strings.
 
 Workbook authoring rejects unsupported cell characters, oversized text and formulas, and non-finite or out-of-range numbers before publishing.
+
+Workbook authoring supports bounded rectangular arrays per sheet, with overlap checks and the same typed-cell validation and source table protections as individual cell writes.

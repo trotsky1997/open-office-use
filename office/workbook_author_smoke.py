@@ -166,6 +166,27 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid cell input accepted')
         assert not bad.exists()
+    range_file=root/'range-author.xlsx'
+    range_spec={'sheets':{'Data':{'D1':'Extra'}},'ranges':{'Data':[{'start':'A1','values':[['Quarter','Revenue','Note'],['Q1',120,{'type':'text','value':'=literal'}],['Q2',140,'=B2+B3']]},{'start':'E2','values':[[True],[None]]}]},'sheet_options':{'Data':{'tables':[{'name':'SalesTable','range':'A1:C3'}]}}}
+    range_json=root/'range-author.json';range_json.write_text(json.dumps(range_spec))
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(range_json),'--out',str(range_file)],capture_output=True,text=True,check=True)
+    range_book=load_workbook(range_file);range_sheet=range_book['Data']
+    assert range_book.sheetnames==['Data'] and range_sheet['B2'].value==120 and range_sheet['C2'].value=='=literal' and range_sheet['C2'].data_type=='s' and range_sheet['C3'].value=='=B2+B3' and range_sheet['E2'].value is True and range_sheet['D1'].value=='Extra'
+    assert range_sheet.tables['SalesTable'].ref=='A1:C3'
+    code,validation,_=officecli_backend.invoke('validate',range_file);assert code==0 and validation['success'],validation
+    range_copy=root/'range-author-copy.xlsx';open_office_use.author({'ranges':{'Data':[{'start':'B2','values':[[150]]}]}},range_copy,range_file)
+    assert load_workbook(range_copy)['Data']['B2'].value==150 and load_workbook(range_file)['Data']['B2'].value==120
+    invalid_ranges=[{'ranges':{'Data':[{'start':'A1','values':[[1],[2,3]]}]}},{'ranges':{'Data':[{'start':'XFD1','values':[[1,2]]}]}},{'sheets':{'Data':{'A1':1}},'ranges':{'Data':[{'start':'A1','values':[[2]]}]}},{'ranges':{'Data':[{'start':'A1','values':[[1]]},{'start':'A1','values':[[2]]}]}},{'ranges':{'Data':[{'start':'A1','values':[[1]]*100001}]}}]
+    for index,bad_spec in enumerate(invalid_ranges):
+        bad=root/f'bad-range-author-{index}.xlsx'
+        try: open_office_use.author(bad_spec,bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid or overlapping authored range accepted')
+        assert not bad.exists()
+    try: open_office_use.author({'ranges':{'Data':[{'start':'A1','values':[['Overwrite']]}]}},root/'bad-table-range.xlsx',range_file)
+    except ValueError as exc: assert 'table' in str(exc).lower()
+    else: raise AssertionError('Table header overwrite accepted')
+    assert not (root/'bad-table-range.xlsx').exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))

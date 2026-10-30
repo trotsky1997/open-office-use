@@ -70,6 +70,14 @@ Specifications:
 {"slides": [{"title": "Overview", "body": "Details"}], "replace_text": [{"slide": 0, "shape": 0, "text": "New title"}]}
 ```
 
+For tabular spreadsheet input, provide rectangular `ranges` keyed by worksheet:
+
+```json
+{"ranges":{"Sales":[{"start":"A1","values":[["Quarter","Revenue"],["Q1",120],["Q2",140]]}]},"sheet_options":{"Sales":{"tables":[{"name":"SalesTable","range":"A1:B3"}]}}}
+```
+
+Each block takes a single-cell `start` and nonempty rectangular `values` rows. Values use the same types, formula behavior and explicit literal-text format as `sheets`. Different blocks and individually specified `sheets` cells must not overlap. Each block has at most 200 columns; a request can include up to 100 blocks per worksheet, 100 range worksheets and 100,000 range cells in total. Source-based writing uses the same table-header and totals protection as single-cell authoring. The spreadsheet library can alter unsupported features and caches when saving a source workbook; use targeted session editing when preserving those matters.
+
 For spreadsheet cells that must remain literal text, use a typed value:
 
 ```json

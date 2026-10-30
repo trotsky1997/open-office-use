@@ -329,3 +329,5 @@ PowerPoint table authoring now supports rich cell paragraphs, styled runs and hy
 Added explicit literal-text cell authoring for new and copied workbooks, including formula-like and error-like strings. Validated saved types, table headers, grid reads, invalid input and OfficeCLI schema.
 
 Workbook authoring validates all cell text, formulas and numeric inputs before saving, preventing silent text truncation and non-finite values becoming blank. Limits and numeric precision are documented.
+
+Added bounded rectangular range input to workbook authoring, sharing cell validation and table protections. Verified source copies, formulas, literal text, native table creation, overlap rejection and CLI/MCP.
