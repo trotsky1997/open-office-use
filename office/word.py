@@ -11,6 +11,7 @@ from lxml import etree
 import ooxml
 
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+W14 = '{http://schemas.microsoft.com/office/word/2010/wordml}'
 W14_PARAGRAPH_ID = '{http://schemas.microsoft.com/office/word/2010/wordml}paraId'
 INDEX = r'[1-9][0-9]{0,5}'
 PATH = re.compile(r'/body(?:(?:/(?:tbl|table)\[' + INDEX + r'\]/(?:tr|row)\[' + INDEX + r'\]/(?:tc|cell)\[' + INDEX + r'\])){0,8}/p(?:\[' + INDEX + r'\]|\[@paraId=[0-9A-Fa-f]{8}\])\Z')
@@ -86,7 +87,9 @@ def tracked_changes(source):
                             else: issues.add('invalid_tracking_setting')
                 kinds = {'ins', 'del', 'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
                          'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'tblGridChange', 'trPrChange', 'tcPrChange', 'numberingChange',
-                         'cellIns', 'cellDel', 'cellMerge', 'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd'}
+                         'cellIns', 'cellDel', 'cellMerge', 'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+                         'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd'}
+                revision_tags = {W + kind for kind in kinds} | {W14 + kind for kind in ('customXmlConflictInsRangeStart', 'customXmlConflictInsRangeEnd', 'customXmlConflictDelRangeStart', 'customXmlConflictDelRangeEnd', 'conflictIns', 'conflictDel')}
                 records, counts, scanned_parts = [], {}, []
                 scanned, complete = 0, True
                 for part, info in list(parts.items())[:200]:
@@ -94,9 +97,9 @@ def tracked_changes(source):
                     expected = {'body': 'document', 'header': 'hdr', 'footer': 'ftr', 'footnotes': 'footnotes', 'endnotes': 'endnotes'}[info['kind']]
                     if root.tag != W + expected: issues.add('invalid_story_root'); continue
                     for node in root.iter():
-                        if not isinstance(node.tag, str) or not node.tag.startswith(W) or node.tag[len(W):] not in kinds: continue
+                        if node.tag not in revision_tags: continue
                         if scanned >= 10000: complete = False; break
-                        scanned += 1; kind = node.tag[len(W):]; counts[kind] = counts.get(kind, 0) + 1
+                        scanned += 1; kind = node.tag.rsplit('}', 1)[-1]; counts[kind] = counts.get(kind, 0) + 1
                         if len(records) < 200:
                             chunks, length, clipped = [], 0, False
                             for item in node.iter():
@@ -545,23 +548,45 @@ def resolve_tracked_runs(source, output, part, ids, accept):
     def edit(tree, archive):
         if tree.getroot().tag != W + selected_kind: raise ValueError('Word story has an invalid root')
         known = {W + name for name in ('ins', 'del', 'moveFrom', 'moveTo')}
-        ranges = {W + name for name in ('moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd', 'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd')}
-        if any(node.tag in ranges for node in tree.iter()): raise ValueError('Parts containing tracked move or custom XML ranges are not supported')
+        range_names = [(W, name) for name in ('moveFrom', 'moveTo', 'customXmlIns', 'customXmlDel', 'customXmlMoveFrom', 'customXmlMoveTo')]
+        range_names += [(W14, name) for name in ('customXmlConflictIns', 'customXmlConflictDel')]
+        markers = {namespace + name + 'Range' + suffix: (namespace + name, suffix == 'Start')
+                   for namespace, name in range_names for suffix in ('Start', 'End')}
+        conflicts = {W14 + 'conflictIns', W14 + 'conflictDel'}
+        active, seen, enclosed = set(), set(), set()
+        def story_scope(node):
+            return next((parent for parent in node.iterancestors() if parent.tag in (W + 'footnote', W + 'endnote', W + 'txbxContent')), tree.getroot())
         matches = {identifier: [] for identifier in requested}
         for node in tree.iter():
+            if node.tag in markers:
+                raw = node.get(W + 'id', '').strip()
+                if not re.fullmatch(r'[+-]?[0-9]{1,100}', raw): raise ValueError('Tracked range has an invalid ID')
+                kind, starting = markers[node.tag]; key = (kind, int(raw), story_scope(node))
+                if starting:
+                    if key in seen: raise ValueError('Tracked range IDs are ambiguous')
+                    seen.add(key); active.add(key)
+                else:
+                    if key not in active: raise ValueError('Tracked range markers are unmatched')
+                    active.remove(key)
+                continue
             if node.tag not in known: continue
             value = node.get(W + 'id', '').strip()
             if re.fullmatch(r'[+-]?[0-9]{1,100}', value):
                 key = int(value)
-                if key in matches: matches[key].append(node)
+                if key in matches:
+                    matches[key].append(node)
+                    current_scope = story_scope(node)
+                    if any(scope == current_scope for _, _, scope in active): enclosed.add(key)
+        if active: raise ValueError('Tracked range markers are unmatched')
         chosen = []
         for identifier in requested:
             candidates = matches[identifier]
             if len(candidates) != 1: raise ValueError(f'Revision ID {identifier} is missing or ambiguous')
+            if identifier in enclosed: raise ValueError('Revision lies inside a tracked move or custom XML range')
             node = candidates[0]; parent = node.getparent()
             if node.tag not in (W + 'ins', W + 'del') or parent is None or parent.tag != W + 'p':
                 raise ValueError('Only direct paragraph insertion or deletion runs can be resolved')
-            if any(ancestor.tag in known for ancestor in node.iterancestors()): raise ValueError('Nested tracked revisions are not supported')
+            if any(ancestor.tag in known or ancestor.tag in conflicts for ancestor in node.iterancestors()): raise ValueError('Nested tracked revisions are not supported')
             for ancestor in node.iterancestors():
                 prop_name = {W + 'p': 'pPr', W + 'tr': 'trPr', W + 'tc': 'tcPr', W + 'tbl': 'tblPr'}.get(ancestor.tag)
                 props = ancestor.find(W + prop_name) if prop_name else None
