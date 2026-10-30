@@ -296,3 +296,5 @@ New Word documents support a native table-of-contents field with a readable head
 Word session target inspection and targeted text, tracked-change and comment edits protect paragraphs intersecting fields, including fields spanning paragraphs. Generic OfficeCLI batch actions have separate safety semantics.
 
 Word body, header/footer and note searches flag matches inside fields, including fields spanning paragraphs, and mark field text incomplete and ineligible for targeted replacement.
+
+Authored Word TOC heading caches can be refreshed in a snapshot-bound session revision after heading edits. The supported scope is original generated fields and standard direct-body heading styles; pagination still requires a field update in a compatible editor.

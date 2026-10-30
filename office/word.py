@@ -437,6 +437,42 @@ def field_overlap(paragraph):
     raise ValueError('Target paragraph is outside its story')
 
 
+def refresh_authored_toc(source, output, path, expected_sha256=None):
+    """Refresh the heading-only cache of an unmodified authored TOC field."""
+    if not paragraph_path(path): raise ValueError('TOC target must be a body paragraph path')
+    count = 0
+    def edit(tree, archive):
+        nonlocal count
+        paragraph = find_paragraph(tree, path)
+        children = [node for node in paragraph if node.tag != W + 'pPr']
+        if len(children) < 4 or any(node.tag != W + 'r' or len(node) != 1 for node in children): raise ValueError('Unsupported TOC field structure')
+        begin, instruction, separator, end = children[0][0], children[1][0], children[2][0], children[-1][0]
+        pattern = r' TOC \\o "1-([1-9])" \\h \\z \\u '
+        match = re.fullmatch(pattern, instruction.text or '') if instruction.tag == W + 'instrText' else None
+        if begin.tag != W + 'fldChar' or begin.get(W + 'fldCharType') != 'begin' or separator.tag != W + 'fldChar' or separator.get(W + 'fldCharType') != 'separate' or end.tag != W + 'fldChar' or end.get(W + 'fldCharType') != 'end' or not match: raise ValueError('Unsupported TOC field instruction')
+        if any(node.attrib or node[0].tag not in (W + 't', W + 'br') or set(node[0].attrib) - {'{http://www.w3.org/XML/1998/namespace}space'} for node in children[3:-1]): raise ValueError('Unsupported TOC field cache')
+        body = tree.getroot().find(W + 'body')
+        if paragraph.getparent() is not body: raise ValueError('TOC must be a direct body paragraph')
+        fields = field_paragraphs(body); headings = []
+        for item in body.iter(W + 'p'):
+            style = item.find(W + 'pPr/' + W + 'pStyle'); value = style.get(W + 'val', '') if style is not None else ''
+            level = re.fullmatch(r'Heading([1-9])', value)
+            if not level or int(level.group(1)) > int(match.group(1)): continue
+            if item.getparent() is not body or item in fields or any(node.tag in {W + name for name in ('ins', 'del', 'moveFrom', 'moveTo', 'sdt', 'drawing', 'object', 'tab', 'br', 'sym', 'footnoteReference', 'endnoteReference')} | {W14 + 'conflictIns', W14 + 'conflictDel'} for node in item.iter()): raise ValueError('TOC headings require supported direct body text')
+            text = ''.join(node.text or '' for node in item.iter(W + 't'))
+            headings.append((int(level.group(1)), text))
+            if len(headings) > 2000 or sum(len(value) for _, value in headings) > 200000: raise ValueError('TOC heading cache exceeds limits')
+        if not headings: raise ValueError('No supported headings in the TOC range')
+        for node in children[3:-1]: paragraph.remove(node)
+        for index, (level, text) in enumerate(headings):
+            if index:
+                run = etree.Element(W + 'r'); run.append(etree.Element(W + 'br')); paragraph.insert(paragraph.index(children[-1]), run)
+            run = etree.Element(W + 'r'); value = etree.SubElement(run, W + 't'); value.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve'); value.text = '  ' * (level - 1) + text; paragraph.insert(paragraph.index(children[-1]), run)
+        begin.set(W + 'dirty', 'true'); count = len(headings)
+    ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit, expected_sha256=expected_sha256)
+    return {'headings': count, 'page_numbers': 'require_field_update'}
+
+
 def paragraph_has_field(file, path):
     part = paragraph_part(file, path)
     with zipfile.ZipFile(file) as archive:

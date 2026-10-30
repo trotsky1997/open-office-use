@@ -12,6 +12,7 @@ import open_office_use
 import officecli_backend
 import session
 import review
+import word
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); output = root / 'brief.docx'
@@ -104,6 +105,24 @@ with tempfile.TemporaryDirectory() as tmp:
     toc_pdf = open_office_use.render(toc,root/'toc-render')
     toc_text = subprocess.run(['pdftotext','-f','1','-l','1',str(toc_pdf),'-'],check=True,capture_output=True,text=True).stdout
     assert 'Introduction' in toc_text and 'Analysis results' in toc_text and 'Hidden from contents' not in toc_text
+    altered = root/'altered-toc.docx'; altered_doc = Document(toc); altered_doc.paragraphs[0].runs[3].bold = True; altered_doc.save(altered)
+    try: word.refresh_authored_toc(altered,root/'rejected-toc.docx','/body/p[1]')
+    except ValueError: pass
+    else: raise AssertionError('Complex TOC cache accepted')
+    assert not (root/'rejected-toc.docx').exists()
+    toc_draft = root/'toc-draft'; session.start(toc_draft,source=toc)
+    session.replace_text(toc_draft,0,'/body/p[3]','Introduction','Revised introduction')
+    stale = session.edit_target(toc_draft,1,'/body/p[1]')['snapshot_sha256']
+    try: session.refresh_word_toc(toc_draft,1,'/body/p[1]',expected_sha256='0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale TOC snapshot accepted')
+    refreshed = session.refresh_word_toc(toc_draft,1,'/body/p[1]',expected_sha256=stale)
+    assert refreshed['headings'] == 2 and 'Revised introduction' in Document(refreshed['file']).paragraphs[0].text
+    code, validation, _ = officecli_backend.invoke('validate',refreshed['file']); assert code == 0 and validation['success'], validation
+    rendered = open_office_use.render(refreshed['file'],root/'toc-refreshed')
+    assert 'Revised introduction' in subprocess.run(['pdftotext','-f','1','-l','1',str(rendered),'-'],check=True,capture_output=True,text=True).stdout
+    cli_refresh = subprocess.run([sys.executable,str(cli),'session','refresh-word-toc',str(toc_draft),'--base','2','--path','/body/p[1]'],capture_output=True,text=True,check=True)
+    assert json.loads(cli_refresh.stdout)['revision'] == 3
     try: open_office_use.author({'blocks':[{'type':'table_of_contents'},{'type':'heading','text':'Added'}]},root/'toc-source.docx',source=output)
     except ValueError: pass
     else: raise AssertionError('Table of contents with a source accepted')

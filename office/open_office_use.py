@@ -1368,6 +1368,7 @@ def main():
     candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
+    refresh_toc = sub.add_parser('refresh-word-toc'); refresh_toc.add_argument('directory'); refresh_toc.add_argument('--base', type=int, required=True); refresh_toc.add_argument('--path', required=True); refresh_toc.add_argument('--expected-sha256')
     replace_batch = sub.add_parser('replace-text-batch'); replace_batch.add_argument('directory'); replace_batch.add_argument('--base', type=int, required=True); replace_batch.add_argument('--changes', required=True, help='JSON array of path/find/replacement objects')
     session_cell_diff = sub.add_parser('compare-cells'); session_cell_diff.add_argument('directory'); session_cell_diff.add_argument('--before', type=int, required=True); session_cell_diff.add_argument('--after', type=int, required=True); session_cell_diff.add_argument('--sheet', required=True); session_cell_diff.add_argument('--range', required=True, dest='cell_range')
     chart_grid = sub.add_parser('read-slide-chart-grid'); chart_grid.add_argument('directory'); chart_grid.add_argument('--revision', type=int, required=True); chart_grid.add_argument('--part', required=True); chart_grid.add_argument('--sheet', required=True); chart_grid.add_argument('--range', dest='cell_range', required=True)
@@ -1443,6 +1444,8 @@ def main():
                 result = selection_candidates.candidates(args.directory, render)
             elif args.action == 'replace-text':
                 result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
+            elif args.action == 'refresh-word-toc':
+                result = session.refresh_word_toc(args.directory, args.base, args.path, args.expected_sha256)
             elif args.action == 'replace-text-batch':
                 result = session.replace_text_batch(args.directory, args.base, json.loads(args.changes))
             elif args.action == 'compare-cells':

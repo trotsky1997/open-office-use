@@ -399,3 +399,5 @@ Added Word table-of-contents authoring with cached heading text, configurable le
 Protected Word field results from session text, tracked-change and comment edits, including cross-paragraph fields; exposed field read-only status in target inspection.
 
 Word search now detects field context across paragraphs in each story and reports field matches as incomplete and read-only candidates.
+
+Added session and CLI refresh for authored Word TOC heading caches with snapshot checks and conservative structure validation.

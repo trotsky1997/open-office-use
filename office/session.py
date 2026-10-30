@@ -575,6 +575,17 @@ def replace_text(directory, base_revision, path, find, replacement, expected_sha
     return {'revision': base_revision + 1, 'file': str(output), 'path': path, **({'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True} if state['format'] == 'xlsx' else {})}
 
 
+def refresh_word_toc(directory, base_revision, path, expected_sha256=None):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'docx': raise ValueError('TOC refresh requires a DOCX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.docx"
+    try: result = word.refresh_authored_toc(source, output, path, expected_sha256)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'path': path, **result}
+
+
 def replace_text_batch(directory, base_revision, changes):
     if not isinstance(changes, list) or not 1 <= len(changes) <= 25:
         raise ValueError('Provide 1 to 25 text replacements')
