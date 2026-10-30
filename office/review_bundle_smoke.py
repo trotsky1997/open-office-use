@@ -11,6 +11,7 @@ from docx import Document
 from docx.oxml import OxmlElement
 from openpyxl import Workbook
 from pptx import Presentation
+from pptx.util import Inches, Pt
 
 import open_office_use
 import review_bundle
@@ -67,10 +68,11 @@ with tempfile.TemporaryDirectory() as tmp:
     notes_deck = Presentation(); first = notes_deck.slides.add_slide(notes_deck.slide_layouts[1]); first.notes_slide.notes_text_frame.text = 'Private speaker note'
     hidden = notes_deck.slides.add_slide(notes_deck.slide_layouts[1]); hidden._element.set('show', '0')
     empty = notes_deck.slides.add_slide(notes_deck.slide_layouts[1]); empty.notes_slide
+    box = first.shapes.add_textbox(Inches(1), Inches(1), Inches(2), Inches(1)); run = box.text_frame.paragraphs[0].add_run(); run.text = 'Small'; run.font.size = Pt(10)
     notes_file = root / 'notes.pptx'; notes_deck.save(notes_file)
     notes_result = review_bundle.create(notes_file, root / 'notes-review', failed_render)
     report = json.loads(Path(notes_result['report']).read_text())
-    assert {'speaker_notes_parts_present', 'speaker_notes_text_present', 'hidden_slides_present'} <= set(notes_result['flags'])
+    assert {'speaker_notes_parts_present', 'speaker_notes_text_present', 'hidden_slides_present', 'slide_small_text_candidates'} <= set(notes_result['flags'])
     assert report['checks']['speaker_notes']['result']['notes_slides'] == [{'slide': 1, 'body_text_present': True}, {'slide': 3, 'body_text_present': False}]
     assert 'Private speaker note' not in json.dumps(report)
     rejected = subprocess.run([sys.executable, str(cli), 'session', 'review', str(draft), '--revision', '0', '--out-dir', str(draft / 'bad')], capture_output=True, text=True)

@@ -126,3 +126,7 @@ Replaced the inherited browser-first root README with English and Chinese Office
 ## Review visibility for comments and presentation notes
 
 Review bundles flag Word comments, hidden slides and speaker-note parts or body text. The notes inventory returns slide numbers and text presence without copying note contents, with a 500-slide scan limit and explicit placeholder-only scope. Other notes content and comments require independent inspection.
+
+## Small-font review candidates
+
+A real PPTX was authored through OfficeCLI, rendered and inspected. Slide layout inspection and review bundles now flag directly specified runs below 14 pt, including table cells, and report unresolved inherited sizes and scan limits. The threshold is advisory; theme inheritance, auto-fit, grouped scaling and final legibility require rendered review.

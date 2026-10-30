@@ -175,3 +175,7 @@ Made the repository landing pages describe the Office harness, installation, aut
 ### Review bundle disclosure flags
 
 Added Word-comment and hidden-slide flags and a bounded PowerPoint speaker-note placeholder inventory, returning slide numbers and presence instead of note contents. Tested real files with comments, hidden slides, populated and empty notes, along with review-bundle partial failures. Other notes shapes, masters and presentation comments remain outside the inventory.
+
+### Slide small-text candidates
+
+Exercised a structured PowerPoint creation and render/review workflow, and added explicit run-size candidates below 14 pt to layout inspection and review bundles. Checked text boxes, tables, unresolved inheritance and normal authored text, along with layout and review-bundle smoke checks. Rendering, auto-fit, group scaling, theme inheritance and master text remain outside the font-size calculation.

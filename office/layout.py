@@ -132,6 +132,25 @@ def inspect(file, selection=None):
             selected_count = 0
             totals = {'shapes_scanned': 0, 'text_shapes': 0, 'pairs_checked': 0, 'off_slide_count': 0, 'overlap_count': 0, 'skipped_count': 0}
             complete, overlap_complete, shape_limit = True, True, False
+            fonts = {'threshold_pt': 14, 'runs_scanned': 0, 'unresolved_runs': 0, 'candidate_count': 0, 'candidates': [], 'scan_limit_reached': False}
+            # shortcut: explicit run sizes only; resolve theme and effective rendered sizes when supported.
+            def scan_fonts(frame, descriptor, cell=None):
+                if fonts['scan_limit_reached']: return
+                for paragraph in frame.paragraphs:
+                    runs = paragraph.runs
+                    if paragraph._p.findall(A + 'fld') or paragraph.text.strip() and not runs: fonts['unresolved_runs'] += 1
+                    for run in runs:
+                        if not run.text.strip(): continue
+                        if fonts['runs_scanned'] >= 100000:
+                            fonts['scan_limit_reached'] = True; return
+                        fonts['runs_scanned'] += 1
+                        size = run.font.size
+                        if size is None:
+                            fonts['unresolved_runs'] += 1; continue
+                        if size.pt < fonts['threshold_pt']:
+                            fonts['candidate_count'] += 1
+                            if len(fonts['candidates']) < MAX_ISSUES:
+                                fonts['candidates'].append({'slide': descriptor['slide'], 'path_hint': descriptor['path_hint'], 'name': descriptor['name'], 'cell': cell, 'size_pt': size.pt, 'text_preview': run.text[:160]})
             def issue(bucket, item):
                 if len(bucket) < MAX_ISSUES:
                     bucket.append(item)
@@ -187,6 +206,12 @@ def inspect(file, selection=None):
                                 descriptor['text_preview'] = text[:160]; descriptor['text_truncated'] = len(text) > 160
                             if has_text:
                                 totals['text_shapes'] += 1
+                            if shape.has_table:
+                                for row_index, row in enumerate(shape.table.rows, 1):
+                                    for column_index, cell in enumerate(row.cells, 1):
+                                        scan_fonts(cell.text_frame, descriptor, [row_index, column_index])
+                            elif shape.has_text_frame:
+                                scan_fonts(shape.text_frame, descriptor)
                             full_area = area(points)
                             visible = intersect(points[:], [(0, 0), (slide_width, 0), (slide_width, slide_height), (0, slide_height)])
                             descriptor['visible_polygon_inches'] = [[round(x / EMU, 4), round(y / EMU, 4)] for x, y in visible]
@@ -235,6 +260,9 @@ def inspect(file, selection=None):
                     'off_slide': off_slide, 'off_slide_truncated': totals['off_slide_count'] > len(off_slide),
                     'overlaps': overlaps, 'overlaps_truncated': totals['overlap_count'] > len(overlaps),
                     'skipped': skipped, 'skipped_truncated': totals['skipped_count'] > len(skipped),
+                    'font_size': {**fonts, 'candidates_truncated': fonts['candidate_count'] > len(fonts['candidates']),
+                                  'complete': complete and not fonts['scan_limit_reached'] and not fonts['unresolved_runs'],
+                                  'scope': 'Explicit run sizes only; inheritance, autofit, group scaling, masters and rendered legibility require review.'},
                     'units': 'inches', 'overlaps_are_candidates': True}
         except (zipfile.BadZipFile, PackageNotFoundError, etree.XMLSyntaxError, KeyError) as exc:
             raise ValueError(f'Invalid presentation package: {exc}') from exc

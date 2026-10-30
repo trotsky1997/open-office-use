@@ -74,6 +74,8 @@ def create(source, destination, render, revision=None):
             if geometry is not None:
                 if geometry['hidden_slides']: flags.append('hidden_slides_present')
                 if not geometry['visibility_known']: flags.append('slide_visibility_unknown')
+                if geometry['font_size']['candidate_count']: flags.append('slide_small_text_candidates')
+                if not geometry['font_size']['complete']: flags.append('slide_font_size_scan_incomplete')
                 if not geometry['complete']: flags.append('slide_layout_incomplete')
                 if geometry['off_slide_count'] or geometry['overlap_count']: flags.append('slide_layout_candidates')
             note_inventory = check('speaker_notes', lambda: notes.inventory(snapshot))

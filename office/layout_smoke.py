@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE
-from pptx.util import Inches
+from pptx.util import Inches, Pt
 
 import layout
 import session
@@ -54,6 +54,15 @@ with tempfile.TemporaryDirectory() as tmp:
     off_deck.save(outside); off_result = layout.inspect(outside)
     assert off_result['off_slide_count'] == 3 and off_result['overlap_count'] == 0, off_result
     assert any('/picture[@id=' in item['path_hint'] for item in off_result['off_slide'])
+    font_deck = Presentation(); font_slide = font_deck.slides.add_slide(font_deck.slide_layouts[6])
+    font_shape = font_slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)); paragraph = font_shape.text_frame.paragraphs[0]
+    small = paragraph.add_run(); small.text = 'Footnote'; small.font.size = Pt(10)
+    inherited = paragraph.add_run(); inherited.text = ' inherited'
+    table = font_slide.shapes.add_table(1, 1, Inches(1), Inches(3), Inches(4), Inches(1)).table
+    cell_run = table.cell(0, 0).text_frame.paragraphs[0].add_run(); cell_run.text = 'Table'; cell_run.font.size = Pt(12)
+    font_source = root / 'fonts.pptx'; font_deck.save(font_source); fonts = layout.inspect(font_source)['font_size']
+    assert fonts['candidate_count'] == 2 and fonts['unresolved_runs'] == 1 and not fonts['complete']
+    assert [(item['size_pt'], item['cell']) for item in fonts['candidates']] == [(10, None), (12, [1, 1])]
     hidden_deck = Presentation(); hidden_deck.slides.add_slide(hidden_deck.slide_layouts[6]); hidden = hidden_deck.slides.add_slide(hidden_deck.slide_layouts[6]); hidden._element.set('show', '0')
     hidden_source = root / 'hidden.pptx'; hidden_deck.save(hidden_source); hidden_result = layout.inspect(hidden_source)
     assert hidden_result['visibility_known'] and hidden_result['hidden_slides'] == [2]
