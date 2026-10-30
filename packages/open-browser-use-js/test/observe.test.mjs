@@ -1839,3 +1839,18 @@ test('dynamic download frame preparation gates subsequent SDK commands',async()=
   for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1,sessionId:'late'},method:'Page.downloadWillBegin',params:{guid:'g',frameId:'f',url:'https://example.test',suggestedFilename:'file'}}});
   assert.equal((await wait.wait()).guid,'g');assert.equal(handlers.size,0);
 });
+
+test('successful download observation releases other stalled frame preparations',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1),handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return()=>handlers.delete(handler);};client.onDisconnect=()=>()=>{};
+  browser.cdp.ensureAttached=async()=>{};browser.cdp.enableFrameSessions=async()=>true;browser.cdp.frameSessions=async()=>[];
+  let started=false,commands=0;client.request=async(_method,params,_generation,_timeout,signal)=>{
+    if(params.method==='Page.enable' && params.target.sessionId==='slow'){started=true;return await new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('cancelled')),{once:true}));}
+    if(params.method==='Runtime.evaluate')commands++;return {};
+  };
+  const wait=await tab.prepareDownloadStart({timeoutMs:1000});
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1},method:'Target.attachedToTarget',params:{sessionId:'slow',targetInfo:{type:'iframe'}}}});
+  while(!started)await new Promise(resolve=>setImmediate(resolve));const next=browser.cdp.call(1,'Runtime.evaluate',{expression:'1'});await new Promise(resolve=>setImmediate(resolve));assert.equal(commands,0);
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1},method:'Page.downloadWillBegin',params:{guid:'g',frameId:'root',url:'https://example.test',suggestedFilename:'file'}}});
+  assert.equal((await wait.wait()).guid,'g');await next;assert.equal(commands,1);
+});

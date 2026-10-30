@@ -2380,7 +2380,8 @@ export class OpenBrowserUseTab {
             throw new Error("Invalid download timeout");
         const cdp = this.browser.cdp, controller = new AbortController(), deadline = performance.now() + timeoutMs;
         const enabled = new Map();
-        let rejectDynamic;
+        let rejectDynamic, releaseOnSuccess;
+        const succeeded = new Promise(resolve => { releaseOnSuccess = resolve; });
         const dynamicFailure = new Promise((_, reject) => { rejectDynamic = reject; });
         void dynamicFailure.catch(() => { });
         const enable = (sessionId) => {
@@ -2399,7 +2400,7 @@ export class OpenBrowserUseTab {
             if (!isObject(source) || source.tabId !== this.id || method !== "Target.attachedToTarget" || !isObject(params) || typeof params.sessionId !== "string" || !isObject(params.targetInfo) || params.targetInfo.type !== "iframe")
                 return;
             const preparation = enable(params.sessionId);
-            cdp.blockUntilPrepared(this.id, preparation);
+            cdp.blockUntilPrepared(this.id, Promise.race([preparation, succeeded]));
             void preparation.catch(error => { if (!controller.signal.aborted)
                 rejectDynamic(error instanceof Error ? error : new Error(String(error))); });
         });
@@ -2414,7 +2415,7 @@ export class OpenBrowserUseTab {
                 throw new Error("Invalid download start event");
             return { guid: value.guid, frameId: value.frameId, url: value.url, suggestedFilename: value.suggestedFilename, ...(typeof source.sessionId === "string" ? { sessionId: source.sessionId } : {}) };
         });
-        const result = Promise.race([waiting, dynamicFailure]).finally(() => { removeDynamic(); controller.abort(); });
+        const result = Promise.race([waiting, dynamicFailure]).then(value => { releaseOnSuccess(); return value; }).finally(() => { removeDynamic(); controller.abort(); });
         void result.catch(() => { });
         const prepare = (async () => {
             await cdp.enableFrameSessions(this.id);

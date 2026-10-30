@@ -1942,7 +1942,8 @@ export class OpenBrowserUseTab {
     if(!Number.isFinite(timeoutMs) || timeoutMs<=0 || timeoutMs>120_000)throw new Error("Invalid download timeout");
     const cdp=this.browser.cdp, controller=new AbortController(), deadline=performance.now()+timeoutMs;
     const enabled=new Map<string,Promise<JsonValue>>();
-    let rejectDynamic!:(error:Error)=>void;
+    let rejectDynamic!:(error:Error)=>void, releaseOnSuccess!:()=>void;
+    const succeeded=new Promise<void>(resolve=>{releaseOnSuccess=resolve;});
     const dynamicFailure=new Promise<never>((_,reject)=>{rejectDynamic=reject;});
     void dynamicFailure.catch(()=>{});
     const enable=(sessionId?:string):Promise<JsonValue>=>{
@@ -1955,7 +1956,7 @@ export class OpenBrowserUseTab {
       const {source,method,params}=event.params;
       if(!isObject(source) || source.tabId!==this.id || method!=="Target.attachedToTarget" || !isObject(params) || typeof params.sessionId!=="string" || !isObject(params.targetInfo) || params.targetInfo.type!=="iframe")return;
       const preparation=enable(params.sessionId);
-      cdp.blockUntilPrepared(this.id,preparation);
+      cdp.blockUntilPrepared(this.id,Promise.race([preparation,succeeded]));
       void preparation.catch(error=>{if(!controller.signal.aborted)rejectDynamic(error instanceof Error ? error : new Error(String(error)));});
     });
     const waiting=cdp.waitForEvent(this.id,event=>{
@@ -1967,7 +1968,7 @@ export class OpenBrowserUseTab {
       if(typeof value.guid!=="string" || !value.guid || typeof value.frameId!=="string" || !value.frameId || typeof value.url!=="string" || typeof value.suggestedFilename!=="string")throw new Error("Invalid download start event");
       return {guid:value.guid,frameId:value.frameId,url:value.url,suggestedFilename:value.suggestedFilename,...(typeof source.sessionId==="string" ? {sessionId:source.sessionId} : {})};
     });
-    const result=Promise.race([waiting,dynamicFailure]).finally(()=>{removeDynamic();controller.abort();});
+    const result=Promise.race([waiting,dynamicFailure]).then(value=>{releaseOnSuccess();return value;}).finally(()=>{removeDynamic();controller.abort();});
     void result.catch(()=>{});
     const prepare=(async()=>{
       await cdp.enableFrameSessions(this.id);

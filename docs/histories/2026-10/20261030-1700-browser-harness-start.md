@@ -546,3 +546,5 @@ Chrome 对外下载句柄改为随机 UUID，扩展内保存句柄与原生数�
 下载开始观察在等待期间为新附着的跨进程 iframe 启用 Page 事件，结束或失败时移除监听；SDK 107 项检查通过。Linux ARM64 Chromium 原生消息及 macOS Electron 实页验证动态新 frame 加载后触发下载并取得所属 frame 事件。frame 附着至事件启用之间仍存在遗漏窗口；Windows 未测。
 
 下载开始观察期间，新 frame 的 Page.enable 会成为后续 SDK CDP 操作的准备屏障，事件或失败后释放。SDK 108 项检查通过；Linux ARM64 Chromium 原生消息和 macOS Electron 实页注入延迟，确认后续下载动作等待启用并收到 frame 事件。页面独立触发及绕过 SDK 的动作仍可能发生在启用之前；Windows 未测。
+
+下载开始事件已经成功观察时，其他仍在准备的 frame 不再让等待中的后续 SDK 操作误报取消；观察失败时保留准备失败的传播。SDK 109 项检查通过；macOS Electron 实页注入一个挂起的动态 frame，确认主 frame 下载事件到达后后续操作恢复。Linux 和 Windows 本轮未测。
