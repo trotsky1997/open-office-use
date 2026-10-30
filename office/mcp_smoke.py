@@ -219,11 +219,13 @@ async def main():
                 assert not started_picture.isError, started_picture
                 changed_picture = await session.call_tool('session_replace_picture', {'directory': str(picture_draft), 'base_revision': 0, 'path': f'/slide[1]/picture[@id={picture.shape_id}]', 'image_file': str(replacement_image)})
                 assert not changed_picture.isError and Presentation(picture_draft / 'revision-000001.pptx').slides[0].shapes[0].image.blob == replacement_image.read_bytes(), changed_picture
-                changed_notes = await session.call_tool('session_replace_slide_notes', {'directory': str(picture_draft), 'base_revision': 1, 'slide': 1, 'text': 'Talk track'})
+                initial_notes = await session.call_tool('session_read_slide_notes', {'directory':str(picture_draft),'revision':1,'slide':1})
+                assert (await session.call_tool('session_replace_slide_notes', {'directory':str(picture_draft),'base_revision':1,'slide':1,'text':'bad','expected_sha256':'0'*64})).isError
+                changed_notes = await session.call_tool('session_replace_slide_notes', {'directory': str(picture_draft), 'base_revision': 1, 'slide': 1, 'text': 'Talk track', 'expected_sha256':initial_notes.structuredContent['snapshot_sha256']})
                 assert not changed_notes.isError and changed_notes.structuredContent['revision'] == 2, changed_notes
                 read_notes = await session.call_tool('session_read_slide_notes', {'directory': str(picture_draft), 'revision': 2, 'slide': 1})
                 assert not read_notes.isError and read_notes.structuredContent['text'] == 'Talk track', read_notes
-                note_edit = await session.call_tool('session_replace_slide_notes_text', {'directory': str(picture_draft), 'base_revision': 2, 'slide': 1, 'paragraph': 1, 'find': 'track', 'replacement': 'notes'})
+                note_edit = await session.call_tool('session_replace_slide_notes_text', {'directory': str(picture_draft), 'base_revision': 2, 'slide': 1, 'paragraph': 1, 'find': 'track', 'replacement': 'notes', 'expected_sha256':read_notes.structuredContent['snapshot_sha256']})
                 assert not note_edit.isError and note_edit.structuredContent['revision'] == 3, note_edit
                 edited_notes = await session.call_tool('session_read_slide_notes', {'directory': str(picture_draft), 'revision': 3, 'slide': 1})
                 assert not edited_notes.isError and edited_notes.structuredContent['text'] == 'Talk notes', edited_notes

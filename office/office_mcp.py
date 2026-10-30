@@ -334,15 +334,15 @@ def session_compare_slide_notes(directory: str, before_revision: int, after_revi
 
 
 @server.tool()
-def session_replace_slide_notes(directory: str, base_revision: int, slide: int, text: str) -> dict[str, Any]:
+def session_replace_slide_notes(directory: str, base_revision: int, slide: int, text: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Replace all speaker notes on one slide in a new revision; notes formatting is reset."""
-    return session.replace_notes(directory, base_revision, slide, text)
+    return session.replace_notes(directory, base_revision, slide, text, expected_sha256)
 
 
 @server.tool()
-def session_replace_slide_notes_text(directory: str, base_revision: int, slide: int, paragraph: int, find: str, replacement: str) -> dict[str, Any]:
+def session_replace_slide_notes_text(directory: str, base_revision: int, slide: int, paragraph: int, find: str, replacement: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Replace one unique literal in a one-based notes paragraph, preserving run formatting."""
-    return session.replace_notes_text(directory, base_revision, slide, paragraph, find, replacement)
+    return session.replace_notes_text(directory, base_revision, slide, paragraph, find, replacement, expected_sha256)
 
 
 @server.tool()

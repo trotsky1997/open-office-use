@@ -37,3 +37,5 @@ Use `session_reorder_slides` with the latest revision and a complete array of on
 Use `inspect_slides` or `session_inspect_slides` before reordering to list slide positions, IDs, titles, visibility, notes presence and recognized section membership. `section_status` reports `none`, `supported`, or `unsupported` with an explanation. Results are snapshot-bound, limited to 1,000 slides, and titles and section names are truncated at 500 characters.
 
 In the local viewer, the Slide order panel loads the displayed revision's slide list and recognized sections and saves a complete comma-separated order in the latest revision. Reload after changing revisions.
+
+Speaker-note reads return `snapshot_sha256`. Pass it as `expected_sha256` when replacing full notes or a notes paragraph; the viewer binds these operations to the displayed snapshot.

@@ -689,24 +689,32 @@ def compare_notes(directory, before_revision, after_revision, before_slide, afte
     return {'before_revision': before_revision, 'after_revision': after_revision, **result}
 
 
-def replace_notes(directory, base_revision, slide, text):
+def replace_notes(directory, base_revision, slide, text, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Speaker notes require a PPTX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
-    try: notes.replace(source, output, slide, text)
+    try:
+        with tempfile.TemporaryDirectory(prefix='office-notes-source-') as tmp:
+            frozen, digest = snapshots.copy(source, tmp)
+            if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Document snapshot changed; reload notes')
+            notes.replace(frozen, output, slide, text)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'slide': slide}
 
 
-def replace_notes_text(directory, base_revision, slide, paragraph, find, replacement):
+def replace_notes_text(directory, base_revision, slide, paragraph, find, replacement, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Speaker notes require a PPTX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
-    try: notes.replace_text(source, output, slide, paragraph, find, replacement)
+    try:
+        with tempfile.TemporaryDirectory(prefix='office-notes-source-') as tmp:
+            frozen, digest = snapshots.copy(source, tmp)
+            if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Document snapshot changed; reload notes')
+            notes.replace_text(frozen, output, slide, paragraph, find, replacement)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'slide': slide, 'paragraph': paragraph}
 

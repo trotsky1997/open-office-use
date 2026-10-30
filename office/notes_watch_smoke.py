@@ -21,15 +21,18 @@ with tempfile.TemporaryDirectory() as tmp:
         def post(route, data, origin=origin):
             request = urllib.request.Request(url + route, data=json.dumps(data).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
             with urllib.request.urlopen(request, timeout=30) as response: return json.load(response)
-        assert not post('notes-read', {'revision': 0, 'slide': 1})['has_notes_slide']
-        assert post('notes-replace', {'base_revision': 0, 'slide': 1, 'text': 'Notes'})['revision'] == 1
+        initial = post('notes-read', {'revision': 0, 'slide': 1}); assert not initial['has_notes_slide']
+        try: post('notes-replace', {'base_revision':0,'slide':1,'text':'Notes','snapshot_sha256':'0'*64}); raise AssertionError('Wrong notes hash accepted')
+        except urllib.error.HTTPError as exc: assert exc.code == 400
+        assert post('notes-replace', {'base_revision': 0, 'slide': 1, 'text': 'Notes', 'snapshot_sha256':initial['snapshot_sha256']})['revision'] == 1
         assert post('notes-read', {'revision': 1, 'slide': 1})['text'] == 'Notes'
         search = {'revision': 1, 'query': 'Notes', 'scope': 'notes', 'offset': 0, 'snapshot_sha256': None}
         found = post('text-search', search)
         assert found['scope'] == 'notes' and found['matches'][0]['notes_paragraph'] == 1
         try: post('text-search', search, 'http://evil.test'); raise AssertionError('Cross-origin search accepted')
         except urllib.error.HTTPError as exc: assert exc.code == 403
-        assert post('notes-replace-text', {'base_revision': 1, 'slide': 1, 'paragraph': 1, 'find': 'Notes', 'replacement': 'Edited'})['revision'] == 2
+        saved = post('notes-read', {'revision':1,'slide':1})
+        assert post('notes-replace-text', {'base_revision': 1, 'slide': 1, 'paragraph': 1, 'find': 'Notes', 'replacement': 'Edited', 'snapshot_sha256':saved['snapshot_sha256']})['revision'] == 2
         assert post('notes-read', {'revision': 2, 'slide': 1})['text'] == 'Edited'
         diff = post('notes-comparison', {'before': 1, 'after': 2, 'before_slide': 1, 'after_slide': 1})
         assert diff['text_changed'] and '-Notes' in diff['diff'] and '+Edited' in diff['diff']

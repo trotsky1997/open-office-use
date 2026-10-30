@@ -371,3 +371,5 @@ Bound merge, frozen-pane and grid sizing edits to checked workbook snapshots and
 Bound element inspection and direct text edits to checked source snapshots; viewer direct edits and replacements supply the loaded snapshot hash.
 
 Bound Word tracked insertion/replacement and new paragraph comments to checked source snapshots; the viewer and MCP accept the inspected target hash.
+
+Bound speaker-note reads and both note replacement operations to checked snapshots, with optional expected hashes through MCP and the viewer.

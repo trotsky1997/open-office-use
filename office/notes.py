@@ -9,6 +9,7 @@ from pptx import Presentation
 
 import slides
 import ooxml
+import snapshot as snapshots
 
 
 def _slide(source, number):
@@ -50,6 +51,12 @@ def inventory(source):
 
 
 def read(source, number):
+    with tempfile.TemporaryDirectory(prefix='office-notes-read-') as tmp:
+        frozen, digest = snapshots.copy(source, tmp)
+        return {**_read(frozen, number), 'snapshot_sha256': digest}
+
+
+def _read(source, number):
     _, slide = _slide(source, number)
     if not slide.has_notes_slide:
         return {'slide': number, 'has_notes_slide': False, 'text': '', 'truncated': False}

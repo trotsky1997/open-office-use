@@ -5,6 +5,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 from pptx import Presentation
 import notes
 import session
@@ -14,9 +15,24 @@ with tempfile.TemporaryDirectory() as tmp:
     presentation = Presentation(); slide = presentation.slides.add_slide(presentation.slide_layouts[1]); slide.shapes.title.text = 'Title'; presentation.save(source)
     assert not notes.read(source, 1)['has_notes_slide']
     session.start(draft, source=source)
-    one = session.replace_notes(draft, 0, 1, 'Opening\nSecond line')
+    original = session.read_notes(draft, 0, 1)
+    try: session.replace_notes(draft, 0, 1, 'Opening', expected_sha256='0'*64)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Changed notes source accepted')
+    assert session.info(draft)['latest_revision'] == 0
+    one = session.replace_notes(draft, 0, 1, 'Opening\nSecond line', expected_sha256=original['snapshot_sha256'])
     assert session.read_notes(draft, 0, 1)['text'] == ''
     assert session.read_notes(draft, 1, 1)['text'] == 'Opening\nSecond line'
+    read_before=session.read_notes(draft,1,1); revision_file=draft/'revision-000001.pptx'; original_bytes=revision_file.read_bytes(); original_slide=notes._slide
+    def mutate_after_snapshot(frozen, number):
+        revision_file.write_bytes(source.read_bytes())
+        return original_slide(frozen, number)
+    with patch.object(notes, '_slide', side_effect=mutate_after_snapshot): captured=session.read_notes(draft,1,1)
+    assert captured['text']=='Opening\nSecond line' and captured['snapshot_sha256']==read_before['snapshot_sha256']
+    try: session.replace_notes(draft,1,1,'Should fail',expected_sha256=captured['snapshot_sha256'])
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Changed notes snapshot accepted')
+    revision_file.write_bytes(original_bytes)
     two = session.replace_notes(draft, 1, 1, 'Updated speaker notes')
     assert session.read_notes(draft, 2, 1)['text'] == 'Updated speaker notes'
     assert Presentation(two['file']).slides[0].shapes.title.text == 'Title'
@@ -64,7 +80,11 @@ with tempfile.TemporaryDirectory() as tmp:
     else: raise AssertionError('Cross-boundary hyperlink edit succeeded')
     assert not rejected.exists()
     link_draft=root/'notes-link-draft';session.start(link_draft,source=hyperlink)
-    linked_result=session.replace_notes_text(link_draft,0,1,1,'ked notes','k references')
+    linked_before=session.read_notes(link_draft,0,1)
+    try: session.replace_notes_text(link_draft,0,1,1,'ked notes','k references',expected_sha256='0'*64)
+    except ValueError as exc: assert 'snapshot changed' in str(exc)
+    else: raise AssertionError('Changed notes paragraph source accepted')
+    linked_result=session.replace_notes_text(link_draft,0,1,1,'ked notes','k references',expected_sha256=linked_before['snapshot_sha256'])
     linked_frame=Presentation(linked_result['file']).slides[0].notes_slide.notes_text_frame;linked_runs=linked_frame.paragraphs[0].runs
     assert linked_frame.text=='See Link references today' and linked_runs[1].font.bold and linked_runs[2].font.italic
     assert linked_runs[1].hyperlink.address=='https://example.com' and linked_runs[2].hyperlink.address=='https://example.com'

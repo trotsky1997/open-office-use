@@ -268,3 +268,5 @@ Grid merge, freeze and resize now bind validation and writes to checked snapshot
 Element target inspection and direct/replacement edits support expected source hashes; viewer binds those actions to the displayed snapshot. Other element actions need separate consistency review.
 
 Tracked insertion/replacement and new paragraph comments can bind to the inspected target snapshot. Comment replies, resolution, notes and image workflows remain for consistency review.
+
+Speaker-note reads and replacements use checked snapshots; the viewer binds saves and targeted replacements to its loaded notes hash.

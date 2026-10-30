@@ -1079,7 +1079,8 @@ async function loadNotes(requestedSlide=null) {
   const response=await fetch('notes-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,slide})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not read notes');
   if (epoch!==notesEpoch || displayed!==revision || Number(document.getElementById('notes-slide').value)!==slide) return;
-  text.value=result.text; text.disabled=false; notesBaseline=result.text; notesLoaded={revision,slide,truncated:result.truncated};
+  if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; reload notes');
+  text.value=result.text; text.disabled=false; notesBaseline=result.text; notesLoaded={revision,slide,truncated:result.truncated,snapshot_sha256:result.snapshot_sha256};
   const editable=revision===current && pinned===null && !result.truncated;
   text.readOnly=!editable; document.getElementById('notes-save').disabled=!editable; document.getElementById('notes-replace-text').disabled=!editable;
   status.textContent=`Revision ${revision}, slide ${slide}. ${result.truncated ? 'Notes were truncated; editing is unavailable.' : editable ? 'Ready to edit.' : 'Read-only preview.'}`;
@@ -1130,7 +1131,7 @@ document.getElementById('notes-form').addEventListener('submit', async event => 
  if (notesBusy || !target || target.truncated || pinned!==null || target.revision!==current || target.revision!==displayed || target.slide!==Number(document.getElementById('notes-slide').value)) { invalidateNotes('Version or slide changed; load notes again.'); return; }
  const value=text.value, button=document.getElementById('notes-save'); notesBusy=true; button.disabled=true; document.getElementById('notes-replace-text').disabled=true; text.readOnly=true;
  try {
-  const response=await fetch('notes-replace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,slide:target.slide,text:value})});
+  const response=await fetch('notes-replace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,slide:target.slide,text:value,snapshot_sha256:target.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not save notes');
   notesBaseline=value; invalidateNotes(`Notes saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
@@ -1146,7 +1147,7 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
  if (!Number.isSafeInteger(paragraph) || paragraph<1 || !find) { status.textContent='Enter a paragraph number and text to find.'; return; }
  notesBusy=true; text.readOnly=true; document.getElementById('notes-save').disabled=true; document.getElementById('notes-replace-text').disabled=true;
  try {
-  const response=await fetch('notes-replace-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,slide:target.slide,paragraph,find,replacement})});
+  const response=await fetch('notes-replace-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,slide:target.slide,paragraph,find,replacement,snapshot_sha256:target.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not replace notes text');
   invalidateNotes(`Replacement saved as revision ${result.revision}; load it to see updated notes.`); await refresh();
  } catch(error) {
@@ -1550,13 +1551,13 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'part', 'reference'}: raise ValueError('Chart cache sync requires revision, part and reference')
                             saved = session.sync_chart_cache(directory, payload['base_revision'], payload['part'], payload['reference'])
                         elif route.endswith('/notes-replace-text'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'slide', 'paragraph', 'find', 'replacement'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'slide', 'paragraph', 'find', 'replacement'}, {'base_revision', 'slide', 'paragraph', 'find', 'replacement', 'snapshot_sha256'}):
                                 raise ValueError('Notes text replacement requires revision, slide, paragraph, find and replacement')
-                            saved = session.replace_notes_text(directory, payload['base_revision'], payload['slide'], payload['paragraph'], payload['find'], payload['replacement'])
+                            saved = session.replace_notes_text(directory, payload['base_revision'], payload['slide'], payload['paragraph'], payload['find'], payload['replacement'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/notes-replace'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'slide', 'text'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'slide', 'text'}, {'base_revision', 'slide', 'text', 'snapshot_sha256'}):
                                 raise ValueError('Notes replacement requires revision, slide and text')
-                            saved = session.replace_notes(directory, payload['base_revision'], payload['slide'], payload['text'])
+                            saved = session.replace_notes(directory, payload['base_revision'], payload['slide'], payload['text'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/selection'):
                             selection = session.validate_selection(payload)
                             pages = cache.get(selection['revision'])
