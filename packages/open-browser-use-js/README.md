@@ -595,9 +595,10 @@ observation.
 `await tab.back()` and `await tab.forward()` move through the tab's session
 history; at either boundary they return without navigating. These methods return
 after the browser accepts the command, so use `waitForURL` for a distinct
-expected destination. `await tab.reload()` waits for the main page load event,
-with a 10-second timeout. If a command fails after dispatch, inspect the page
-before deciding whether to try again.
+expected destination. `await tab.reload({timeoutMs: 15000})` waits for the main
+page load event; its default timeout is 10 seconds and includes preparation.
+A preparation timeout occurs before dispatch. If a command fails or times out
+after dispatch, inspect the page before deciding whether to try again.
 
 ## Waiting for a URL
 

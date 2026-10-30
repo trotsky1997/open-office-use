@@ -379,3 +379,5 @@ waitForLoadState 正数期限覆盖启用事件与状态读取，超时清理监
 goto 的时间预算覆盖准备、导航与页面加载；准备超时不会导航，调试器连接阶段超时会阻止迟到的命令，已开始的导航超时提示结果未知。SDK 82 项通过；隔离 Linux ARM64 Chromium 原生扩展验证按需连接访问真实 MDN 与同页面片段导航。Electron 与 Windows 本轮未测。
 
 CDP 命令的显式超时同步用于 socket 请求及调试器附着，并保留 2 秒响应余量；goto 准备阶段传递剩余预算，外层仍按原期限结束。SDK 83 项通过，真实 Unix socket 测试覆盖慢附着和慢响应；隔离 Linux ARM64 Chromium 原生扩展访问 MDN 并等待加载成功。Electron 与 Windows 本轮未测。
+
+reload 支持显式超时，统一限制准备、刷新命令和加载等待；准备超时不发送刷新，命令连接阶段超时会阻止迟到发送，已发送命令的超时提示结果未知。SDK 84 项通过；隔离 Linux ARM64 Chromium 对真实 MDN 页面验证刷新和页面状态重置。Electron 与 Windows 本轮未测。

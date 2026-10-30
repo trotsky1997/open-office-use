@@ -334,6 +334,16 @@ test('goto preparation timeout does not begin navigation',async()=>{
   release();await new Promise(resolve=>setImmediate(resolve));assert.ok(!calls.includes('Page.navigate'));
 });
 
+test('reload bounds preparation and cancels a late command',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];let release,attachCount=0;
+  client.request=async(method,params)=>{if(method==='attach'){attachCount++;if(attachCount===2)await new Promise(resolve=>{release=resolve;});return {};}calls.push(params.method);return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);await assert.rejects(tab.reload({timeoutMs:10}),/outcome unknown/);
+  release();await new Promise(resolve=>setImmediate(resolve));assert.ok(!calls.includes('Page.reload'));
+  client.request=async(method,params)=>{if(method==='attach')return {};if(params.method==='Page.enable')await new Promise(resolve=>{release=resolve;});else calls.push(params.method);return {};};
+  await assert.rejects(tab.reload({timeoutMs:10}),/preparation timed out before action/);release();await new Promise(resolve=>setImmediate(resolve));assert.ok(!calls.includes('Page.reload'));
+  await assert.rejects(tab.reload({timeoutMs:-1}),/Invalid reload timeout/);
+});
+
 test('navigation waits clean up on failure and observe load events during state reads', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set();
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};

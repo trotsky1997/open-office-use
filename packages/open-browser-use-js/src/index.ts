@@ -750,16 +750,33 @@ export class OpenBrowserUseTab {
     await this.browser.cdp.call(this.id, "Page.navigateToHistoryEntry", {entryId:entry.id});
   }
 
-  async reload(): Promise<void> {
-    this.#observation = undefined;
-    await this.browser.cdp.call(this.id, "Page.enable");
-    const controller = new AbortController();
-    const wait = this.browser.cdp.waitForLoadEvent(this.id, "load", defaultNavigationTimeoutMs, controller.signal);
-    void wait.catch(() => {});
+  async reload(options:{timeoutMs?:number} = {}): Promise<void> {
+    if(!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>key!=="timeoutMs"))throw new Error("Invalid reload options");
+    const timeoutMs=options.timeoutMs ?? defaultNavigationTimeoutMs;
+    if(!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000)throw new Error("Invalid reload timeout");
+    this.#observation=undefined;
+    const deadline=performance.now()+timeoutMs,initialGeneration=this.browser.client.isConnected ? this.browser.client.connectionGeneration : undefined,controller=new AbortController();
+    let timer:ReturnType<typeof setTimeout>|undefined,started=false;
+    const timeout=()=>new Error(started ? "Timed out waiting for reload; outcome unknown" : "Reload preparation timed out before action");
     try {
-      await this.browser.cdp.call(this.id, "Page.reload");
-      await wait;
-    } finally { controller.abort(); }
+      const work=(async()=>{
+        await this.browser.cdp.call(this.id,"Page.enable",{},{timeoutMs:Math.max(1,deadline-performance.now()),signal:controller.signal});
+        if(controller.signal.aborted || performance.now()>=deadline)throw timeout();
+        if(initialGeneration!==undefined && initialGeneration!==this.browser.client.connectionGeneration)throw new Error("Connection changed during reload preparation before action");
+        const generation=this.browser.client.connectionGeneration,remaining=deadline-performance.now();
+        if(remaining<=0)throw timeout();
+        const wait=this.browser.cdp.waitForLoadEvent(this.id,"load",remaining,controller.signal).catch(error=>{
+          if(error instanceof Error && error.message===`Timed out waiting for load in tab ${this.id}`)throw timeout();
+          throw error;
+        });
+        void wait.catch(()=>{});
+        started=true;
+        await this.browser.cdp.call(this.id,"Page.reload",{},{timeoutMs:remaining,expectedGeneration:generation,signal:controller.signal});
+        await wait;
+      })();
+      await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(timeout()),Math.max(0,deadline-performance.now()));})]);
+      if(performance.now()>=deadline)throw timeout();
+    } finally {if(timer)clearTimeout(timer);controller.abort();}
   }
 
   waitForLoadState(options: OpenBrowserUseWaitForLoadStateOptions = {}): Promise<void> {

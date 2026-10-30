@@ -341,7 +341,9 @@ export declare class OpenBrowserUseTab {
     bringToFront(): Promise<void>;
     getPresentation(): Promise<OpenBrowserUseTabPresentation>;
     private moveHistory;
-    reload(): Promise<void>;
+    reload(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
     expectNavigation<T>(action: () => Promise<T>, options?: {
         timeoutMs?: number;
