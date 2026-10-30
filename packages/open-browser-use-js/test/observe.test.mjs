@@ -77,6 +77,36 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test('navigation waits clean up on failure and observe load events during state reads', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  let mode='event';
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='Page.navigate'){
+      if(mode==='throw')throw new Error('scope revoked');
+      return {errorText:'net::ERR_FAILED'};
+    }
+    if(params.method==='Runtime.evaluate'){
+      if(mode==='event')for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method:'Page.loadEventFired',params:{}}});
+      return {result:{value:{href:'https://example.test',readyState:mode==='ready'?'complete':'loading'}}};
+    }
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await tab.waitForLoadState({timeoutMs:1000});assert.equal(handlers.size,1);
+  mode='ready';await tab.waitForLoadState({timeoutMs:1000});assert.equal(handlers.size,1);
+  let settled=false;
+  const wait=tab.browser.cdp.waitForLoadEvent(1,'load',1000).then(()=>{settled=true;});
+  for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1,sessionId:'child'},method:'Page.loadEventFired',params:{}}});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
+  for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method:'Page.loadEventFired',params:{}}});
+  await wait;assert.equal(handlers.size,1);
+
+  mode='failed';await assert.rejects(tab.goto('https://example.test'),/net::ERR_FAILED/);assert.equal(handlers.size,1);
+  mode='throw';await assert.rejects(tab.goto('https://example.test'),/scope revoked/);assert.equal(handlers.size,1);
+});
+
 test('URL wait checks the matching document state and propagates transport errors', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let step=0, calls=0;

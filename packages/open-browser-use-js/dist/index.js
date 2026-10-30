@@ -1674,32 +1674,45 @@ export class OpenBrowserUseCdp {
         assertSupportedLoadState(waitUntil);
         const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
         await this.call(tabId, "Page.enable");
-        const wait = this.waitForLoadEvent(tabId, waitUntil, timeoutMs);
+        const controller = new AbortController();
+        const wait = this.waitForLoadEvent(tabId, waitUntil, timeoutMs, controller.signal);
         void wait.catch(() => { });
-        const result = await this.call(tabId, "Page.navigate", { url }, { timeoutMs });
-        if (isObject(result) && typeof result.errorText === "string" && result.errorText) {
-            throw new Error(`Browser failed to navigate tab ${tabId}: ${result.errorText}`);
-        }
-        await wait.catch(async (error) => {
-            if (!(error instanceof Error) || !error.message.startsWith("Timed out waiting for "))
-                throw error;
-            const state = await this.readDocumentState(tabId);
-            if (documentStateMatches(state, waitUntil)) {
-                return;
+        try {
+            const result = await this.call(tabId, "Page.navigate", { url }, { timeoutMs });
+            if (isObject(result) && typeof result.errorText === "string" && result.errorText) {
+                throw new Error(`Browser failed to navigate tab ${tabId}: ${result.errorText}`);
             }
-            throw error;
-        });
-        return result;
+            await wait.catch(async (error) => {
+                if (!(error instanceof Error) || !error.message.startsWith("Timed out waiting for "))
+                    throw error;
+                const state = await this.readDocumentState(tabId);
+                if (documentStateMatches(state, waitUntil))
+                    return;
+                throw error;
+            });
+            return result;
+        }
+        finally {
+            controller.abort();
+        }
     }
     async waitForLoadState(tabId, options = {}) {
         const state = options.state ?? "load";
         assertSupportedLoadState(state);
         await this.call(tabId, "Page.enable");
-        const documentState = await this.readDocumentState(tabId);
-        if (documentStateMatches(documentState, state)) {
-            return;
+        const controller = new AbortController();
+        const wait = this.waitForLoadEvent(tabId, state, options.timeoutMs ?? defaultNavigationTimeoutMs, controller.signal);
+        try {
+            const ready = await Promise.race([
+                wait.then(() => true),
+                this.readDocumentState(tabId).then(documentState => documentStateMatches(documentState, state))
+            ]);
+            if (!ready)
+                await wait;
         }
-        await this.waitForLoadEvent(tabId, state, options.timeoutMs ?? defaultNavigationTimeoutMs);
+        finally {
+            controller.abort();
+        }
     }
     async readDocumentState(tabId) {
         try {
@@ -1711,6 +1724,8 @@ export class OpenBrowserUseCdp {
         }
     }
     waitForEvent(tabId, predicate, options = {}) {
+        if (options.signal?.aborted)
+            return Promise.reject(new Error("Event wait cancelled"));
         const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
         return new Promise((resolve, reject) => {
             let settled = false;
@@ -1725,13 +1740,17 @@ export class OpenBrowserUseCdp {
                 clearTimeout(timer);
                 removeHandler?.();
                 removeDisconnect?.();
+                options.signal?.removeEventListener("abort", onAbort);
                 return true;
             };
+            const onAbort = () => { if (finish())
+                reject(new Error("Event wait cancelled")); };
             timer = setTimeout(() => {
                 if (finish()) {
                     reject(new Error(options.timeoutMessage ?? `Timed out waiting for tab ${tabId} event`));
                 }
             }, timeoutMs);
+            options.signal?.addEventListener("abort", onAbort, { once: true });
             removeDisconnect = this.client.onDisconnect(error => { if (finish())
                 reject(error); });
             removeHandler = this.client.onNotification((notification) => {
@@ -1753,7 +1772,7 @@ export class OpenBrowserUseCdp {
             });
         });
     }
-    waitForLoadEvent(tabId, state, timeoutMs) {
+    waitForLoadEvent(tabId, state, timeoutMs, signal) {
         return this.waitForEvent(tabId, (notification) => {
             const event = cdpEventForTab(notification, tabId);
             if (!event) {
@@ -1767,6 +1786,7 @@ export class OpenBrowserUseCdp {
                 : event.method === "Page.loadEventFired";
         }, {
             timeoutMs,
+            signal,
             timeoutMessage: `Timed out waiting for ${state} in tab ${tabId}`
         }).then(() => undefined);
     }
@@ -1948,7 +1968,7 @@ function cdpEventForTab(notification, tabId) {
         return null;
     }
     const source = notification.params.source;
-    if (!isObject(source) || source.tabId !== tabId) {
+    if (!isObject(source) || source.tabId !== tabId || typeof source.sessionId === "string") {
         return null;
     }
     return {

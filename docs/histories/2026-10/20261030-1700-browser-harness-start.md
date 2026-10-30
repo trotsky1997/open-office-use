@@ -131,3 +131,5 @@ getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察�
 新增 waitForURL：精确字符串或正则匹配主文档 URL，同时检查所需加载状态；支持 history API 路由和跨文档跳转。仅在执行上下文被导航销毁时重试，权限和连接错误直接返回；REPL 的跨上下文正则可使用。macOS Electron 与 macOS/Linux Chromium 实页验证两种导航；Linux 使用隔离浏览器与 --no-sandbox。该方法以约 100 ms 间隔采样，短暂中间 URL 可能错过。
 
 对话框和页面加载事件等待监听所属标签关闭、调试器断开及客户端连接关闭，并及时释放监听器；其他标签的事件不会中断等待。导航仅在等待超时后尝试读取当前加载状态，不吞掉连接断开等错误。macOS Electron 与 macOS/Linux Chromium 实页验证关闭标签后等待结束，真实本地 socket 验证远端断开与 IAB 授权撤销。Linux 使用隔离浏览器与 --no-sandbox。
+
+修复加载等待的事件订阅竞态：先订阅主页面事件，再检查文档状态；跨进程 iframe 的事件不会使主页面等待提前结束。导航失败或已满足加载状态后取消等待并释放监听器。回归覆盖状态读取期间完成加载、iframe 事件、导航报错和资源释放；macOS Electron、macOS/Linux Chromium 完成现有真实页面回归。Linux 使用隔离浏览器与 --no-sandbox。

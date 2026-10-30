@@ -322,8 +322,9 @@ export declare class OpenBrowserUseCdp {
     waitForEvent(tabId: number, predicate: (notification: OpenBrowserUseNotification) => boolean, options?: {
         timeoutMs?: number;
         timeoutMessage?: string;
+        signal?: AbortSignal;
     }): Promise<OpenBrowserUseNotification>;
-    waitForLoadEvent(tabId: number, state: OpenBrowserUseLoadState, timeoutMs: number): Promise<void>;
+    waitForLoadEvent(tabId: number, state: OpenBrowserUseLoadState, timeoutMs: number, signal?: AbortSignal): Promise<void>;
     ensureAttached(tabId: number): Promise<void>;
 }
 export declare function encodeFrame(value: JsonValue | Record<string, unknown>): Buffer;
