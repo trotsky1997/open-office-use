@@ -212,7 +212,34 @@ def append_word_blocks(doc, blocks):
     for block in blocks:
         if not isinstance(block, dict): raise ValueError('Each Word block must be an object')
         kind = block.get('type')
-        if kind == 'table':
+        if kind == 'table_of_contents':
+            if set(block) - {'type', 'max_level'}: raise ValueError('Unsupported table of contents property')
+            level = block.get('max_level', 3)
+            if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= 9: raise ValueError('Table of contents max_level must be 1 to 9')
+            headings = []
+            for item in blocks:
+                if not isinstance(item, dict) or item.get('type') != 'heading': continue
+                heading_level = item.get('level', 1)
+                if isinstance(heading_level, bool) or not isinstance(heading_level, int) or not 1 <= heading_level <= 9: raise ValueError('Heading level must be 1 to 9')
+                if ('text' in item) == ('runs' in item): raise ValueError('Provide text or runs for each Word text block')
+                runs = [{'text': item['text']}] if 'text' in item else item['runs']
+                validate_runs(runs)
+                if heading_level <= level: headings.append((heading_level, ''.join(run['text'] for run in runs)))
+            if not headings: raise ValueError('Table of contents requires a heading within its level range')
+            paragraph = doc.add_paragraph()
+            begin = OxmlElement('w:fldChar'); begin.set(qn('w:fldCharType'), 'begin'); begin.set(qn('w:dirty'), 'true'); paragraph.add_run()._r.append(begin)
+            instruction = OxmlElement('w:instrText'); instruction.set(qn('xml:space'), 'preserve'); instruction.text = f' TOC \\o "1-{level}" \\h \\z \\u '; paragraph.add_run()._r.append(instruction)
+            separator = OxmlElement('w:fldChar'); separator.set(qn('w:fldCharType'), 'separate'); paragraph.add_run()._r.append(separator)
+            for index, (heading_level, heading) in enumerate(headings):
+                if index: paragraph.add_run().add_break()
+                paragraph.add_run('  ' * (heading_level - 1) + heading)
+            end = OxmlElement('w:fldChar'); end.set(qn('w:fldCharType'), 'end'); paragraph.add_run()._r.append(end)
+            settings = doc.settings._element; update = settings.find(qn('w:updateFields'))
+            if update is None:
+                update = OxmlElement('w:updateFields')
+                settings.insert_element_before(update, 'w:hdrShapeDefaults', 'w:footnotePr', 'w:endnotePr', 'w:compat', 'w:docVars', 'w:rsids', 'm:mathPr', 'w:attachedSchema', 'w:themeFontLang', 'w:clrSchemeMapping', 'w:doNotIncludeSubdocsInStats', 'w:doNotAutoCompressPictures', 'w:forceUpgrade', 'w:captions', 'w:readModeInkLockDown', 'w:smartTagType', 'sl:schemaLibrary', 'w:shapeDefaults', 'w:doNotEmbedSmartTags', 'w:decimalSymbol', 'w:listSeparator')
+            update.set(qn('w:val'), 'true')
+        elif kind == 'table':
             if set(block) - {'type', 'rows', 'header', 'style', 'column_weights', 'header_fill', 'header_color', 'font', 'font_size'}: raise ValueError('Unsupported Word table property')
             rows = block.get('rows'); header = block.get('header', False); style = block.get('style')
             if not isinstance(rows, list) or not 1 <= len(rows) <= 100 or not all(isinstance(row, list) for row in rows): raise ValueError('A table requires 1 to 100 rows')
@@ -1130,6 +1157,7 @@ def author(spec, output, source=None):
                 doc.paragraphs[int(index)].text = text
             for text in spec.get('paragraphs', []):
                 doc.add_paragraph(text)
+            if source and isinstance(spec.get('blocks'), list) and any(isinstance(block, dict) and block.get('type') == 'table_of_contents' for block in spec['blocks']): raise ValueError('Table of contents authoring requires a new document')
             if 'blocks' in spec: append_word_blocks(doc, spec['blocks'])
             obj = doc
         elif suffix == '.xlsx':

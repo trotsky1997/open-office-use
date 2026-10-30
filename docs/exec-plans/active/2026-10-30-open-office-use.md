@@ -290,3 +290,5 @@ PowerPoint authoring also supports horizontal bar charts with editable embedded 
 PowerPoint column, bar and line charts can show native value labels using source number formatting. LibreOffice rendered percentage labels; native PowerPoint and dense-label layout need review.
 
 PowerPoint authoring supports single-series pie charts with slice colors, optional percentage labels and editable embedded data. LibreOffice rendering and chart-cache reconciliation were checked; native PowerPoint remains unverified.
+
+New Word documents support a native table-of-contents field with a readable heading cache and an update-on-open request. Page numbers and refreshed entries require an editor that updates the field; native Word behavior remains unverified.

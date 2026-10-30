@@ -393,3 +393,5 @@ Added horizontal PowerPoint bar charts with editable embedded data, cache valida
 Added optional native value labels to authored PowerPoint charts; checked percentage labels in LibreOffice rendering.
 
 Added native PowerPoint pie charts with embedded data, slice colors and percentage labels; verified schema, reconciliation and LibreOffice rendering.
+
+Added Word table-of-contents authoring with cached heading text, configurable levels and a field update request; verified OOXML schema and preview.

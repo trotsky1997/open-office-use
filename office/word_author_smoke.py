@@ -95,13 +95,25 @@ with tempfile.TemporaryDirectory() as tmp:
     edited = session.replace_text(draft, 0, '/body/p[1]', 'source', 'reference')
     result_doc = Document(edited['file']); assert result_doc.paragraphs[0].hyperlinks[0].text == 'reference' and result_doc.paragraphs[0].hyperlinks[0].address == 'https://example.com/report'
     assert Path(open_office_use.render(linked, root/'linked-render')).read_bytes().startswith(b'%PDF')
+    toc = root/'toc.docx'
+    open_office_use.author({'blocks':[{'type':'table_of_contents','max_level':2},{'type':'page_break'},{'type':'heading','text':'Introduction'},{'type':'heading','level':2,'runs':[{'text':'Analysis '},{'text':'results','bold':True}]},{'type':'heading','level':3,'text':'Hidden from contents'}]},toc)
+    toc_doc = Document(toc); toc_para = toc_doc.paragraphs[0]
+    assert 'Introduction' in toc_para.text and 'Analysis results' in toc_para.text and 'Hidden from contents' not in toc_para.text
+    assert 'TOC \\o "1-2"' in toc_para._p.xml and toc_doc.settings._element.find(qn('w:updateFields')).get(qn('w:val')) == 'true'
+    code, validation, _ = officecli_backend.invoke('validate',toc); assert code == 0 and validation['success'], validation
+    toc_pdf = open_office_use.render(toc,root/'toc-render')
+    toc_text = subprocess.run(['pdftotext','-f','1','-l','1',str(toc_pdf),'-'],check=True,capture_output=True,text=True).stdout
+    assert 'Introduction' in toc_text and 'Analysis results' in toc_text and 'Hidden from contents' not in toc_text
+    try: open_office_use.author({'blocks':[{'type':'table_of_contents'},{'type':'heading','text':'Added'}]},root/'toc-source.docx',source=output)
+    except ValueError: pass
+    else: raise AssertionError('Table of contents with a source accepted')
     for index, url in enumerate(['javascript:alert(1)', 'https://', 'https://example.com/bad path']):
         bad_file = root/f'bad-link{index}.docx'
         try: open_office_use.author({'blocks':[{'type':'paragraph','runs':[{'text':'Link','url':url}]}]}, bad_file)
         except ValueError: pass
         else: raise AssertionError('Invalid hyperlink accepted')
         assert not bad_file.exists()
-    for i, bad in enumerate([{'blocks':[{'type':'table','rows':[['a'],['a','b']]}]}, {'blocks':[{'type':'heading','level':10,'text':'bad'}]}, {'blocks':[{'type':'paragraph','text':'a','runs':[]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','bold':'yes'}]}]}, {'blocks':[{'type':'table','rows':[['a','b']],'column_weights':[1]}]}, {'blocks':[{'type':'table','rows':[['a']],'header_fill':'000000'}]}, {'blocks':[{'type':'table','rows':[['a']],'font_size':12.1}]}, {'blocks':[{'type':'paragraph','align':'bad','text':'a'}]}, {'blocks':[{'type':'paragraph','line_spacing':0,'text':'a'}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':True}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':12.1}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','color':'oops'}]}]}]):
+    for i, bad in enumerate([{'blocks':[{'type':'table_of_contents'}]}, {'blocks':[{'type':'table_of_contents','max_level':0},{'type':'heading','text':'A'}]}, {'blocks':[{'type':'table','rows':[['a'],['a','b']]}]}, {'blocks':[{'type':'heading','level':10,'text':'bad'}]}, {'blocks':[{'type':'paragraph','text':'a','runs':[]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','bold':'yes'}]}]}, {'blocks':[{'type':'table','rows':[['a','b']],'column_weights':[1]}]}, {'blocks':[{'type':'table','rows':[['a']],'header_fill':'000000'}]}, {'blocks':[{'type':'table','rows':[['a']],'font_size':12.1}]}, {'blocks':[{'type':'paragraph','align':'bad','text':'a'}]}, {'blocks':[{'type':'paragraph','line_spacing':0,'text':'a'}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':True}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','font_size':12.1}]}]}, {'blocks':[{'type':'paragraph','runs':[{'text':'a','color':'oops'}]}]}]):
         target = root/f'bad{i}.docx'
         try: open_office_use.author(bad, target)
         except ValueError: pass
