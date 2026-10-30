@@ -38,6 +38,7 @@ const headerBytes = 4;
 const defaultNavigationTimeoutMs = 10_000;
 
 export type OpenBrowserUseLoadState = "domcontentloaded" | "load";
+export type OpenBrowserUseWaitUntil = OpenBrowserUseLoadState | "commit";
 
 export type OpenBrowserUseGotoOptions = {
   waitUntil?: OpenBrowserUseLoadState;
@@ -831,11 +832,11 @@ export class OpenBrowserUseTab {
     } finally { if (timer) clearTimeout(timer); controller.abort(); }
   }
 
-  async waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {
+  async waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseWaitUntil; timeoutMs?: number} = {}): Promise<void> {
     if (typeof url !== "string" && !types.isRegExp(url)) throw new Error("URL matcher must be a string or RegExp");
     const matcher = typeof url === "string" ? url : new RegExp(url.source, url.flags);
     const waitUntil = options.waitUntil ?? "load";
-    assertSupportedLoadState(waitUntil);
+    if(waitUntil!=="commit")assertSupportedLoadState(waitUntil);
     const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid URL timeout");
     const deadline = performance.now() + timeoutMs;
@@ -853,7 +854,7 @@ export class OpenBrowserUseTab {
       if (isObject(state) && typeof state.href === "string") {
         if (matcher instanceof RegExp) matcher.lastIndex = 0;
         const matches = typeof matcher === "string" ? state.href === matcher : matcher.test(state.href);
-        if (matches && documentStateMatches({readyState:stringValue(state.readyState)},waitUntil)) return;
+        if (matches && (waitUntil==="commit" || documentStateMatches({readyState:stringValue(state.readyState)},waitUntil))) return;
       }
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw timedOut();
@@ -2645,7 +2646,7 @@ export class OpenBrowserUseTabPlaywright {
     return this.tab.expectNavigation(action, options);
   }
 
-  waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseLoadState; timeoutMs?: number} = {}): Promise<void> {
+  waitForURL(url: string | RegExp, options: {waitUntil?: OpenBrowserUseWaitUntil; timeoutMs?: number} = {}): Promise<void> {
     return this.tab.waitForURL(url, options);
   }
 

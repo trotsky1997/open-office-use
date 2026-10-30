@@ -864,7 +864,8 @@ export class OpenBrowserUseTab {
             throw new Error("URL matcher must be a string or RegExp");
         const matcher = typeof url === "string" ? url : new RegExp(url.source, url.flags);
         const waitUntil = options.waitUntil ?? "load";
-        assertSupportedLoadState(waitUntil);
+        if (waitUntil !== "commit")
+            assertSupportedLoadState(waitUntil);
         const timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid URL timeout");
@@ -892,7 +893,7 @@ export class OpenBrowserUseTab {
                 if (matcher instanceof RegExp)
                     matcher.lastIndex = 0;
                 const matches = typeof matcher === "string" ? state.href === matcher : matcher.test(state.href);
-                if (matches && documentStateMatches({ readyState: stringValue(state.readyState) }, waitUntil))
+                if (matches && (waitUntil === "commit" || documentStateMatches({ readyState: stringValue(state.readyState) }, waitUntil)))
                     return;
             }
             const remaining = deadline - performance.now();

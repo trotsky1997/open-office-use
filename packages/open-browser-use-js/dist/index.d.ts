@@ -16,6 +16,7 @@ export type OpenBrowserUseNotification = {
 };
 export type NotificationHandler = (notification: OpenBrowserUseNotification) => void;
 export type OpenBrowserUseLoadState = "domcontentloaded" | "load";
+export type OpenBrowserUseWaitUntil = OpenBrowserUseLoadState | "commit";
 export type OpenBrowserUseGotoOptions = {
     waitUntil?: OpenBrowserUseLoadState;
     timeoutMs?: number;
@@ -357,7 +358,7 @@ export declare class OpenBrowserUseTab {
         waitUntil?: OpenBrowserUseLoadState;
     }): Promise<T>;
     waitForURL(url: string | RegExp, options?: {
-        waitUntil?: OpenBrowserUseLoadState;
+        waitUntil?: OpenBrowserUseWaitUntil;
         timeoutMs?: number;
     }): Promise<void>;
     domSnapshot(): Promise<string>;
@@ -550,7 +551,7 @@ export declare class OpenBrowserUseTabPlaywright {
         waitUntil?: OpenBrowserUseLoadState;
     }): Promise<T>;
     waitForURL(url: string | RegExp, options?: {
-        waitUntil?: OpenBrowserUseLoadState;
+        waitUntil?: OpenBrowserUseWaitUntil;
         timeoutMs?: number;
     }): Promise<void>;
     expectPopup(action: () => Promise<unknown>, options?: {

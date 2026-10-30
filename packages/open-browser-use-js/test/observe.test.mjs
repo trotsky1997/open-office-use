@@ -393,6 +393,17 @@ test('URL wait checks the matching document state and propagates transport error
   await assert.rejects(tab.waitForURL(/done/),/scope revoked/);
 });
 
+test('waitForURL commit accepts a matching loading document',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let state='loading';
+  client.request=async(method)=>method==='attach'?{}:{result:{value:{href:'https://example.test/done',readyState:state}}};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await tab.waitForURL(/\/done$/,{waitUntil:'commit',timeoutMs:0});
+  await assert.rejects(tab.waitForURL(/\/done$/,{waitUntil:'domcontentloaded',timeoutMs:0}),/Timed out/);
+  state='interactive';await tab.playwright.waitForURL('https://example.test/done',{waitUntil:'domcontentloaded',timeoutMs:0});
+  await assert.rejects(tab.waitForURL('https://example.test/other',{waitUntil:'commit',timeoutMs:0}),/Timed out/);
+  await assert.rejects(tab.waitForURL(/done/,{waitUntil:'invalid'}),/Unsupported load state/);
+});
+
 test('screenshot clips use viewport coordinates and reject invalid regions', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), calls=[];let screenshotData=pngFixture.toString('base64');
   client.request=async(method,params)=>{

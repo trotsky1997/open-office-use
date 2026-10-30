@@ -612,8 +612,10 @@ after dispatch, inspect the page before deciding whether to try again.
 `await tab.waitForURL("https://example.com/done")` waits for an exact URL.
 `await tab.playwright.waitForURL(/\/done(?:\?|$)/, {waitUntil: "domcontentloaded", timeoutMs: 15000})`
 accepts a regular expression. Both forms inspect the current main document and
-work with history API route changes as well as document navigation. The default
-load state is `load` and the default timeout is 10 seconds; `timeoutMs: 0`
+work with history API route changes as well as document navigation. Use
+`{waitUntil: "commit"}` to return once the current document URL matches, even
+while the document is loading. The default load state is `load` and the default
+timeout is 10 seconds; `timeoutMs: 0`
 checks once. URLs are sampled roughly every 100 ms, so transient intermediate
 URLs can be missed. Positive timeouts bound each browser read; a read already
 issued can finish later. A zero-timeout single check waits for its browser read.
