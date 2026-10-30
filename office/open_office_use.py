@@ -89,7 +89,7 @@ def author(spec, output, source=None):
     if source and kind(source) != suffix:
         raise ValueError('Source and output formats must match')
     out = Path(output)
-    if out.exists():
+    if out.exists() or out.is_symlink():
         raise FileExistsError(f'Output already exists: {out}')
     if source and out.resolve() == Path(source).resolve():
         raise ValueError('Output must differ from source')
@@ -125,30 +125,28 @@ def author(spec, output, source=None):
     with tempfile.TemporaryDirectory(dir=out.parent) as tmp:
         candidate = Path(tmp) / out.name
         obj.save(candidate)
-        with out.open('xb') as destination, candidate.open('rb') as original:
-            shutil.copyfileobj(original, destination)
+        os.link(candidate, out)
     return str(out.resolve())
 
 
 def render(source, output_dir):
     kind(source)
     source = Path(source).resolve(strict=True)
-    destination = Path(output_dir)
+    destination = Path(output_dir).absolute()
     destination.mkdir(parents=True, exist_ok=True)
     target = destination / (source.stem + '.pdf')
-    if target.exists():
+    if target.exists() or target.is_symlink():
         raise FileExistsError(f'Output already exists: {target}')
     executable = shutil.which('soffice') or shutil.which('libreoffice')
     if not executable:
         raise RuntimeError('LibreOffice (soffice) is required for rendering')
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=destination, prefix='.office-render-') as tmp:
         profile = (Path(tmp) / 'profile').as_uri()
         result = subprocess.run([executable, '-env:UserInstallation=' + profile, '--headless', '--convert-to', 'pdf', '--outdir', tmp, str(source)], capture_output=True, text=True, timeout=120, check=False)
         pdf = Path(tmp) / target.name
         if result.returncode or not pdf.is_file():
             raise RuntimeError(f'LibreOffice conversion failed: {result.stderr or result.stdout}')
-        with target.open('xb') as out, pdf.open('rb') as inp:
-            shutil.copyfileobj(inp, out)
+        os.link(pdf, target)
     return str(target.resolve())
 
 
