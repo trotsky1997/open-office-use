@@ -167,3 +167,5 @@ Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器
 语义定位器增加 innerText()：等待唯一匹配，读取前核对目标、作用域及 frame，限定 30000 字符并释放 CDP 对象。SDK 54 项通过；macOS 隔离 Chromium 原生消息及 Electron 44 页面实测主页面和跨进程 iframe 读取，后者包含作用域定位。
 
 语义定位器增加 getAttribute(name)，返回单个匹配元素的原始属性或 null，并复用 innerText 的目标、作用域、frame 与长度校验。macOS 隔离 Chromium 原生消息链路实测主页面 href、缺失属性和跨进程 frame 属性；Electron 44 页面实测 href。真实链路发现 null CDP 参数会变化，已改为空字符串哨兵并重新验证；SDK 54 项通过。
+
+语义定位器新增 textContent()：读取唯一匹配节点的原始 DOM 内容，复用作用域、frame 和长度校验。macOS 隔离 Chromium 原生消息链路验证隐藏后代与 innerText 的差异及跨进程 frame；Electron 44 页面实测主页面。SDK 54 项通过。

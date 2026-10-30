@@ -309,6 +309,9 @@ export declare class OpenBrowserUseRoleLocator {
     innerText(options?: {
         timeoutMs?: number;
     }): Promise<string>;
+    textContent(options?: {
+        timeoutMs?: number;
+    }): Promise<string | null>;
     getAttribute(name: string, options?: {
         timeoutMs?: number;
     }): Promise<string | null>;

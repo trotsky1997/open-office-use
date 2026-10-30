@@ -164,6 +164,8 @@ await tab.playwright.getByRole("listitem").filter({ hasText: "Apples" })
 
 `innerText()` reads the matched DOM node, including in supported frames. It
 requires one match and rejects text longer than 30,000 characters.
+`textContent()` reads the raw DOM text, including hidden descendants, with the
+same match and length checks.
 `getAttribute(name)` reads the raw attribute from one match and returns `null`
 when absent; it applies the same size limit. Text-node matches do not have
 attributes; select their containing element to read its attributes.
