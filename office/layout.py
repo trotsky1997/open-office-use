@@ -105,7 +105,7 @@ def intersect(subject, clip):
     return subject
 
 
-def inspect(file):
+def inspect(file, selection=None):
     source = Path(file).resolve(strict=True)
     if source.suffix.lower() != '.pptx':
         raise ValueError('Slide layout inspection requires a PPTX file')
@@ -128,7 +128,8 @@ def inspect(file):
             visibility_known = all(value in (None, '0', '1', 'false', 'true') for value in visibility)
             if not slide_width or not slide_height or slide_width <= 0 or slide_height <= 0:
                 raise ValueError('Presentation has no valid slide size')
-            off_slide, overlaps, skipped = [], [], []
+            off_slide, overlaps, skipped, selected = [], [], [], []
+            selected_count = 0
             totals = {'shapes_scanned': 0, 'text_shapes': 0, 'pairs_checked': 0, 'off_slide_count': 0, 'overlap_count': 0, 'skipped_count': 0}
             complete, overlap_complete, shape_limit = True, True, False
             def issue(bucket, item):
@@ -141,7 +142,7 @@ def inspect(file):
             for slide_number, slide in enumerate(slides, 1):
                 objects = []
                 def walk(shapes, matrix, prefix, depth):
-                    nonlocal shape_limit
+                    nonlocal shape_limit, selected_count
                     for shape in shapes:
                         if totals['shapes_scanned'] >= MAX_SHAPES:
                             skip(slide_number, prefix, 'Shape scan limit reached'); shape_limit = True; return
@@ -183,12 +184,21 @@ def inspect(file):
                                 text = '\n'.join(cell.text for row in shape.table.rows for cell in row.cells)
                             has_text = bool(text.strip()); descriptor['has_text'] = has_text; descriptor['draw_order'] = totals['shapes_scanned']
                             if has_text:
-                                descriptor['text_preview'] = text[:160]
+                                descriptor['text_preview'] = text[:160]; descriptor['text_truncated'] = len(text) > 160
                             if has_text:
                                 totals['text_shapes'] += 1
                             full_area = area(points)
                             visible = intersect(points[:], [(0, 0), (slide_width, 0), (slide_width, slide_height), (0, slide_height)])
                             descriptor['visible_polygon_inches'] = [[round(x / EMU, 4), round(y / EMU, 4)] for x, y in visible]
+                            if selection and selection['page'] == slide_number and path and area(visible) > 1:
+                                x1, y1, x2, y2 = selection['box']
+                                box = [(x1 * slide_width, y1 * slide_height), (x2 * slide_width, y1 * slide_height),
+                                       (x2 * slide_width, y2 * slide_height), (x1 * slide_width, y2 * slide_height)]
+                                overlap = area(intersect(visible[:], box))
+                                if overlap > 1:
+                                    selected_count += 1
+                                    if len(selected) < 50:
+                                        selected.append({**descriptor, 'selection_overlap_fraction': round(overlap / area(visible), 6)})
                             if full_area > 1 and area(visible) > 1:
                                 visible_box = (min(p[0] for p in visible), min(p[1] for p in visible), max(p[0] for p in visible), max(p[1] for p in visible))
                                 objects.append((descriptor, visible, visible_box, full_area))
@@ -219,7 +229,8 @@ def inspect(file):
                 if shape_limit:
                     break
             return {**totals, 'slides_total': len(slides), 'slide_size_inches': [round(slide_width / EMU, 6), round(slide_height / EMU, 6)],
-                    'hidden_slides': hidden_slides, 'visibility_known': visibility_known, 'complete': complete and overlap_complete,
+                    'hidden_slides': hidden_slides, 'visibility_known': visibility_known, 'selection_matches': selected,
+                    'selection_match_count': selected_count, 'complete': complete and overlap_complete,
                     'geometry_complete': complete, 'overlap_complete': overlap_complete,
                     'off_slide': off_slide, 'off_slide_truncated': totals['off_slide_count'] > len(off_slide),
                     'overlaps': overlaps, 'overlaps_truncated': totals['overlap_count'] > len(overlaps),

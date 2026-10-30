@@ -1,5 +1,7 @@
 """Extract text from a revision-bound visual selection via rendered PDF."""
 import math
+import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,6 +20,16 @@ def extract(directory, render):
         raise RuntimeError('Poppler pdftotext is required for selected text')
     with tempfile.TemporaryDirectory(prefix='office-selection-text-') as tmp:
         pdf = render(source, Path(tmp) / 'pdf')
+        page_count = None
+        if source.suffix.lower() == '.pptx' and shutil.which('pdfinfo'):
+            try:
+                info = subprocess.run(['pdfinfo', str(pdf)], capture_output=True, text=True, timeout=120,
+                                      check=False, env={**os.environ, 'LC_ALL': 'C'})
+                match = re.search(r'^Pages:\s*(\d+)\s*$', info.stdout, re.MULTILINE)
+                if info.returncode == 0 and match:
+                    page_count = int(match.group(1))
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         output = Path(tmp) / 'words.xhtml'
         result = subprocess.run([executable, '-f', str(selection['page']), '-l', str(selection['page']),
                                  '-bbox-layout', pdf, str(output)], capture_output=True, text=True,
@@ -61,4 +73,5 @@ def extract(directory, render):
     return {'revision': selection['revision'], 'page': selection['page'], 'box': selection['box'],
             'latest_revision': latest, 'stale': selection['revision'] != latest,
             'text': '\n'.join(lines), 'words': words, 'truncated': truncated,
+            'pdf_page_count': page_count, 'pdf_page_size': [width, height],
             'method': 'pdf_word_centers'}

@@ -40,7 +40,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <label for="restore-revision">Revision</label> <select id="restore-revision" required></select>
 <button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="compare-revision">Compare with latest</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
 <details id="candidate-panel"><summary>Find selected elements</summary>
-<p>Matches use text and may be incomplete or ambiguous. Verify the target before editing.</p>
+<p>Matches use text and, when available for PowerPoint, visible shape geometry. Results may be incomplete or ambiguous. Verify the target before editing.</p>
 <button type="button" id="candidate-search" disabled>Find candidates</button><p id="candidate-status" role="status"></p><ul id="candidate-list"></ul></details>
 <details id="edit-panel"><summary>Edit an element</summary><form id="edit-form">
 <label>Element path <input id="edit-path" required maxlength="512" placeholder="/body/p[1]"></label>
@@ -125,7 +125,7 @@ document.getElementById('candidate-search').addEventListener('click', async () =
   const list=document.getElementById('candidate-list'); list.replaceChildren();
   for (const item of result.candidates) {
    const row=document.createElement('li'); const label=document.createElement('span');
-   label.textContent=`${item.type || 'element'} · ${item.path} · ${String(item.text || '').slice(0,200)}`;
+   label.textContent=`${item.type || 'element'} · ${item.path} · ${item.geometry_match ? 'geometry match · ' : 'text match · '}${String(item.text || '').slice(0,200)}`;
    const use=document.createElement('button'); use.type='button'; use.textContent=`Use ${item.path}`;
    use.addEventListener('click', () => {
     if (epoch !== selectionEpoch || current !== result.revision || pinned !== null) return;
@@ -133,7 +133,7 @@ document.getElementById('candidate-search').addEventListener('click', async () =
    });
    row.append(label, document.createTextNode(' '), use); list.appendChild(row);
   }
-  document.getElementById('candidate-status').textContent = result.candidates.length ? `${result.candidates.length} candidate(s). Verify the target; matches may be incomplete.` : 'No candidates found. Try a different selection or enter a path.';
+  document.getElementById('candidate-status').textContent = result.candidates.length ? `${result.candidates.length} candidate(s). ${result.geometry_available ? 'Geometry and text matches. ' : 'Text matches. '}Verify the target; matches may be incomplete.` : 'No candidates found. Try a different selection or enter a path.';
  } catch (error) { if (epoch === selectionEpoch) document.getElementById('candidate-status').textContent=`Candidate error: ${error.message}`; }
  finally { if (epoch === selectionEpoch && pinned === null && savedSelection) button.disabled=false; }
 });
