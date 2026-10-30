@@ -170,18 +170,30 @@ with tempfile.TemporaryDirectory() as tmp:
             raise AssertionError('Stale grid edit was accepted')
         except urllib.error.HTTPError as error:
             assert error.code == 400
-        freeze = {'base_revision': 3, 'sheet': 'Sales Data', 'cell': 'B2'}
+        current_grid = post('grid', {'base_revision':3,'sheet':'Sales Data','cell_range':'A1:C2'})
+        freeze = {'base_revision': 3, 'sheet': 'Sales Data', 'cell': 'B2', 'snapshot_sha256':current_grid['snapshot_sha256']}
+        try: post('grid-freeze', {**freeze,'snapshot_sha256':'0'*64}); raise AssertionError('Stale freeze accepted')
+        except urllib.error.HTTPError as error: assert error.code == 400
         try: post('grid-freeze', freeze, 'http://evil.test'); raise AssertionError('Cross-origin freeze accepted')
         except urllib.error.HTTPError as error: assert error.code == 403
         assert post('grid-freeze', freeze)['revision'] == 4
         assert load_workbook(draft / 'revision-000004.xlsx').active.freeze_panes == 'B2'
-        assert post('grid', {'base_revision': 4, 'sheet': 'Sales Data', 'cell_range': 'A1'})['worksheet_view']['pane']['topLeftCell'] == 'B2'
-        merge = {'base_revision': 4, 'sheet': 'Sales Data', 'cell_range': 'C1:C2', 'merge': True}
+        current_grid = post('grid', {'base_revision': 4, 'sheet': 'Sales Data', 'cell_range': 'A1'})
+        assert current_grid['worksheet_view']['pane']['topLeftCell'] == 'B2'
+        merge = {'base_revision': 4, 'sheet': 'Sales Data', 'cell_range': 'C1:C2', 'merge': True, 'snapshot_sha256':current_grid['snapshot_sha256']}
+        try: post('grid-merge', {**merge,'snapshot_sha256':'0'*64}); raise AssertionError('Stale merge accepted')
+        except urllib.error.HTTPError as error: assert error.code == 400
         try: post('grid-merge', merge, 'http://evil.test'); raise AssertionError('Cross-origin merge accepted')
         except urllib.error.HTTPError as error: assert error.code == 403
         assert post('grid-merge', merge)['revision'] == 5
         assert 'C1:C2' in str(load_workbook(draft / 'revision-000005.xlsx').active.merged_cells)
-        assert post('grid-merge', {**merge, 'base_revision': 5, 'merge': False})['revision'] == 6
+        hash5 = post('grid', {'base_revision':5,'sheet':'Sales Data','cell_range':'C1:C2'})['snapshot_sha256']
+        assert post('grid-merge', {**merge, 'base_revision': 5, 'merge': False, 'snapshot_sha256':hash5})['revision'] == 6
+        hash6 = post('grid', {'base_revision':6,'sheet':'Sales Data','cell_range':'A1:C2'})['snapshot_sha256']
+        resize = {**sizing,'base_revision':6,'snapshot_sha256':hash6}
+        try: post('grid-resize', {**resize,'snapshot_sha256':'0'*64}); raise AssertionError('Stale resize accepted')
+        except urllib.error.HTTPError as error: assert error.code == 400
+        assert post('grid-resize',resize)['revision'] == 7
     finally:
         server.send_signal(signal.SIGINT); server.wait(timeout=10)
 print('Grid smoke passed: multiple cells, formulas, clear, range and revision safety')

@@ -365,3 +365,5 @@ Added viewer slide-order inventory and revision-bound reorder form; validated br
 Bound shared OOXML part selection and rewriting to a checked source snapshot. Slide reorder uses that same snapshot for relationship inspection, and the viewer validates its hash against the editing snapshot.
 
 Bound spreadsheet grid reads, value edits and style edits to matching snapshots, and connected the viewer and MCP to optional expected hashes. Other grid operations need separate consistency review.
+
+Bound merge, frozen-pane and grid sizing edits to checked workbook snapshots and exposed expected hashes to MCP and the viewer.

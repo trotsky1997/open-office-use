@@ -558,7 +558,7 @@ async function mergeGrid(merge) {
  gridBusy=true; const buttons=['grid-merge','grid-unmerge','grid-freeze','grid-unfreeze','grid-save','grid-format','grid-resize'];
  for (const name of buttons) document.getElementById(name).disabled=true; lockGridInputs(inputs,true);
  try {
-  const response=await fetch('grid-merge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:document.getElementById('grid-merge-range').value,merge})});
+  const response=await fetch('grid-merge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:document.getElementById('grid-merge-range').value,merge,snapshot_sha256:loaded.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Merge failed');
   invalidateGrid(`${merge ? 'Merged' : 'Unmerged'} ${result.range} as revision ${result.revision}.`); await refresh();
  } catch(error) {
@@ -576,7 +576,7 @@ async function freezeGrid(cell) {
  gridBusy=true; const freeze=document.getElementById('grid-freeze'), unfreeze=document.getElementById('grid-unfreeze');
  freeze.disabled=true; unfreeze.disabled=true; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; lockGridInputs(inputs,true);
  try {
-  const response=await fetch('grid-freeze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell})});
+  const response=await fetch('grid-freeze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell,snapshot_sha256:loaded.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Pane change failed');
   invalidateGrid(`Pane saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
@@ -595,7 +595,7 @@ document.getElementById('grid-resize').addEventListener('click', async () => {
  if (!width && !height) {document.getElementById('grid-status').textContent='Enter a width or height.'; return;}
  gridBusy=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-save').disabled=true; lockGridInputs(inputs,true);
  try {
-  const response=await fetch('grid-resize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,target_range:document.getElementById('grid-size-range').value,column_width:width ? Number(width) : null,row_height:height ? Number(height) : null})});
+  const response=await fetch('grid-resize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,target_range:document.getElementById('grid-size-range').value,column_width:width ? Number(width) : null,row_height:height ? Number(height) : null,snapshot_sha256:loaded.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Sizing failed');
   invalidateGrid(`Sizing saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
@@ -1613,15 +1613,15 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Grid requires base_revision, sheet and cell_range')
                             saved = session.read_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'])
                         elif route.endswith('/grid-merge'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'merge'}: raise ValueError('Merge requires revision, sheet, range and operation')
-                            saved = session.merge_cells(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['merge'])
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell_range', 'merge'}, {'base_revision', 'sheet', 'cell_range', 'merge', 'snapshot_sha256'}): raise ValueError('Merge requires revision, sheet, range and operation')
+                            saved = session.merge_cells(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['merge'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/grid-freeze'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell'}: raise ValueError('Freeze requires revision, sheet and cell')
-                            saved = session.freeze_panes(directory, payload['base_revision'], payload['sheet'], payload['cell'])
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell'}, {'base_revision', 'sheet', 'cell', 'snapshot_sha256'}): raise ValueError('Freeze requires revision, sheet and cell')
+                            saved = session.freeze_panes(directory, payload['base_revision'], payload['sheet'], payload['cell'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/grid-resize'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'target_range', 'column_width', 'row_height'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell_range', 'target_range', 'column_width', 'row_height'}, {'base_revision', 'sheet', 'cell_range', 'target_range', 'column_width', 'row_height', 'snapshot_sha256'}):
                                 raise ValueError('Grid sizing requires revision, sheet, ranges, width and height')
-                            saved = session.resize_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['target_range'], payload['column_width'], payload['row_height'])
+                            saved = session.resize_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['target_range'], payload['column_width'], payload['row_height'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/grid-format'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'sheet', 'cell_range', 'style_range', 'properties'}, {'base_revision', 'sheet', 'cell_range', 'style_range', 'properties', 'snapshot_sha256'}):
                                 raise ValueError('Grid formatting requires revision, sheet, ranges and properties')

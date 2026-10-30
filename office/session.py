@@ -1356,7 +1356,7 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
     return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect']}
 
 
-def merge_cells(directory, base_revision, sheet, cell_range, merge=True):
+def merge_cells(directory, base_revision, sheet, cell_range, merge=True, expected_sha256=None):
     if not isinstance(merge, bool): raise ValueError('merge must be true or false')
     c1, r1, c2, r2 = grid_bounds(cell_range)
     if (c1, r1) == (c2, r2): raise ValueError('A merged range requires at least two cells')
@@ -1365,126 +1365,129 @@ def merge_cells(directory, base_revision, sheet, cell_range, merge=True):
     if state['format'] != 'xlsx': raise ValueError('Merging cells requires an XLSX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
-    constraints = spreadsheet.worksheet_constraints(source, sheet)
-    if constraints['sheet_protected']: raise ValueError('Protected worksheets cannot be merged')
-    def overlap(a, b): return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
-    bounds = (c1, r1, c2, r2)
-    if merge and any(overlap(bounds, other) for other in constraints['formula_ranges']): raise ValueError('Merged range overlaps a multi-cell formula')
-    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'; ns = grid_styles.X
-    part = grid_styles.sheet_part(source, sheet)
-    def edit(tree, archive):
-        from lxml import etree
-        root = tree.getroot(); data = root.findall(ns + 'sheetData'); containers = root.findall(ns + 'mergeCells')
-        if root.tag != ns + 'worksheet' or len(data) != 1 or len(list(root.iter(ns + 'sheetData'))) != 1 or len(containers) > 1 or len(list(root.iter(ns + 'mergeCells'))) != len(containers): raise ValueError('Ambiguous worksheet structure')
-        container = containers[0] if containers else None; matches = []
-        if container is not None:
-            count = container.get('count')
-            if set(container.attrib) - {'count'} or (count is not None and (not re.fullmatch(r'[0-9]{1,8}', count) or int(count) != len(container))): raise ValueError('Invalid merge collection')
-            for item in container:
-                if item.tag != ns + 'mergeCell' or set(item.attrib) != {'ref'} or len(item): raise ValueError('Unsupported merge record')
-                try: other = range_boundaries(item.get('ref'))
-                except (ValueError, TypeError): raise ValueError('Invalid merge record') from None
-                if any(v is None for v in other) or not (1 <= other[0] <= other[2] <= 16384 and 1 <= other[1] <= other[3] <= 1048576): raise ValueError('Invalid merge record')
-                if overlap(bounds, other): matches.append((item, other))
-        if merge:
-            if matches: raise ValueError('Range overlaps an existing merged range')
-            rel_path = posixpath.join(posixpath.dirname(part), '_rels', posixpath.basename(part) + '.rels')
-            relationships = []
-            if rel_path in archive.namelist():
-                rels = ooxml.parse_xml(archive.read(rel_path)).getroot()
-                if rels.tag != grid_styles.REL + 'Relationships': raise ValueError('Invalid worksheet relationships')
-                relationships = rels.findall(grid_styles.REL + 'Relationship')
-                ids = [item.get('Id') for item in relationships]
-                if any(not rid for rid in ids) or len(ids) != len(set(ids)): raise ValueError('Ambiguous worksheet relationships')
-            base = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
-            def related(item, expected_type):
-                target = item.get('Target', '')
-                if item.get('Type') != expected_type or item.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported related worksheet part')
-                path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(part), target))
-                if not path.startswith('xl/') or path not in archive.namelist(): raise ValueError('Invalid related worksheet part')
-                return ooxml.parse_xml(archive.read(path)).getroot()
-            table_parts = root.findall(ns + 'tableParts')
-            if len(table_parts) > 1 or len(list(root.iter(ns + 'tableParts'))) != len(table_parts): raise ValueError('Ambiguous table parts')
-            table_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/table')]
-            table_ids = []
-            if table_parts:
-                collection = table_parts[0]; count = collection.get('count')
-                if set(collection.attrib) - {'count'} or (count is not None and (not re.fullmatch(r'[0-9]{1,8}', count) or int(count) != len(collection))): raise ValueError('Invalid table parts')
-                rid_key = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
-                for item in collection:
-                    if item.tag != ns + 'tablePart' or set(item.attrib) != {rid_key} or len(item): raise ValueError('Unsupported table part')
-                    table_ids.append(item.get(rid_key))
-            if len(table_ids) != len(set(table_ids)) or set(table_ids) != {item.get('Id') for item in table_rels}: raise ValueError('Ambiguous table references')
-            for rel in table_rels:
-                table = related(rel, base + 'table')
-                if table.tag != ns + 'table': raise ValueError('Invalid table part')
-                try: table_bounds = range_boundaries(table.get('ref'))
-                except (TypeError, ValueError): raise ValueError('Invalid table range') from None
-                if any(v is None for v in table_bounds) or not (1 <= table_bounds[0] <= table_bounds[2] <= 16384 and 1 <= table_bounds[1] <= table_bounds[3] <= 1048576): raise ValueError('Invalid table range')
-                if overlap(bounds, table_bounds): raise ValueError('Merged range overlaps a table')
-            comment_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/comments')]
-            threaded_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/threadedcomment')]
-            thread_type = 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment'
-            if len(comment_rels) > 1 or len(threaded_rels) > 1: raise ValueError('Ambiguous comment references')
-            for rel in comment_rels:
-                comments = related(rel, base + 'comments'); lists = comments.findall(ns + 'commentList')
-                if comments.tag != ns + 'comments' or len(lists) != 1 or len(list(comments.iter(ns + 'commentList'))) != 1 or any(child.tag not in (ns + 'authors', ns + 'commentList') for child in comments): raise ValueError('Unsupported comment structure')
-                seen_comments = set()
-                for comment in lists[0]:
-                    ref = comment.get('ref', '')
-                    if comment.tag != ns + 'comment' or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref) or ref in seen_comments: raise ValueError('Invalid comment reference')
-                    seen_comments.add(ref); col, number = range_boundaries(ref)[:2]
-                    if col > 16384 or number > 1048576: raise ValueError('Invalid comment reference')
-                    if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1): raise ValueError(f'Non-anchor cell {ref} has a comment')
-            thread_ns = '{http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments}'
-            for rel in threaded_rels:
-                thread = related(rel, thread_type)
-                if thread.tag != thread_ns + 'ThreadedComments' or any(child.tag != thread_ns + 'threadedComment' for child in thread): raise ValueError('Unsupported threaded comment structure')
-                for comment in thread:
-                    ref = comment.get('ref', '')
-                    if not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref): raise ValueError('Invalid threaded comment reference')
-                    col, number = range_boundaries(ref)[:2]
-                    if col > 16384 or number > 1048576: raise ValueError('Invalid threaded comment reference')
-                    if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1): raise ValueError(f'Non-anchor cell {ref} has a threaded comment')
-            for link in root.iter(ns + 'hyperlink'):
-                try: linked = range_boundaries(link.get('ref'))
-                except (ValueError, TypeError): raise ValueError('Invalid hyperlink range') from None
-                if any(value is None for value in linked): raise ValueError('Invalid hyperlink range')
-                if overlap(bounds, linked) and (max(c1, linked[0]), max(r1, linked[1]), min(c2, linked[2]), min(r2, linked[3])) != (c1, r1, c1, r1): raise ValueError('Non-anchor cell contains a hyperlink')
-            seen = set()
-            for row in data[0].findall(ns + 'row'):
-                for cell in row.findall(ns + 'c'):
-                    ref = cell.get('r', '')
-                    if not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref): raise ValueError('Invalid cell reference')
-                    col, number = range_boundaries(ref)[:2]
-                    if ref in seen: raise ValueError('Duplicate worksheet cell')
-                    seen.add(ref)
-                    if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1):
-                        if len(cell) or set(cell.attrib) - {'r', 's', 't'} or cell.get('t') not in (None, 'n') or (cell.text and cell.text.strip()): raise ValueError(f'Non-anchor cell {ref} contains data or metadata')
-            if container is None:
-                container = etree.Element(ns + 'mergeCells')
-                preceding = {ns + name for name in ('sheetData','sheetCalcPr','sheetProtection','protectedRanges','scenarios','autoFilter','sortState','dataConsolidate','customSheetViews')}
-                position = max(i for i, node in enumerate(root) if node.tag in preceding) + 1
-                root.insert(position, container)
-            etree.SubElement(container, ns + 'mergeCell', ref=address)
-        else:
-            if len(matches) != 1 or matches[0][1] != bounds: raise ValueError('Select exactly one existing merged range')
-            container.remove(matches[0][0])
-        if len(container): container.set('count', str(len(container)))
-        else: root.remove(container)
-        dimensions = root.findall(ns + 'dimension')
-        if len(dimensions) > 1: raise ValueError('Ambiguous worksheet dimension')
-        if merge and dimensions:
-            try: left, top, right, bottom = range_boundaries(dimensions[0].get('ref'))
-            except (ValueError, TypeError): raise ValueError('Invalid worksheet dimension') from None
-            if any(v is None for v in (left, top, right, bottom)) or not (1 <= left <= right <= 16384 and 1 <= top <= bottom <= 1048576): raise ValueError('Invalid worksheet dimension')
-            dimensions[0].set('ref', f'{get_column_letter(min(left,c1))}{min(top,r1)}:{get_column_letter(max(right,c2))}{max(bottom,r2)}')
-    try: ooxml.edit_xml(source, output, lambda _: part, edit)
-    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'range': address, 'merged': merge, 'formula_cache_effect': 'preserved'}
+    with tempfile.TemporaryDirectory(prefix='office-grid-merge-') as tmp:
+        source, digest = snapshots.copy(source, tmp)
+        if expected_sha256 is not None and digest != expected_sha256: raise ValueError('Workbook snapshot changed; reload the grid')
+        constraints = spreadsheet.worksheet_constraints(source, sheet)
+        if constraints['sheet_protected']: raise ValueError('Protected worksheets cannot be merged')
+        def overlap(a, b): return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
+        bounds = (c1, r1, c2, r2)
+        if merge and any(overlap(bounds, other) for other in constraints['formula_ranges']): raise ValueError('Merged range overlaps a multi-cell formula')
+        output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'; ns = grid_styles.X
+        part = grid_styles.sheet_part(source, sheet)
+        def edit(tree, archive):
+            from lxml import etree
+            root = tree.getroot(); data = root.findall(ns + 'sheetData'); containers = root.findall(ns + 'mergeCells')
+            if root.tag != ns + 'worksheet' or len(data) != 1 or len(list(root.iter(ns + 'sheetData'))) != 1 or len(containers) > 1 or len(list(root.iter(ns + 'mergeCells'))) != len(containers): raise ValueError('Ambiguous worksheet structure')
+            container = containers[0] if containers else None; matches = []
+            if container is not None:
+                count = container.get('count')
+                if set(container.attrib) - {'count'} or (count is not None and (not re.fullmatch(r'[0-9]{1,8}', count) or int(count) != len(container))): raise ValueError('Invalid merge collection')
+                for item in container:
+                    if item.tag != ns + 'mergeCell' or set(item.attrib) != {'ref'} or len(item): raise ValueError('Unsupported merge record')
+                    try: other = range_boundaries(item.get('ref'))
+                    except (ValueError, TypeError): raise ValueError('Invalid merge record') from None
+                    if any(v is None for v in other) or not (1 <= other[0] <= other[2] <= 16384 and 1 <= other[1] <= other[3] <= 1048576): raise ValueError('Invalid merge record')
+                    if overlap(bounds, other): matches.append((item, other))
+            if merge:
+                if matches: raise ValueError('Range overlaps an existing merged range')
+                rel_path = posixpath.join(posixpath.dirname(part), '_rels', posixpath.basename(part) + '.rels')
+                relationships = []
+                if rel_path in archive.namelist():
+                    rels = ooxml.parse_xml(archive.read(rel_path)).getroot()
+                    if rels.tag != grid_styles.REL + 'Relationships': raise ValueError('Invalid worksheet relationships')
+                    relationships = rels.findall(grid_styles.REL + 'Relationship')
+                    ids = [item.get('Id') for item in relationships]
+                    if any(not rid for rid in ids) or len(ids) != len(set(ids)): raise ValueError('Ambiguous worksheet relationships')
+                base = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+                def related(item, expected_type):
+                    target = item.get('Target', '')
+                    if item.get('Type') != expected_type or item.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported related worksheet part')
+                    path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(part), target))
+                    if not path.startswith('xl/') or path not in archive.namelist(): raise ValueError('Invalid related worksheet part')
+                    return ooxml.parse_xml(archive.read(path)).getroot()
+                table_parts = root.findall(ns + 'tableParts')
+                if len(table_parts) > 1 or len(list(root.iter(ns + 'tableParts'))) != len(table_parts): raise ValueError('Ambiguous table parts')
+                table_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/table')]
+                table_ids = []
+                if table_parts:
+                    collection = table_parts[0]; count = collection.get('count')
+                    if set(collection.attrib) - {'count'} or (count is not None and (not re.fullmatch(r'[0-9]{1,8}', count) or int(count) != len(collection))): raise ValueError('Invalid table parts')
+                    rid_key = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
+                    for item in collection:
+                        if item.tag != ns + 'tablePart' or set(item.attrib) != {rid_key} or len(item): raise ValueError('Unsupported table part')
+                        table_ids.append(item.get(rid_key))
+                if len(table_ids) != len(set(table_ids)) or set(table_ids) != {item.get('Id') for item in table_rels}: raise ValueError('Ambiguous table references')
+                for rel in table_rels:
+                    table = related(rel, base + 'table')
+                    if table.tag != ns + 'table': raise ValueError('Invalid table part')
+                    try: table_bounds = range_boundaries(table.get('ref'))
+                    except (TypeError, ValueError): raise ValueError('Invalid table range') from None
+                    if any(v is None for v in table_bounds) or not (1 <= table_bounds[0] <= table_bounds[2] <= 16384 and 1 <= table_bounds[1] <= table_bounds[3] <= 1048576): raise ValueError('Invalid table range')
+                    if overlap(bounds, table_bounds): raise ValueError('Merged range overlaps a table')
+                comment_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/comments')]
+                threaded_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/threadedcomment')]
+                thread_type = 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment'
+                if len(comment_rels) > 1 or len(threaded_rels) > 1: raise ValueError('Ambiguous comment references')
+                for rel in comment_rels:
+                    comments = related(rel, base + 'comments'); lists = comments.findall(ns + 'commentList')
+                    if comments.tag != ns + 'comments' or len(lists) != 1 or len(list(comments.iter(ns + 'commentList'))) != 1 or any(child.tag not in (ns + 'authors', ns + 'commentList') for child in comments): raise ValueError('Unsupported comment structure')
+                    seen_comments = set()
+                    for comment in lists[0]:
+                        ref = comment.get('ref', '')
+                        if comment.tag != ns + 'comment' or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref) or ref in seen_comments: raise ValueError('Invalid comment reference')
+                        seen_comments.add(ref); col, number = range_boundaries(ref)[:2]
+                        if col > 16384 or number > 1048576: raise ValueError('Invalid comment reference')
+                        if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1): raise ValueError(f'Non-anchor cell {ref} has a comment')
+                thread_ns = '{http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments}'
+                for rel in threaded_rels:
+                    thread = related(rel, thread_type)
+                    if thread.tag != thread_ns + 'ThreadedComments' or any(child.tag != thread_ns + 'threadedComment' for child in thread): raise ValueError('Unsupported threaded comment structure')
+                    for comment in thread:
+                        ref = comment.get('ref', '')
+                        if not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref): raise ValueError('Invalid threaded comment reference')
+                        col, number = range_boundaries(ref)[:2]
+                        if col > 16384 or number > 1048576: raise ValueError('Invalid threaded comment reference')
+                        if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1): raise ValueError(f'Non-anchor cell {ref} has a threaded comment')
+                for link in root.iter(ns + 'hyperlink'):
+                    try: linked = range_boundaries(link.get('ref'))
+                    except (ValueError, TypeError): raise ValueError('Invalid hyperlink range') from None
+                    if any(value is None for value in linked): raise ValueError('Invalid hyperlink range')
+                    if overlap(bounds, linked) and (max(c1, linked[0]), max(r1, linked[1]), min(c2, linked[2]), min(r2, linked[3])) != (c1, r1, c1, r1): raise ValueError('Non-anchor cell contains a hyperlink')
+                seen = set()
+                for row in data[0].findall(ns + 'row'):
+                    for cell in row.findall(ns + 'c'):
+                        ref = cell.get('r', '')
+                        if not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref): raise ValueError('Invalid cell reference')
+                        col, number = range_boundaries(ref)[:2]
+                        if ref in seen: raise ValueError('Duplicate worksheet cell')
+                        seen.add(ref)
+                        if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1):
+                            if len(cell) or set(cell.attrib) - {'r', 's', 't'} or cell.get('t') not in (None, 'n') or (cell.text and cell.text.strip()): raise ValueError(f'Non-anchor cell {ref} contains data or metadata')
+                if container is None:
+                    container = etree.Element(ns + 'mergeCells')
+                    preceding = {ns + name for name in ('sheetData','sheetCalcPr','sheetProtection','protectedRanges','scenarios','autoFilter','sortState','dataConsolidate','customSheetViews')}
+                    position = max(i for i, node in enumerate(root) if node.tag in preceding) + 1
+                    root.insert(position, container)
+                etree.SubElement(container, ns + 'mergeCell', ref=address)
+            else:
+                if len(matches) != 1 or matches[0][1] != bounds: raise ValueError('Select exactly one existing merged range')
+                container.remove(matches[0][0])
+            if len(container): container.set('count', str(len(container)))
+            else: root.remove(container)
+            dimensions = root.findall(ns + 'dimension')
+            if len(dimensions) > 1: raise ValueError('Ambiguous worksheet dimension')
+            if merge and dimensions:
+                try: left, top, right, bottom = range_boundaries(dimensions[0].get('ref'))
+                except (ValueError, TypeError): raise ValueError('Invalid worksheet dimension') from None
+                if any(v is None for v in (left, top, right, bottom)) or not (1 <= left <= right <= 16384 and 1 <= top <= bottom <= 1048576): raise ValueError('Invalid worksheet dimension')
+                dimensions[0].set('ref', f'{get_column_letter(min(left,c1))}{min(top,r1)}:{get_column_letter(max(right,c2))}{max(bottom,r2)}')
+        try: ooxml.edit_xml(source, output, lambda _: part, edit)
+        except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+        return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'range': address, 'merged': merge, 'formula_cache_effect': 'preserved'}
 
 
-def freeze_panes(directory, base_revision, sheet, cell):
+def freeze_panes(directory, base_revision, sheet, cell, expected_sha256=None):
     if cell is not None:
         if not isinstance(cell, str) or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', cell): raise ValueError('Freeze position must be an uppercase cell address or null')
         col, row = range_boundaries(cell)[:2]
@@ -1521,29 +1524,34 @@ def freeze_panes(directory, base_revision, sheet, cell):
         else:
             from lxml import etree
             etree.SubElement(view, ns + 'selection', activeCell='A1', sqref='A1')
-    try: ooxml.edit_xml(source, output, lambda path: grid_styles.sheet_part(path, sheet), edit)
+    try: ooxml.edit_xml(source, output, lambda path: grid_styles.sheet_part(path, sheet), edit, expected_sha256=expected_sha256)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'freeze_panes': cell, 'formula_cache_effect': 'preserved'}
 
 
-def resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width=None, row_height=None):
+def resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width=None, row_height=None, expected_sha256=None):
     for name, value, limit in (('column_width', column_width, 255), ('row_height', row_height, 409.5)):
         if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= limit or not math.isfinite(value)):
             raise ValueError(f'{name} must be greater than zero and at most {limit}')
     if column_width is None and row_height is None: raise ValueError('Provide a column width or row height')
     grid = read_grid(directory, base_revision, sheet, cell_range)
+    if expected_sha256 is not None and grid['snapshot_sha256'] != expected_sha256: raise ValueError('Workbook snapshot changed; reload the grid')
     if grid['sheet_protected']: raise ValueError('Grid sizing is unavailable for protected worksheets')
     c1, r1, c2, r2 = grid_bounds(cell_range); sc1, sr1, sc2, sr2 = grid_bounds(target_range)
     if not (c1 <= sc1 <= sc2 <= c2 and r1 <= sr1 <= sr2 <= r2): raise ValueError('Sizing range must be within the loaded range')
     state = info(directory); source = revision_file(state, base_revision)
-    constraints = spreadsheet.worksheet_constraints(source, sheet, (sc1, sr1, sc2, sr2), column_width is not None, row_height is not None)
-    if constraints['dimension_issues']: raise ValueError('Ambiguous worksheet dimensions: ' + ', '.join(constraints['dimension_issues']))
-    if base_revision >= 999999: raise ValueError('Session revision limit reached')
-    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
-    try: spreadsheet.resize_dimensions(source, output, sheet, (sc1, sr1, sc2, sr2), column_width, row_height)
-    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'target_range': target_range,
-            'column_width': column_width, 'row_height': row_height, 'formula_cache_effect': 'preserved'}
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    with tempfile.TemporaryDirectory(prefix='office-grid-resize-') as tmp:
+        source, digest = snapshots.copy(source, tmp)
+        if digest != grid['snapshot_sha256']: raise ValueError('Workbook snapshot changed; reload the grid')
+        constraints = spreadsheet.worksheet_constraints(source, sheet, (sc1, sr1, sc2, sr2), column_width is not None, row_height is not None)
+        if constraints['dimension_issues']: raise ValueError('Ambiguous worksheet dimensions: ' + ', '.join(constraints['dimension_issues']))
+        if base_revision >= 999999: raise ValueError('Session revision limit reached')
+        output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
+        try: spreadsheet.resize_dimensions(source, output, sheet, (sc1, sr1, sc2, sr2), column_width, row_height)
+        except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+        return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'target_range': target_range,
+                'column_width': column_width, 'row_height': row_height, 'formula_cache_effect': 'preserved'}
 
 
 def sheet_names(directory, base_revision):

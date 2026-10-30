@@ -232,21 +232,21 @@ def session_format_grid(directory: str, base_revision: int, sheet: str, cell_ran
 
 
 @server.tool()
-def session_merge_cells(directory: str, base_revision: int, sheet: str, cell_range: str, merge: bool = True) -> dict[str, Any]:
+def session_merge_cells(directory: str, base_revision: int, sheet: str, cell_range: str, merge: bool = True, expected_sha256: str | None = None) -> dict[str, Any]:
     """Merge a bounded empty-interior range or unmerge an exact existing range."""
-    return session.merge_cells(directory, base_revision, sheet, cell_range, merge)
+    return session.merge_cells(directory, base_revision, sheet, cell_range, merge, expected_sha256)
 
 
 @server.tool()
-def session_freeze_panes(directory: str, base_revision: int, sheet: str, cell: str | None) -> dict[str, Any]:
+def session_freeze_panes(directory: str, base_revision: int, sheet: str, cell: str | None, expected_sha256: str | None = None) -> dict[str, Any]:
     """Freeze rows and columns above and left of cell; pass null or A1 to unfreeze."""
-    return session.freeze_panes(directory, base_revision, sheet, cell)
+    return session.freeze_panes(directory, base_revision, sheet, cell, expected_sha256)
 
 
 @server.tool()
-def session_resize_grid(directory: str, base_revision: int, sheet: str, cell_range: str, target_range: str, column_width: float | None = None, row_height: float | None = None) -> dict[str, Any]:
+def session_resize_grid(directory: str, base_revision: int, sheet: str, cell_range: str, target_range: str, column_width: float | None = None, row_height: float | None = None, expected_sha256: str | None = None) -> dict[str, Any]:
     """Set entire column widths and/or row heights for a subrange of the loaded grid, in a new revision."""
-    return session.resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width, row_height)
+    return session.resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width, row_height, expected_sha256)
 
 
 @server.tool()

@@ -68,4 +68,25 @@ with tempfile.TemporaryDirectory() as tmp:
             except ValueError as exc: assert 'snapshot changed' in str(exc)
             else: raise AssertionError('Changed grid source accepted')
         assert session.info(draft)['latest_revision'] == 0
+    for mode in ('merge', 'freeze', 'resize'):
+        draft = root/('structural-' + mode); session.start(draft, source=workbook)
+        snapshot_hash = session.read_grid(draft, 0, 'Sheet', 'A1:B2')['snapshot_sha256']
+        (draft/'revision-000000.xlsx').write_bytes(changed.read_bytes())
+        try:
+            if mode == 'merge': session.merge_cells(draft, 0, 'Sheet', 'A1:B2', expected_sha256=snapshot_hash)
+            elif mode == 'freeze': session.freeze_panes(draft, 0, 'Sheet', 'B2', expected_sha256=snapshot_hash)
+            else: session.resize_grid(draft, 0, 'Sheet', 'A1:B2', 'A1', column_width=15, expected_sha256=snapshot_hash)
+        except ValueError as exc: assert 'snapshot changed' in str(exc)
+        else: raise AssertionError(f'Changed source accepted for {mode}')
+        assert session.info(draft)['latest_revision'] == 0
+    draft = root/'merge-race'; session.start(draft, source=workbook)
+    real_constraints = session.spreadsheet.worksheet_constraints
+    def mutate_after_read(*args, **kwargs):
+        result = real_constraints(*args, **kwargs)
+        (draft/'revision-000000.xlsx').write_bytes(changed.read_bytes())
+        return result
+    with patch.object(session.spreadsheet, 'worksheet_constraints', side_effect=mutate_after_read):
+        result = session.merge_cells(draft, 0, 'Sheet', 'A1:B2')
+    from openpyxl import load_workbook
+    assert load_workbook(result['file']).active['A1'].value == 'Original'
 print('Session snapshot smoke passed: start, batch, apply, restore and export')
