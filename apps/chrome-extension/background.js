@@ -1140,7 +1140,9 @@ class BrowserBackend {
       awaitPromise
     });
     if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.text ?? "JavaScript evaluation failed");
+      const exception = result.exceptionDetails.exception;
+      const detail = typeof exception?.description === "string" ? exception.description : typeof exception?.value === "string" ? exception.value : result.exceptionDetails.text;
+      throw new Error(typeof detail === "string" && detail ? detail.split("\n", 1)[0].slice(0, 500) : "JavaScript evaluation failed");
     }
     return result.result?.value;
   }

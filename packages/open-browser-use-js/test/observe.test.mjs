@@ -185,6 +185,18 @@ test('developer logs are tab-scoped, bounded and cleared on disconnect',async()=
   client.close();assert.deepEqual(browser.cdp.logs(1),[]);
 });
 
+test('tab clipboard maps structured data and rejects malformed writes before dispatch',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];
+  client.request=async(method,params)=>{calls.push({method,params});if(method==='readClipboardText')return {text:'hello'};if(method==='readClipboard')return {items:[{presentation_style:'inline',entries:[{mime_type:'text/plain',text:'hello'},{mime_type:'image/png',base64:'AQID'}]}]};return {};};
+  const clipboard=new OpenBrowserUseBrowser({client}).tab(7).clipboard;
+  assert.equal(await clipboard.readText(),'hello');
+  const items=await clipboard.read();assert.deepEqual(items,[{presentationStyle:'inline',entries:[{mimeType:'text/plain',text:'hello'},{mimeType:'image/png',base64:'AQID'}]}]);
+  await clipboard.write(items);assert.deepEqual(calls.at(-1),{method:'writeClipboard',params:{tabId:7,items:[{presentation_style:'inline',entries:[{mime_type:'text/plain',text:'hello'},{mime_type:'image/png',base64:'AQID'}]}]}});
+  await clipboard.writeText('updated');assert.deepEqual(calls.at(-1),{method:'writeClipboardText',params:{tabId:7,text:'updated'}});
+  const before=calls.length;await assert.rejects(clipboard.write([{entries:[{mimeType:'image/png',base64:'not base64!'}]}]),/base64/);
+  await assert.rejects(clipboard.write([{entries:[{mimeType:'text/plain',text:'a'},{mimeType:'text/plain',text:'b'}]}]),/Invalid clipboard entry/);assert.equal(calls.length,before);
+});
+
 test('goto does not treat a loaded previous document as a completed navigation', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let sameDocument=false, detached=false;const handlers=new Set();

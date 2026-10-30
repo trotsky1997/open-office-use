@@ -36,6 +36,13 @@ test('download readiness is emitted only after the waiter is installed',async()=
   backend.emitDownloadChange({id:'ready',status:'started'});assert.equal((await pending).downloadId,'ready');
 });
 
+test('clipboard evaluation exposes a bounded permission error',async()=>{
+  const backend=new Backend();await backend.store.ready;const original=chrome.debugger.sendCommand;
+  chrome.debugger.sendCommand=async()=>({exceptionDetails:{text:'Uncaught (in promise)',exception:{description:'NotAllowedError: clipboard denied\n    at page.js:1'}}});
+  try {await assert.rejects(backend.evaluateJavascript(1,'navigator.clipboard.readText()',true),error=>error.message==='NotAllowedError: clipboard denied');}
+  finally {chrome.debugger.sendCommand=original;}
+});
+
 test('only one Chrome download start wait may be active',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});
   const first=backend.waitForDownload({tabId:1,timeoutMs:1000});

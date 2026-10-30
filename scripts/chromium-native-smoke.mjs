@@ -37,6 +37,23 @@ try {
  const client=new OpenBrowserUseClient({socketPath,sessionId:'native-e2e',timeoutMs:15000});browser=new OpenBrowserUseBrowser({client});await browser.connect();
  const info=await client.getInfo();assert.equal(info.metadata.extensionId,id);
  const tab=await browser.newTab();await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
+ if(process.env.OBU_TEST_CLIPBOARD==='1'){
+   const [port,wsPath]=(await readFile(join(profile,'DevToolsActivePort'),'utf8')).trim().split('\n');
+   const ws=new WebSocket(`ws://127.0.0.1:${port}${wsPath}`);await once(ws,'open');let sequence=0;const pending=new Map();
+   ws.addEventListener('message',event=>{const message=JSON.parse(event.data),wait=pending.get(message.id);if(wait){pending.delete(message.id);message.error?wait.reject(new Error(JSON.stringify(message.error))):wait.resolve(message.result);}});
+   const call=(method,params)=>new Promise((resolve,reject)=>{const requestId=++sequence;pending.set(requestId,{resolve,reject});ws.send(JSON.stringify({id:requestId,method,params}));});
+   try {
+     const origin=`http://127.0.0.1:${http.address().port}`;
+     await call('Browser.setPermission',{origin,permission:{name:'clipboard-read'},setting:'granted'});
+     await call('Browser.setPermission',{origin,permission:{name:'clipboard-write',allowWithoutGesture:true},setting:'granted'});
+     await client.executeCdp(tab.id,'Page.bringToFront');
+     await tab.clipboard.writeText('isolated fixture');assert.equal(await tab.clipboard.readText(),'isolated fixture');
+     await tab.clipboard.write([{entries:[{mimeType:'text/plain',text:'plain fixture'},{mimeType:'text/html',text:'<b>rich fixture</b>'}]}]);
+     const rich=await tab.clipboard.read();assert.ok(rich.some(item=>item.entries.some(entry=>entry.mimeType==='text/plain' && entry.text==='plain fixture')));assert.ok(rich.some(item=>item.entries.some(entry=>entry.mimeType==='text/html' && entry.text.includes('rich fixture'))));
+     const png=(await tab.getScreenshot()).toString('base64');await tab.clipboard.write([{entries:[{mimeType:'image/png',base64:png}]}]);
+     const binary=(await tab.clipboard.read()).flatMap(item=>item.entries).find(entry=>entry.mimeType==='image/png');assert.ok(binary?.base64);assert.equal(Buffer.from(binary.base64,'base64').subarray(1,4).toString(),'PNG');
+   } finally {ws.close();}
+ }
  await tab.dev.watch();await tab.evaluate(`console.log('root-log-fixture',42);setTimeout(()=>{throw new Error('root-error-fixture')},0)`);
  await new Promise(r=>setTimeout(r,100));
  assert.ok((await tab.dev.logs({filter:'root-log-fixture'})).some(entry=>entry.level==='log' && entry.message.includes('42')));

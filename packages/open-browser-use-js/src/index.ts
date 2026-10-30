@@ -55,6 +55,8 @@ export type InteractiveNode = { index: number; role: string; name: string; frame
 export type SelectOption = string | {value?: string; label?: string};
 export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; url: string; defaultPrompt?: string };
 export type OpenBrowserUseLogEntry = {level: "debug" | "info" | "log" | "warn" | "error"; message: string; timestamp: string; url?: string};
+export type OpenBrowserUseClipboardEntry = {mimeType: string; text?: string; base64?: string};
+export type OpenBrowserUseClipboardItem = {entries: OpenBrowserUseClipboardEntry[]; presentationStyle?: "unspecified" | "inline" | "attachment"};
 export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {name?: TextMatcher; exact?: boolean; level?: number; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
@@ -492,6 +494,7 @@ export class OpenBrowserUseTab {
   readonly id: number;
   readonly playwright: OpenBrowserUseTabPlaywright;
   readonly dev: OpenBrowserUseTabDev;
+  readonly clipboard: OpenBrowserUseTabClipboard;
   #observation?: Observation;
   #lastText?: { documentId: number; includeFrames: boolean; includeValues: boolean; includeText: boolean; text: string; truncated: boolean };
 
@@ -500,6 +503,7 @@ export class OpenBrowserUseTab {
     this.id = id;
     this.playwright = new OpenBrowserUseTabPlaywright(this);
     this.dev = new OpenBrowserUseTabDev(this);
+    this.clipboard = new OpenBrowserUseTabClipboard(this);
   }
 
   goto(url: string, options: OpenBrowserUseGotoOptions = {}): Promise<JsonValue> {
@@ -1479,6 +1483,46 @@ export class OpenBrowserUseTab {
 
   close(): Promise<JsonValue> {
     return this.browser.cdp.call(this.id, "Page.close");
+  }
+}
+
+export class OpenBrowserUseTabClipboard {
+  constructor(private tab: OpenBrowserUseTab) {}
+  async readText(): Promise<string> {
+    const result = await this.tab.browser.client.readClipboardText(this.tab.id);
+    if (!isObject(result) || typeof result.text !== "string") throw new Error("Browser returned invalid clipboard text");
+    return result.text;
+  }
+  async writeText(text: string): Promise<void> {
+    if (typeof text !== "string") throw new Error("Clipboard text must be a string");
+    await this.tab.browser.client.writeClipboardText(this.tab.id,text);
+  }
+  async read(): Promise<OpenBrowserUseClipboardItem[]> {
+    const result = await this.tab.browser.client.readClipboard(this.tab.id);
+    if (!isObject(result) || !Array.isArray(result.items)) throw new Error("Browser returned invalid clipboard items");
+    return result.items.map(item => {
+      if (!isObject(item) || !Array.isArray(item.entries) || (item.presentation_style !== undefined && !["unspecified","inline","attachment"].includes(String(item.presentation_style)))) throw new Error("Browser returned invalid clipboard item");
+      const entries = item.entries.map(entry => {
+        if (!isObject(entry) || typeof entry.mime_type !== "string" || !entry.mime_type || (entry.text !== undefined && typeof entry.text !== "string") || (entry.base64 !== undefined && typeof entry.base64 !== "string") || (typeof entry.text === "string") === (typeof entry.base64 === "string")) throw new Error("Browser returned invalid clipboard entry");
+        return {mimeType:entry.mime_type,...(typeof entry.text === "string" ? {text:entry.text} : {base64:entry.base64 as string})};
+      });
+      return {entries,...(item.presentation_style !== undefined ? {presentationStyle:item.presentation_style as OpenBrowserUseClipboardItem["presentationStyle"]} : {})};
+    });
+  }
+  async write(items: OpenBrowserUseClipboardItem[]): Promise<void> {
+    if (!Array.isArray(items)) throw new Error("Clipboard items must be an array");
+    const wire = items.map(item => {
+      if (!item || !Array.isArray(item.entries) || !item.entries.length || (item.presentationStyle !== undefined && !["unspecified","inline","attachment"].includes(item.presentationStyle))) throw new Error("Invalid clipboard item");
+      const seen = new Set<string>();
+      const entries = item.entries.map(entry => {
+        if (!entry || typeof entry.mimeType !== "string" || !entry.mimeType || seen.has(entry.mimeType) || (entry.text !== undefined && typeof entry.text !== "string") || (entry.base64 !== undefined && typeof entry.base64 !== "string") || (typeof entry.text === "string") === (typeof entry.base64 === "string")) throw new Error("Invalid clipboard entry");
+        if (entry.base64 !== undefined && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(entry.base64)) throw new Error("Invalid clipboard base64");
+        seen.add(entry.mimeType);
+        return {mime_type:entry.mimeType,...(typeof entry.text === "string" ? {text:entry.text} : {base64:entry.base64!})};
+      });
+      return {entries,...(item.presentationStyle !== undefined ? {presentation_style:item.presentationStyle} : {})};
+    });
+    await this.tab.browser.client.writeClipboard(this.tab.id,wire);
   }
 }
 

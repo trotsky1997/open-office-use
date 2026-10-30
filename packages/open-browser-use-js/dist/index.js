@@ -440,6 +440,7 @@ export class OpenBrowserUseTab {
     id;
     playwright;
     dev;
+    clipboard;
     #observation;
     #lastText;
     constructor(browser, id) {
@@ -447,6 +448,7 @@ export class OpenBrowserUseTab {
         this.id = id;
         this.playwright = new OpenBrowserUseTabPlaywright(this);
         this.dev = new OpenBrowserUseTabDev(this);
+        this.clipboard = new OpenBrowserUseTabClipboard(this);
     }
     goto(url, options = {}) {
         this.#observation = undefined;
@@ -1628,6 +1630,57 @@ export class OpenBrowserUseTab {
     }
     close() {
         return this.browser.cdp.call(this.id, "Page.close");
+    }
+}
+export class OpenBrowserUseTabClipboard {
+    tab;
+    constructor(tab) {
+        this.tab = tab;
+    }
+    async readText() {
+        const result = await this.tab.browser.client.readClipboardText(this.tab.id);
+        if (!isObject(result) || typeof result.text !== "string")
+            throw new Error("Browser returned invalid clipboard text");
+        return result.text;
+    }
+    async writeText(text) {
+        if (typeof text !== "string")
+            throw new Error("Clipboard text must be a string");
+        await this.tab.browser.client.writeClipboardText(this.tab.id, text);
+    }
+    async read() {
+        const result = await this.tab.browser.client.readClipboard(this.tab.id);
+        if (!isObject(result) || !Array.isArray(result.items))
+            throw new Error("Browser returned invalid clipboard items");
+        return result.items.map(item => {
+            if (!isObject(item) || !Array.isArray(item.entries) || (item.presentation_style !== undefined && !["unspecified", "inline", "attachment"].includes(String(item.presentation_style))))
+                throw new Error("Browser returned invalid clipboard item");
+            const entries = item.entries.map(entry => {
+                if (!isObject(entry) || typeof entry.mime_type !== "string" || !entry.mime_type || (entry.text !== undefined && typeof entry.text !== "string") || (entry.base64 !== undefined && typeof entry.base64 !== "string") || (typeof entry.text === "string") === (typeof entry.base64 === "string"))
+                    throw new Error("Browser returned invalid clipboard entry");
+                return { mimeType: entry.mime_type, ...(typeof entry.text === "string" ? { text: entry.text } : { base64: entry.base64 }) };
+            });
+            return { entries, ...(item.presentation_style !== undefined ? { presentationStyle: item.presentation_style } : {}) };
+        });
+    }
+    async write(items) {
+        if (!Array.isArray(items))
+            throw new Error("Clipboard items must be an array");
+        const wire = items.map(item => {
+            if (!item || !Array.isArray(item.entries) || !item.entries.length || (item.presentationStyle !== undefined && !["unspecified", "inline", "attachment"].includes(item.presentationStyle)))
+                throw new Error("Invalid clipboard item");
+            const seen = new Set();
+            const entries = item.entries.map(entry => {
+                if (!entry || typeof entry.mimeType !== "string" || !entry.mimeType || seen.has(entry.mimeType) || (entry.text !== undefined && typeof entry.text !== "string") || (entry.base64 !== undefined && typeof entry.base64 !== "string") || (typeof entry.text === "string") === (typeof entry.base64 === "string"))
+                    throw new Error("Invalid clipboard entry");
+                if (entry.base64 !== undefined && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(entry.base64))
+                    throw new Error("Invalid clipboard base64");
+                seen.add(entry.mimeType);
+                return { mime_type: entry.mimeType, ...(typeof entry.text === "string" ? { text: entry.text } : { base64: entry.base64 }) };
+            });
+            return { entries, ...(item.presentationStyle !== undefined ? { presentation_style: item.presentationStyle } : {}) };
+        });
+        await this.tab.browser.client.writeClipboard(this.tab.id, wire);
     }
 }
 export class OpenBrowserUseTabDev {

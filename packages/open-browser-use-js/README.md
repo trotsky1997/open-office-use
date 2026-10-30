@@ -375,6 +375,25 @@ the requested URL and load state. A timeout or action error can occur after
 the action has taken effect; inspect the page before retrying. The timeout also
 bounds a pending action callback; it cannot cancel a command already issued.
 
+## Clipboard
+
+Chrome tabs expose the system clipboard through the page's Clipboard API:
+
+```js
+await tab.clipboard.writeText("hello");
+const text = await tab.clipboard.readText();
+await tab.clipboard.write([{entries: [{mimeType: "text/plain", text: "hello"}]}]);
+const items = await tab.clipboard.read(); // entries contain text or base64
+```
+
+The page must satisfy the browser's secure-context, focus and permission
+requirements. These calls can read or replace the system clipboard; an error
+after a write may leave its outcome unknown. Electron scopes currently do not
+provide clipboard operations. For an isolated Chromium clipboard smoke, use
+`OBU_TEST_CLIPBOARD=1` with `scripts/chromium-native-smoke.mjs`; the smoke grants
+clipboard permission only in its temporary test profile and writes fixture data
+to its clipboard. Run it where the clipboard is isolated from your desktop.
+
 ## Page developer logs
 
 Call `await tab.dev.watch()` before the action to capture console calls,

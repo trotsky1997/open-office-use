@@ -197,3 +197,5 @@ Linux ARM64 更新验证：隔离 Chromium 150 使用真实原生消息清单、
 首页与 SDK 文档新增本 fork 的源码接入路径，区分上游已发布包：构建 SDK 和 Go host、加载源码扩展、使用扩展 ID 注册 host、以绝对路径配置持久 REPL；说明注册会更新已有 host 链接。pnpm 8.15.9 离线验证 frozen lockfile，SDK/Go 构建与 MCP initialize 通过；真实用户浏览器注册未改动，Windows 安装仍待端到端验证。
 
 源码 host 注册补充隔离实测：Linux ARM64 使用临时挂载命名空间和临时用户目录，执行真实 install-manifest，以临时扩展 ID 注册后启动 Chromium 150，SDK 经原生消息连接并读取页面。自定义 user-data-dir 分别验证标准注册清单的链接和 --output 指向该目录的清单；使用 no-sandbox。测试未修改宿主用户的真实浏览器配置，普通桌面及 Windows 安装仍未覆盖。
+
+JavaScript SDK 新增 tab.clipboard 的 readText/writeText/read/write，映射原有 Chrome 协议的 MIME 文本和 base64 格式，写入前验证结构；Electron 仍明确不支持。Chrome clipboard 执行错误现在返回限长异常首行，实际权限拒绝可显示 NotAllowedError。SDK 59 项、扩展 29 项通过；Linux ARM64 隔离 Chromium 150 headless 临时 profile 中显式授予本地 fixture 站点权限，原生消息链路验证文本、HTML 和 PNG；无权限场景验证错误。剪贴板 smoke 需显式启用并使用隔离剪贴板；macOS/Windows 和 Electron 尚未验证或实现。

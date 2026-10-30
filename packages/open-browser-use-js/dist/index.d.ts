@@ -64,6 +64,15 @@ export type OpenBrowserUseLogEntry = {
     timestamp: string;
     url?: string;
 };
+export type OpenBrowserUseClipboardEntry = {
+    mimeType: string;
+    text?: string;
+    base64?: string;
+};
+export type OpenBrowserUseClipboardItem = {
+    entries: OpenBrowserUseClipboardEntry[];
+    presentationStyle?: "unspecified" | "inline" | "attachment";
+};
 export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {
     name?: TextMatcher;
@@ -184,6 +193,7 @@ export declare class OpenBrowserUseTab {
     readonly id: number;
     readonly playwright: OpenBrowserUseTabPlaywright;
     readonly dev: OpenBrowserUseTabDev;
+    readonly clipboard: OpenBrowserUseTabClipboard;
     constructor(browser: OpenBrowserUseBrowser, id: number);
     goto(url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     back(): Promise<void>;
@@ -263,6 +273,14 @@ export declare class OpenBrowserUseTab {
         awaitPromise?: boolean;
     }): Promise<JsonValue>;
     close(): Promise<JsonValue>;
+}
+export declare class OpenBrowserUseTabClipboard {
+    private tab;
+    constructor(tab: OpenBrowserUseTab);
+    readText(): Promise<string>;
+    writeText(text: string): Promise<void>;
+    read(): Promise<OpenBrowserUseClipboardItem[]>;
+    write(items: OpenBrowserUseClipboardItem[]): Promise<void>;
 }
 export declare class OpenBrowserUseTabDev {
     private tab;
