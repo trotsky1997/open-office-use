@@ -27,7 +27,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'read_slide_notes', 'session_read_slide_notes', 'session_replace_slide_notes', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -39,6 +39,12 @@ async def main():
                 assert not started_picture.isError, started_picture
                 changed_picture = await session.call_tool('session_replace_picture', {'directory': str(picture_draft), 'base_revision': 0, 'path': f'/slide[1]/picture[@id={picture.shape_id}]', 'image_file': str(replacement_image)})
                 assert not changed_picture.isError and Presentation(picture_draft / 'revision-000001.pptx').slides[0].shapes[0].image.blob == replacement_image.read_bytes(), changed_picture
+                changed_notes = await session.call_tool('session_replace_slide_notes', {'directory': str(picture_draft), 'base_revision': 1, 'slide': 1, 'text': 'Talk track'})
+                assert not changed_notes.isError and changed_notes.structuredContent['revision'] == 2, changed_notes
+                read_notes = await session.call_tool('session_read_slide_notes', {'directory': str(picture_draft), 'revision': 2, 'slide': 1})
+                assert not read_notes.isError and read_notes.structuredContent['text'] == 'Talk track', read_notes
+                empty_notes = await session.call_tool('read_slide_notes', {'file': str(picture_source), 'slide': 1})
+                assert not empty_notes.isError and not empty_notes.structuredContent['has_notes_slide'], empty_notes
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})

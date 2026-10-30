@@ -13,6 +13,7 @@ from openpyxl import Workbook, load_workbook
 from pptx import Presentation
 
 import layout
+import notes
 import visual
 import word
 import officecli_backend
@@ -145,6 +146,7 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     read = commands.add_parser('inspect'); read.add_argument('file')
     comments = commands.add_parser('comments'); comments.add_argument('file')
+    note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
     render_command = commands.add_parser('render'); render_command.add_argument('file'); render_command.add_argument('--out-dir', required=True)
@@ -169,6 +171,8 @@ def main():
     candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
+    note_session = sub.add_parser('notes'); note_session.add_argument('directory'); note_session.add_argument('--revision', type=int, required=True); note_session.add_argument('--slide', type=int, required=True)
+    note_write = sub.add_parser('replace-notes'); note_write.add_argument('directory'); note_write.add_argument('--base', type=int, required=True); note_write.add_argument('--slide', type=int, required=True); note_write.add_argument('--text-file', required=True)
     reply = sub.add_parser('reply-comment'); reply.add_argument('directory'); reply.add_argument('--base', type=int, required=True); reply.add_argument('--parent-id', required=True); reply.add_argument('--text', required=True); reply.add_argument('--author', required=True)
     resolve = sub.add_parser('resolve-comment'); resolve.add_argument('directory'); resolve.add_argument('--base', type=int, required=True); resolve.add_argument('--id', required=True); resolve.add_argument('--resolved', choices=['true', 'false'], required=True)
     comment = sub.add_parser('add-comment'); comment.add_argument('directory'); comment.add_argument('--base', type=int, required=True); comment.add_argument('--path', required=True); comment.add_argument('--text', required=True); comment.add_argument('--author', required=True); comment.add_argument('--anchor')
@@ -210,6 +214,11 @@ def main():
                 result = selection_candidates.candidates(args.directory, render)
             elif args.action == 'replace-text':
                 result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
+            elif args.action == 'notes':
+                result = session.read_notes(args.directory, args.revision, args.slide)
+            elif args.action == 'replace-notes':
+                if Path(args.text_file).stat().st_size > 400000: raise ValueError('Notes text file exceeds 400,000 bytes')
+                result = session.replace_notes(args.directory, args.base, args.slide, Path(args.text_file).read_text(encoding='utf-8'))
             elif args.action == 'reply-comment':
                 result = session.reply_comment(args.directory, args.base, args.parent_id, args.text, args.author)
             elif args.action == 'resolve-comment':
@@ -245,6 +254,8 @@ def main():
             result = inspect(args.file)
         elif args.command == 'comments':
             result = word.list_comments(args.file)
+        elif args.command == 'notes':
+            result = notes.read(args.file, args.slide)
         elif args.command == 'inspect-layout':
             result = layout.inspect(args.file)
         elif args.command == 'author':

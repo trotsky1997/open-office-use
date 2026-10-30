@@ -11,6 +11,7 @@ from openpyxl.utils.cell import column_index_from_string, get_column_letter, ran
 
 import cell_text
 import layout
+import notes
 import officecli_backend
 import spreadsheet
 import slides
@@ -286,6 +287,23 @@ def replace_text(directory, base_revision, path, find, replacement):
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'path': path}
+
+
+def read_notes(directory, revision, slide):
+    state = info(directory); source = revision_file(state, revision)
+    result = notes.read(source, slide); result['revision'] = revision
+    return result
+
+
+def replace_notes(directory, base_revision, slide, text):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'pptx': raise ValueError('Speaker notes require a PPTX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
+    try: notes.replace(source, output, slide, text)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'slide': slide}
 
 
 def reply_comment(directory, base_revision, parent_id, text, author):

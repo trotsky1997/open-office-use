@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP, Image
 import officecli_backend
 import spreadsheet
 import layout
+import notes
 import visual
 import word
 import review
@@ -125,6 +126,24 @@ def session_edit(directory: str, base_revision: int, path: str, mode: Literal['t
 def session_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str) -> dict[str, Any]:
     """Replace one unique text match in supported Word, PowerPoint or Excel text, retaining formatting."""
     return session.replace_text(directory, base_revision, path, find, replacement)
+
+
+@server.tool()
+def read_slide_notes(file: str, slide: int) -> dict[str, Any]:
+    """Read speaker notes for a one-based slide number without creating a notes slide."""
+    return notes.read(file, slide)
+
+
+@server.tool()
+def session_read_slide_notes(directory: str, revision: int, slide: int) -> dict[str, Any]:
+    """Read speaker notes from an exact PPTX session revision."""
+    return session.read_notes(directory, revision, slide)
+
+
+@server.tool()
+def session_replace_slide_notes(directory: str, base_revision: int, slide: int, text: str) -> dict[str, Any]:
+    """Replace all speaker notes on one slide in a new revision; notes formatting is reset."""
+    return session.replace_notes(directory, base_revision, slide, text)
 
 
 @server.tool()
