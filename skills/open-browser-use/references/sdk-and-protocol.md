@@ -36,7 +36,7 @@ the task. Do not rely on the CLI fallback `obu-cli` in agent workflows; it is a
 manual convenience fallback and can reuse stale Chrome tab groups from unrelated
 tasks.
 
-Install the SDK package from the package registry for your runtime:
+The fork’s newer JavaScript harness is built from source; follow [installation.md](installation.md). The following registry commands install upstream packages and can provide different capabilities:
 
 ```sh
 npm install open-browser-use-sdk

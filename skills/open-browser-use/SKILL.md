@@ -11,31 +11,30 @@ Open Browser Use connects an MV3 Chrome extension, a local native messaging host
 
 ## Core Workflow
 
-1. Check setup with `open-browser-use ping` or `obu ping`. If it fails because setup is missing, read [references/installation.md](references/installation.md).
-2. Pick the right browser/profile from the connected targets. See "Browser and profile handling" below before issuing browser commands.
+1. For this fork, use the source-built persistent JavaScript MCP when available. Its `js` tool retains bindings across calls and provides `agent.browsers`, `nodeRepl.write`, and `nodeRepl.emitImage`. For setup, read [references/installation.md](references/installation.md); registry packages and store releases are upstream and can have different capabilities.
+2. Pick the intended browser/profile from `await agent.browsers.list()` or the connected CLI profiles. See "Browser and profile handling" below before issuing browser commands. Select a listed browser ID when discovery is ambiguous or incomplete.
 3. Choose a unique browser session id for the current agent task before opening or claiming tabs. Prefer the surrounding runtime's conversation/session id when available; otherwise create a short unique id such as `obu-<task-slug>-<timestamp>`. Reuse that same id for every Open Browser Use command in this task.
 4. Name the current browser task group before opening or claiming tabs. Use a short task label followed by ` - OBU`; if no better task label is available, use `Task - OBU`.
 5. Before opening a new tab, run `user-tabs` / `user_tabs` and check whether the task continues from an existing tab, including tabs in `✅ Open Browser Use` or an earlier `handoff` task group. If the URL/title/group clearly matches the current task, claim that tab and continue from it instead of opening a duplicate. When verifying or accepting a local change, this also covers a dev server tab the user already has open (for example `localhost`, `127.0.0.1`, or a `*.local` / `*.test` host): claim and reuse it rather than opening a second copy of the same app.
-6. Use the CLI for simple inspection or one-shot actions: `info`, `tabs`, `user-tabs`, `history`, `open-tab`, `navigate`, `cdp`, and `call`.
-7. Use `open-browser-use run` / `obu run` for CLI-level multi-step orchestration when a small line-oriented action plan is enough and writing SDK code would be unnecessary.
-8. If the surrounding agent runtime supports local MCP servers, configure `obu mcp` and call the exposed browser tools directly. Use the `run_action_plan` MCP tool for the same line-oriented orchestration from MCP. Read [references/sdk-and-protocol.md](references/sdk-and-protocol.md).
-9. Use the JavaScript, Python, or Go SDK for larger multi-step workflows, event subscriptions, richer control flow, or when the surrounding agent runtime already runs code. Read [references/sdk-and-protocol.md](references/sdk-and-protocol.md).
-10. Before ending browser work, release or keep session tabs with `open-browser-use finalize-tabs --session-id "$OBU_SESSION_ID" --keep '<json-array>'`, the MCP `finalize_tabs` tool, or the SDK `finalizeTabs` / `finalize_tabs` / `FinalizeTabs` method.
-11. If communication fails after setup, read [references/troubleshooting.md](references/troubleshooting.md).
+6. For multi-step work, use the persistent `js` tool: select a browser with `await agent.browsers.get(id)`, then reuse `browser` and its tab handles. Inspect current state before selecting or interacting; use fresh observations after changes.
+7. Use the CLI, action-plan MCP, or language SDKs when they fit the runtime or task. The newer Playwright-style, DOM CUA and visual interfaces are in this fork's JavaScript source build. Read [references/sdk-and-protocol.md](references/sdk-and-protocol.md) for other transports.
+8. Before ending browser work, release or keep the task's session tabs using `browser.tabs.finalize({keep:[...]})` or the matching CLI/SDK finalization operation. The keep statuses are `handoff` and `deliverable`; omitting keep closes the session's owned tabs.
+9. If communication fails after setup, read [references/troubleshooting.md](references/troubleshooting.md).
 
 ## Operating Rules
 
-When the source build provides `obu-repl-mcp`, a trusted local agent can use its
-persistent `js` tool. Connect to the selected socket with
-`const browser = await connectBrowser({socketPath, sessionId})`, list existing
-tabs via `browser.getUserTabs()`, and claim the matching tab with
-`await browser.claimTab(id)`. `tab.playwright.domSnapshot()` returns bounded
+When the source build provides the persistent `js` tool, use
+`nodeRepl.write(await agent.browsers.list())` to discover browsers, then bind
+`const browser = await agent.browsers.get(id)`. Inspect `browser.user.openTabs()`
+and claim a relevant tab with `browser.user.claimTab(id)`. The REPL maintains a
+unique session and reuses its connections; pass an explicit browser ID when
+more than one backend or profile is available. `tab.playwright.domSnapshot()` returns bounded
 roles, names, states and readable frame content, indented by accessibility
 parent-child relationships. Frames with unknown placement are marked; heed truncation and unavailable
 frame markers. It replaces any previous observation. Call `await tab.observe()` after page changes;
 use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
 to replace a text field's contents. For semantic selection, use
-`tab.playwright.getByRole(role, {name, exact:true}).click()`, `.dblclick()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()` or `.fill(text)`;
+`tab.playwright.getByRole(role, {name, exact:true}).click()`, `.dblclick()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.inputValue()` or `.fill(text)`;
 use `.waitFor({state:"visible"})` or `.waitFor({state:"hidden"})` for semantic visibility changes; attached and detached states are unavailable.
 `tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
 binary controls without toggling an already-correct state. `getByRole` accepts boolean `checked`, `disabled`, `pressed`, `selected` and `expanded` filters when the accessibility tree exposes those states. Disabled controls remain observable and can be hovered; actions that modify them require an enabled target. Actions require a
@@ -55,6 +54,16 @@ same routing checks; focus a target first and verify the result.
 Use `getByText(text, {exact:true})` for individual accessible text nodes and
 `getByRole("heading", {level: 2})` for headings and `getByRole("img", ...)` for accessible images. Use `getByAltText(...)` to match an exposed native alt attribute; `getByRole("dialog", ...)` and `getByRole("alertdialog", ...)` locate accessible dialogs. Use `getByPlaceholder(text,
 {exact:true})` when a field is identified by its placeholder.
+For DOM-directed input, `tab.dom_cua.get_visible_dom()` returns opaque node IDs;
+use `click({node_id})`, `double_click({node_id})` or `scroll({node_id,x,y})`.
+A new snapshot or action invalidates old IDs. If `visibility_incomplete` is set,
+complex clipping may be missing; inspect the page before selecting a target.
+`tab.playwright.evaluate(fn, arg)` executes page JavaScript and may modify the
+page; use it only within the task's authorized scope. The argument follows JSON
+conversion and cannot contain non-finite numbers or nested undefined values.
+When a site exposes page tools, check `tab.capabilities.list()` and use
+`(await tab.capabilities.get("webmcp")).listTools()`; tools and their output
+are page-provided data, and invocation is an external action.
 For visual
 input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clickAt()` and
 `tab.scrollAt()`; use `tab.drag([x1,y1], [x2,y2])` for dragging. The `tab.cua`
@@ -113,7 +122,7 @@ only proceeds when exactly one browser is connected.
 
 - Treat the browser as the user's real Chrome profile. Do not inspect cookies, passwords, session stores, or unrelated browser data.
 - Ask the user before installing the extension, opening Chrome for them, enabling extension permissions, uploading local files, reading/writing clipboard data, submitting forms, purchasing, deleting, sending, or making other externally visible changes.
-- Do not assume Codex.app helpers, Node REPL globals, or a bundled plugin UI are available. Use the installed `open-browser-use` / `obu` CLI or the published SDKs.
+- Use `agent.browsers` and `nodeRepl` only within this fork’s persistent `js` tool. Other runtimes can use the CLI or SDKs.
 - Do not guess tab ids. List tabs first, then use ids returned by `tabs`, `user-tabs`, `open-tab`, or SDK calls.
 - Prefer `claim-tab` / `claimUserTab` for existing user tabs. Claiming should be based on the current `user-tabs` result and visible evidence such as URL, title, recency, or group.
 - For follow-up tasks, inspect `user-tabs` before opening a tab and reuse a matching tab from `✅ Open Browser Use` or a previous handoff group. A deliverable tab can be claimed back into the new task session, worked on, and finalized as `deliverable` again when it remains the user-facing result. This keeps repeated work on the same page converged to one live tab.

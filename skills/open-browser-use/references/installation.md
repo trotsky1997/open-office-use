@@ -8,9 +8,37 @@ Read this reference when the user asks to install, verify, repair, or explain Op
 - Native host and CLI: the local `open-browser-use` binary, also exposed as `obu` when installed from supported packages.
 - SDKs: JavaScript, Python, and Go clients that connect to the active native host socket.
 
-## Install The CLI
+## Install This Fork From Source
 
-Use one of the supported package routes:
+The npm, Homebrew, PyPI and Chrome Web Store releases below are upstream and may
+lack this fork's browser harness. For this branch, use Node.js 22+, pnpm 8.15.9,
+Go 1.25.10+ and a native C++ build toolchain:
+
+```sh
+git clone --branch codex/browser-harness https://github.com/trotsky1997/open-office-use.git
+cd open-office-use
+pnpm install --frozen-lockfile
+pnpm --filter open-browser-use-sdk build
+mkdir -p build
+go build -o build/open-browser-use ./cmd/open-browser-use
+```
+
+Load `apps/chrome-extension` as an unpacked extension in the intended Chrome
+profile. Register its actual extension ID with `./build/open-browser-use
+install-manifest --extension-id ID --path "$PWD/build/open-browser-use"`, then
+reload the extension and check `./build/open-browser-use ping`. Registration
+updates the native-host manifest and stable host link; an existing installation
+using that host name will use this binary and extension ID. Keep the checkout
+and binary available at their paths. Windows registration has not been validated
+end to end.
+
+Configure the trusted local MCP client to run `node` with the absolute path to
+`packages/open-browser-use-js/dist/repl-cli.js`. The embedded Electron host
+provides its own scope-authorized REPL connection.
+
+## Upstream CLI Packages
+
+The following package routes install upstream releases:
 
 ```sh
 npm install -g open-browser-use
