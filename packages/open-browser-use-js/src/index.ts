@@ -83,14 +83,15 @@ async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number,
     return result;
   } finally { if (timer) clearTimeout(timer); }
 }
-async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click"):Promise<void> {
+async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click"):Promise<void> {
   if(timeoutMs===0)return action(()=>undefined);
   const controller=new AbortController();
   let expired=false,issued=false,timer:ReturnType<typeof setTimeout> | undefined;
   const timeout=()=>new Error(issued ? `${name} timed out; outcome is unknown` : `${name} preparation timed out before dispatch`);
-  const mark=()=>{if(expired || performance.now()>=deadline)throw timeout();issued=true;return controller.signal;};
+  const check=()=>{if(expired || performance.now()>=deadline){controller.abort();throw timeout();}};
+  const mark=()=>{check();issued=true;return controller.signal;};
   try {
-    await Promise.race([action(mark),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{expired=true;controller.abort();reject(timeout());},Math.max(0,deadline-performance.now()));})]);
+    await Promise.race([action(mark,controller.signal,check),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{expired=true;controller.abort();reject(timeout());},Math.max(0,deadline-performance.now()));})]);
     if(performance.now()>=deadline)throw timeout();
   } finally {if(timer)clearTimeout(timer);}
 }
@@ -1318,7 +1319,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, domIdentity?:DomIdentity, domConnectionGeneration?:number, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined): Promise<void | string[]> {
+  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, domIdentity?:DomIdentity, domConnectionGeneration?:number, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}): Promise<void | string[]> {
     if (key !== undefined) this.parseKey(key);
     const frame = snapshot.frame;
     if (!frame || !snapshot.ids.includes(id)) throw new RetryablePreflightError("Selector target changed; observe again");
@@ -1341,6 +1342,7 @@ export class OpenBrowserUseTab {
       }
       const chain = frameAncestry(frame,snapshot.frames);
       const measure = async () => {
+        checkClick();
         const result = await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:hover},{value:!!mouse.force}],functionDeclaration:`function(allowDisabled,force) {
           if (!this.isConnected) return null;
           if (!allowDisabled) for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return null;
@@ -1350,7 +1352,7 @@ export class OpenBrowserUseTab {
           if(force)return {x,y,width:r.width,height:r.height};
           let target=this, root=target.getRootNode();
           while (true) { const hit=root.elementFromPoint(x,y); if (!hit || (hit!==target && !target.contains(hit))) return null; if (!(root instanceof ShadowRoot)) return {x,y,width:r.width,height:r.height}; target=root.host; root=target.getRootNode(); }
-        }`},{sessionId});
+        }`},{sessionId,signal:clickSignal});
         const value = isObject(result) && isObject(result.result) ? result.result.value : null;
         if (!isObject(value) || ![value.x,value.y,value.width,value.height].every(v=>typeof v === "number" && Number.isFinite(v)) || (value.width as number) <= 0 || (value.height as number) <= 0) throw new RetryablePreflightError("Target is hidden, disabled, or covered; observe again");
         const geometry = {x:value.x as number,y:value.y as number,width:value.width as number,height:value.height as number};
@@ -1503,7 +1505,7 @@ export class OpenBrowserUseTab {
           const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || (domIdentity ? !latest.ids.includes(id) : JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids))) throw new Error("Selector target changed after the first click; observe again");
           await verifyDomIdentity();
-          await this.dispatchClick(pointerPoint,mouse,2,pointerOptions);
+          await this.dispatchClick(pointerPoint,mouse,2,{...pointerOptions,signal:markClick()});
         }
       }
     } catch (error) {
@@ -1886,12 +1888,12 @@ export class OpenBrowserUseTab {
     return dialog;
   }
 
-  async click(index: number, snapshotId: string, mouse?:MouseClick, markClick:()=>AbortSignal | undefined = ()=>undefined): Promise<void> {
-    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, false, mouse, false, undefined, markClick);
+  async click(index: number, snapshotId: string, mouse?:MouseClick, markClick:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
+    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, false, mouse, false, undefined, markClick,signal,check);
   }
 
-  async dblclick(index: number, snapshotId: string, mouse?:MouseClick): Promise<void> {
-    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true, mouse);
+  async dblclick(index: number, snapshotId: string, mouse?:MouseClick, markClick:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
+    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true, mouse, false, undefined, markClick,signal,check);
   }
 
   async hover(index: number, snapshotId: string): Promise<void> {
@@ -2152,7 +2154,7 @@ export class OpenBrowserUseTab {
     return result as string[];
   }
 
-  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined): Promise<void | string[]> {
+  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}): Promise<void | string[]> {
     const observation = this.#observation;
     this.#observation = undefined;
     const node = observation?.nodes.find((item) => item.index === index);
@@ -2216,6 +2218,7 @@ export class OpenBrowserUseTab {
         await this.verifyLocatorScope(observation,node);return;
       }
       const measure = async () => {
+        checkClick();
         const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
           objectId, returnByValue: true, arguments:[{value:hover},{value:!!mouse.force}],
           functionDeclaration: `function(allowDisabled,force) {
@@ -2240,7 +2243,7 @@ export class OpenBrowserUseTab {
               target = root.host; root = target.getRootNode();
             }
           }`
-        }, { sessionId: targetSession });
+        }, { sessionId: targetSession, signal:clickSignal });
         let point = isObject(result) && isObject(result.result) ? result.result.value : null;
         if (!isObject(point) || typeof point.x !== "number" || !Number.isFinite(point.x) || typeof point.y !== "number" || !Number.isFinite(point.y) || typeof point.width !== "number" || !Number.isFinite(point.width) || point.width <= 0 || typeof point.height !== "number" || !Number.isFinite(point.height) || point.height <= 0) throw new RetryablePreflightError("Target is hidden, disabled, or covered; observe again");
         const geometry = {x:point.x, y:point.y, width:point.width, height:point.height};
@@ -2380,7 +2383,7 @@ export class OpenBrowserUseTab {
         const latest = interactiveNodes(tree,0,supplementalRoles.includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
         if (!latest || latest.name !== node.name || latest.stateKey !== node.stateKey) throw new Error("Target changed after the first click; observe again");
         await this.verifyLocatorScope(observation,node);
-        await this.dispatchClick({x:inputPoint.x as number,y:inputPoint.y as number},mouse,2,inputOptions);
+        await this.dispatchClick({x:inputPoint.x as number,y:inputPoint.y as number},mouse,2,{...inputOptions,signal:markClick()});
       }
       if (checked !== undefined) {
         if (await this.documentId() !== observation.documentId) throw new Error("Page changed after input; observe again");
@@ -3061,8 +3064,8 @@ export class OpenBrowserUseCssLocator {
   downloadMedia(options:{timeoutMs?:number} = {}):Promise<void> {
     return this.first().perform(async (snapshot,id)=>{if (!snapshot.frame) throw new RetryablePreflightError("Download target is unavailable; observe again"); await this.tab.triggerMediaDownload(id,snapshot.frame,()=>this.tab.readCss(snapshot,id,"attribute","src"));},options.timeoutMs);
   }
-  click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async mark=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,mouse,undefined,undefined,false,undefined,mark);},options.timeoutMs ?? 5000,deadline,"Click"),options.timeoutMs); }
-  dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,true,undefined,undefined,false,mouse);},options.timeoutMs); }
+  click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,mouse,undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Click"),options.timeoutMs); }
+  dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,true,undefined,undefined,false,mouse,undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Double click"),options.timeoutMs); }
   hover(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,true);},options.timeoutMs); }
   check(options: LocatorCheckOptions = {}): Promise<void> { return this.setChecked(true,options); }
   uncheck(options: LocatorCheckOptions = {}): Promise<void> { return this.setChecked(false,options); }
@@ -3396,8 +3399,8 @@ export class OpenBrowserUseRoleLocator {
       await this.tab.triggerMediaDownload(target.backendNodeId,frame,()=>this.tab.locatorRead(id,node.index,"attribute","src"));
     },options.timeoutMs);
   }
-  async click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id,deadline)=>actionBeforeDeadline(mark=>this.tab.click(node.index,id,mouse,mark),options.timeoutMs ?? 5000,deadline,"Click"), options.timeoutMs); }
-  async dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id)=>this.tab.dblclick(node.index,id,mouse), options.timeoutMs); }
+  async click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.click(node.index,id,mouse,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Click"), options.timeoutMs); }
+  async dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.dblclick(node.index,id,mouse,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Double click"), options.timeoutMs); }
   async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.hover(node.index,id), options.timeoutMs); }
   async focus(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline(mark=>this.tab.focus(node.index,id,mark),options.timeoutMs ?? 5000,deadline,"Focus"),options.timeoutMs); }
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }

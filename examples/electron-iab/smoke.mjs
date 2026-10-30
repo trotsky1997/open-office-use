@@ -169,6 +169,17 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   } finally {unblockPress?.();sdkTab.browser.cdp.call=originalCdpCall;await evaluate(a.id,"document.querySelector('#deadline-click').remove()");}
   check('SDK click deadline: no late press and release after an issued press');
 
+  await evaluate(a.id,`(()=>{window.doubleDeadlineClicks=0;const el=document.createElement('button');el.id='double-deadline';el.textContent='Double deadline';el.onclick=()=>window.doubleDeadlineClicks++;document.body.append(el)})()`);
+  for (const locator of [sdkTab.playwright.locator('#double-deadline'),sdkTab.playwright.getByRole('button',{name:'Double deadline',exact:true})]) {
+    let unblockFirstRelease,pressed=0;
+    sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mousePressed')pressed++;if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mouseReleased' && args[2].clickCount===1){const result=await originalCdpCall(...args);await new Promise(resolve=>{unblockFirstRelease=resolve});return result;}return originalCdpCall(...args);};
+    try {
+      const before=await evaluate(a.id,'window.doubleDeadlineClicks');await assert.rejects(locator.dblclick({timeoutMs:1000}),/outcome is unknown/i);assert.ok(unblockFirstRelease);unblockFirstRelease();await new Promise(resolve=>setTimeout(resolve,250));assert.equal(pressed,1);assert.equal(await evaluate(a.id,'window.doubleDeadlineClicks'),before+1);
+    } finally {unblockFirstRelease?.();sdkTab.browser.cdp.call=originalCdpCall;}
+  }
+  await evaluate(a.id,"document.querySelector('#double-deadline').remove()");
+  check('SDK double click deadline: no second press after timeout');
+
   await evaluate(a.id,`(()=>{window.focusChanges=0;const el=document.createElement('input');el.id='focus-changing';el.addEventListener('focus',()=>{window.focusChanges++;el.id='focus-changed'});document.body.append(el)})()`);
   await assert.rejects(sdkTab.playwright.locator('#focus-changing').focus({timeoutMs:1000}),/changed|focus/i);
   assert.equal(await evaluate(a.id,'window.focusChanges'),1);await evaluate(a.id,"document.querySelector('#focus-changed').remove()");
