@@ -130,6 +130,18 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   const rootTree=await sdkTab.browser.cdp.call(a.id,'Page.getFrameTree'),evalWorld=await sdkTab.browser.cdp.call(a.id,'Page.createIsolatedWorld',{frameId:rootTree.frameTree.frame.id,worldName:'open-browser-use-selector'});
   const evalHandles=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{contextId:evalWorld.executionContextId,expression:`Object.getOwnPropertyNames(globalThis).filter(key=>key.startsWith('__obu_eval_'))`,returnByValue:true});assert.deepEqual(evalHandles.result.value,[]);
   check('SDK locator evaluate: scoped read, mutation rejection and timeout');
+
+  await evaluate(a.id,`(()=>{const group=document.createElement('div');group.id='eval-all-test';group.innerHTML='<button data-n="1">Eval batch one</button><button data-n="2">Eval batch two</button>';document.body.append(group)})()`);
+  for(const locator of [sdkTab.playwright.locator('#eval-all-test button'),sdkTab.playwright.getByRole('button',{name:/Eval batch/})]) {
+    assert.deepEqual(await locator.evaluateAll((els,arg)=>els.map(el=>el.getAttribute('data-n')+arg),'!'),['1!','2!']);
+    await assert.rejects(locator.evaluateAll(els=>els[0].click()),/side.effect/i);
+    await assert.rejects(locator.evaluateAll(()=>{while(true){}},undefined,{timeoutMs:100}),/timed out|terminated|side.effect/i);
+  }
+  assert.deepEqual(await sdkTab.playwright.locator('#eval-all-test .missing').evaluateAll(els=>els.length),0);
+  assert.deepEqual(await sdkTab.playwright.getByRole('button',{name:'Missing batch'}).evaluateAll(els=>els.length),0);
+  await new Promise(resolve=>setTimeout(resolve,150));const batchHandles=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{contextId:evalWorld.executionContextId,expression:`Object.getOwnPropertyNames(globalThis).filter(key=>key.startsWith('__obu_eval_'))`,returnByValue:true});assert.deepEqual(batchHandles.result.value,[]);
+  await evaluate(a.id,"document.querySelector('#eval-all-test').remove()");
+  check('SDK locator evaluateAll: ordered batch, empty results and read-only execution');
   await evaluate(a.id,`(()=>{window.semanticIsolationClicks=0;const button=document.createElement('button');button.id='semantic-isolation-button';button.textContent='Isolation action';button.onclick=e=>{if(e.isTrusted)window.semanticIsolationClicks++};const input=document.createElement('input');input.id='semantic-isolation-input';input.setAttribute('aria-label','Isolation field');document.body.append(button,input);window.savedSemanticConnected=Object.getOwnPropertyDescriptor(Node.prototype,'isConnected');Object.defineProperty(Node.prototype,'isConnected',{configurable:true,get:()=>false});return true})()`);
   try {
     const isolatedState=await sdkTab.observe(),isolatedButton=isolatedState.nodes.find(node=>node.name==='Isolation action');assert.ok(isolatedButton);await sdkTab.click(isolatedButton.index,isolatedState.snapshotId);
@@ -333,6 +345,10 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   const frameInput=sdkTab.playwright.frameLocator('#cross-frame').getByRole('textbox',{name:'Cross-frame text'}),frameCss=sdkTab.playwright.frameLocator('#cross-frame').locator('input[aria-label="Cross-frame text"]');
   assert.equal(await frameInput.isEditable(),true);assert.equal(await frameCss.isEditable(),true);
   for(const locator of [frameCss,frameInput]){assert.equal(await locator.evaluate(el=>el.getAttribute('aria-label')),'Cross-frame text');await assert.rejects(locator.evaluate(el=>{el.value='unsafe'}),/side.effect/i);}
+  for(const locator of [frameCss,frameInput])assert.deepEqual(await locator.evaluateAll(els=>els.map(el=>el.getAttribute('aria-label'))),['Cross-frame text']);
+  await evaluate(a.id,`(()=>{const e=document.createElement('input');e.id='duplicate-cross';e.setAttribute('aria-label','Cross-frame text');document.body.append(e)})()`);
+  await assert.rejects(sdkTab.playwright.getByRole('textbox',{name:'Cross-frame text',exact:true}).evaluateAll(els=>els.length),/multiple frames/i);
+  await evaluate(a.id,"document.querySelector('#duplicate-cross').remove()");
   await evaluate(a.id,`(()=>{window.savedFrameRect=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'getBoundingClientRect');HTMLIFrameElement.prototype.getBoundingClientRect=()=>({width:0,height:0});return true})()`);
   try {assert.equal(await frameInput.isVisible(),true);}
   finally {await evaluate(a.id,"if(window.savedFrameRect)Object.defineProperty(HTMLIFrameElement.prototype,'getBoundingClientRect',window.savedFrameRect);else delete HTMLIFrameElement.prototype.getBoundingClientRect;true");}

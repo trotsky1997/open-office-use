@@ -1304,32 +1304,35 @@ export class OpenBrowserUseTab {
 
   /** @internal */
   evaluateNode(id:number,frame:FrameInfo,fn:string,input:string,timeoutMs:number,deadline:number,verify:()=>Promise<void>):Promise<JsonValue> {
+    return this.evaluateNodes([id],frame,fn,input,timeoutMs,deadline,verify,false);
+  }
+
+  /** @internal */
+  evaluateNodes(ids:number[],frame:FrameInfo,fn:string,input:string,timeoutMs:number,deadline:number,verify:()=>Promise<void>,all:boolean):Promise<JsonValue> {
+    if(ids.length>1000)throw new Error("Locator matched more than 1000 elements");
     const controller=new AbortController(),sessionId=frame.sessionId,key=`__obu_eval_${randomUUID().replace(/-/g,"")}`;
     const check=()=>{if(controller.signal.aborted || (timeoutMs!==0 && performance.now()>=deadline)){controller.abort();throw new Error("Locator evaluation timed out");}};
     const work=async()=>{
       await verify();check();
       const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId:frame.id,worldName:"open-browser-use-selector"},{sessionId,signal:controller.signal});
       if(!isObject(world) || typeof world.executionContextId!=="number")throw new RetryablePreflightError("Target context is unavailable; observe again");
-      const contextId=world.executionContextId;check();
-      const resolved=await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:id,executionContextId:contextId},{sessionId,signal:controller.signal});
-      const objectId=isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
-      if(typeof objectId!=="string")throw new RetryablePreflightError("Target is unavailable; observe again");
-      let stored=false;
+      const contextId=world.executionContextId,objects:string[]=[];let stored=false;
       try {
+        for(const id of ids){check();const resolved=await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:id,executionContextId:contextId},{sessionId,signal:controller.signal});const objectId=isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;if(typeof objectId!=="string")throw new RetryablePreflightError("Target is unavailable; observe again");objects.push(objectId);}
         check();stored=true;
-        const saved=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,functionDeclaration:"function(key){globalThis[key]=this;return true}",arguments:[{value:key}],returnByValue:true},{sessionId,signal:controller.signal});
+        const saved=objects.length ? await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId:objects[0],functionDeclaration:"function(key,...nodes){globalThis[key]=[this,...nodes];return true}",arguments:[{value:key},...objects.slice(1).map(objectId=>({objectId}))],returnByValue:true},{sessionId,signal:controller.signal}) : await this.browser.cdp.call(this.id,"Runtime.evaluate",{contextId,expression:`(globalThis[${JSON.stringify(key)}]=[],true)`,returnByValue:true},{sessionId,signal:controller.signal});
         if(!isObject(saved) || !isObject(saved.result) || saved.result.value!==true)throw new Error("Cannot prepare locator evaluation");
         await verify();check();
         const executionTimeout=timeoutMs===0 ? 5000 : Math.max(1,Math.ceil(deadline-performance.now()));
-        const expression=`(node=>{const element=node?.nodeType===3 ? node.parentElement : node;if(!(element instanceof Element) || !element.isConnected)throw new Error('Target changed');return (${fn})(element,${input})})(globalThis[${JSON.stringify(key)}])`;
+        const expression=`(nodes=>{const elements=nodes.map(node=>{const element=node?.nodeType===3 ? node.parentElement : node;if(!(element instanceof Element) || !element.isConnected)throw new Error('Target changed');return element});return (${fn})(${all ? 'elements' : 'elements[0]'},${input})})(globalThis[${JSON.stringify(key)}])`;
         const result=await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression,contextId,returnByValue:true,awaitPromise:true,throwOnSideEffect:true,timeout:executionTimeout},{sessionId,signal:controller.signal,timeoutMs:executionTimeout});
         if(isObject(result) && isObject(result.exceptionDetails)){const error=result.exceptionDetails.exception;throw new Error(isObject(error) && typeof error.description==="string" ? error.description : String(result.exceptionDetails.text ?? "Locator evaluation failed"));}
         if(!isObject(result) || !isObject(result.result))throw new Error("Invalid locator evaluation result");
         const remote=result.result;if(remote.unserializableValue!==undefined || (!("value" in remote) && remote.type!=="undefined"))throw new Error("Evaluation result is not JSON serializable");
         await verify();check();return remote.type==="undefined" ? null : remote.value as JsonValue;
       } finally {
-        if(stored)await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,functionDeclaration:"function(key){delete globalThis[key]}",arguments:[{value:key}],returnByValue:true},{sessionId}).catch(()=>{});
-        await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});
+        if(stored)await this.browser.cdp.call(this.id,"Runtime.evaluate",{contextId,expression:`delete globalThis[${JSON.stringify(key)}]`,returnByValue:true},{sessionId}).catch(()=>{});
+        for(const objectId of objects)await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});
       }
     };
     return locatorReadBeforeDeadline(work(),timeoutMs,deadline,"Locator evaluation timed out").catch(error=>{controller.abort();throw error;});
@@ -3153,6 +3156,21 @@ export class OpenBrowserUseCssLocator {
       return this.tab.evaluateNode(id,snapshot.frame,fn,input,timeoutMs,deadline,verify);
     },timeoutMs,true);
   }
+  async evaluateAll<T extends JsonValue = JsonValue>(pageFunction:string | ((elements:Element[],arg:T)=>unknown),arg?:T,options:{timeoutMs?:number} = {}):Promise<JsonValue> {
+    if(typeof pageFunction!=="string" && typeof pageFunction!=="function")throw new Error("Evaluation requires a function");
+    if(!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>key!=="timeoutMs"))throw new Error("Invalid evaluation options");
+    const fn=typeof pageFunction==="string" ? pageFunction : Function.prototype.toString.call(pageFunction),input=evaluationArgument(arg),timeoutMs=options.timeoutMs ?? 5000;
+    if(!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120000)throw new Error("Invalid locator timeout");
+    const deadline=performance.now()+timeoutMs;
+    while(true){
+      try {
+        const snapshot=await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,"Locator evaluation timed out");
+        if(!snapshot.frame)throw new Error("Target frame is unavailable");
+        const verify=async()=>{const fresh=await this.tab.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);if(fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids))throw new RetryablePreflightError("Selector targets changed; observe again");};
+        return await this.tab.evaluateNodes(snapshot.ids,snapshot.frame,fn,input,timeoutMs,deadline,verify,true);
+      } catch(error){if(!(error instanceof RetryablePreflightError) || performance.now()>=deadline)throw error;await new Promise(resolve=>setTimeout(resolve,Math.min(100,deadline-performance.now())));}
+    }
+  }
   private read(mode: "innerText" | "textContent" | "attribute", name = "", timeoutMs = 5000): Promise<string | null> {
     return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,mode,name) as string | null,timeoutMs,true);
   }
@@ -3470,6 +3488,31 @@ export class OpenBrowserUseRoleLocator {
       const verify=async()=>{await this.tab.locatorRead(id,node.index,"visible");};
       return this.tab.evaluateNode(target.backendNodeId,frame,fn,input,timeoutMs,deadline,verify);
     },timeoutMs,true);
+  }
+  async evaluateAll<T extends JsonValue = JsonValue>(pageFunction:string | ((elements:Element[],arg:T)=>unknown),arg?:T,options:{timeoutMs?:number} = {}):Promise<JsonValue> {
+    if(typeof pageFunction!=="string" && typeof pageFunction!=="function")throw new Error("Evaluation requires a function");
+    if(!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>key!=="timeoutMs"))throw new Error("Invalid evaluation options");
+    const fn=typeof pageFunction==="string" ? pageFunction : Function.prototype.toString.call(pageFunction),input=evaluationArgument(arg),timeoutMs=options.timeoutMs ?? 5000;
+    if(!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120000)throw new Error("Invalid locator timeout");
+    const deadline=performance.now()+timeoutMs;
+    while(true){
+      try {
+        const {state,matches}=await locatorReadBeforeDeadline(this.find(),timeoutMs,deadline,"Locator evaluation timed out"),observation=this.tab.currentObservation(state.snapshotId);
+        if(!observation.frames?.length)throw new Error("Frame information is unavailable");
+        const targets=matches.map(match=>observation.nodes.find(node=>node.index===match.node.index));
+        if(targets.some(node=>!node))throw new RetryablePreflightError("Locator targets changed; observe again");
+        const frameIds=new Set(targets.map(node=>node!.frameId ?? observation.frames![0].id));
+        if(frameIds.size>1)throw new Error("Locator matches span multiple frames; choose one frame");
+        let frameId=frameIds.values().next().value as string | undefined;
+        if(!frameId && this.framePath){frameId=await this.tab.resolveFramePath(this.framePath,undefined,observation.frames) ?? undefined;if(!frameId)throw new Error("Target frame is unavailable");}
+        if(!frameId && this.cssScope){const scope=await this.cssScope.snapshot();frameId=scope.frame?.id;if(!frameId)throw new Error("Target scope frame is unavailable");}
+        if(!frameId && this.scope){const roots=await this.scope.detachedRoots(),frames=new Set(roots.roots.map(root=>root.frameId || observation.frames![0].id));if(frames.size>1)throw new Error("Locator scope spans multiple frames; choose one frame");frameId=frames.values().next().value as string | undefined;if(!frameId)throw new Error("Locator scope is unavailable");}
+        frameId ??= observation.frames[0].id;
+        const frame=observation.frames.find(item=>item.id===frameId);if(!frame)throw new Error("Target frame is unavailable");
+        const expected=this.identities(observation,matches),verify=()=>this.verifyMatches(observation,expected);
+        return await this.tab.evaluateNodes(targets.map(node=>node!.backendNodeId),frame,fn,input,timeoutMs,deadline,verify,true);
+      } catch(error){if(!(error instanceof RetryablePreflightError) || performance.now()>=deadline)throw error;await new Promise(resolve=>setTimeout(resolve,Math.min(100,deadline-performance.now())));}
+    }
   }
   async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs,true); }
   async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs,true); }

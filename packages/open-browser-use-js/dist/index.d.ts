@@ -691,6 +691,9 @@ export declare class OpenBrowserUseCssLocator {
     evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((element: Element, arg: T) => unknown), arg?: T, options?: {
         timeoutMs?: number;
     }): Promise<JsonValue>;
+    evaluateAll<T extends JsonValue = JsonValue>(pageFunction: string | ((elements: Element[], arg: T) => unknown), arg?: T, options?: {
+        timeoutMs?: number;
+    }): Promise<JsonValue>;
     private read;
     isEnabled(options?: {
         timeoutMs?: number;
@@ -832,6 +835,9 @@ export declare class OpenBrowserUseRoleLocator {
     }): Promise<string[]>;
     private readAllText;
     evaluate<T extends JsonValue = JsonValue>(pageFunction: string | ((element: Element, arg: T) => unknown), arg?: T, options?: {
+        timeoutMs?: number;
+    }): Promise<JsonValue>;
+    evaluateAll<T extends JsonValue = JsonValue>(pageFunction: string | ((elements: Element[], arg: T) => unknown), arg?: T, options?: {
         timeoutMs?: number;
     }): Promise<JsonValue>;
     innerText(options?: {

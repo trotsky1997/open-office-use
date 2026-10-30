@@ -250,6 +250,12 @@ its target and scope are checked before and after evaluation. Chromium rejects
 operations it considers to have side effects, and the execution deadline stops
 long-running code. Text-node matches provide their parent element. The page's
 JavaScript variables are unavailable in this isolated world.
+`locator.evaluateAll((elements, argument) => ..., argument, {timeoutMs})`
+reads the ordered matches as an array, including an empty array when nothing
+matches. Up to 1000 matches are supported. Matches must belong to one frame;
+use `frameLocator` when a semantic locator matches elements in multiple frames.
+The target set is checked before and after execution, with the same read-only
+and timeout rules as `evaluate`.
 
 `innerText()` reads the matched DOM node, including in supported frames. It
 requires one match and rejects text longer than 30,000 characters.

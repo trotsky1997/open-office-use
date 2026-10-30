@@ -107,4 +107,5 @@
 - [x] playwright.evaluate 启用 Chromium 副作用检查与有界执行；macOS Electron 和 Linux ARM64 Chromium 原生链路验证 DOM 读取、同步/异步修改拒绝及执行超时。
 - [x] playwright.evaluate 的准备超时阻止连接恢复后的迟到执行；macOS Electron 与 Linux Chromium 原生消息链路验证。
 - [x] CSS 与语义 locator.evaluate 支持只读元素求值、身份重核和可中止执行；macOS Electron 与 Linux Chromium 验证主文档及跨进程 frame。
-- [ ] 只读 locator.evaluateAll：需覆盖跨 frame 范围、批量目标身份与可中止执行。
+- [x] 单 frame 的 CSS 与语义 locator.evaluateAll 支持有序批量、空数组、身份重核和可中止执行；macOS Electron 与 Linux Chromium 原生链路验证。
+- [ ] 只读 locator.evaluateAll 的跨 frame 统一元素数组；当前明确拒绝跨 frame 匹配。
