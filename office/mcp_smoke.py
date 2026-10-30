@@ -25,7 +25,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
@@ -54,11 +54,17 @@ async def main():
                 slide_source = root / 'slides.pptx'; deck = Presentation(); slide = deck.slides.add_slide(deck.slide_layouts[6])
                 slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = 'slide content'
                 slide.shapes.add_table(1, 1, Inches(1), Inches(2), Inches(4), Inches(1)).table.cell(0, 0).text = 'table content'; deck.save(slide_source)
+                layout_check = await session.call_tool('inspect_slide_layout', {'file': str(slide_source)})
+                assert not layout_check.isError and layout_check.structuredContent['complete'], layout_check
                 slide_draft = root / 'slide-draft'
                 slide_started = await session.call_tool('start_session', {'directory': str(slide_draft), 'source': str(slide_source)})
                 assert not slide_started.isError, slide_started
+                layout_revision = await session.call_tool('session_inspect_slide_layout', {'directory': str(slide_draft), 'revision': 0})
+                assert not layout_revision.isError and layout_revision.structuredContent['revision'] == 0, layout_revision
                 slide_edit = await session.call_tool('session_replace_text', {'directory': str(slide_draft), 'base_revision': 0, 'path': '/slide[1]/shape[1]/paragraph[1]', 'find': 'content', 'replacement': 'result'})
                 assert not slide_edit.isError and Presentation(slide_draft / 'revision-000001.pptx').slides[0].shapes[0].text == 'slide result', slide_edit
+                historic_layout = await session.call_tool('session_inspect_slide_layout', {'directory': str(slide_draft), 'revision': 0})
+                assert not historic_layout.isError and historic_layout.structuredContent['revision'] == 0, historic_layout
                 cell_edit = await session.call_tool('session_replace_text', {'directory': str(slide_draft), 'base_revision': 1, 'path': '/slide[1]/table[1]/tr[1]/tc[1]', 'find': 'content', 'replacement': 'result'})
                 assert not cell_edit.isError and Presentation(slide_draft / 'revision-000002.pptx').slides[0].shapes[1].table.cell(0, 0).text == 'table result', cell_edit
                 link_source = root / 'link.docx'; linked = Document(); paragraph = linked.add_paragraph('Read ')

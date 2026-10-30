@@ -27,7 +27,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 .box{position:absolute;border:2px solid #0867c4;background:#087dd126;pointer-events:none;display:none;box-sizing:border-box}
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
-#comparison-text,#comparison-parts,#formula-scan-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
+#comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
 input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
@@ -55,6 +55,9 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <p>Requires one exact match in supported Word, PowerPoint or Excel text. Replacement takes the first matched run's formatting. Word matches must stay within link or annotation boundaries; fields and complex content require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
+<details id="layout-panel" hidden><summary>Slide layout checks</summary>
+<p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
+<button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details></details>
 <details id="formula-panel" hidden><summary>Workbook calculation and checks</summary>
 <p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
 <button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
@@ -92,7 +95,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -411,7 +414,32 @@ function selectable(image, page, revision, enabled) {
  });
  return wrapper;
 }
+function clearLayoutFor(revision) {
+ if (layoutRevision !== null && layoutRevision !== revision) {
+  layoutRevision=null; document.getElementById('layout-status').textContent=''; document.getElementById('layout-results').replaceChildren(); document.getElementById('layout-scan-output').textContent='';
+ }
+}
+document.getElementById('layout-scan').addEventListener('click', async () => {
+ if (layoutBusy || displayed<0) return;
+ const revision=displayed, button=document.getElementById('layout-scan'); layoutBusy=true; layoutRevision=revision; button.disabled=true;
+ document.getElementById('layout-status').textContent=`Checking revision ${revision}…`; document.getElementById('layout-results').replaceChildren(); document.getElementById('layout-scan-output').textContent='';
+ try {
+  const response=await fetch('layout-scan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Layout check failed');
+  if (displayed!==revision || layoutRevision!==revision) return;
+  document.getElementById('layout-status').textContent=`Revision ${revision}: ${result.off_slide_count} off-slide candidate(s), ${result.overlap_count} overlap candidate(s). ${result.complete ? 'Scan complete.' : 'Scan incomplete.'}`;
+  const list=document.getElementById('layout-results');
+  const describe=item=>`${item.name || 'Object'} (ID ${item.id}, ${item.path_hint || 'no path hint'})${item.text_preview ? ': ' + item.text_preview : ''}`;
+  for (const item of result.off_slide) { const row=document.createElement('li'); row.textContent=`Slide ${item.slide}: off-slide — ${describe(item)}`; list.appendChild(row); }
+  for (const item of result.overlaps) { const row=document.createElement('li'); row.textContent=`Slide ${item.slide}: overlap — ${describe(item.first)} / ${describe(item.second)} (${Math.round(item.fraction_of_smaller*100)}% of smaller object)`; list.appendChild(row); }
+  if (!result.off_slide.length && !result.overlaps.length) { const row=document.createElement('li'); row.textContent='No candidates found in the scanned portion.'; list.appendChild(row); }
+  if (result.off_slide_truncated || result.overlaps_truncated) { const row=document.createElement('li'); row.textContent='Some candidates are omitted; see report counts.'; list.appendChild(row); }
+  document.getElementById('layout-scan-output').textContent=JSON.stringify(result, null, 2);
+ } catch(error) { if (displayed===revision && layoutRevision===revision) document.getElementById('layout-status').textContent=`Layout error: ${error.message}`; }
+ finally { layoutBusy=false; button.disabled=false; }
+});
 function display(state, live) {
+ clearLayoutFor(state.revision);
  document.getElementById('comparison-details').hidden=true;
  const key = `${state.revision}:${live}`;
  if (key === viewKey) return;
@@ -429,6 +457,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ clearLayoutFor(state.revision);
  const key=`compare:${state.revision}:${state.latest_revision}`;
  if (key === viewKey) return;
  const grid=document.createElement('div'); grid.className='comparison';
@@ -520,6 +549,7 @@ async function refresh() {
   const response = await fetch('state', {cache:'no-store'});
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
+  document.getElementById('layout-panel').hidden=state.format !== 'pptx';
   document.getElementById('formula-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
   if (state.revision !== current) {
@@ -587,13 +617,18 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/layout-scan'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}:
+                            raise ValueError('Layout inspection requires revision')
+                        saved = session.inspect_layout(directory, payload['revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/formula-scan') or route.endswith('/formula-recalculate'):
                         if not isinstance(payload, dict) or set(payload) != {'base_revision'}:
                             raise ValueError('Formula operation requires base_revision')

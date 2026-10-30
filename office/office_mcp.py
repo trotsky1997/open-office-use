@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 import officecli_backend
 import spreadsheet
+import layout
 import review
 import session
 import selection_text
@@ -147,6 +148,12 @@ def session_apply(directory: str, base_revision: int, operations: list[dict[str,
 
 
 @server.tool()
+def session_inspect_slide_layout(directory: str, revision: int) -> dict[str, Any]:
+    """Inspect geometric layout candidates in a saved PPTX session revision."""
+    return session.inspect_layout(directory, revision)
+
+
+@server.tool()
 def session_recalculate(directory: str, base_revision: int) -> dict[str, Any]:
     """Recalculate a saved XLSX revision with LibreOffice and publish a new revision."""
     return session.recalculate(directory, base_revision)
@@ -174,6 +181,12 @@ def session_export(directory: str, revision: int, output: str) -> dict[str, Any]
 def audit_file(file: str) -> dict[str, Any]:
     """Check a saved Office file using OfficeCLI schema validation and its issues view."""
     return officecli_backend.audit(file)
+
+
+@server.tool()
+def inspect_slide_layout(file: str) -> dict[str, Any]:
+    """Report off-slide and overlapping-text geometric candidates in a saved PPTX."""
+    return layout.inspect(file)
 
 
 @server.tool()

@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
 
 import cell_text
+import layout
 import officecli_backend
 import spreadsheet
 import slides
@@ -106,6 +107,14 @@ def restore(directory, base_revision, revision):
         except FileExistsError as exc:
             raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'restored_revision': revision, 'file': str(output)}
+
+
+def inspect_layout(directory, revision):
+    state = info(directory)
+    source = revision_file(state, revision)
+    if state['format'] != 'pptx':
+        raise ValueError('Slide layout inspection requires a PPTX session')
+    return {'revision': revision, **layout.inspect(source)}
 
 
 def recalculate(directory, base_revision):

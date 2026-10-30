@@ -67,3 +67,5 @@ Extended PowerPoint run-preserving replacement to table cells, merged origins, e
 Added versioned, run-preserving XLSX text-cell replacement with shared-string isolation, merged and formula-range safeguards, and atomic multi-part writes.
 
 Added version-bound XLSX formula scanning and LibreOffice recalculation through session CLI, MCP and the viewer, with atomic publication and concurrent-write protection.
+
+Added bounded PowerPoint off-slide and text-overlap geometric inspection, including group transforms and revision-specific viewer reports.

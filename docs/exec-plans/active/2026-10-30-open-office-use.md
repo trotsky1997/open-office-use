@@ -84,3 +84,7 @@ Added on-demand text and OOXML part change details to the visual comparison view
 ## Worksheet grid
 
 Added bounded XLSX worksheet listing and grid editing through the local viewer and MCP. Real OfficeCLI and Chrome checks cover multiple cells, formulas, clearing cells, stale updates, retained unsaved input and origin restriction. Declared array, data-table and shared formula ranges are protected from grid edits. Run-preserving replacement supports inline and shared Excel text cells with atomic worksheet and string-table updates; dependent formula caches remain unchanged. Rectangular TSV paste is validated against grid bounds and protected formulas before changing inputs. Bold, RGB fill and number formats are available for grid subranges. Broader formatting, other advanced formula structures, large sheets and live Office interoperability remain open.
+
+## Slide layout candidates
+
+Added bounded PPTX off-slide and overlap-candidate inspection through CLI, MCP and the revision viewer. Geometry covers rotations and nested group transforms; results include shapes and intersection polygons. Intentional layering, master content and text overflow still require rendered visual review.

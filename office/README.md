@@ -107,6 +107,16 @@ office-use audit report.docx
 
 This uses a saved disk snapshot with OfficeCLI's Open XML schema validator and issues view. The result includes the validator's exit code and original JSON envelope, plus up to 200 issue entries. A nonzero validator exit code or `success: false` requires inspecting its result; an `issues_error` means the issue scan did not finish. The issues list can be truncated, and its reported count describes OfficeCLI's returned results. These checks cover only what OfficeCLI detects. Inspect rendered pages, formulas and the destination application's behavior separately. Save and close external editor sessions before auditing.
 
+
+For PowerPoint geometry, inspect a saved file or one revision:
+
+```sh
+office-use inspect-layout deck.pptx
+office-use session inspect-layout ./slides-draft --revision 2
+```
+
+The matching MCP tools are `inspect_slide_layout` and `session_inspect_slide_layout`; the viewer can check its displayed revision. Results report visible slide objects extending beyond the slide and geometric overlaps involving a text-bearing shape or table. Each candidate includes slide and object IDs, path hints, draw-order hints, bounds and polygons in inches from the slide's top-left; overlap polygons are clipped to the visible slide. Rotated and nested group transforms are considered. Treat overlaps as candidates: backgrounds, intentional layering, transparency, strokes, shadows and actual glyph shapes are not resolved. The check does not measure text overflow or scan master/layout content, chart labels, SmartArt internals, notes or hidden objects. Verify path hints and inspect rendered slides. Limits are 10,000 shapes, 200,000 checked pairs, eight nested groups, and 200 results per category; completeness and truncation flags identify partial reports. Packages are limited to 5,000 parts and 128 MiB.
+
 ## Review edits
 
 ```sh
@@ -158,7 +168,7 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `scan_formulas`, `recalculate_workbook`, `compare_files`, `compare_cells`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_restore`, `session_recalculate`, `session_scan_formulas`, `session_export`, `session_edit_target`, `session_edit`, `session_replace_text`, `session_sheets`, `session_read_grid`, `session_edit_grid`, `session_format_grid`, `session_selection`, `session_selection_image`, `session_selection_text`, and `session_selection_candidates`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. Selected text extraction uses `pdftotext` word centers within the rectangle on a freshly rendered PDF and returns text, normalized word boxes, revision and staleness. It is bounded to 5,000 selected words and an 8 MiB page extraction. It can miss partially selected words, reordered text, images, or scanned text; it does not perform OCR. Candidate lookup searches up to three selected text lines against OfficeCLI and returns possible paths with matching text. Results are limited and non-exhaustive: repeated text, wrapped lines, tables, formulas, images and complex layouts can yield ambiguity or missing matches. The paths are not geometrically verified. Check the selected revision and use structured reads and visual context to verify the exact target before editing. Search fragments are passed as OfficeCLI command arguments, which may be visible to other local processes. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `inspect_slide_layout`, `session_inspect_slide_layout`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `scan_formulas`, `recalculate_workbook`, `compare_files`, `compare_cells`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_restore`, `session_recalculate`, `session_scan_formulas`, `session_export`, `session_edit_target`, `session_edit`, `session_replace_text`, `session_sheets`, `session_read_grid`, `session_edit_grid`, `session_format_grid`, `session_selection`, `session_selection_image`, `session_selection_text`, and `session_selection_candidates`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. Selected text extraction uses `pdftotext` word centers within the rectangle on a freshly rendered PDF and returns text, normalized word boxes, revision and staleness. It is bounded to 5,000 selected words and an 8 MiB page extraction. It can miss partially selected words, reordered text, images, or scanned text; it does not perform OCR. Candidate lookup searches up to three selected text lines against OfficeCLI and returns possible paths with matching text. Results are limited and non-exhaustive: repeated text, wrapped lines, tables, formulas, images and complex layouts can yield ambiguity or missing matches. The paths are not geometrically verified. Check the selected revision and use structured reads and visual context to verify the exact target before editing. Search fragments are passed as OfficeCLI command arguments, which may be visible to other local processes. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 
@@ -182,5 +192,6 @@ python3 office/review_smoke.py      # requires OfficeCLI
 python3 office/spreadsheet_smoke.py # requires LibreOffice
 python3 office/formula_scan_smoke.py # requires LibreOffice
 python3 office/session_calc_smoke.py # requires LibreOffice
+python3 office/layout_smoke.py       # slide geometry checks
 python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
 ```

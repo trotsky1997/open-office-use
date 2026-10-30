@@ -34,6 +34,13 @@ with tempfile.TemporaryDirectory() as tmp:
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
         origin = f"http://{urlsplit(url).netloc}"
         selection = {'revision': 0, 'page': 1, 'box': [0, 0, 1, 1]}
+        for request_origin, expected in [('http://evil.test', 403), (origin, 400)]:
+            request = urllib.request.Request(url + 'layout-scan', data=json.dumps({'revision': 0}).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(request)
+                raise AssertionError('Invalid layout request accepted')
+            except urllib.error.HTTPError as error:
+                assert error.code == expected
         request = urllib.request.Request(url + 'selection', data=json.dumps(selection).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         assert json.loads(urllib.request.urlopen(request).read()) == selection
         assert json.loads((directory / 'selection.json').read_text()) == selection
