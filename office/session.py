@@ -601,10 +601,12 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
     grid = read_grid(directory, base_revision, sheet, cell_range)
     min_col, min_row, max_col, max_row = grid_bounds(cell_range)
     original = {cell['cell']: cell for row in grid['rows'] for cell in row}
-    seen, operations = set(), []
+    seen, operations, normalized = set(), [], []
     for change in changes:
-        if not isinstance(change, dict) or set(change) != {'cell', 'value'}:
-            raise ValueError('Each change requires cell and value')
+        if not isinstance(change, dict) or set(change) not in ({'cell', 'value'}, {'cell', 'value', 'type'}):
+            raise ValueError('Each change requires cell and value and may specify type')
+        kind = change.get('type', 'auto')
+        if kind not in ('auto', 'text'): raise ValueError('Cell type must be auto or text')
         address, value = change['cell'], change['value']
         match = re.fullmatch(r'([A-Za-z]{1,3})([1-9][0-9]{0,6})', address) if isinstance(address, str) else None
         if match is None:
@@ -617,19 +619,21 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
             raise ValueError(f"Cell cannot be edited: {address} ({original[address]['read_only_reason']}); Array, data-table and shared formula ranges are protected")
         if not isinstance(value, str) or len(value) > 4000:
             raise ValueError('Cell values must be text of at most 4,000 characters')
-        if value.lstrip().startswith('=') and not value.startswith('='):
+        if kind == 'text' and (not value or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value)):
+            raise ValueError('Explicit text must be nonempty and contain valid XML characters')
+        if kind == 'auto' and value.lstrip().startswith('=') and not value.startswith('='):
             raise ValueError('Formula expressions must begin with =')
-        if value == '=':
+        if kind == 'auto' and value == '=':
             raise ValueError('A formula requires an expression')
         seen.add(address)
-        mode = 'formula' if value.startswith('=') else 'value'
+        mode = 'formula' if kind == 'auto' and value.startswith('=') else 'value'
         if mode == 'value': spreadsheet.validate_cell_value(value)
-        operations.append({'command': 'set', 'path': f'/{sheet}/{address}', 'props': {mode: value}})
+        operations.append({'command': 'set', 'path': f'/{sheet}/{address}', 'props': {mode: 'office-use-literal-text' if kind == 'text' else value}})
+        normalized.append({'cell': address, 'value': value, 'type': kind})
     state = info(directory); source = revision_file(state, base_revision)
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
-    normalized = [{'cell': op['path'].rsplit('/', 1)[1], 'value': next(iter(op['props'].values()))} for op in operations]
     try: result = grid_values.apply(source, output, sheet, normalized, operations)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True, 'calculation_chain': result['calculation_chain']}

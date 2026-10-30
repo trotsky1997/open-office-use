@@ -73,6 +73,7 @@ def remove_calculation_chain(archive, manifest):
 
 def apply(source, output, sheet, changes, operations):
     source = Path(source); output = Path(output); targets = {change['cell']: change['value'] for change in changes}
+    literal = {change['cell'] for change in changes if change.get('type') == 'text'}
     with zipfile.ZipFile(source) as archive:
         if any(name.startswith('_xmlsignatures/') for name in archive.namelist()): raise ValueError('Digitally signed workbooks are not supported for grid edits')
         style_name = grid_styles.style_part(archive)
@@ -103,12 +104,12 @@ def apply(source, output, sheet, changes, operations):
                     values[address] = (None, None, None); continue
                 if any(key not in ('r', 's', 't') for key in cell.attrib): raise ValueError('Candidate cell has unsupported metadata')
                 style = cell.get('s', '0'); kind = cell.get('t'); children = list(cell)
-                if requested.startswith('='):
+                if address not in literal and requested.startswith('='):
                     formulas = cell.findall(X + 'f')
                     if len(formulas) != 1 or formulas[0].attrib or len(formulas[0]) or not formulas[0].text or any(child.tag not in (X + 'f', X + 'v') for child in children):
                         raise ValueError('Candidate formula is unsupported')
                     values[address] = (style, None, [copy.deepcopy(formulas[0])]); continue
-                if requested == '':
+                if address not in literal and requested == '':
                     if any(child.tag not in (X + 'v',) for child in children) or any((child.text or '') for child in children): raise ValueError('Candidate did not clear target cell')
                     values[address] = (style, None, []); continue
                 if kind in ('str', 's', 'inlineStr'):
@@ -124,10 +125,12 @@ def apply(source, output, sheet, changes, operations):
                     else:
                         if len(children) != 1 or children[0].tag != X + 'is' or len(children[0]) != 1 or children[0][0].tag != X + 't' or len(children[0][0]): raise ValueError('Unsupported candidate inline text')
                         text = children[0][0].text or ''
-                    if text != requested or cell_text.ESCAPED.search(text): raise ValueError('Candidate text differs from requested value')
+                    if text != ('office-use-literal-text' if address in literal else requested) or cell_text.ESCAPED.search(text): raise ValueError('Candidate text differs from requested value')
+                    if address in literal: text = requested
                     content = etree.Element(X + 'is'); node = etree.SubElement(content, X + 't'); node.text = text
                     if text[0].isspace() or text[-1].isspace(): node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
                     values[address] = (style, 'inlineStr', [content]); continue
+                if address in literal: raise ValueError('Candidate literal text is not text')
                 if kind not in (None, 'n', 'b', 'e', 'd') or len(children) != 1 or children[0].tag != X + 'v' or len(children[0]): raise ValueError('Unsupported candidate cell value')
                 text = children[0].text or ''
                 if kind in (None, 'n'):
@@ -201,5 +204,12 @@ def apply(source, output, sheet, changes, operations):
                     table.attrib.pop('count', None); table.attrib.pop('uniqueCount', None)
                     additional[path] = ooxml.serialize_xml(shared_tree, raw)
             return additional
+        result = copy.deepcopy(batch['result'])
+        if not isinstance(result, dict) or not isinstance(result.get('results'), list): raise ValueError('Invalid OfficeCLI batch result')
+        for item in result['results']:
+            if not isinstance(item, dict): raise ValueError('Invalid OfficeCLI batch result')
+            index = item.get('index')
+            if isinstance(index, int) and 0 <= index < len(changes) and changes[index]['cell'] in literal and isinstance(item.get('output'), str):
+                item['output'] = item['output'].replace('office-use-literal-text', '[literal text]')
         ooxml.edit_xml(source, output, lambda _: source_part, edit, allow_remove=True)
-        return {'output': str(output), 'result': batch['result'], 'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True, 'calculation_chain': chain_status}
+        return {'output': str(output), 'result': result, 'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True, 'calculation_chain': chain_status}

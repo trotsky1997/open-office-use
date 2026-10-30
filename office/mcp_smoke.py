@@ -355,6 +355,12 @@ async def main():
                 assert not long_grid.isError and long_grid.structuredContent['rows'][0][0]['read_only_reason'] == 'value_too_long', long_grid
                 oversized = await session.call_tool('read_cells', {'file': str(long_source), 'sheet': 'Sheet', 'cell_range': 'A1:A101'})
                 assert oversized.isError, oversized
+                literal_draft = root / 'literal-grid-draft'
+                assert not (await session.call_tool('start_session', {'directory': str(literal_draft), 'source': str(original)})).isError
+                literal_edit = await session.call_tool('session_edit_grid', {'directory': str(literal_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '00123', 'type': 'text'}, {'cell': 'A2', 'value': '=literal', 'type': 'text'}]})
+                assert not literal_edit.isError, literal_edit
+                literal_book = load_workbook(literal_draft / 'revision-000001.xlsx')
+                assert literal_book.active['A1'].value == '00123' and literal_book.active['A2'].value == '=literal' and literal_book.active['A2'].data_type == 's'
                 saved_grid = await session.call_tool('session_edit_grid', {'directory': str(grid_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '5'}]})
                 assert not saved_grid.isError and saved_grid.structuredContent['revision'] == 1 and saved_grid.structuredContent['formula_cache_effect'] == 'may_be_stale' and saved_grid.structuredContent['recalculation_requested'], saved_grid
                 styled = await session.call_tool('session_format_grid', {'directory': str(grid_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'style_range': 'A1', 'properties': {'bold': True, 'italic': True, 'font_color': '336699', 'horizontal': 'center', 'wrap': True}})

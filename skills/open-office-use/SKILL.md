@@ -45,4 +45,4 @@ Use `session_compare_cells` to review formulas, cached values, direct formatting
 
 XLSX targeted text replacement requests sheet recalculation on load while retaining existing caches; inspect `session_scan_formulas` and use explicit recalculation when appropriate. LibreOffice uses its own formula engine and may alter workbook features.
 
-Use `session_edit_grid` for bounded multi-cell value and formula edits; unchanged formula caches are retained, changed formulas lose their caches, and sheet recalculation is requested. When formulas change, a validated saved calculation chain is removed for rebuilding; ambiguous chain metadata is rejected.
+Use `session_edit_grid` for bounded multi-cell value and formula edits; set `type: "text"` on nonempty changes to retain literal values such as `00123` or `=literal`; unchanged formula caches are retained, changed formulas lose their caches, and sheet recalculation is requested. When formulas change, a validated saved calculation chain is removed for rebuilding; ambiguous chain metadata is rejected.

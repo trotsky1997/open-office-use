@@ -163,7 +163,7 @@ def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range
 
 @server.tool()
 def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
-    """Edit grid values while preserving unrelated caches and requesting recalculation; validated calculation chains are removed when formulas change."""
+    """Edit grid values; each change may set type to text to preserve literal content. Unrelated caches are retained and recalculation is requested."""
     return session.edit_grid(directory, base_revision, sheet, cell_range, changes)
 
 

@@ -108,7 +108,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
-<div id="grid-output" class="grid-scroll"></div><button type="submit" id="grid-save" disabled>Save changed cells</button>
+<div id="grid-output" class="grid-scroll"></div><label>Changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
 <fieldset><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
@@ -131,7 +131,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Changes affect entire columns or rows, including cells outside this range.</p>
 <details><summary>Stored dimensions for loaded range</summary><pre id="grid-dimensions"></pre></details></fieldset>
 <p>Formatting applies to the loaded range or a smaller range. Existing patterned fills keep their pattern; theme colors are not previewed in the grid.</p>
-<p>Up to 200 cells. Paste tab-separated cells starting at the focused cell. Enter formulas beginning with =. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
+<p>Up to 200 cells. Paste tab-separated cells starting at the focused cell. Enter formulas beginning with =. Choose literal text to retain leading zeros or = characters. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
 <p id="grid-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
@@ -422,7 +422,7 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
  event.preventDefault(); if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
  const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output input')];
- const changes=inputs.filter(input=>input.dataset.editable==='true' && input.value!==input.dataset.baseline).map(input=>({cell:input.dataset.cell,value:input.value}));
+ const changes=inputs.filter(input=>input.dataset.editable==='true' && input.value!==input.dataset.baseline).map(input=>({cell:input.dataset.cell,value:input.value,...(document.getElementById('grid-input-type').value==='text' && input.value ? {type:'text'} : {})}));
  if (!changes.length) { document.getElementById('grid-status').textContent='No changed cells.'; return; }
  const body=JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,changes});
  if (new TextEncoder().encode(body).length > 20000) { document.getElementById('grid-status').textContent='Changes exceed 20 KB; save fewer cells at a time.'; return; }

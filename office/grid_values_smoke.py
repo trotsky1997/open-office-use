@@ -46,6 +46,22 @@ with tempfile.TemporaryDirectory() as tmp:
     recalc = session.recalculate(draft, 1); recalculated = load_workbook(recalc['file'], data_only=True)
     assert recalculated.active['B1'].value == 16 and recalculated.active['C1'].value == 9
     assert source.read_bytes() == original
+    literal_draft = root / 'literal-draft'; session.start(literal_draft, source=source)
+    literal = session.edit_grid(literal_draft, 0, 'Sheet', 'A1:D2', [
+        {'cell': 'A1', 'value': '00123', 'type': 'text'},
+        {'cell': 'C1', 'value': '=not a formula', 'type': 'text'},
+        {'cell': 'D2', 'value': ' line 1\nline 2 ', 'type': 'text'},
+    ])
+    assert 'office-use-literal-text' not in json.dumps(literal['result'])
+    book = load_workbook(literal['file']); assert book.active['A1'].value == '00123' and book.active['A1'].data_type == 's'
+    assert book.active['C1'].value == '=not a formula' and book.active['C1'].data_type == 's'
+    assert book.active['D2'].value == ' line 1\nline 2 ' and book.active['A1'].font.bold
+    assert load_workbook(literal['file'], data_only=True).active['B1'].value == 10
+    for invalid in ('', 'bad\x01text', '_x0041_'):
+        try: session.edit_grid(literal_draft, 1, 'Sheet', 'A1', [{'cell': 'A1', 'value': invalid, 'type': 'text'}])
+        except ValueError: pass
+        else: raise AssertionError('Invalid explicit text accepted')
+    assert session.info(literal_draft)['latest_revision'] == 1
     shared_source = root / 'shared.xlsx'; wb = xlsxwriter.Workbook(str(shared_source)); ws = wb.add_worksheet('Sheet'); ws.write('A1', 'same'); ws.write('A2', 'same'); ws.write('B1', 5); wb.close()
     shared_draft = root / 'shared-draft'; session.start(shared_draft, source=shared_source)
     changed = session.edit_grid(shared_draft, 0, 'Sheet', 'A1:B2', [{'cell': 'A1', 'value': 'new text'}, {'cell': 'B1', 'value': 'hello'}])
@@ -64,6 +80,8 @@ with tempfile.TemporaryDirectory() as tmp:
     cli = Path(__file__).with_name('open_office_use.py')
     command = subprocess.run([sys.executable, str(cli), 'session', 'edit-grid', str(cli_draft), '--base', '0', '--sheet', 'Sheet', '--range', 'A1', '--changes', json.dumps([{'cell': 'A1', 'value': '17'}])], capture_output=True, text=True, check=True)
     assert json.loads(command.stdout)['recalculation_requested'] and load_workbook(cli_draft / 'revision-000001.xlsx', data_only=True).active['B1'].value == 10
+    command = subprocess.run([sys.executable, str(cli), 'session', 'edit-grid', str(cli_draft), '--base', '1', '--sheet', 'Sheet', '--range', 'A1', '--changes', json.dumps([{'cell': 'A1', 'value': '=literal', 'type': 'text'}])], capture_output=True, text=True, check=True)
+    assert json.loads(command.stdout)['revision'] == 2 and load_workbook(cli_draft / 'revision-000002.xlsx').active['A1'].value == '=literal' and load_workbook(cli_draft / 'revision-000002.xlsx').active['A1'].data_type == 's'
     chain_source = root / 'chain.xlsx'; rel = '{http://schemas.openxmlformats.org/package/2006/relationships}'; ct = '{http://schemas.openxmlformats.org/package/2006/content-types}'
     with zipfile.ZipFile(source) as before, zipfile.ZipFile(chain_source, 'w') as after:
         for entry in before.infolist():
