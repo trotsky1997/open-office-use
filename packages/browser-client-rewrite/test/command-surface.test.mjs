@@ -19,3 +19,11 @@ test("browser-client rewrite covers generated Browser Use command strings", asyn
 
   assert.deepEqual(missing, []);
 });
+
+test('download commands use scoped host requests', async () => {
+  const calls=[];const api={async sendSessionRequest(method,params){calls.push({method,params});return method==='waitForDownload' ? {downloadId:'download-1'} : {path:'/tmp/result'};}};
+  const downloads=new __browserClientInternals.Downloads(api);
+  assert.deepEqual(await downloads.waitForDownload({tabId:7,timeoutMs:1234}),{download_id:'download-1'});
+  assert.deepEqual(await downloads.path({downloadId:'download-1',timeoutMs:2345}),{path:'/tmp/result'});
+  assert.deepEqual(calls,[{method:'waitForDownload',params:{tabId:7,timeoutMs:1234}},{method:'downloadPath',params:{downloadId:'download-1',timeoutMs:2345}}]);
+});

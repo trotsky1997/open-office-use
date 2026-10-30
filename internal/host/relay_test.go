@@ -112,7 +112,7 @@ func TestRelayBroadcastsExtensionNotificationsToSDKClients(t *testing.T) {
 
 	notification := map[string]any{
 		"jsonrpc": "2.0",
-		"method":  "onDownloadChange",
+		"method":  "heartbeat",
 		"params":  map[string]any{"id": "download-1", "status": "started"},
 	}
 	if err := wire.WriteJSON(extensionToHostWriter, notification); err != nil {
@@ -125,7 +125,7 @@ func TestRelayBroadcastsExtensionNotificationsToSDKClients(t *testing.T) {
 		if err := wire.ReadJSON(client, &received); err != nil {
 			t.Fatalf("client %d did not receive notification: %v", index+1, err)
 		}
-		if received["method"] != "onDownloadChange" {
+		if received["method"] != "heartbeat" {
 			encoded, _ := json.Marshal(received)
 			t.Fatalf("client %d received unexpected payload: %s", index+1, encoded)
 		}
@@ -438,5 +438,32 @@ func TestRelayScopesDebuggerEventsToSubscribedSessions(t *testing.T) {
 	_ = second.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
 	if err := wire.ReadJSON(second, &received); err == nil {
 		t.Fatalf("other session received event: %#v", received)
+	}
+}
+
+func TestRelayDropsUnscopedDownloadChanges(t *testing.T) {
+	source, sink := net.Pipe()
+	defer source.Close()
+	defer sink.Close()
+	relay := NewRelay(Config{}, nil, nil)
+	relay.clients[1] = &clientConn{id: 1, conn: sink, sessions: map[string]bool{"a": true}}
+	payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "onDownloadChange", "params": map[string]any{"filename": "private"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- relay.dispatchExtensionPayload(payload) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("unscoped download change was sent to a client")
+	}
+	_ = source.SetReadDeadline(time.Now().Add(30 * time.Millisecond))
+	var received map[string]any
+	if err := wire.ReadJSON(source, &received); err == nil {
+		t.Fatalf("received unscoped download change: %#v", received)
 	}
 }

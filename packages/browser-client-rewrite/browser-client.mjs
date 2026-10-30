@@ -1142,66 +1142,18 @@ class DevLogs {
 }
 
 class Downloads {
-  constructor(api) {
-    this.api = api;
-    this.api.addEventListener("onDownloadChange", (change) => this.handleDownloadChange(change));
-  }
+  constructor(api) { this.api = api; }
 
-  downloadsById = new Map();
-  waiters = new Set();
-
-  async waitForDownload({ timeoutMs: rawTimeout }) {
-    const existing = [...this.downloadsById.values()].find((change) => change.status === "started" || change.status === "in_progress");
-    if (existing) return { download_id: existing.id };
-    const change = await this.waitForChange(
-      (candidate) => candidate.status === "started" || candidate.status === "in_progress" || candidate.status === "complete",
-      timeoutMs({ timeout_ms: rawTimeout }),
-      "Timed out waiting for download.",
-    );
-    return { download_id: change.id };
+  async waitForDownload({ tabId, timeoutMs: rawTimeout }) {
+    const result = await this.api.sendSessionRequest("waitForDownload", {tabId, timeoutMs:timeoutMs({timeout_ms:rawTimeout})});
+    if (!result || typeof result.downloadId !== "string") throw new Error("Invalid download result");
+    return {download_id:result.downloadId};
   }
 
   async path({ downloadId, timeoutMs: rawTimeout }) {
-    const current = this.downloadsById.get(downloadId);
-    if (current?.status === "complete") return { path: current.filename ?? null };
-    if (current?.status === "failed" || current?.status === "canceled") return { path: null };
-    const change = await this.waitForChange(
-      (candidate) => candidate.id === downloadId && ["complete", "failed", "canceled"].includes(candidate.status),
-      timeoutMs({ timeout_ms: rawTimeout }),
-      `Timed out waiting for download ${downloadId}.`,
-    );
-    return { path: change.status === "complete" ? (change.filename ?? null) : null };
-  }
-
-  handleDownloadChange(change) {
-    if (!change || typeof change !== "object" || typeof change.id !== "string") return;
-    const previous = this.downloadsById.get(change.id) ?? {};
-    const next = { ...previous, ...change };
-    this.downloadsById.set(change.id, next);
-    for (const waiter of [...this.waiters]) {
-      if (waiter.predicate(next)) waiter.resolve(next);
-    }
-  }
-
-  waitForChange(predicate, timeout, timeoutMessage) {
-    return new Promise((resolve, reject) => {
-      const waiter = {
-        predicate,
-        resolve: (value) => {
-          cleanup();
-          resolve(value);
-        },
-      };
-      const cleanup = () => {
-        clearTimeout(timer);
-        this.waiters.delete(waiter);
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(timeoutMessage));
-      }, timeout);
-      this.waiters.add(waiter);
-    });
+    const result = await this.api.sendSessionRequest("downloadPath", {downloadId, timeoutMs:timeoutMs({timeout_ms:rawTimeout})});
+    if (!result || (typeof result.path !== "string" && result.path !== null)) throw new Error("Invalid download path");
+    return {path:result.path};
   }
 }
 
@@ -2231,7 +2183,7 @@ const commandHandlers = [
   command("playwright_wait_for_file_chooser", async (params, ctx) => waitForFileChooser(params, ctx)),
   command("playwright_wait_for_download", async (params, ctx) => {
     await ctx.security.ensureDownloadAllowed(positiveInteger(params.tab_id));
-    return await ctx.downloads.waitForDownload({ timeoutMs: params.timeout_ms });
+    return await ctx.downloads.waitForDownload({ tabId: positiveInteger(params.tab_id), timeoutMs: params.timeout_ms });
   }),
   command("playwright_wait_for_load_state", async (params, ctx) => {
     await waitForLoadState(params.tab_id, params.state, timeoutMs(params), ctx);
@@ -2722,6 +2674,7 @@ export const __browserClientInternals = {
   BrowserApi,
   BrowserUseAgent,
   CdpClient,
+  Downloads,
   NativePipeTransport,
   commandHandlers,
   decodeFrames,

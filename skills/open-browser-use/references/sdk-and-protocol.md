@@ -109,7 +109,7 @@ The JavaScript SDK supports notification handlers:
 
 ```ts
 const unsubscribe = client.onNotification((event) => {
-  if (event.method === "onDownloadChange") {
+  if (event.method === "onCDPEvent") {
     console.log(event.params);
   }
 });

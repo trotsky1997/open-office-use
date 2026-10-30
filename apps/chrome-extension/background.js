@@ -325,7 +325,6 @@ class BrowserBackend {
     this.downloadsById = new Map();
     this.downloadWaiters = new Set();
     this.downloadStartWait = null;
-    this.downloadChangeListeners = new Set();
     this.downloadReadyListeners = new Set();
     this.fileChooserReadyListeners = new Set();
     this.cursorArrivalWaitersByKey = new Map();
@@ -975,11 +974,6 @@ class BrowserBackend {
     throw new Error(`Open Browser Use Chrome does not support command "${params.type}"`);
   }
 
-  addDownloadChangeListener(listener) {
-    this.downloadChangeListeners.add(listener);
-    return () => this.downloadChangeListeners.delete(listener);
-  }
-
   handleDownloadCreated(item) {
     if (!this.isBrowserControlActive() || !Number.isInteger(item?.id)) {
       return;
@@ -1152,9 +1146,6 @@ class BrowserBackend {
       if (waiter.predicate(change)) {
         waiter.resolve(change);
       }
-    }
-    for (const listener of this.downloadChangeListeners) {
-      listener(change);
     }
   }
 
@@ -1720,9 +1711,6 @@ chrome.debugger.onDetach.addListener((source) => {
     if (sessionId) safeSendNotification(peer, "onDebuggerDetach", { tabId: source.tabId }, sessionId);
     backend.debuggerSessionByTabId.delete(source.tabId);
   }
-});
-backend.addDownloadChangeListener((change) => {
-  safeSendNotification(peer, "onDownloadChange", change);
 });
 backend.downloadReadyListeners.add((waitId, sessionId) => {
   if (sessionId) safeSendNotification(peer, "onDownloadWaitReady", { waitId }, sessionId);

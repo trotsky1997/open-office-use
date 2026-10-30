@@ -1200,13 +1200,11 @@ configure a directory and grant `files.download` with `page.control`.
 ## Notifications
 
 The JS SDK can subscribe to JSON-RPC notifications from the native socket. This
-is useful for downloads and CDP events.
+is useful for session-scoped CDP events. Use `prepareDownload()` and
+`download.path()` to wait for a download and its completed path.
 
 ```js
 const unsubscribe = client.onNotification((event) => {
-  if (event.method === "onDownloadChange") {
-    console.log("download", event.params);
-  }
   if (event.method === "onCDPEvent") {
     console.log("cdp", event.params);
   }

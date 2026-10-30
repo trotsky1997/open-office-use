@@ -224,9 +224,9 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   同名分组，合并任何重复（如 session restore 带回的旧分组）后再加入新 tab，
   仅在该窗口完全没有同名分组时才新建。
   `turnEnded` and `finalizeTabs` clear active session state when control ends
-  so download notifications only fire while a browser session is active.
+  so download waits only operate while a browser session is active.
 - MV3 extension event forwarding：`chrome.debugger.onEvent` 转发为
-  `onCDPEvent`，`chrome.downloads` 创建/变更转发为 `onDownloadChange`，
+  `onCDPEvent` 并按会话路由；`chrome.downloads` 创建/变更由显式下载等待处理，
   cursor content script 会回报 cursor arrival 以支持 `moveMouse`
   等待落点。file chooser 通过 CDP `Page.setInterceptFileChooserDialog` 和
   `Page.fileChooserOpened` 事件截获，再使用 `DOM.setFileInputFiles` 写入
