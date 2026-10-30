@@ -92,6 +92,14 @@ For ordered Word content, `author` and MCP `author_file` accept `blocks`:
 ]}
 ```
 
+Table cells can also contain multiple formatted paragraphs:
+
+```json
+{"blocks":[{"type":"table","header":true,"rows":[["Metric","Details"],["Growth",{"paragraphs":[{"runs":[{"text":"18%","bold":true,"color":"14804A"},{"text":" source","url":"https://example.com/source"}]},{"text":"Year over year","align":"right"}]}]]}]}
+```
+
+Each cell accepts plain text or an object with 1–20 `paragraphs`; each paragraph supplies `text` or `runs` and optional `align`. Runs use the same formatting and URL rules as text blocks. Table font, font size, and header formatting are defaults that individual runs can override. Hyperlinks default to blue and underlined. The document block limits also apply to rich table content.
+
 Text blocks accept either `text` or `runs`, optional `align` (`left`, `center`, `right`, `justify`), `space_before` and `space_after` in points (0–400), `line_spacing` as a multiple (0.5–4), and boolean `keep_with_next`, `keep_together` and `page_break_before`. Runs accept boolean `bold`, `italic` and `underline`, `font` (up to 100 characters), `font_size` in points (1–400, in half-point increments), and six-digit RGB `color`. Font names are applied to Latin, East Asian and complex-script slots. A run may specify a `url` with an HTTP, HTTPS or mailto link; it is styled blue and underlined by default, and `color` and `underline` can override those choices. Image blocks embed a local PNG or JPEG at the required width in inches, keeping its pixel aspect ratio; they accept `align` (`left`, `center`, `right`) and an accessibility `description`. Each image is snapshotted and limited to 20 MiB and 40 million pixels, with at most 128 MiB of images per request. Width must be 0.1–22 inches and resulting height 0.01–22 inches; EXIF orientation must be normalized. Heading levels range from 1 to 9. A table's optional `header` bolds its first row and marks it as a repeating header; optional `style` must name a table style available in the document. `column_weights` sets fixed proportional column widths across the last section's page width minus margins; provide one weight from 0.01 to 1,000 per column. `header_fill` and `header_color` are six-digit RGB and require `header: true`. `font` and half-point `font_size` apply to all table cells. Column layouts, table indents and rendered wrapping can affect the result; inspect the output. Lists use the document's `List Bullet` and `List Number` styles. Blocks follow any legacy `paragraphs` entries and, with a source, are appended after existing content. Limits are 200 blocks, 200 runs per text block, 100 rows and 20 columns per table, 2,000 cells per table, 10,000 characters per run or cell, and 2,000,000 serialized characters for all blocks. Render and inspect the resulting document in the target application.
 
 For basic Excel authoring, `sheet_options` can format a workbook in the same request:

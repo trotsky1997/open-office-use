@@ -44,6 +44,23 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [item.tag.rsplit('}', 1)[-1] for item in body] == ['p','p','p','p','tbl','p','p','sectPr']
     assert body[5].find('.//' + qn('w:br')).get(qn('w:type')) == 'page'
     pdf = open_office_use.render(output, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    rich_file=root/'rich-table.docx'
+    rich_spec={'blocks':[{'type':'table','header':True,'header_fill':'236B8E','header_color':'FFFFFF','font':'Arial','font_size':10,'rows':[[{'paragraphs':[{'runs':[{'text':'Metric'},{'text':' details','italic':True}]}]},'Value'],['Growth',{'paragraphs':[{'align':'right','runs':[{'text':'18%','bold':True,'color':'14804A'},{'text':' source','url':'https://example.com/source'}]},{'text':'Year over year'}]}]]}]}
+    rich_json=root/'rich-table.json';rich_json.write_text(json.dumps(rich_spec),encoding='utf-8')
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(rich_json),'--out',str(rich_file)],capture_output=True,text=True,check=True)
+    rich_doc=Document(rich_file);rich_header=rich_doc.tables[0].cell(0,0).paragraphs[0];rich_cell=rich_doc.tables[0].cell(1,1)
+    assert rich_header.text=='Metric details' and all(run.bold and str(run.font.color.rgb)=='FFFFFF' for run in rich_header.runs) and rich_header.runs[1].italic
+    assert len(rich_cell.paragraphs)==2 and rich_cell.paragraphs[0].alignment==WD_ALIGN_PARAGRAPH.RIGHT and rich_cell.paragraphs[1].text=='Year over year'
+    assert rich_cell.paragraphs[0].runs[0].bold and str(rich_cell.paragraphs[0].runs[0].font.color.rgb)=='14804A'
+    assert rich_cell.paragraphs[0].hyperlinks[0].address=='https://example.com/source' and rich_cell.paragraphs[0].hyperlinks[0].runs[0].font.name=='Arial'
+    code, validation, _=officecli_backend.invoke('validate',rich_file); assert code==0 and validation['success'],validation
+    rich_pdf=open_office_use.render(rich_file,root/'rich-render'); rich_text=subprocess.run(['pdftotext',rich_pdf,'-'],capture_output=True,text=True,check=True).stdout
+    assert 'Metric details' in rich_text and '18%' in rich_text and 'Year over year' in rich_text
+    bad_rich=root/'bad-rich-table.docx'
+    try: open_office_use.author({'blocks':[{'type':'table','rows':[[{'paragraphs':[{'runs':[{'text':'x','url':'javascript:x'}]}]}]]}]},bad_rich)
+    except ValueError: pass
+    else: raise AssertionError('Invalid table hyperlink accepted')
+    assert not bad_rich.exists()
     paged=root/'paged.docx'
     page_spec={'page_setup':{'size':'a4','orientation':'landscape','margins':{'top':0.7,'bottom':0.7,'left':0.8,'right':0.8},'header':{'text':'Quarterly report','align':'left'},'footer':{'text':'Page','align':'right','page_number':True}},'blocks':[{'type':'paragraph','text':'First page'},{'type':'page_break'},{'type':'paragraph','text':'Second page'}]}
     page_path=root/'page-spec.json';page_path.write_text(json.dumps(page_spec),encoding='utf-8')

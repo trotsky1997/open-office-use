@@ -167,6 +167,43 @@ def append_word_blocks(doc, blocks):
         raise ValueError('Word blocks must be a list of at most 200 items')
     if len(json.dumps(blocks, ensure_ascii=False)) > 2000000:
         raise ValueError('Word blocks exceed the 2,000,000-character limit')
+    def validate_runs(runs):
+        if not isinstance(runs, list) or not 1 <= len(runs) <= 200: raise ValueError('Word runs must contain 1 to 200 items')
+        for run in runs:
+            if not isinstance(run, dict) or set(run) - {'text', 'bold', 'italic', 'underline', 'url', 'font', 'font_size', 'color'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(key in run and not isinstance(run[key], bool) for key in ('bold', 'italic', 'underline')):
+                raise ValueError('Each run requires text and optional boolean bold, italic or underline')
+            if 'font' in run and (not isinstance(run['font'], str) or not 1 <= len(run['font']) <= 100 or not run['font'].strip() or any(ord(char) < 32 for char in run['font'])): raise ValueError('Font must be a name of at most 100 characters')
+            if 'font_size' in run and (isinstance(run['font_size'], bool) or not isinstance(run['font_size'], (int, float)) or not math.isfinite(run['font_size']) or not 1 <= run['font_size'] <= 400 or run['font_size'] * 2 % 1): raise ValueError('Word font size must be 1 to 400 points in half-point increments')
+            if 'color' in run and (not isinstance(run['color'], str) or not re.fullmatch(r'[0-9a-fA-F]{6}', run['color'])): raise ValueError('Word color must be six-digit RGB')
+            if 'url' in run:
+                url = run['url']
+                if not isinstance(url, str) or len(url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in url): raise ValueError('Invalid hyperlink URL')
+                try: parsed = urlsplit(url)
+                except ValueError: raise ValueError('Invalid hyperlink URL') from None
+                if parsed.scheme.lower() not in ('http', 'https', 'mailto') or (parsed.scheme.lower() in ('http', 'https') and not parsed.hostname) or (parsed.scheme.lower() == 'mailto' and not parsed.path): raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
+    def add_runs(paragraph, runs, defaults=None):
+        defaults = defaults or {}
+        for run in runs:
+            target = paragraph.add_run(run['text'])
+            if defaults.get('bold'): target.bold = True
+            if defaults.get('color'): target.font.color.rgb = DocxRGBColor.from_string(defaults['color'].upper())
+            if defaults.get('font_size'): target.font.size = DocxPt(defaults['font_size'])
+            if defaults.get('font'):
+                target.font.name = defaults['font']; fonts = target._r.get_or_add_rPr().rFonts
+                fonts.set(qn('w:eastAsia'), defaults['font']); fonts.set(qn('w:cs'), defaults['font'])
+            if 'url' in run:
+                target.font.color.rgb = DocxRGBColor.from_string('0563C1'); target.underline = True
+            for name in ('bold', 'italic', 'underline'):
+                if name in run: setattr(target, name, run[name])
+            if 'font' in run:
+                target.font.name = run['font']
+                fonts = target._r.get_or_add_rPr().rFonts
+                fonts.set(qn('w:eastAsia'), run['font']); fonts.set(qn('w:cs'), run['font'])
+            if 'font_size' in run: target.font.size = DocxPt(run['font_size'])
+            if 'color' in run: target.font.color.rgb = DocxRGBColor.from_string(run['color'].upper())
+            if 'url' in run:
+                link = OxmlElement('w:hyperlink'); link.set(qn('r:id'), doc.part.relate_to(run['url'], RELATIONSHIP_TYPE.HYPERLINK, is_external=True))
+                link.append(target._r); paragraph._p.append(link)
     image_bytes = 0
     for block in blocks:
         if not isinstance(block, dict): raise ValueError('Each Word block must be an object')
@@ -177,7 +214,16 @@ def append_word_blocks(doc, blocks):
             if not isinstance(rows, list) or not 1 <= len(rows) <= 100 or not all(isinstance(row, list) for row in rows): raise ValueError('A table requires 1 to 100 rows')
             width = len(rows[0])
             if not 1 <= width <= 20 or len(rows) * width > 2000 or any(len(row) != width for row in rows): raise ValueError('A table requires a rectangular grid of at most 2,000 cells and 20 columns')
-            if any(not isinstance(value, str) or len(value) > 10000 for row in rows for value in row): raise ValueError('Table cells must be text of at most 10,000 characters')
+            for row in rows:
+                for value in row:
+                    if isinstance(value, str):
+                        if len(value) > 10000: raise ValueError('Table text exceeds 10,000 characters')
+                        continue
+                    if not isinstance(value, dict) or set(value) != {'paragraphs'} or not isinstance(value['paragraphs'], list) or not 1 <= len(value['paragraphs']) <= 20: raise ValueError('Table cells require text or 1 to 20 paragraphs')
+                    for para in value['paragraphs']:
+                        if not isinstance(para, dict) or set(para) - {'text','runs','align'} or ('text' in para) == ('runs' in para): raise ValueError('Table paragraphs require text or runs')
+                        if 'align' in para and para['align'] not in ('left','center','right','justify'): raise ValueError('Invalid table paragraph alignment')
+                        validate_runs([{'text':para['text']}] if 'text' in para else para['runs'])
             if not isinstance(header, bool): raise ValueError('Table header must be a boolean')
             if not header and ('header_fill' in block or 'header_color' in block): raise ValueError('Header colors require a header row')
             for key in ('header_fill', 'header_color'):
@@ -206,18 +252,18 @@ def append_word_blocks(doc, blocks):
             cells = table._cells
             for row_index, values in enumerate(rows):
                 for column_index, value in enumerate(values):
-                    cell = cells[row_index * width + column_index]; cell.text = value
+                    cell = cells[row_index * width + column_index]
+                    paragraphs = [{'text':value}] if isinstance(value, str) else value['paragraphs']
+                    for para_index, para in enumerate(paragraphs):
+                        paragraph = cell.paragraphs[0] if para_index == 0 else cell.add_paragraph()
+                        if 'align' in para: paragraph.alignment = {'left':WD_ALIGN_PARAGRAPH.LEFT,'center':WD_ALIGN_PARAGRAPH.CENTER,'right':WD_ALIGN_PARAGRAPH.RIGHT,'justify':WD_ALIGN_PARAGRAPH.JUSTIFY}[para['align']]
+                        runs = [{'text':para['text']}] if 'text' in para else para['runs']
+                        defaults = {'bold':header and row_index == 0, 'color':block.get('header_color') if header and row_index == 0 else None, 'font':block.get('font'), 'font_size':block.get('font_size')}
+                        add_runs(paragraph, runs, defaults)
                     if weights is not None: cell.width = DocxTwips(widths[column_index])
                     is_header = header and row_index == 0
                     if is_header and 'header_fill' in block:
                         shading = OxmlElement('w:shd'); shading.set(qn('w:val'), 'clear'); shading.set(qn('w:fill'), block['header_fill'].upper()); cell._tc.get_or_add_tcPr().append(shading)
-                    for run in cell.paragraphs[0].runs:
-                        if is_header: run.bold = True
-                        if is_header and 'header_color' in block: run.font.color.rgb = DocxRGBColor.from_string(block['header_color'].upper())
-                        if 'font_size' in block: run.font.size = DocxPt(block['font_size'])
-                        if 'font' in block:
-                            run.font.name = block['font']; fonts = run._r.get_or_add_rPr().rFonts
-                            fonts.set(qn('w:eastAsia'), block['font']); fonts.set(qn('w:cs'), block['font'])
             if header:
                 properties = table.rows[0]._tr.get_or_add_trPr()
                 marker = OxmlElement('w:tblHeader'); properties.append(marker)
@@ -261,19 +307,7 @@ def append_word_blocks(doc, blocks):
             for key in ('keep_with_next', 'keep_together', 'page_break_before'):
                 if key in block and not isinstance(block[key], bool): raise ValueError(f'Word paragraph {key} must be a boolean')
             runs = [{'text': block['text']}] if 'text' in block else block['runs']
-            if not isinstance(runs, list) or not 1 <= len(runs) <= 200: raise ValueError('Word runs must contain 1 to 200 items')
-            for run in runs:
-                if not isinstance(run, dict) or set(run) - {'text', 'bold', 'italic', 'underline', 'url', 'font', 'font_size', 'color'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(key in run and not isinstance(run[key], bool) for key in ('bold', 'italic', 'underline')):
-                    raise ValueError('Each run requires text and optional boolean bold, italic or underline')
-                if 'font' in run and (not isinstance(run['font'], str) or not 1 <= len(run['font']) <= 100 or not run['font'].strip() or any(ord(char) < 32 for char in run['font'])): raise ValueError('Font must be a name of at most 100 characters')
-                if 'font_size' in run and (isinstance(run['font_size'], bool) or not isinstance(run['font_size'], (int, float)) or not math.isfinite(run['font_size']) or not 1 <= run['font_size'] <= 400 or run['font_size'] * 2 % 1): raise ValueError('Word font size must be 1 to 400 points in half-point increments')
-                if 'color' in run and (not isinstance(run['color'], str) or not re.fullmatch(r'[0-9a-fA-F]{6}', run['color'])): raise ValueError('Word color must be six-digit RGB')
-                if 'url' in run:
-                    url = run['url']
-                    if not isinstance(url, str) or len(url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in url): raise ValueError('Invalid hyperlink URL')
-                    try: parsed = urlsplit(url)
-                    except ValueError: raise ValueError('Invalid hyperlink URL') from None
-                    if parsed.scheme.lower() not in ('http', 'https', 'mailto') or (parsed.scheme.lower() in ('http', 'https') and not parsed.hostname) or (parsed.scheme.lower() == 'mailto' and not parsed.path): raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
+            validate_runs(runs)
             if kind == 'heading': paragraph = doc.add_heading(level=level)
             else: paragraph = doc.add_paragraph(style={'bullet': 'List Bullet', 'numbered': 'List Number'}.get(kind))
             if 'align' in block: paragraph.alignment = alignments[block['align']]
@@ -282,21 +316,7 @@ def append_word_blocks(doc, blocks):
             if 'line_spacing' in block: paragraph.paragraph_format.line_spacing = float(block['line_spacing'])
             for key in ('keep_with_next', 'keep_together', 'page_break_before'):
                 if key in block: setattr(paragraph.paragraph_format, key, block[key])
-            for run in runs:
-                target = paragraph.add_run(run['text'])
-                if 'url' in run:
-                    target.font.color.rgb = DocxRGBColor.from_string('0563C1'); target.underline = True
-                for name in ('bold', 'italic', 'underline'):
-                    if name in run: setattr(target, name, run[name])
-                if 'font' in run:
-                    target.font.name = run['font']
-                    fonts = target._r.get_or_add_rPr().rFonts
-                    fonts.set(qn('w:eastAsia'), run['font']); fonts.set(qn('w:cs'), run['font'])
-                if 'font_size' in run: target.font.size = DocxPt(run['font_size'])
-                if 'color' in run: target.font.color.rgb = DocxRGBColor.from_string(run['color'].upper())
-                if 'url' in run:
-                    link = OxmlElement('w:hyperlink'); link.set(qn('r:id'), doc.part.relate_to(run['url'], RELATIONSHIP_TYPE.HYPERLINK, is_external=True))
-                    link.append(target._r); paragraph._p.append(link)
+            add_runs(paragraph, runs)
         else:
             raise ValueError('Unsupported Word block type')
 

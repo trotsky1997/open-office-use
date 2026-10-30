@@ -11,3 +11,5 @@ For proposed revisions in supported body, header, or footer paragraphs, use `ses
 For basic new Word files, `author_file` supports ordered `blocks`: headings, paragraphs with aligned and spaced text, styled or hyperlinked runs with font, size and color, bullets, numbered items, tables with optional repeating headers, proportional column widths, header colors and cell typography, embedded PNG/JPEG images with descriptions, and page breaks. See the project guide for the schema and limits. Source-based authoring appends blocks but may change unsupported features; use targeted session edits for existing rich documents.
 
 For a new document, `author_file` accepts `page_setup` with A4 or Letter size, orientation, margins, header text and footer text with an optional PAGE field. Page numbers are fields updated by a compatible application; inspect the rendered pages.
+
+Word table cells may contain multiple paragraphs with formatted runs and hyperlinks using `rows` cells shaped as `{"paragraphs":[{"runs":[...]}]}`. Render and review cell wrapping and layout.

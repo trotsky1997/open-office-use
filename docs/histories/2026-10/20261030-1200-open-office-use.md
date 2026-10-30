@@ -317,3 +317,5 @@ Resolved implicit references using unique worksheet and table ownership across s
 Added authoring of fixed-list and same-sheet range-based spreadsheet dropdown validation, with bounded inputs and overlap rejection. The local grid can display supported choices; its edits do not enforce validation.
 
 Added native workbook conditional-format authoring for numeric thresholds, formulas, color scales and data bars, preserving valid existing priority order. OfficeCLI validation and LibreOffice rendering covered representative rules; native Excel remains unverified.
+
+Word table authoring now supports rich runs, links and multiple paragraphs in cells using the same run validation as body text. Checked CLI, OOXML validation and LibreOffice rendering; native Word remains unverified.
