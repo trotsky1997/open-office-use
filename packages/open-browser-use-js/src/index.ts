@@ -441,6 +441,7 @@ export async function connectOpenBrowserUse(options: OpenBrowserUseBrowserOption
 
 type BrowserTabInfo = {id:string;title?:string;url?:string;active?:boolean;openerTabId?:string};
 type BrowserUserTabInfo = {id:string;title?:string;url?:string;lastOpened?:string;tabGroup?:string};
+export type BrowserHistoryEntry = {url:string;dateVisited:string;title?:string};
 function browserTabId(value:unknown):number {
   const raw=value instanceof OpenBrowserUseTab ? value.id : value && typeof value==='object' && 'id' in value ? value.id : value;
   if(typeof raw==='number' && Number.isSafeInteger(raw) && raw>0)return raw;
@@ -577,7 +578,7 @@ export class OpenBrowserUseBrowserUser {
     if((await this.browser.tabs.list()).some(item=>item.id===String(id)))return this.browser.tab(id);
     return this.browser.claimTab(id);
   }
-  async history(options:{from?:string | Date;to?:string | Date;limit?:number;query?:string} = {}):Promise<JsonValue> {
+  async history(options:{from?:string | Date;to?:string | Date;limit?:number;query?:string} = {}):Promise<BrowserHistoryEntry[]> {
     if(!options || typeof options!=='object' || Array.isArray(options) || Object.keys(options).some(key=>!['from','to','limit','query'].includes(key)))throw new Error('Invalid history options');
     const date=(value:string | Date | undefined):string | undefined=>{
       if(value===undefined)return undefined;
@@ -586,7 +587,12 @@ export class OpenBrowserUseBrowserUser {
     };
     const from=date(options.from),to=date(options.to);
     if((from && to && from>to) || (options.limit!==undefined && (!Number.isSafeInteger(options.limit) || options.limit<1)) || (options.query!==undefined && typeof options.query!=='string'))throw new Error('Invalid history options');
-    return this.browser.client.getUserHistory({...(from ? {from} : {}),...(to ? {to} : {}),...(options.limit!==undefined ? {limit:options.limit} : {}),...(options.query!==undefined ? {query:options.query} : {})});
+    const result=await this.browser.client.getUserHistory({...(from ? {from} : {}),...(to ? {to} : {}),...(options.limit!==undefined ? {limit:options.limit} : {}),...(options.query!==undefined ? {query:options.query} : {})});
+    if(!Array.isArray(result))throw new Error('Browser returned invalid history');
+    return result.map(item=>{
+      if(!isObject(item) || typeof item.url!=='string' || typeof item.dateVisited!=='string' || !Number.isFinite(Date.parse(item.dateVisited)) || (item.title!==undefined && typeof item.title!=='string'))throw new Error('Browser returned invalid history entry');
+      return {url:item.url,dateVisited:item.dateVisited,...(typeof item.title==='string' ? {title:item.title} : {})};
+    });
   }
 }
 

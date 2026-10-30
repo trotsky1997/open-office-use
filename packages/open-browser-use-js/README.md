@@ -910,6 +910,7 @@ const tab = await browser.tabs.get(tabs[0].id); // session-owned tabs only
 const newTab = await browser.tabs.new();
 const selected = await browser.tabs.selected();
 const userTabs = await browser.user.openTabs();
+const history = await browser.user.history({query: "example", limit: 10}); // Chrome history
 // await browser.user.claimTab(userTabs[0]); // explicitly moves a Chrome user tab into this session
 // await browser.tabs.finalize({keep: [{tab: newTab, status: 'handoff'}]});
 ```
@@ -920,6 +921,8 @@ reported active flag: Chrome reports session-logical selection and Electron
 reports presented tabs. Multiple active tabs cause an explicit error. Tab-list
 IDs are strings; tab handles retain their numeric `id`. Electron user tab
 listing is limited to its authorized scope, and its history is unavailable.
+History entries contain `url`, `dateVisited`, and an optional `title`; invalid
+backend responses are rejected.
 
 ## Capabilities and WebMCP
 

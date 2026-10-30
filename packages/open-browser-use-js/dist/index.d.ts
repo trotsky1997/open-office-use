@@ -203,6 +203,11 @@ type BrowserUserTabInfo = {
     lastOpened?: string;
     tabGroup?: string;
 };
+export type BrowserHistoryEntry = {
+    url: string;
+    dateVisited: string;
+    title?: string;
+};
 export declare class OpenBrowserUseBrowser {
     #private;
     readonly client: OpenBrowserUseClient;
@@ -247,7 +252,7 @@ export declare class OpenBrowserUseBrowserUser {
         to?: string | Date;
         limit?: number;
         query?: string;
-    }): Promise<JsonValue>;
+    }): Promise<BrowserHistoryEntry[]>;
 }
 export type OpenBrowserUseCapabilityInfo = {
     id: string;

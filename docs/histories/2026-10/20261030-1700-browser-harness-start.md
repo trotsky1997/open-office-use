@@ -359,3 +359,5 @@ Chrome 与 Electron 的会话标签列表提供作用域内 openerTabId；新增
 隔离 Linux ARM64 Chromium 原生扩展在 MDN HTML 文档点击“View this page on GitHub”，expectPopup 识别新标签，随后确认目标 GitHub URL 并关闭标签。新标签返回时 URL 曾为空，导航完成后才可读取；SDK 文档已说明这一时序。
 
 同一真实 MDN 到 GitHub 新标签路径进一步验证 expectPopup 后立即调用 waitForURL，等待导航完成成功；SDK 文档补充串联示例。
+
+浏览器历史高层接口返回具名 BrowserHistoryEntry 类型并校验后端数据，支持 TypeScript 直接使用 url、dateVisited 和可选 title。隔离 Linux ARM64 Chromium 在真实 MDN 访问后查询其历史记录成功；Electron 不提供历史记录。

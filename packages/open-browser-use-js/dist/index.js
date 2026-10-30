@@ -535,7 +535,14 @@ export class OpenBrowserUseBrowserUser {
         const from = date(options.from), to = date(options.to);
         if ((from && to && from > to) || (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 1)) || (options.query !== undefined && typeof options.query !== 'string'))
             throw new Error('Invalid history options');
-        return this.browser.client.getUserHistory({ ...(from ? { from } : {}), ...(to ? { to } : {}), ...(options.limit !== undefined ? { limit: options.limit } : {}), ...(options.query !== undefined ? { query: options.query } : {}) });
+        const result = await this.browser.client.getUserHistory({ ...(from ? { from } : {}), ...(to ? { to } : {}), ...(options.limit !== undefined ? { limit: options.limit } : {}), ...(options.query !== undefined ? { query: options.query } : {}) });
+        if (!Array.isArray(result))
+            throw new Error('Browser returned invalid history');
+        return result.map(item => {
+            if (!isObject(item) || typeof item.url !== 'string' || typeof item.dateVisited !== 'string' || !Number.isFinite(Date.parse(item.dateVisited)) || (item.title !== undefined && typeof item.title !== 'string'))
+                throw new Error('Browser returned invalid history entry');
+            return { url: item.url, dateVisited: item.dateVisited, ...(typeof item.title === 'string' ? { title: item.title } : {}) };
+        });
     }
 }
 export class OpenBrowserUseCapabilities {
