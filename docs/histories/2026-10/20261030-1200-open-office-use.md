@@ -461,3 +461,5 @@ Added synchronized workbook literal-category editing across matching chart serie
 Added workbook chart series-name inventory and targeted literal series-name edits.
 
 Added snapshot-bound viewer controls for workbook literal chart values, categories and series names.
+
+Fixed silent integer rounding in chart literal CLI/MCP inputs by preserving integer types and validating binary64 representability before writing.

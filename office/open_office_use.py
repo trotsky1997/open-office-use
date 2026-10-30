@@ -2,6 +2,7 @@
 import argparse
 from copy import copy
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 import importlib
 import importlib.metadata
 import io
@@ -1371,6 +1372,19 @@ def render_with_info(source, output_dir, pages=False):
         else: result = {'pdf': render(frozen, output_dir)}
         return {**result, 'snapshot_sha256': digest, 'render_advisory': advisory}
 
+def chart_number(value):
+    """Keep integral CLI input intact before chart precision validation."""
+    try:
+        number = Decimal(value)
+        if not number.is_finite() or abs(number) > Decimal('1e100'): raise ValueError()
+        if number == number.to_integral_value(): return int(number)
+        result = float(number)
+        if result == 0 and number != 0: raise ValueError()
+        return result
+    except (InvalidOperation, ValueError, OverflowError):
+        raise argparse.ArgumentTypeError('Enter a finite chart number within ±1e100') from None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -1454,7 +1468,7 @@ def main():
     session_charts = sub.add_parser('inspect-slide-charts'); session_charts.add_argument('directory'); session_charts.add_argument('--revision', type=int, required=True)
     chart_color = sub.add_parser('set-slide-chart-text-color'); chart_color.add_argument('directory'); chart_color.add_argument('--base', type=int, required=True); chart_color.add_argument('--part', required=True); chart_color.add_argument('--color', required=True); chart_color.add_argument('--expected-sha256')
     literal_text = sub.add_parser('set-slide-chart-literal-text'); literal_text.add_argument('directory'); literal_text.add_argument('--base', type=int, required=True); literal_text.add_argument('--part', required=True); literal_text.add_argument('--kind', choices=('series_name','category'), required=True); literal_text.add_argument('--text', required=True); literal_text.add_argument('--series', type=int); literal_text.add_argument('--point', type=int); literal_text.add_argument('--expected-sha256')
-    literal_edit = sub.add_parser('set-slide-chart-literal-value'); literal_edit.add_argument('directory'); literal_edit.add_argument('--base', type=int, required=True); literal_edit.add_argument('--part', required=True); literal_edit.add_argument('--series', type=int, required=True); literal_edit.add_argument('--point', type=int, required=True); literal_edit.add_argument('--value', type=float, required=True); literal_edit.add_argument('--expected-sha256')
+    literal_edit = sub.add_parser('set-slide-chart-literal-value'); literal_edit.add_argument('directory'); literal_edit.add_argument('--base', type=int, required=True); literal_edit.add_argument('--part', required=True); literal_edit.add_argument('--series', type=int, required=True); literal_edit.add_argument('--point', type=int, required=True); literal_edit.add_argument('--value', type=chart_number, required=True); literal_edit.add_argument('--expected-sha256')
     axis_edit = sub.add_parser('set-slide-chart-axis-bounds'); axis_edit.add_argument('directory'); axis_edit.add_argument('--base', type=int, required=True); axis_edit.add_argument('--part', required=True); axis_edit.add_argument('--axis-id', required=True); axis_edit.add_argument('--minimum', type=lambda value: None if value == 'auto' else float(value), required=True, help='Number or auto'); axis_edit.add_argument('--maximum', type=lambda value: None if value == 'auto' else float(value), required=True, help='Number or auto'); axis_edit.add_argument('--expected-sha256')
     slide_chart_sync = sub.add_parser('sync-slide-chart-cache'); slide_chart_sync.add_argument('directory'); slide_chart_sync.add_argument('--base', type=int, required=True); slide_chart_sync.add_argument('--part', required=True); slide_chart_sync.add_argument('--reference', type=int, required=True); slide_chart_sync.add_argument('--allow-formula-caches', action='store_true'); slide_chart_sync.add_argument('--expected-sha256')
     session_external = sub.add_parser('external-links'); session_external.add_argument('directory'); session_external.add_argument('--revision', type=int, required=True)
@@ -1464,7 +1478,7 @@ def main():
     session_chart_scan = sub.add_parser('scan-chart-caches'); session_chart_scan.add_argument('directory'); session_chart_scan.add_argument('--revision', type=int, required=True)
     chart_name = sub.add_parser('set-chart-literal-series-name'); chart_name.add_argument('directory'); chart_name.add_argument('--base', type=int, required=True); chart_name.add_argument('--part', required=True); chart_name.add_argument('--series', type=int, required=True); chart_name.add_argument('--text', required=True); chart_name.add_argument('--expected-sha256')
     chart_category = sub.add_parser('set-chart-literal-category'); chart_category.add_argument('directory'); chart_category.add_argument('--base', type=int, required=True); chart_category.add_argument('--part', required=True); chart_category.add_argument('--reference', type=int, required=True); chart_category.add_argument('--point', type=int, required=True); chart_category.add_argument('--text', required=True); chart_category.add_argument('--expected-sha256')
-    chart_literal = sub.add_parser('set-chart-literal-value'); chart_literal.add_argument('directory'); chart_literal.add_argument('--base', type=int, required=True); chart_literal.add_argument('--part', required=True); chart_literal.add_argument('--reference', type=int, required=True); chart_literal.add_argument('--point', type=int, required=True); chart_literal.add_argument('--value', type=float, required=True); chart_literal.add_argument('--expected-sha256')
+    chart_literal = sub.add_parser('set-chart-literal-value'); chart_literal.add_argument('directory'); chart_literal.add_argument('--base', type=int, required=True); chart_literal.add_argument('--part', required=True); chart_literal.add_argument('--reference', type=int, required=True); chart_literal.add_argument('--point', type=int, required=True); chart_literal.add_argument('--value', type=chart_number, required=True); chart_literal.add_argument('--expected-sha256')
     session_chart_sync = sub.add_parser('sync-chart-cache'); session_chart_sync.add_argument('directory'); session_chart_sync.add_argument('--base', type=int, required=True); session_chart_sync.add_argument('--part', required=True); session_chart_sync.add_argument('--reference', type=int, required=True); session_chart_sync.add_argument('--allow-formula-caches', action='store_true'); session_chart_sync.add_argument('--expected-sha256')
     session_workbook = sub.add_parser('inspect-workbook'); session_workbook.add_argument('directory'); session_workbook.add_argument('--revision', type=int, required=True)
     session_search = sub.add_parser('search-cells'); session_search.add_argument('directory'); session_search.add_argument('--revision', type=int, required=True); session_search.add_argument('--query', required=True)

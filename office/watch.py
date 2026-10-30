@@ -975,7 +975,7 @@ document.getElementById('chart-literal-save').addEventListener('click', async ()
  const entry=selection.entry, text=document.getElementById('chart-literal-value').value;
  if (text===selection.initial) { status.textContent='No change to save.'; return; }
  if (!text || (entry.kind==='value' && (!/^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$/.test(text.trim()) || !Number.isFinite(Number(text))))) { status.textContent='Enter a valid value.'; return; }
- if (entry.kind==='value' && Number.isInteger(Number(text)) && !Number.isSafeInteger(Number(text))) { status.textContent='Large integers require the CLI or MCP; browser numbers cannot preserve them exactly.'; return; }
+ if (entry.kind==='value' && Number.isInteger(Number(text)) && !Number.isSafeInteger(Number(text))) { status.textContent='Large integers require CLI or MCP validation; the browser cannot preserve them exactly.'; return; }
  const payload={base_revision:target.revision,snapshot_sha256:target.hash,kind:entry.kind,part:entry.part,reference:entry.reference ?? null,point:entry.point ?? null,series:entry.series ?? null,value:entry.kind==='value' ? Number(text) : text};
  chartLiteralBusy=true; document.getElementById('chart-literal-save').disabled=true; document.getElementById('chart-literal-select').disabled=true; document.getElementById('chart-literal-value').readOnly=true;
  try {

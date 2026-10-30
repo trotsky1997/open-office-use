@@ -130,6 +130,13 @@ with tempfile.TemporaryDirectory() as tmp:
     command=[sys.executable,str(cli),'session','set-slide-chart-literal-value',str(point_draft),'--base','1','--part',literal_chart['chart_part'],'--series','1','--point','2','--value','140']
     assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2
     assert session.inspect_slide_charts(point_draft,2)['charts'][0]['series'][0]['values']==[130,140]
+    precision_draft=root/'literal-precision';session.start(precision_draft,source=literal)
+    precision_cli=[sys.executable,str(cli),'session','set-slide-chart-literal-value',str(precision_draft),'--base','0','--part',literal_chart['chart_part'],'--series','1','--point','1','--value']
+    rejected=subprocess.run(precision_cli+['9.007199254740993e15'],capture_output=True,text=True)
+    assert rejected.returncode != 0 and session.info(precision_draft)['latest_revision']==0
+    accepted=subprocess.run(precision_cli+['9007199254740994'],capture_output=True,text=True,check=True); assert json.loads(accepted.stdout)['revision']==1
+    with zipfile.ZipFile(precision_draft/'revision-000001.pptx') as archive:
+        tree=etree.fromstring(archive.read(literal_chart['chart_part'].lstrip('/'))); assert tree.find('.//'+slide_charts.C+'val/'+slide_charts.C+'numLit/'+slide_charts.C+'pt/'+slide_charts.C+'v').text=='9007199254740994'
     shared_literal=root/'shared-literal.pptx'; deck=Presentation(literal); shape=next(item for item in deck.slides[0].shapes if item.has_chart)
     duplicate=copy.deepcopy(shape._element); duplicate.nvGraphicFramePr.cNvPr.set('id','1000'); shape._element.addnext(duplicate); deck.save(shared_literal)
     shared_report=slide_charts.inspect(shared_literal); shared_draft=root/'shared-literal-draft'; session.start(shared_draft,source=shared_literal)

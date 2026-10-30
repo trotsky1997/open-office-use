@@ -111,6 +111,14 @@ with tempfile.TemporaryDirectory() as tmp:
         assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=static_scan['charts'][0]['part'])
         tree=etree.fromstring(after.read(static_scan['charts'][0]['part'])); assert tree.find('.//'+C+'val/'+C+'numLit/'+C+'pt/'+C+'v').text=='30'
     assert load_workbook(changed_literal['output'])['Sales Data']['B2'].value==10
+    precision_draft=root/'literal-precision-draft'; session.start(precision_draft,source=static_source)
+    precision_cli=[sys.executable,str(cli),'session','set-chart-literal-value',str(precision_draft),'--base','0','--part',static_scan['charts'][0]['part'],'--reference',str(static_ref['index']),'--point','1','--value']
+    rejected=subprocess.run(precision_cli+['9007199254740993'],capture_output=True,text=True)
+    assert rejected.returncode != 0 and session.info(precision_draft)['latest_revision']==0
+    accepted=subprocess.run(precision_cli+['9007199254740994'],capture_output=True,text=True,check=True)
+    assert json.loads(accepted.stdout)['revision']==1
+    precise=session.scan_chart_caches(precision_draft,1); example=next(item for item in precise['charts'][0]['references'] if item['kind']=='numLit')['examples'][0]
+    assert example['value']=='9007199254740994',example
     code,validation,_=officecli_backend.invoke('validate',changed_literal['output']); assert code==0 and validation['success'],validation
     command=[sys.executable,str(cli),'session','set-chart-literal-value',str(literal_draft),'--base','1','--part',static_scan['charts'][0]['part'],'--reference',str(static_ref['index']),'--point','2','--value','35']
     assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2

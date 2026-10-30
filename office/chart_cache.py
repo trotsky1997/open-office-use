@@ -317,6 +317,7 @@ def set_literal_value(source, output, part, reference, point, value, expected_sh
     if Path(source).suffix.lower() != '.xlsx' or Path(output).suffix.lower() != '.xlsx': raise ValueError('Chart literal editing requires XLSX input and output')
     if not isinstance(part, str) or any(isinstance(item, bool) or not isinstance(item, int) or item < 1 for item in (reference, point)): raise ValueError('Provide a chart part and positive one-based reference and point')
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value): raise ValueError('Chart value must be a finite number within ±1e100')
+    if isinstance(value, int) and int(float(value)) != value: raise ValueError('Chart integer cannot be represented exactly as a binary64 value')
     selected = {}
     def select(file):
         result = scan(file); charts = [item for item in result['charts'] if item['part'] == part]

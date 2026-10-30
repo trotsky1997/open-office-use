@@ -123,7 +123,7 @@ def session_set_chart_literal_category(directory: str, base_revision: int, part:
 
 
 @server.tool()
-def session_set_chart_literal_value(directory: str, base_revision: int, part: str, reference: StrictInt, point: StrictInt, value: StrictFloat, expected_sha256: str | None = None) -> dict[str, Any]:
+def session_set_chart_literal_value(directory: str, base_revision: int, part: str, reference: StrictInt, point: StrictInt, value: StrictInt | StrictFloat, expected_sha256: str | None = None) -> dict[str, Any]:
     """Set an existing numeric literal series point in an XLSX chart, using the inspected chart part and one-based reference and point indices."""
     return session.set_chart_literal_value(directory, base_revision, part, reference, point, value, expected_sha256)
 
@@ -147,7 +147,7 @@ def session_set_slide_chart_literal_text(directory: str, base_revision: int, par
 
 
 @server.tool()
-def session_set_slide_chart_literal_value(directory: str, base_revision: int, part: str, series: StrictInt, point: StrictInt, value: StrictFloat, expected_sha256: str | None = None) -> dict[str, Any]:
+def session_set_slide_chart_literal_value(directory: str, base_revision: int, part: str, series: StrictInt, point: StrictInt, value: StrictInt | StrictFloat, expected_sha256: str | None = None) -> dict[str, Any]:
     """Set one existing numeric literal chart point using one-based series and point indices from inspection. Shared chart parts affect all placements."""
     return session.set_slide_chart_literal_value(directory, base_revision, part, series, point, value, expected_sha256)
 

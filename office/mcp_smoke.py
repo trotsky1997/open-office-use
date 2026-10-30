@@ -116,6 +116,12 @@ async def main():
                 static_args={'directory':str(static_chart_draft),'base_revision':0,'part':static_part['part'],'reference':static_ref['index'],'point':1,'value':125,'expected_sha256':static_chart_report.structuredContent['snapshot_sha256']}
                 assert (await session.call_tool('session_set_chart_literal_value',{**static_args,'value':True})).isError
                 static_edit=await session.call_tool('session_set_chart_literal_value',static_args); assert not static_edit.isError and static_edit.structuredContent['old_value']==100,static_edit
+                precision_args={**static_args,'base_revision':1,'expected_sha256':None,'value':9007199254740993}
+                assert (await session.call_tool('session_set_chart_literal_value',precision_args)).isError
+                precision_edit=await session.call_tool('session_set_chart_literal_value',{**precision_args,'value':9007199254740994}); assert not precision_edit.isError,precision_edit
+                precision_scan=await session.call_tool('session_scan_chart_caches',{'directory':str(static_chart_draft),'revision':2})
+                precision_ref=next(item for item in precision_scan.structuredContent['charts'][0]['references'] if item['kind']=='numLit')
+                assert precision_ref['examples'][0]['value']=='9007199254740994',precision_ref
                 static_category_file=root/'mcp-static-category.xlsx'
                 with zipfile.ZipFile(static_chart_file) as original,zipfile.ZipFile(static_category_file,'w') as changed:
                     for entry in original.infolist():
@@ -220,6 +226,11 @@ async def main():
                 assert not literal_text.isError, literal_text
                 literal_after_text=await session.call_tool('session_inspect_slide_charts', {'directory':str(literal_draft),'revision':2})
                 assert literal_after_text.structuredContent['charts'][0]['categories']==['First quarter','Q2'], literal_after_text
+                slide_precision={'directory':str(literal_draft),'base_revision':2,'part':'/'+chart_part,'series':1,'point':1,'value':9007199254740993}
+                assert (await session.call_tool('session_set_slide_chart_literal_value',slide_precision)).isError
+                slide_precise=await session.call_tool('session_set_slide_chart_literal_value',{**slide_precision,'value':9007199254740994}); assert not slide_precise.isError,slide_precise
+                with zipfile.ZipFile(slide_precise.structuredContent['output']) as archive:
+                    tree=etree.fromstring(archive.read(chart_part)); assert tree.find('.//'+chart_ns+'val/'+chart_ns+'numLit/'+chart_ns+'pt/'+chart_ns+'v').text=='9007199254740994'
                 axis_inventory = chart_inventory.structuredContent['charts'][0]['axis_inventory']; axis = next(item for item in axis_inventory['axes'] if item['type'] == 'valAx')
                 assert axis_inventory['complete'] and axis['minimum'] == 0 and axis['maximum'] == 150, axis_inventory
                 color_draft=root/'chart-color-draft'; assert not (await session.call_tool('start_session', {'directory':str(color_draft),'source':str(positioned)})).isError

@@ -63,3 +63,5 @@ For a numeric literal chart series, `session_set_slide_chart_literal_value` upda
 Use `session_set_slide_chart_literal_text` to edit a direct literal series name or shared category. Series category arrays must match; the operation updates every series and does not update an embedded workbook. Inspect shared chart placements and render after editing.
 
 For dark or light backgrounds, set a chart `text_color` at authoring, or use `session_set_slide_chart_text_color` on an inspected chart part and snapshot. It applies to titles, axis labels, legend and default data labels in a simple chart; per-point formatting can override it. Render and review contrast.
+
+Literal chart numeric edits reject integer values that cannot be represented exactly as binary64. Client and target-application numeric precision may impose additional limits.

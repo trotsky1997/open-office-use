@@ -391,6 +391,7 @@ def set_literal_value(source, output, part, series, point, value, expected_sha25
     if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from slide chart inspection')
     if any(isinstance(item, bool) or not isinstance(item, int) or not 1 <= item <= limit for item, limit in ((series, 30), (point, 200))): raise ValueError('Series and point must be positive one-based indices within inspection limits')
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value): raise ValueError('Chart value must be a finite number within ±1e100')
+    if isinstance(value, int) and int(float(value)) != value: raise ValueError('Chart integer cannot be represented exactly as a binary64 value')
     selected = {}
     def select(file):
         inventory = inspect(file); charts = [item for item in inventory['charts'] if item.get('chart_part') == part]

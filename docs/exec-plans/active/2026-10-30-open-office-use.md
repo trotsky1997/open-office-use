@@ -360,3 +360,5 @@ Workbook fixed chart categories can be updated across matching series in snapsho
 Workbook chart scans expose bounded series names and indices. Direct literal names can be edited through snapshot-bound CLI/MCP revisions. The OfficeCLI sales-dashboard reference rendered the renamed legend and passed validation; native Excel remains unverified.
 
 The workbook viewer can select and edit fixed chart numeric points, shared categories and literal series names from bounded scan results. Browser interaction on the OfficeCLI reference saved and re-inspected three revisions; route checks covered stale snapshots and cross-origin requests.
+
+Workbook and slide literal chart edits preserve integral CLI/MCP input until validation and reject integers not exactly representable as binary64. Verified adjacent values around 2^53 and scientific notation; client and native Office precision can impose further limits.
