@@ -307,6 +307,7 @@ class BrowserBackend {
     this.downloadUrlsById = new Map();
     this.downloadsById = new Map();
     this.downloadWaiters = new Set();
+    this.downloadStartWaitActive = false;
     this.downloadChangeListeners = new Set();
     this.downloadReadyListeners = new Set();
     this.fileChooserReadyListeners = new Set();
@@ -759,15 +760,22 @@ class BrowserBackend {
         ? params.timeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
     if (params.waitId !== undefined && (typeof params.waitId !== "string" || !/^[0-9a-f-]{36}$/.test(params.waitId))) throw new Error("Invalid download wait ID");
-    const waiting = this.waitForDownloadChange(
-      (change) => change.status === "started",
-      timeoutMs,
-      "Timed out waiting for download.",
-      { includeExisting: false }
-    );
-    if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId);
-    const download = await waiting;
-    return { downloadId: download.id };
+    // shortcut: downloads lack tab attribution here; permit concurrent waits when reliable attribution is available.
+    if (this.downloadStartWaitActive) throw new Error("Already waiting for a Chrome download");
+    this.downloadStartWaitActive = true;
+    try {
+      const waiting = this.waitForDownloadChange(
+        (change) => change.status === "started",
+        timeoutMs,
+        "Timed out waiting for download.",
+        { includeExisting: false }
+      );
+      if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId);
+      const download = await waiting;
+      return { downloadId: download.id };
+    } finally {
+      this.downloadStartWaitActive = false;
+    }
   }
 
   async downloadPath(params) {

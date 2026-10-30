@@ -36,6 +36,18 @@ test('download readiness is emitted only after the waiter is installed',async()=
   backend.emitDownloadChange({id:'ready',status:'started'});assert.equal((await pending).downloadId,'ready');
 });
 
+test('only one Chrome download start wait may be active',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});
+  const first=backend.waitForDownload({tabId:1,timeoutMs:1000});
+  await new Promise(resolve=>setImmediate(resolve));
+  await assert.rejects(backend.waitForDownload({tabId:2,timeoutMs:1000}),/Already waiting/);
+  backend.emitDownloadChange({id:'first',status:'started'});assert.equal((await first).downloadId,'first');
+  await assert.rejects(backend.waitForDownload({tabId:2,timeoutMs:10}),/Timed out/);
+  const next=backend.waitForDownload({tabId:2,timeoutMs:1000});
+  await new Promise(resolve=>setImmediate(resolve));
+  backend.emitDownloadChange({id:'next',status:'started'});assert.equal((await next).downloadId,'next');
+});
+
 test('file chooser readiness follows interception and preserves the frame session',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.requireSession=async()=>({});backend.attachedTabs.add(1);
   commands.length=0;let ready=false;

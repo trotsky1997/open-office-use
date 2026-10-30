@@ -608,6 +608,8 @@ unsubscribe();
   the next download started after the wait is registered. Chrome download events
   currently lack a reliable tab association here, so a concurrent download from
   another tab can satisfy the wait; verify the result before using its path.
+  Only one Chrome download-start wait can be active at a time; a second wait
+  fails immediately.
   The low-level wait has no registration acknowledgement; use
   `tab.prepareDownload()` when the page action follows immediately.
 - Clipboard: `readClipboardText`, `writeClipboardText`, `readClipboard`,
