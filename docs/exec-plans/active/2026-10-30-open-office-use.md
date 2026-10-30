@@ -282,3 +282,5 @@ Chart-cache inspection and sync support snapshot-bound repair in XLSX and PPTX; 
 PowerPoint authoring supports editable straight lines and arrows with free-position endpoints; attached connectors and advanced routing remain open.
 
 PowerPoint authoring supports editable text-bearing rectangle, rounded rectangle, ellipse and diamond nodes; inspect rendered text fit and connector placement.
+
+Straight connectors can reference earlier named shape nodes with cardinal connection sites, including ellipse-specific indices; native PowerPoint interaction remains unverified.

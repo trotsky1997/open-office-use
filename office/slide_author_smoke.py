@@ -52,6 +52,22 @@ with tempfile.TemporaryDirectory() as tmp:
     assert shapes[1].text == 'Go?' and shapes[1].text_frame.auto_size == MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE and shapes[1].text_frame.paragraphs[0].runs[0].font.bold
     assert shapes[1].text_frame.paragraphs[0].runs[1].hyperlink.address == 'https://example.com' and shapes[2].line.width.pt == 2
     code,validation,_=officecli_backend.invoke('validate',flow_file); assert code==0 and validation['success'],validation
+    connector_file=root/'attached.pptx'
+    nodes=[{**shape,'id':f'node{i}'} for i,shape in enumerate(flow)]
+    connectors=[{'type':'connector','start':{'shape':'node0','side':'right'},'end':{'shape':'node1','side':'left'},'color':'236B8E'}, {'type':'connector','start':{'shape':'node1','side':'right'},'end':{'shape':'node2','side':'left'},'color':'236B8E'}]
+    open_office_use.author({'slides':[{'layout':'blank','elements':nodes+connectors}]},connector_file)
+    attached=Presentation(connector_file).slides[0].shapes
+    first=attached[4]._element.nvCxnSpPr.cNvCxnSpPr; second=attached[5]._element.nvCxnSpPr.cNvCxnSpPr
+    assert first.find(a+'stCxn').get('id') == str(attached[0].shape_id) and first.find(a+'stCxn').get('idx') == '3'
+    assert first.find(a+'endCxn').get('id') == str(attached[1].shape_id) and first.find(a+'endCxn').get('idx') == '1'
+    assert second.find(a+'endCxn').get('id') == str(attached[2].shape_id) and second.find(a+'endCxn').get('idx') == '2'
+    assert attached[4].begin_x == attached[0].left + attached[0].width and attached[4].end_x == attached[1].left
+    code, validation, _=officecli_backend.invoke('validate',connector_file); assert code==0 and validation['success'],validation
+    for elements in ([nodes[0],nodes[0]], [nodes[0],connectors[0]], [nodes[0],dict(connectors[0],start={'shape':'node0','side':'corner'})]):
+        invalid=root/'invalid-connector.pptx'
+        try: open_office_use.author({'slides':[{'layout':'blank','elements':elements}]},invalid)
+        except ValueError: assert not invalid.exists()
+        else: raise AssertionError('Invalid connector accepted')
     flow_draft=root/'flow-draft';session.start(flow_draft,source=flow_file)
     edited=session.replace_text(flow_draft,0,f'/slide[1]/shape[@id={shapes[0].shape_id}]/paragraph[1]','Start','Begin')
     assert Presentation(edited['file']).slides[0].shapes[0].text == 'Begin'

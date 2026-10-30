@@ -408,14 +408,36 @@ def append_slides(presentation, slides):
             fill = slide.background.fill; fill.solid(); fill.fore_color.rgb = color(item['background'])
         elements = item.get('elements', [])
         if not isinstance(elements, list) or len(elements) > 200: raise ValueError('Slide elements must be a list of at most 200 items')
+        named_shapes = {}
         for element in elements:
             if not isinstance(element, dict): raise ValueError('Slide elements must be objects')
             kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
             allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
-                       'rectangle': geometry | {'fill'}, 'shape': geometry | {'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
+                       'rectangle': geometry | {'fill'}, 'shape': geometry | {'id', 'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'connector': {'type', 'start', 'end', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
                        'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
+            if kind == 'connector':
+                ends = []
+                for key in ('start', 'end'):
+                    endpoint = element.get(key)
+                    if not isinstance(endpoint, dict) or set(endpoint) != {'shape', 'side'} or not isinstance(endpoint['shape'], str) or endpoint['shape'] not in named_shapes or endpoint['side'] not in ('top', 'left', 'bottom', 'right'): raise ValueError('Connector endpoints require an earlier named shape and a valid side')
+                    target, target_kind = named_shapes[endpoint['shape']]; side = endpoint['side']
+                    sites = {'top':0, 'left':2, 'bottom':4, 'right':6} if target_kind == 'ellipse' else {'top':0, 'left':1, 'bottom':2, 'right':3}
+                    point = {'top':(target.left + target.width // 2, target.top), 'left':(target.left, target.top + target.height // 2), 'bottom':(target.left + target.width // 2, target.top + target.height), 'right':(target.left + target.width, target.top + target.height // 2)}[side]
+                    ends.append((target, sites[side], point))
+                if ends[0][2] == ends[1][2]: raise ValueError('Connector endpoints must differ')
+                arrow = element.get('arrow', 'end')
+                if arrow not in ('none', 'start', 'end', 'both'): raise ValueError('Connector arrow must be none, start, end or both')
+                ink = color(element.get('color', '000000')); line_width = number(element.get('line_width', 2), 'line_width', 0.1, 20)
+                shape = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, *ends[0][2], *ends[1][2])
+                properties = shape._element.nvCxnSpPr.cNvCxnSpPr
+                for tag, (target, index, _) in zip(('a:stCxn', 'a:endCxn'), ends):
+                    connection = PptxElement(tag); connection.set('id', str(target.shape_id)); connection.set('idx', str(index)); properties.append(connection)
+                shape.line.color.rgb = ink; shape.line.width = Pt(line_width); line = shape._element.spPr.get_or_add_ln()
+                if arrow in ('start', 'both'): head = PptxElement('a:headEnd'); head.set('type', 'triangle'); line.append(head)
+                if arrow in ('end', 'both'): tail = PptxElement('a:tailEnd'); tail.set('type', 'triangle'); line.append(tail)
+                continue
             x = Inches(number(element.get('x'), 'x', -100, 100)); y = Inches(number(element.get('y'), 'y', -100, 100))
             if kind == 'line':
                 end_x = Inches(number(element.get('end_x'), 'end_x', -100, 100)); end_y = Inches(number(element.get('end_y'), 'end_y', -100, 100))
@@ -483,6 +505,8 @@ def append_slides(presentation, slides):
                 kinds = {'rectangle':MSO_SHAPE.RECTANGLE, 'rounded_rectangle':MSO_SHAPE.ROUNDED_RECTANGLE, 'ellipse':MSO_SHAPE.OVAL, 'diamond':MSO_SHAPE.DIAMOND}
                 shape_kind = element.get('shape_kind')
                 if not isinstance(shape_kind, str) or shape_kind not in kinds: raise ValueError('Unsupported shape kind')
+                shape_id = element.get('id')
+                if 'id' in element and (not isinstance(shape_id, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,63}', shape_id) or shape_id in named_shapes): raise ValueError('Shape id must be a unique identifier')
                 if 'fill' not in element: raise ValueError('Shape requires a fill color')
                 fill = color(element['fill'])
                 if 'line_width' in element and 'line_color' not in element: raise ValueError('Shape line_width requires line_color')
@@ -504,6 +528,7 @@ def append_slides(presentation, slides):
                 if paragraphs is not None: validate_slide_paragraphs(paragraphs)
                 elif 'paragraphs' in element: raise ValueError('Shape paragraphs must be a list')
                 shape = slide.shapes.add_shape(kinds[shape_kind], x, y, width, height)
+                if shape_id is not None: named_shapes[shape_id] = (shape, shape_kind)
                 shape.fill.solid(); shape.fill.fore_color.rgb = fill
                 if 'line_color' in element:
                     shape.line.color.rgb = color(element['line_color']); shape.line.width = Pt(element.get('line_width', 1))

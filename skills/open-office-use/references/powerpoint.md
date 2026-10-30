@@ -47,3 +47,5 @@ Slide chart inventories return `snapshot_sha256`; pass it as `expected_sha256` t
 Use `{"type":"line","x":2,"y":2,"end_x":5,"end_y":2,"color":"236B8E","line_width":3,"arrow":"end"}` for a straight editable connector. Coordinates are inches, width is points, and `arrow` can be `none`, `start`, `end`, or `both`. Endpoints are free positions, so review connections after moving shapes.
 
 For a flowchart node, use `type: "shape"`, `shape_kind` (`rectangle`, `rounded_rectangle`, `ellipse`, `diamond`), geometry and `fill`; add `text` or rich `paragraphs`, text styling, and optional `line_color`/`line_width`. Text is centered vertically; `auto_fit: "shrink"` can reduce overflow. Inspect the rendered slide.
+
+To attach an arrow to shape nodes, give each earlier `shape` a unique `id` and use `type: "connector"` with `start` and `end` objects, each containing `shape` and `side` (`top`, `left`, `bottom`, `right`). This writes native shape connection references; it supports the four documented node shapes and straight lines. Inspect behavior after moving nodes in the destination app.

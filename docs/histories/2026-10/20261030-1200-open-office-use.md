@@ -385,3 +385,5 @@ Chart-cache scanning uses checked snapshots; XLSX and PPTX syncs accept inspecte
 Added native PowerPoint straight line and arrow authoring with endpoint geometry, RGB color and line width; verified reverse and vertical directions in LibreOffice.
 
 Added editable PowerPoint flowchart shapes with text, rich paragraphs, fill, optional outline and shrink-to-fit; verified structure, targeted text editing, schema and LibreOffice rendering.
+
+Added native attached PowerPoint connectors between named shapes with geometry-specific connection-site indices; validated schema and LibreOffice rendering.
