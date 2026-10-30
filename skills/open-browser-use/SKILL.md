@@ -56,7 +56,10 @@ input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clic
 interface provides `.get_visible_screenshot()`, `.click({x,y})`, `.double_click({x,y})`,
 `.move({x,y})`, `.drag({path:[{x,y},...]})`, `.scroll({x,y,scrollX,scrollY})`,
 `.keypress({keys:[...]})` and `.type({text})`. Screenshot results can be sent
-to `nodeRepl.emitImage`. Coordinates are CSS viewport pixels. Convert
+to `nodeRepl.emitImage`. Chrome task tabs start in the background; when visual
+input needs an active tab, `await tab.bringToFront()` explicitly activates it and
+changes the user's visible browser. Electron hosts present their own surfaces.
+Coordinates are CSS viewport pixels. Convert
 screenshot pixels to CSS viewport coordinates. For a closer view use
 `tab.getScreenshot({clip:{x,y,width,height}})` with a rectangle inside the CSS
 viewport; convert cropped image pixels using the clip dimensions and add its

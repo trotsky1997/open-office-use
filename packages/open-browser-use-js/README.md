@@ -362,14 +362,16 @@ attempts to release the button on failure. Coordinate actions do not verify
 the identity of the element under the pointer; observe the page again after
 an uncertain outcome. Typing targets the current focus and does not verify the
 result. Pointer modifiers set the event's modifier flags. Electron scrolling
-requires a presented surface. In isolated Linux ARM64 headless Chromium 150,
-the direct wheel command with modifiers timed out; the event outcome was
-unknown. A gesture on a fixed nested scroll container also returned without
-scrolling, and a subsequent screenshot timed out in that environment. Inspect
-the page before retrying. The modified-wheel path was verified on Electron
-44/Xvfb; other Chromium environments need validation. The Chromium pointer
-fixture can be run explicitly with `OBU_TEST_CUA_POINTER=1`, and its modified
-wheel variant additionally uses `OBU_TEST_MODIFIED_WHEEL=1`.
+requires a presented surface. Chrome task tabs start in the background. When
+visual rendering or scrolling requires an active tab, explicitly call
+`await tab.bringToFront()`; this activates the tab and can change the user's
+visible browser. Electron surfaces are presented by the host and do not expose
+this method through their page grant. In isolated Linux ARM64 Chromium 150,
+background wheel input timed out or failed to move a fixed nested scroller;
+activating the task tab allowed ordinary and modified wheel input and a
+subsequent screenshot. An input timeout can have an unknown outcome; inspect
+the page before retrying. Other desktop and operating-system configurations
+need validation.
 
 A locator’s `press("Enter")` focuses its matched target, verifies focus and
 then sends the key; focus handlers can change the page. Frame targets use their

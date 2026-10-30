@@ -458,6 +458,10 @@ export class OpenBrowserUseTab {
     }
     async back() { await this.moveHistory(-1); }
     async forward() { await this.moveHistory(1); }
+    async bringToFront() {
+        this.#observation = undefined;
+        await this.browser.cdp.call(this.id, "Page.bringToFront");
+    }
     async moveHistory(direction) {
         const history = await this.browser.cdp.call(this.id, "Page.getNavigationHistory");
         if (!isObject(history) || !Number.isInteger(history.currentIndex) || !Array.isArray(history.entries))

@@ -199,6 +199,7 @@ export declare class OpenBrowserUseTab {
     goto(url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     back(): Promise<void>;
     forward(): Promise<void>;
+    bringToFront(): Promise<void>;
     private moveHistory;
     reload(): Promise<void>;
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;

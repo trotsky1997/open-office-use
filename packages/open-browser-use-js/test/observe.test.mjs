@@ -536,19 +536,24 @@ test("same-process frame targets translate coordinates and reject frame navigati
 
 test("coordinate input is bounded to the CSS viewport and invalidates observations", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
-  const events = [];
+  const events = [];let broughtToFront=false;
   client.request = async (method, params) => {
     if (method === "attach") return {};
     if (params.method === "Page.getLayoutMetrics") return { cssVisualViewport: { clientWidth: 100, clientHeight: 80 } };
     if (params.method === "DOM.getDocument") return { root: { backendNodeId: 1 } };
+    if (params.method === "Page.bringToFront") {broughtToFront=true;return {};}
     if (params.method === "Accessibility.getFullAXTree") return { nodes: [{ backendDOMNodeId: 7, role: { value: "button" }, name: { value: "Go" } }] };
     if (params.method === "Input.dispatchMouseEvent" || params.method === "Input.synthesizeScrollGesture") events.push({ method: params.method, ...params.commandParams });
     return {};
   };
   const tab = new OpenBrowserUseBrowser({ client }).tab(1);
   const state = await tab.observe();
-  await tab.clickAt(20, 30);
+  await tab.bringToFront();
+  assert.equal(broughtToFront,true);
   await assert.rejects(tab.click(1, state.snapshotId), /stale/);
+  const next = await tab.observe();
+  await tab.clickAt(20, 30);
+  await assert.rejects(tab.click(1, next.snapshotId), /stale/);
   await tab.hoverAt(10, 20);
   await tab.scrollAt(20, 30, 0, 200);
   assert.deepEqual(events.map(event => event.type ?? event.method), ["mouseMoved", "mousePressed", "mouseReleased", "mouseMoved", "mouseMoved", "Input.synthesizeScrollGesture"]);

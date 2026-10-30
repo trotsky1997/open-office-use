@@ -515,6 +515,10 @@ export class OpenBrowserUseTab {
 
   async back(): Promise<void> { await this.moveHistory(-1); }
   async forward(): Promise<void> { await this.moveHistory(1); }
+  async bringToFront(): Promise<void> {
+    this.#observation = undefined;
+    await this.browser.cdp.call(this.id,"Page.bringToFront");
+  }
 
   private async moveHistory(direction: -1 | 1): Promise<void> {
     const history = await this.browser.cdp.call(this.id, "Page.getNavigationHistory");
