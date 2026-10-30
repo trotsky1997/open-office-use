@@ -449,7 +449,7 @@ def session_add_comment(directory: str, base_revision: int, path: str, text: str
 
 @server.tool()
 def session_set_slide_navigation(directory: str, base_revision: int, path: str, target_slide: int | None, expected_sha256: str | None = None) -> dict[str, Any]:
-    """Set a one-based shape-to-slide click target, or remove a supported slide jump with null."""
+    """Set a one-based slide click target on a shape or regular text run, or remove a supported slide jump with null."""
     return session.set_slide_navigation(directory, base_revision, path, target_slide, expected_sha256)
 
 

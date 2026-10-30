@@ -47,6 +47,13 @@ with tempfile.TemporaryDirectory() as tmp:
         removed = post('slide-navigation-save',{'base_revision':2,'snapshot_sha256':updated['snapshot_sha256'],'path':navigation['path'],'target_slide':None})
         after_remove = post('slide-navigation-read',{'revision':3})
         assert removed['revision'] == 3 and len(after_remove['actions']) == 1 and after_remove['actions'][0]['kind'] == 'text_run' and after_remove['actions'][0]['target_url'] == 'https://example.com/source'
+        run_shape_id = Presentation(removed['file']).slides[0].shapes.title.shape_id
+        run_path = f'/slide[1]/shape[@id={run_shape_id}]/paragraph[1]/run[1]'
+        run_saved = post('slide-navigation-save',{'base_revision':3,'snapshot_sha256':after_remove['snapshot_sha256'],'path':run_path,'target_slide':2})
+        run_actions = post('slide-navigation-read',{'revision':4})
+        assert run_saved['revision'] == 4 and next(item for item in run_actions['actions'] if item['path'] == run_path)['target_slide'] == 2
+        post('slide-navigation-save',{'base_revision':4,'snapshot_sha256':run_actions['snapshot_sha256'],'path':run_path,'target_slide':None})
+        assert all(item['path'] != run_path for item in post('slide-navigation-read',{'revision':5})['actions'])
 
     finally:
         server.terminate(); server.wait(timeout=10)

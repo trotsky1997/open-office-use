@@ -482,9 +482,11 @@ def set_description(source, output, path, description, expected_sha256=None):
 
 
 def set_navigation(source, output, path, target_slide, expected_sha256=None):
-    """Set or remove a simple shape-to-slide action without rewriting other parts."""
-    match = OBJECT_PATH.fullmatch(path) if isinstance(path, str) and len(path) <= 512 else None
-    if not match or Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx': raise ValueError('Target must be a PPTX slide object path')
+    """Set or remove a simple slide jump on a shape or regular text run."""
+    run_match = re.fullmatch(r'(.+)/run\[(' + INDEX + r')\]', path) if isinstance(path, str) and len(path) <= 512 else None
+    paragraph = run_match.group(1) if run_match and '/paragraph[' in run_match.group(1) and paragraph_path(run_match.group(1)) else None
+    match = PATH.fullmatch(paragraph) if paragraph else OBJECT_PATH.fullmatch(path) if isinstance(path, str) and len(path) <= 512 else None
+    if not match or Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx': raise ValueError('Target must be a PPTX slide object or text-run path')
     if target_slide is not None and (isinstance(target_slide, bool) or not isinstance(target_slide, int) or not 1 <= target_slide <= 1000000): raise ValueError('Target slide must be a positive one-based slide number or null')
     selected = {}
     def select(file):
@@ -492,7 +494,17 @@ def set_navigation(source, output, path, target_slide, expected_sha256=None):
         if target_slide is not None: selected['target'] = slide_part(file, target_slide - 1)
         return selected['part']
     def edit(tree, archive):
-        metadata = object_metadata(tree, path); links = metadata.findall(A + 'hlinkClick')
+        if paragraph:
+            runs = find_paragraph(tree, paragraph).findall(A + 'r'); index = int(run_match.group(2)) - 1
+            if index >= len(runs): raise ValueError('Text run does not exist')
+            run = runs[index]; properties = run.findall(A + 'rPr')
+            if len(properties) > 1: raise ValueError('Text run has ambiguous properties')
+            if not properties:
+                if target_slide is None: raise ValueError('Text run has no slide jump')
+                metadata = etree.Element(A + 'rPr'); run.insert(0, metadata)
+            else: metadata = properties[0]
+        else: metadata = object_metadata(tree, path)
+        links = metadata.findall(A + 'hlinkClick')
         if len(links) > 1: raise ValueError('Shape has ambiguous click actions')
         link = links[0] if links else None
         if link is not None:
@@ -519,8 +531,14 @@ def set_navigation(source, output, path, target_slide, expected_sha256=None):
         if target_slide is None: metadata.remove(link)
         else:
             if link is None:
-                if any(child.tag not in (A + 'hlinkHover', A + 'extLst') for child in metadata): raise ValueError('Unsupported nonvisual click-action structure')
-                link = etree.Element(A + 'hlinkClick'); metadata.insert(0, link)
+                if paragraph:
+                    link = etree.Element(A + 'hlinkClick')
+                    following = next((child for child in metadata if child.tag in (A + 'hlinkMouseOver', A + 'extLst')), None)
+                    if following is None: metadata.append(link)
+                    else: metadata.insert(metadata.index(following), link)
+                else:
+                    if any(child.tag not in (A + 'hlinkHover', A + 'extLst') for child in metadata): raise ValueError('Unsupported nonvisual click-action structure')
+                    link = etree.Element(A + 'hlinkClick'); metadata.insert(0, link)
             used = {item.get('Id') for item in rel_root}; number = 1
             while f'rId{number}' in used: number += 1
             identity = f'rId{number}'; link.set('action', 'ppaction://hlinksldjump'); link.set(R + 'id', identity)

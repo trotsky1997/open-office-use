@@ -111,6 +111,20 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [(item['kind'],item['trigger'],item['status']) for item in action_report['actions']] == [('shape','click','slide'),('shape','hover','external'),('text_run','click','external'),('text_run','hover','external'),('text_run','click','slide'),('text_run','click','external'),('text_run','click','slide')], action_report
     assert action_report['actions'][4]['target_slide'] == 2 and action_report['actions'][5]['path'].endswith('/tr[1]/tc[1]/paragraph[1]/run[1]') and action_report['actions'][6]['target_slide'] == 2
     code, validation, _ = officecli_backend.invoke('validate',text_nav); assert code == 0 and validation['success'],validation
+    run_draft = root/'run-navigation-draft'; session.start(run_draft,source=text_nav)
+    run_path = action_report['actions'][4]['path']; table_path = action_report['actions'][6]['path']; external_path = action_report['actions'][2]['path']
+    changed = session.set_slide_navigation(run_draft,0,run_path,1,expected_sha256=action_report['snapshot_sha256'])
+    updated = session.inspect_slide_navigation(run_draft,1)
+    assert next(item for item in updated['actions'] if item['path'] == run_path)['target_slide'] == 1
+    assert next(item for item in updated['actions'] if item['path'] == table_path)['target_slide'] == 2
+    try: session.set_slide_navigation(run_draft,1,external_path,1)
+    except ValueError: pass
+    else: raise AssertionError('External text link silently replaced')
+    session.set_slide_navigation(run_draft,1,table_path,None)
+    assert not any(item['path'] == table_path for item in session.inspect_slide_navigation(run_draft,2)['actions'])
+    restored = session.set_slide_navigation(run_draft,2,table_path,1)
+    assert next(item for item in session.inspect_slide_navigation(run_draft,3)['actions'] if item['path'] == table_path)['target_slide'] == 1
+    code, validation, _ = officecli_backend.invoke('validate',restored['file']); assert code == 0 and validation['success'], validation
     text_draft = root/'text-navigation-draft'; session.start(text_draft,source=text_nav)
     paragraph_path = action_report['actions'][4]['path'].rsplit('/run[',1)[0]
     changed_text = session.replace_text(text_draft,0,paragraph_path,'Internal','Destination')

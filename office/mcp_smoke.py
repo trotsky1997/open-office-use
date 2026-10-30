@@ -127,6 +127,12 @@ async def main():
                 assert not (await session.call_tool('author_file', {'spec':nav_text_spec,'output':str(nav_text_file)})).isError
                 nav_text = await session.call_tool('inspect_slide_navigation', {'file':str(nav_text_file)})
                 assert nav_text.structuredContent['actions'][0]['kind'] == 'text_run' and nav_text.structuredContent['actions'][0]['target_url'] == 'https://example.com/source' and nav_text.structuredContent['actions'][1]['target_slide'] == 2, nav_text
+                text_draft = root/'navigation-text-draft'; assert not (await session.call_tool('start_session', {'directory':str(text_draft),'source':str(nav_text_file)})).isError
+                text_action = nav_text.structuredContent['actions'][1]
+                text_edit = await session.call_tool('session_set_slide_navigation', {'directory':str(text_draft),'base_revision':0,'path':text_action['path'],'target_slide':1,'expected_sha256':nav_text.structuredContent['snapshot_sha256']})
+                assert not text_edit.isError, text_edit
+                text_updated = await session.call_tool('session_inspect_slide_navigation', {'directory':str(text_draft),'revision':1})
+                assert text_updated.structuredContent['actions'][1]['target_slide'] == 1, text_updated
                 nav_target = nav_session.structuredContent['actions'][0]['path']
                 nav_edit = await session.call_tool('session_set_slide_navigation', {'directory':str(nav_draft),'base_revision':0,'path':nav_target,'target_slide':1,'expected_sha256':nav_session.structuredContent['snapshot_sha256']})
                 assert not nav_edit.isError, nav_edit

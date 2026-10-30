@@ -429,3 +429,5 @@ Added a snapshot-bound viewer panel for inspecting and editing slide navigation,
 Extended PowerPoint navigation inventory to text-run and hover actions and kept viewer editing restricted to shape click jumps.
 
 Added internal slide navigation to authored rich text runs, including table cells and source-deck forward references.
+
+Extended snapshot-bound slide navigation editing to regular text runs in shapes and table cells.

@@ -87,9 +87,9 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="slide-order-load">Load slide list</button><ol id="slide-order-list"></ol><p id="slide-order-sections"></p>
 <form id="slide-order-form"><label>New order <input id="slide-order-input" style="width:min(32rem,70vw)" placeholder="3, 1, 2" required></label> <button type="submit" id="slide-order-save" disabled>Save order as new revision</button></form><p id="slide-order-status" role="status"></p></details>
 <details id="slide-navigation-panel" hidden><summary>Slide navigation</summary>
-<p>Inspect shape and text-run click/hover actions in the displayed revision. Notes, masters and layouts are outside this list. Only shape click jumps can be edited here.</p>
+<p>Inspect shape and text-run click/hover actions in the displayed revision. Notes, masters and layouts are outside this list. Shape and regular text-run click jumps can be edited here.</p>
 <button type="button" id="slide-navigation-load">Inspect actions</button><ul id="slide-navigation-list"></ul>
-<label>Shape path <input id="slide-navigation-path" maxlength="512" style="width:min(32rem,70vw)" placeholder="/slide[1]/shape[@id=2]"></label>
+<label>Shape or text-run path <input id="slide-navigation-path" maxlength="512" style="width:min(32rem,70vw)" placeholder="/slide[1]/shape[@id=2]"></label>
 <label>Target slide <input id="slide-navigation-target" type="number" min="1" step="1"></label>
 <button type="button" id="slide-navigation-set" disabled>Set slide jump</button>
 <button type="button" id="slide-navigation-remove" disabled>Remove slide jump</button>
@@ -1169,7 +1169,7 @@ document.getElementById('slide-navigation-load').addEventListener('click', async
   const list=document.getElementById('slide-navigation-list'); list.replaceChildren(...result.actions.map(action=>{
    const item=document.createElement('li'); const text=document.createElement('span');
    text.textContent=`${action.path} (${action.kind}, ${action.trigger}) → ${action.status==='slide' ? 'slide '+action.target_slide : action.status==='external' ? 'external '+action.target_url : action.status}`; item.appendChild(text);
-   if (action.kind==='shape' && action.trigger==='click' && action.status==='slide') { const use=document.createElement('button'); use.type='button'; use.textContent='Use this path'; use.addEventListener('click',()=>{document.getElementById('slide-navigation-path').value=action.path; document.getElementById('slide-navigation-target').value=action.target_slide; slideNavigationPathHash=hash; updateSlideNavigationControls();}); item.appendChild(use); }
+   if ((action.kind==='shape' || action.kind==='text_run') && action.trigger==='click' && action.status==='slide') { const use=document.createElement('button'); use.type='button'; use.textContent='Use this path'; use.addEventListener('click',()=>{document.getElementById('slide-navigation-path').value=action.path; document.getElementById('slide-navigation-target').value=action.target_slide; slideNavigationPathHash=hash; updateSlideNavigationControls();}); item.appendChild(use); }
    return item;
   }));
   slideNavigationLoaded={revision,hash,count:result.slides_total}; slideNavigationPathHash=null; const editable=revision===current && pinned===null && !comparing;
