@@ -3274,7 +3274,10 @@ export class OpenBrowserUseCdp {
     if (isObject(result) && isObject(result.exceptionDetails)) {
       throw new Error(String(result.exceptionDetails.text ?? "Open Browser Use evaluation failed"));
     }
-    return isObject(result) && isObject(result.result) ? (result.result.value ?? null) : null;
+    if (!isObject(result) || !isObject(result.result)) throw new Error("Invalid browser evaluation response");
+    const remote=result.result;
+    if (remote.unserializableValue !== undefined || (!("value" in remote) && remote.type !== "undefined")) throw new Error("Evaluation result is not JSON serializable");
+    return remote.type === "undefined" ? null : remote.value as JsonValue;
   }
 
   async navigate(tabId: number, url: string, options: OpenBrowserUseGotoOptions = {}): Promise<JsonValue> {

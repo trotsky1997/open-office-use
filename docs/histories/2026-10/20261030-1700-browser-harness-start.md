@@ -331,3 +331,5 @@ CSS 与语义定位器新增 inputValue，使用隔离 world 读取 input、text
 Playwright 风格入口新增 evaluate，接受函数和单个 JSON 参数或表达式字符串，等待 Promise 并返回页面结果；函数执行于页面上下文，可修改页面且不能访问调用侧闭包。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44，以及 Linux ARM64 Chromium 原生扩展实页验证异步返回、特殊字符参数与错误传播。Windows 未测。
 
 直线拖拽在鼠标按下请求结果未知时尝试释放按钮，保留原错误；普通滚动、修饰键滚动和 Electron 后台滚动超时统一提示结果未知并要求观察后再操作，不重发滚轮。SDK 70 项通过，覆盖按下失败、普通滚动与 Electron 超时；Linux ARM64 Chromium 原生扩展和 Electron 44 完整实页回归通过。释放请求本身可能失败；macOS 和 Windows 本轮未测。
+
+页面 evaluate 检查 CDP 远程值：undefined 返回 null，NaN、BigInt 等 CDP 标记为不可序列化的结果明确报错，缺失结果的协议响应也报错。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 以及 Linux ARM64 Chromium 原生扩展实页验证 undefined、NaN、BigInt 和正常异步对象。Windows 未测；嵌套对象采用浏览器 CDP 的按值序列化规则。
