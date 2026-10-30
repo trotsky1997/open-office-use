@@ -248,3 +248,5 @@ Line and column workbook charts can use daily date axes with custom label format
 Workbook authoring supports scatter charts with numeric or sub-day datetime X values, multiple Y series and cached data. Formula-source caches require calculation and review.
 
 Workbook chart authoring supports series colors, legend and gridline visibility, and Y-axis bounds; verify visual output in the target application.
+
+Workbook charts can display value labels. Independent label number formats and native Excel rendering remain to be verified.

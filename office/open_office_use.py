@@ -28,6 +28,7 @@ from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, LineChart, ScatterChart, Series, Reference
 from openpyxl.chart.axis import DateAxis, ChartLines
+from openpyxl.chart.label import DataLabelList
 from openpyxl.drawing.image import Image as WorkbookImage
 from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing, _check_anchor
 from openpyxl.chart.data_source import AxDataSource, StrRef, StrData, StrVal, NumData, NumVal
@@ -876,7 +877,7 @@ def format_workbook(workbook, options):
         charts = setting.get('charts', [])
         if not isinstance(charts, list) or len(charts) > 20: raise ValueError('Charts must be a list of at most 20 entries')
         for chart_spec in charts:
-            allowed = {'type', 'data', 'categories', 'anchor', 'title', 'x_axis_title', 'y_axis_title', 'titles_from_data', 'category_type', 'date_format', 'width', 'height', 'series_colors', 'legend', 'y_min', 'y_max', 'show_gridlines'}
+            allowed = {'type', 'data', 'categories', 'anchor', 'title', 'x_axis_title', 'y_axis_title', 'titles_from_data', 'category_type', 'date_format', 'width', 'height', 'series_colors', 'legend', 'y_min', 'y_max', 'show_gridlines', 'show_values'}
             if not isinstance(chart_spec, dict) or set(chart_spec) - allowed or chart_spec.get('type') not in ('column', 'line', 'scatter'): raise ValueError('Invalid chart specification')
             a, b, c, d = bounds(chart_spec.get('data'), 10000)
             headings = chart_spec.get('titles_from_data', True)
@@ -944,7 +945,7 @@ def format_workbook(workbook, options):
             if colors is not None:
                 if not isinstance(colors, list) or len(colors) != c - a + 1: raise ValueError('Chart series_colors must contain one color per series')
                 colors = [rgb(color)[2:] for color in colors]
-            for key in ('legend', 'show_gridlines'):
+            for key in ('legend', 'show_gridlines', 'show_values'):
                 if key in chart_spec and not isinstance(chart_spec[key], bool): raise ValueError(f'Chart {key} must be boolean')
             for key in ('y_min', 'y_max'):
                 if key in chart_spec:
@@ -956,6 +957,7 @@ def format_workbook(workbook, options):
             if chart_spec['type'] == 'column': chart.type = 'col'
             if chart_spec['type'] == 'line': chart.smooth = False
             if chart_spec.get('legend') is False: chart.legend = None
+            if 'show_values' in chart_spec: chart.dLbls = DataLabelList(showVal=chart_spec['show_values'], showLegendKey=False, showCatName=False, showSerName=False, showPercent=False, showBubbleSize=False)
             if 'show_gridlines' in chart_spec: chart.y_axis.majorGridlines = ChartLines() if chart_spec['show_gridlines'] else None
             if 'y_min' in chart_spec: chart.y_axis.scaling.min = chart_spec['y_min']
             if 'y_max' in chart_spec: chart.y_axis.scaling.max = chart_spec['y_max']

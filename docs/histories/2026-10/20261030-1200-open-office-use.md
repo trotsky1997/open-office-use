@@ -351,3 +351,5 @@ Workbook chart authoring now supports daily date axes, inferring them for date c
 Added numeric and sub-day datetime scatter charts with multiple Y series, straight lines and markers. Verified workbook epochs, caches and sync, OfficeCLI schema and LibreOffice rendering; native Excel remains unverified.
 
 Added series colors, legend and gridline visibility, and Y-axis bounds for authored workbook charts; line charts use straight segments.
+
+Added value labels for authored workbook column, line and scatter charts; explicit label number formats need further interoperability work.

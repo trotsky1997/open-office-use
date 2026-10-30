@@ -52,4 +52,4 @@ Forked from [iFurySt/open-browser-use](https://github.com/iFurySt/open-browser-u
 
 [MIT license](LICENSE)
 
-Workbook charts support `series_colors` (one six-digit RGB color per Y series), boolean `legend` and `show_gridlines`, and finite numeric `y_min` / `y_max` axis bounds. Line and scatter charts connect points with straight segments. Review rendering in the target spreadsheet application.
+Workbook charts support `series_colors` (one six-digit RGB color per Y series), boolean `legend`, `show_gridlines`, and `show_values` (data labels), and finite numeric `y_min` / `y_max` axis bounds. Line and scatter charts connect points with straight segments. Review rendering in the target spreadsheet application.

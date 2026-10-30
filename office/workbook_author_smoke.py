@@ -42,17 +42,18 @@ with tempfile.TemporaryDirectory() as tmp:
     assert sheet._charts[0].series[0].val.numRef.f == "'Forecast'!$B$2:$B$3" and sheet._charts[0].series[0].cat.strRef.f == "'Forecast'!$A$2:$A$3"
     report = chart_cache.scan(output)
     refs = report['charts'][0]['references']; assert [ref['status'] for ref in refs] == ['match','match','missing_cache']
-    visual_charts = [{'type':kind,'data':'B1:C3','categories':'A2:A3','series_colors':['236B8E','BA5A32'],'legend':False,'y_min':0,'y_max':100,'show_gridlines':False} for kind in ('column','line','scatter')]
+    visual_charts = [{'type':kind,'data':'B1:C3','categories':'A2:A3','series_colors':['236B8E','BA5A32'],'legend':False,'y_min':0,'y_max':100,'show_gridlines':False,'show_values':True} for kind in ('column','line','scatter')]
     visual_spec = {'ranges':{'Data':[{'start':'A1','values':[['X','One','Two'],[1,20,40],[2,60,80]]}]},'sheet_options':{'Data':{'charts':visual_charts}}}
     visual_file = root/'visual-charts.xlsx'; open_office_use.author(visual_spec, visual_file)
     visual_sheet = load_workbook(visual_file)['Data']
     for chart in visual_sheet._charts:
+        assert chart.dLbls.showVal is True and chart.dLbls.showCatName is False and chart.dLbls.showSerName is False
         assert chart.legend is None and chart.y_axis.scaling.min == 0 and chart.y_axis.scaling.max == 100 and chart.y_axis.majorGridlines is None
     assert visual_sheet._charts[0].series[0].graphicalProperties.solidFill.srgbClr == '236B8E'
     assert visual_sheet._charts[1].series[1].graphicalProperties.line.solidFill.srgbClr == 'BA5A32' and visual_sheet._charts[1].series[1].smooth is False
     assert visual_sheet._charts[2].series[0].marker.graphicalProperties.solidFill.srgbClr == '236B8E'
     assert chart_cache.scan(visual_file)['complete']
-    for invalid in ({'series_colors':['236B8E']}, {'series_colors':['bad','236B8E']}, {'y_min':100,'y_max':0}, {'show_gridlines':1}):
+    for invalid in ({'series_colors':['236B8E']}, {'series_colors':['bad','236B8E']}, {'y_min':100,'y_max':0}, {'show_gridlines':1}, {'show_values':'true'}):
         bad_spec = {'ranges':visual_spec['ranges'],'sheet_options':{'Data':{'charts':[{**visual_charts[0],**invalid}]}}}
         bad_file = root/'invalid-visual.xlsx'
         try: open_office_use.author(bad_spec, bad_file)
