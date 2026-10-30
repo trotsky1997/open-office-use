@@ -609,7 +609,8 @@ unsubscribe();
   currently lack a reliable tab association here, so a concurrent download from
   another tab can satisfy the wait; verify the result before using its path.
   Only one Chrome download-start wait can be active at a time; a second wait
-  fails immediately.
+  fails immediately. Ending its session, closing its tab, or detaching its
+  debugger cancels the pending wait.
   The low-level wait has no registration acknowledgement; use
   `tab.prepareDownload()` when the page action follows immediately.
 - Clipboard: `readClipboardText`, `writeClipboardText`, `readClipboard`,

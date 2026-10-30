@@ -157,3 +157,5 @@ Linux ARM64 Xvfb 中，从未显示的宿主窗口验证了输入准备截图超
 Electron 新增作用域下载：宿主显式配置现有私有目录与大小上限，客户端需同时持有 page.control 与 files.download；仅接受已准备等待且来源 WebContents 匹配的下载，随机文件名写入授权目录。授权撤销或 scope 关闭会取消进行中的下载；总大小已知时预检，流式超限时在事件返回后取消以避免 Electron 回调重入，部分文件可能暂留。macOS Electron 隐藏窗口实测主页面下载；Linux ARM64 Xvfb 通过原生 socket 实测主页面与跨进程 iframe 下载及超限取消，使用 --no-sandbox、禁用 GPU。完成句柄保留五分钟，文件由宿主管理；Windows Electron 尚未实测。
 
 Chrome 下载并发检查补充原生链路验证：macOS 隔离 Chromium profile 中，第二个等待请求被拒绝，首个等待仍可完成，随后下一次下载也成功。调研中启用 Page 域后，主页面下载产生带来源 tab、frameId 和 GUID 的 Page.downloadWillBegin；chrome.downloads.onCreated 则使用独立数字 ID，当前观察到 URL 相同但缺少跨接口的共同标识。两个连续样本不能证明事件排序或同 URL 并发时的关联，仍需研究可靠匹配方案。
+
+Chrome 下载等待现随所属会话 turnEnded、所属标签关闭或调试器断开取消，释放唯一的下载等待槽；其他会话结束不会取消该等待。扩展测试 27 项通过，macOS 隔离 Chromium 经原生消息链路实测 turnEnded 取消等待及后续重新注册。

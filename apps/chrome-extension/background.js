@@ -307,7 +307,7 @@ class BrowserBackend {
     this.downloadUrlsById = new Map();
     this.downloadsById = new Map();
     this.downloadWaiters = new Set();
-    this.downloadStartWaitActive = false;
+    this.downloadStartWait = null;
     this.downloadChangeListeners = new Set();
     this.downloadReadyListeners = new Set();
     this.fileChooserReadyListeners = new Set();
@@ -318,11 +318,15 @@ class BrowserBackend {
     this.nextCursorMoveSequence = 1;
     chrome.debugger.onDetach.addListener((source) => {
       if (typeof source.tabId === "number") {
+        if (this.downloadStartWait?.tabId === source.tabId) this.downloadStartWait.controller.abort();
         this.attachedTabs.delete(source.tabId);
         this.invalidateFileChoosers(source.tabId);
         this.frameSessionsByTabId.delete(source.tabId);
         this.fileChooserWaitersByTabId.get(source.tabId)?.reject(new Error("File chooser debugger detached"));
       }
+    });
+    chrome.tabs?.onRemoved?.addListener((tabId) => {
+      if (this.downloadStartWait?.tabId === tabId) this.downloadStartWait.controller.abort();
     });
   }
 
@@ -761,20 +765,21 @@ class BrowserBackend {
         : DEFAULT_CDP_TIMEOUT_MS;
     if (params.waitId !== undefined && (typeof params.waitId !== "string" || !/^[0-9a-f-]{36}$/.test(params.waitId))) throw new Error("Invalid download wait ID");
     // shortcut: downloads lack tab attribution here; permit concurrent waits when reliable attribution is available.
-    if (this.downloadStartWaitActive) throw new Error("Already waiting for a Chrome download");
-    this.downloadStartWaitActive = true;
+    if (this.downloadStartWait) throw new Error("Already waiting for a Chrome download");
+    const wait = { sessionId: params.session_id, tabId: params.tabId, controller: new AbortController() };
+    this.downloadStartWait = wait;
     try {
       const waiting = this.waitForDownloadChange(
         (change) => change.status === "started",
         timeoutMs,
         "Timed out waiting for download.",
-        { includeExisting: false }
+        { includeExisting: false, signal: wait.controller.signal }
       );
       if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId);
       const download = await waiting;
       return { downloadId: download.id };
     } finally {
-      this.downloadStartWaitActive = false;
+      if (this.downloadStartWait === wait) this.downloadStartWait = null;
     }
   }
 
@@ -896,6 +901,7 @@ class BrowserBackend {
 
   async turnEnded(params) {
     const session = await this.requireSession(params);
+    if (this.downloadStartWait?.sessionId === session.sessionId) this.downloadStartWait.controller.abort();
     const tabs = await this.getSessionTabs(session.sessionId);
     await this.detachMany(tabs.filter(hasTabId).map((tab) => tab.id));
     this.activeTabsBySession.delete(session.sessionId);
@@ -1096,7 +1102,7 @@ class BrowserBackend {
     }
   }
 
-  waitForDownloadChange(predicate, timeoutMs, timeoutMessage, { includeExisting = true } = {}) {
+  waitForDownloadChange(predicate, timeoutMs, timeoutMessage, { includeExisting = true, signal } = {}) {
     if (includeExisting) {
       for (const change of this.downloadsById.values()) {
         if (predicate(change)) return Promise.resolve(change);
@@ -1113,12 +1119,16 @@ class BrowserBackend {
       const cleanup = () => {
         clearTimeout(timeoutId);
         this.downloadWaiters.delete(waiter);
+        signal?.removeEventListener("abort", abort);
       };
+      const abort = () => { cleanup(); reject(new Error("Download wait canceled")); };
       const timeoutId = setTimeout(() => {
         cleanup();
         reject(new Error(timeoutMessage));
       }, timeoutMs);
       this.downloadWaiters.add(waiter);
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
     });
   }
 
@@ -1301,6 +1311,7 @@ class BrowserBackend {
   }
 
   async detachTab(tabId) {
+    if (this.downloadStartWait?.tabId === tabId) this.downloadStartWait.controller.abort();
     try {
       await chrome.debugger.detach({ tabId });
     } finally {

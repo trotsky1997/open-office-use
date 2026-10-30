@@ -9,7 +9,7 @@ const end=source.indexOf('chrome.runtime.onInstalled.addListener');
 assert.notEqual(end,-1);
 const commands=[];
 const chrome={debugger:{onDetach:{addListener(){}},async sendCommand(target,method,params){commands.push({target,method,params});}},storage:{local:{async get(){return {};},async set(){}}}};
-const Backend=vm.runInNewContext(`${source.slice(0,end)}\nBrowserBackend;`,{chrome,crypto:webcrypto,Date,setTimeout,clearTimeout});
+const Backend=vm.runInNewContext(`${source.slice(0,end)}\nBrowserBackend;`,{chrome,crypto:webcrypto,Date,setTimeout,clearTimeout,AbortController});
 
 test('download wait observes the next start while paths retain completed results',async()=>{
   const backend=new Backend();await backend.store.ready;
@@ -46,6 +46,21 @@ test('only one Chrome download start wait may be active',async()=>{
   const next=backend.waitForDownload({tabId:2,timeoutMs:1000});
   await new Promise(resolve=>setImmediate(resolve));
   backend.emitDownloadChange({id:'next',status:'started'});assert.equal((await next).downloadId,'next');
+});
+
+test('ending the owning session cancels its pending download wait',async()=>{
+  const backend=new Backend();await backend.store.ready;
+  backend.requireSessionTab=async()=>({});backend.requireSession=async params=>({sessionId:params.session_id});
+  backend.getSessionTabs=async()=>[];backend.publishCursorState=async()=>{};
+  const first=backend.waitForDownload({session_id:'first',tabId:1,timeoutMs:1000});
+  const canceled=assert.rejects(first,/Download wait canceled/);
+  await new Promise(resolve=>setImmediate(resolve));
+  await backend.turnEnded({session_id:'other'});assert.equal(backend.downloadWaiters.size,1);
+  await backend.turnEnded({session_id:'first'});await canceled;
+  assert.equal(backend.downloadWaiters.size,0);assert.equal(backend.downloadStartWait,null);
+  const next=backend.waitForDownload({session_id:'other',tabId:2,timeoutMs:1000});
+  await new Promise(resolve=>setImmediate(resolve));backend.emitDownloadChange({id:'next',status:'started'});
+  assert.equal((await next).downloadId,'next');
 });
 
 test('file chooser readiness follows interception and preserves the frame session',async()=>{
