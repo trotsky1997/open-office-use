@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory() as tmp:
     for kind in ('hyperlink', 'comment', 'table', 'array', 'overlap'):
         file = root / f'{kind}.xlsx'; book = Workbook(); sheet = book.active
         if kind == 'hyperlink': sheet['B1'].hyperlink = 'https://example.com'
-        if kind == 'comment': sheet['C3'].comment = Comment('note', 'Reviewer')
+        if kind == 'comment': sheet['B1'].comment = Comment('note', 'Reviewer')
         if kind == 'table':
             sheet['A1'] = 'Column'; sheet['A2'] = 1; sheet.add_table(Table(displayName='Example', ref='A1:A2'))
         if kind == 'array': sheet['A1'] = ArrayFormula(ref='A1:B2', text='=1')
@@ -58,4 +58,44 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError(f'{kind} merge accepted')
         assert session.info(trial)['latest_revision'] == 0
+    mixed = root / 'mixed.xlsx'; book = Workbook(); sheet = book.active
+    sheet['E1'] = 'Name'; sheet['F1'] = 'Amount'; sheet['E2'] = 'Item'; sheet['F2'] = 12
+    sheet.add_table(Table(displayName='SalesTable', ref='E1:F2'))
+    sheet['C3'].comment = Comment('Anchor comment', 'Reviewer'); sheet['G4'].comment = Comment('Other comment', 'Reviewer')
+    book.save(mixed); mixed_draft = root / 'mixed-draft'; session.start(mixed_draft, source=mixed)
+    outside = session.merge_cells(mixed_draft, 0, 'Sheet', 'A1:B1')
+    with zipfile.ZipFile(mixed) as before, zipfile.ZipFile(outside['file']) as after:
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name != 'xl/worksheets/sheet1.xml')
+    anchor = session.merge_cells(mixed_draft, 1, 'Sheet', 'C3:D3')
+    readback = load_workbook(anchor['file']); assert readback.active['C3'].comment.text == 'Anchor comment' and readback.active['G4'].comment.text == 'Other comment'
+    assert 'SalesTable' in readback.active.tables and officecli_backend.audit(anchor['file'])['validation']['exit_code'] == 0
+    for selected in ('E1:F1', 'G3:G4'):
+        try: session.merge_cells(mixed_draft, 2, 'Sheet', selected)
+        except ValueError: pass
+        else: raise AssertionError(f'Protected range accepted: {selected}')
+    broken = root / 'broken.xlsx'
+    with zipfile.ZipFile(mixed) as before, zipfile.ZipFile(broken, 'w') as after:
+        for entry in before.infolist():
+            data = before.read(entry)
+            if entry.filename.endswith('sheet1.xml.rels'): data = data.replace(b'/xl/tables/table1.xml', b'/xl/tables/missing.xml')
+            after.writestr(entry, data)
+    broken_draft = root / 'broken-draft'; session.start(broken_draft, source=broken)
+    try: session.merge_cells(broken_draft, 0, 'Sheet', 'A1:B1')
+    except (ValueError, KeyError): pass
+    else: raise AssertionError('Missing table part accepted')
+    assert session.info(broken_draft)['latest_revision'] == 0
+    threaded = root / 'threaded.xlsx'
+    with zipfile.ZipFile(mixed) as before, zipfile.ZipFile(threaded, 'w') as after:
+        for entry in before.infolist():
+            data = before.read(entry)
+            if entry.filename.endswith('sheet1.xml.rels'):
+                tree = etree.fromstring(data); rel = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+                etree.SubElement(tree, rel + 'Relationship', Id='threaded', Type='http://schemas.microsoft.com/office/2017/10/relationships/threadedComment', Target='/xl/threadedComments/threadedComment1.xml'); data = etree.tostring(tree)
+            after.writestr(entry, data)
+        after.writestr('xl/threadedComments/threadedComment1.xml', '<threadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"/>')
+    threaded_draft = root / 'threaded-draft'; session.start(threaded_draft, source=threaded)
+    try: session.merge_cells(threaded_draft, 0, 'Sheet', 'A1:B1')
+    except ValueError: pass
+    else: raise AssertionError('Unverified threaded comments accepted')
+    assert session.info(threaded_draft)['latest_revision'] == 0
     print('Merge cells smoke passed: merge, unmerge, formatting, caches and content protection')

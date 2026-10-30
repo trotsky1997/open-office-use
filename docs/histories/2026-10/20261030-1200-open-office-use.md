@@ -141,3 +141,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Add versioned XLSX freeze/unfreeze operations through CLI, MCP and viewer, expose saved pane attributes in grid reads, and preserve unrelated workbook parts and formula caches.
 
 - Add versioned merge/unmerge through viewer, CLI and MCP, preserving cell XML and formula caches while rejecting occupied interiors, overlapping formulas and unsupported worksheet features.
+
+- Resolve worksheet table relationships and legacy comment anchors before merging: allow disjoint structures and anchor comments, and reject overlaps, ambiguous references and threaded comments.

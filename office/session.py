@@ -799,12 +799,52 @@ def merge_cells(directory, base_revision, sheet, cell_range, merge=True):
                 if overlap(bounds, other): matches.append((item, other))
         if merge:
             if matches: raise ValueError('Range overlaps an existing merged range')
-            if root.find(ns + 'tableParts') is not None: raise ValueError('Worksheets with tables require separate merge review')
             rel_path = posixpath.join(posixpath.dirname(part), '_rels', posixpath.basename(part) + '.rels')
+            relationships = []
             if rel_path in archive.namelist():
                 rels = ooxml.parse_xml(archive.read(rel_path)).getroot()
                 if rels.tag != grid_styles.REL + 'Relationships': raise ValueError('Invalid worksheet relationships')
-                if any(item.get('Type', '').lower().endswith(('/comments', '/threadedcomment')) for item in rels): raise ValueError('Worksheets with comments require separate merge review')
+                relationships = rels.findall(grid_styles.REL + 'Relationship')
+                ids = [item.get('Id') for item in relationships]
+                if any(not rid for rid in ids) or len(ids) != len(set(ids)): raise ValueError('Ambiguous worksheet relationships')
+            base = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+            def related(item, expected_type):
+                target = item.get('Target', '')
+                if item.get('Type') != base + expected_type or item.get('TargetMode', 'Internal') != 'Internal' or not target or any(c in target for c in ('%', '?', '#', chr(92), ':')): raise ValueError('Unsupported related worksheet part')
+                path = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join(posixpath.dirname(part), target))
+                if not path.startswith('xl/') or path not in archive.namelist(): raise ValueError('Invalid related worksheet part')
+                return ooxml.parse_xml(archive.read(path)).getroot()
+            table_parts = root.findall(ns + 'tableParts')
+            if len(table_parts) > 1 or len(list(root.iter(ns + 'tableParts'))) != len(table_parts): raise ValueError('Ambiguous table parts')
+            table_rels = [item for item in relationships if item.get('Type', '').lower().endswith('/table')]
+            table_ids = []
+            if table_parts:
+                collection = table_parts[0]; count = collection.get('count')
+                if set(collection.attrib) - {'count'} or (count is not None and (not re.fullmatch(r'[0-9]{1,8}', count) or int(count) != len(collection))): raise ValueError('Invalid table parts')
+                rid_key = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
+                for item in collection:
+                    if item.tag != ns + 'tablePart' or set(item.attrib) != {rid_key} or len(item): raise ValueError('Unsupported table part')
+                    table_ids.append(item.get(rid_key))
+            if len(table_ids) != len(set(table_ids)) or set(table_ids) != {item.get('Id') for item in table_rels}: raise ValueError('Ambiguous table references')
+            for rel in table_rels:
+                table = related(rel, 'table')
+                if table.tag != ns + 'table': raise ValueError('Invalid table part')
+                try: table_bounds = range_boundaries(table.get('ref'))
+                except (TypeError, ValueError): raise ValueError('Invalid table range') from None
+                if any(v is None for v in table_bounds) or not (1 <= table_bounds[0] <= table_bounds[2] <= 16384 and 1 <= table_bounds[1] <= table_bounds[3] <= 1048576): raise ValueError('Invalid table range')
+                if overlap(bounds, table_bounds): raise ValueError('Merged range overlaps a table')
+            comment_rels = [item for item in relationships if item.get('Type', '').lower().endswith(('/comments', '/threadedcomment'))]
+            if len(comment_rels) > 1 or any(item.get('Type') != base + 'comments' for item in comment_rels): raise ValueError('Unsupported comment references')
+            for rel in comment_rels:
+                comments = related(rel, 'comments'); lists = comments.findall(ns + 'commentList')
+                if comments.tag != ns + 'comments' or len(lists) != 1 or len(list(comments.iter(ns + 'commentList'))) != 1 or any(child.tag not in (ns + 'authors', ns + 'commentList') for child in comments): raise ValueError('Unsupported comment structure')
+                seen_comments = set()
+                for comment in lists[0]:
+                    ref = comment.get('ref', '')
+                    if comment.tag != ns + 'comment' or not re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', ref) or ref in seen_comments: raise ValueError('Invalid comment reference')
+                    seen_comments.add(ref); col, number = range_boundaries(ref)[:2]
+                    if col > 16384 or number > 1048576: raise ValueError('Invalid comment reference')
+                    if c1 <= col <= c2 and r1 <= number <= r2 and (col, number) != (c1, r1): raise ValueError(f'Non-anchor cell {ref} has a comment')
             for link in root.iter(ns + 'hyperlink'):
                 try: linked = range_boundaries(link.get('ref'))
                 except (ValueError, TypeError): raise ValueError('Invalid hyperlink range') from None
