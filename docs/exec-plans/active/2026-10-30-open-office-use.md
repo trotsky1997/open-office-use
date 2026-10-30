@@ -300,3 +300,5 @@ Word body, header/footer and note searches flag matches inside fields, including
 Authored Word TOC heading caches can be refreshed in a snapshot-bound session revision after heading edits. The supported scope is original generated fields and standard direct-body heading styles; pagination still requires a field update in a compatible editor.
 
 TOC cache refresh resolves direct outline levels and paragraph-style inheritance, including custom styles; ambiguous and cyclic styles are rejected. Only direct-body headings are supported.
+
+Positioned PowerPoint elements accept nonvisual descriptions, including tables, charts, shapes and connectors; chart inspection and layout candidates report bounded descriptions. Screen-reader behavior and native PowerPoint remain unverified.

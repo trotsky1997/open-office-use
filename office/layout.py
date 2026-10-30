@@ -202,6 +202,8 @@ def inspect(file, selection=None):
                             left = min(p[0] for p in points); top = min(p[1] for p in points)
                             right = max(p[0] for p in points); bottom = max(p[1] for p in points)
                             descriptor = {'slide': slide_number, 'id': shape_id, 'name': str(shape.name or '')[:200],
+                                          'description': (metadata.get('descr', '') if metadata is not None else '')[:1000],
+                                          'description_truncated': metadata is not None and len(metadata.get('descr', '')) > 1000,
                                           'path_hint': path, 'bounds_inches': [round(value / EMU, 4) for value in (left, top, right, bottom)],
                                           'polygon_inches': [[round(x / EMU, 4), round(y / EMU, 4)] for x, y in points]}
                             if left < -1 or top < -1 or right > slide_width + 1 or bottom > slide_height + 1:

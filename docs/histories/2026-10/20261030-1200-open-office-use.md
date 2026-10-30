@@ -403,3 +403,5 @@ Word search now detects field context across paragraphs in each story and report
 Added session and CLI refresh for authored Word TOC heading caches with snapshot checks and conservative structure validation.
 
 Extended TOC cache refresh to resolve custom inherited heading styles and direct paragraph outline levels; reject cyclic or ambiguous inheritance.
+
+Extended PowerPoint element authoring and inspection with bounded alternative descriptions for native shapes, connectors, tables and charts.

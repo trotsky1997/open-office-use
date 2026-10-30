@@ -22,18 +22,23 @@ with tempfile.TemporaryDirectory() as tmp:
         {'type':'textbox','x':1,'y':0.5,'width':9,'height':1,'text':'Quarterly review','font_size':32,'font':'Arial','bold':True,'color':'14283F'},
         {'type':'textbox','x':1,'y':2,'width':6,'height':2,'text':'Revenue +18%\nRetention 92%','font_size':20,'color':'31485F'},
         {'type':'image','path':str(image),'x':9,'y':2,'width':3,'height':2,'description':'Teal illustration'}]}]}
+    spec['slides'][0]['elements'][0]['description'] = 'Accent bar'
+    spec['slides'][0]['elements'][1]['description'] = 'Report title'
     out = root/'slide.pptx'; open_office_use.author(spec, out)
     deck = Presentation(out); slide = deck.slides[0]
     assert abs(deck.slide_width-Inches(13.333)) < 5 and slide.background.fill.fore_color.rgb == (0xf5,0xf8,0xfc)
+    assert slide.shapes[0]._element.nvSpPr.cNvPr.get('descr') == 'Accent bar' and slide.shapes[1]._element.nvSpPr.cNvPr.get('descr') == 'Report title'
     assert len(slide.shapes) == 4 and slide.shapes[1].text == 'Quarterly review'
     assert slide.shapes[1].text_frame.paragraphs[0].runs[0].font.size.pt == 32
     assert slide.shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Teal illustration'
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
     line_file=root/'lines.pptx'
     lines=[{'type':'line','x':1,'y':1,'end_x':5,'end_y':1,'color':'236B8E','line_width':3,'arrow':'end'}, {'type':'line','x':5,'y':2,'end_x':1,'end_y':2,'color':'BA5A32','arrow':'end'}, {'type':'line','x':6,'y':1,'end_x':6,'end_y':3,'arrow':'both'}]
+    lines[0]['description'] = 'Direction arrow'
     open_office_use.author({'slides':[{'layout':'blank','elements':lines}]},line_file)
     first_line, reverse_line, vertical_line = Presentation(line_file).slides[0].shapes
     a='{http://schemas.openxmlformats.org/drawingml/2006/main}'
+    assert first_line._element.nvCxnSpPr.cNvPr.get('descr') == 'Direction arrow'
     assert first_line.line.width.pt == 3 and str(first_line.line.color.rgb) == '236B8E' and first_line._element.spPr.ln.find(a+'tailEnd').get('type') == 'triangle'
     assert reverse_line._element.spPr.xfrm.get('flipH') == '1' and reverse_line._element.spPr.ln.find(a+'tailEnd') is not None
     assert vertical_line._element.spPr.ln.find(a+'headEnd') is not None and vertical_line._element.spPr.ln.find(a+'tailEnd') is not None
@@ -55,8 +60,10 @@ with tempfile.TemporaryDirectory() as tmp:
     connector_file=root/'attached.pptx'
     nodes=[{**shape,'id':f'node{i}'} for i,shape in enumerate(flow)]
     connectors=[{'type':'connector','start':{'shape':'node0','side':'right'},'end':{'shape':'node1','side':'left'},'color':'236B8E'}, {'type':'connector','start':{'shape':'node1','side':'right'},'end':{'shape':'node2','side':'left'},'color':'236B8E'}]
+    nodes[0]['description'] = 'Starting step'; connectors[0]['description'] = 'Connects first and second step'
     open_office_use.author({'slides':[{'layout':'blank','elements':nodes+connectors}]},connector_file)
     attached=Presentation(connector_file).slides[0].shapes
+    assert attached[0]._element.nvSpPr.cNvPr.get('descr') == 'Starting step' and attached[4]._element.nvCxnSpPr.cNvPr.get('descr') == 'Connects first and second step'
     first=attached[4]._element.nvCxnSpPr.cNvCxnSpPr; second=attached[5]._element.nvCxnSpPr.cNvCxnSpPr
     assert first.find(a+'stCxn').get('id') == str(attached[0].shape_id) and first.find(a+'stCxn').get('idx') == '3'
     assert first.find(a+'endCxn').get('id') == str(attached[1].shape_id) and first.find(a+'endCxn').get('idx') == '1'
@@ -142,8 +149,10 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as exc: assert 'orientation' in str(exc)
     else: raise AssertionError('Image with unresolved orientation accepted')
     table_spec = {'slide_size':{'width':13.333,'height':7.5}, 'slides':[{'layout':'blank','elements':[{'type':'table','x':1,'y':1,'width':8,'height':2,'rows':[['Metric','Current','Prior'],['Revenue','18%','12%'],['Retention','92%','90%']],'header':True,'font':'Arial','font_size':18,'color':'14283F','header_fill':'236B8E','header_color':'FFFFFF','column_weights':[2,1,1]}]}]}
+    table_spec['slides'][0]['elements'][0]['description'] = 'Revenue and retention comparison'
     table_file = root/'table.pptx'; open_office_use.author(table_spec, table_file)
     shape = Presentation(table_file).slides[0].shapes[0]; table = shape.table
+    assert shape._element.nvGraphicFramePr.cNvPr.get('descr') == 'Revenue and retention comparison'
     assert table.cell(1,0).text == 'Revenue' and table.cell(0,1).text == 'Current' and table.first_row
     assert [column.width for column in table.columns] == [Inches(4), Inches(2), Inches(2)]
     assert table.cell(0,0).fill.fore_color.rgb == (0x23,0x6b,0x8e)

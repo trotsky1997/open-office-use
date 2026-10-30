@@ -156,7 +156,9 @@ def inspect(file):
                     if hidden_shape not in (None, '0', 'false', '1', 'true'): issue(slide_no, path, 'unknown_shape_visibility')
                     record = {'slide': slide_no, 'hidden_slide': hidden, 'hidden_shape': hidden_shape in ('1', 'true'), 'shape_id': shape.shape_id, 'name': str(shape.name or '')[:200],
                               'path': path, 'chart_part': str(chart.part.partname), 'chart_type': str(chart.chart_type),
-                              'plot_count': len(plots), 'series_total': len(series), 'series': [], 'workbook': workbook(chart)}
+                              'plot_count': len(plots), 'series_total': len(series), 'series': [], 'workbook': workbook(chart),
+                              'description': (metadata.get('descr', '') if metadata is not None else '')[:1000],
+                              'description_truncated': metadata is not None and len(metadata.get('descr', '')) > 1000}
                     title = chart.part._element.find('.//' + C + 'chart/' + C + 'title')
                     if title is not None:
                         rich = title.find(C + 'tx/' + C + 'rich')

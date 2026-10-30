@@ -443,7 +443,13 @@ def append_slides(presentation, slides):
                        'rectangle': geometry | {'fill'}, 'shape': geometry | {'id', 'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'connector': {'type', 'start', 'end', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
                        'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values', 'show_percent', 'point_colors'}}
-            if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
+            if not isinstance(kind, str) or kind not in allowed or set(element) - (allowed[kind] | {'description'}): raise ValueError('Unsupported slide element or property')
+            if 'description' in element and (not isinstance(element['description'], str) or len(element['description']) > 1000): raise ValueError('Slide description must be text of at most 1,000 characters')
+            def describe(shape):
+                if 'description' in element:
+                    properties = shape._element.xpath('./p:nvSpPr/p:cNvPr | ./p:nvCxnSpPr/p:cNvPr | ./p:nvGraphicFramePr/p:cNvPr | ./p:nvPicPr/p:cNvPr')
+                    if len(properties) != 1: raise ValueError('Slide element has ambiguous nonvisual properties')
+                    properties[0].set('descr', element['description'])
             if kind == 'connector':
                 ends = []
                 for key in ('start', 'end'):
@@ -464,6 +470,7 @@ def append_slides(presentation, slides):
                 shape.line.color.rgb = ink; shape.line.width = Pt(line_width); line = shape._element.spPr.get_or_add_ln()
                 if arrow in ('start', 'both'): head = PptxElement('a:headEnd'); head.set('type', 'triangle'); line.append(head)
                 if arrow in ('end', 'both'): tail = PptxElement('a:tailEnd'); tail.set('type', 'triangle'); line.append(tail)
+                describe(shape)
                 continue
             x = Inches(number(element.get('x'), 'x', -100, 100)); y = Inches(number(element.get('y'), 'y', -100, 100))
             if kind == 'line':
@@ -478,6 +485,7 @@ def append_slides(presentation, slides):
                 line = shape._element.spPr.get_or_add_ln()
                 if arrow in ('start', 'both'): head = PptxElement('a:headEnd'); head.set('type', 'triangle'); line.append(head)
                 if arrow in ('end', 'both'): tail = PptxElement('a:tailEnd'); tail.set('type', 'triangle'); line.append(tail)
+                describe(shape)
                 continue
             width = Inches(number(element.get('width'), 'width', 0.01, 100)); height = Inches(number(element.get('height'), 'height', 0.01, 100))
             if kind == 'textbox':
@@ -586,7 +594,7 @@ def append_slides(presentation, slides):
                 if weights is not None:
                     if not isinstance(weights, list) or len(weights) != columns: raise ValueError('Provide one column weight per column')
                     weights = [number(value, 'column weight', 0.01, 1000) for value in weights]
-                table = slide.shapes.add_table(len(rows), columns, x, y, width, height).table
+                shape = slide.shapes.add_table(len(rows), columns, x, y, width, height); table = shape.table
                 table.first_row = header
                 if weights is not None:
                     total = sum(weights); previous = 0; cumulative = 0
@@ -647,7 +655,7 @@ def append_slides(presentation, slides):
                     if number_format is not None and (not isinstance(number_format, str) or not 1 <= len(number_format) <= 255): raise ValueError('Chart number format must be text of at most 255 characters')
                     if 'color' in series: color(series['color'])
                     data.add_series(name, values, number_format=number_format)
-                chart = slide.shapes.add_chart({'column': XL_CHART_TYPE.COLUMN_CLUSTERED, 'bar': XL_CHART_TYPE.BAR_CLUSTERED, 'line': XL_CHART_TYPE.LINE, 'pie': XL_CHART_TYPE.PIE}[chart_type], x, y, width, height, data).chart
+                shape = slide.shapes.add_chart({'column': XL_CHART_TYPE.COLUMN_CLUSTERED, 'bar': XL_CHART_TYPE.BAR_CLUSTERED, 'line': XL_CHART_TYPE.LINE, 'pie': XL_CHART_TYPE.PIE}[chart_type], x, y, width, height, data); chart = shape.chart
                 # Chart axis IDs must be positive and cross-references must stay consistent.
                 axis_ids = {}
                 for axis_id in chart._element.xpath('.//c:axId | .//c:crossAx'):
@@ -716,6 +724,7 @@ def append_slides(presentation, slides):
                         if aspect > box_aspect: shape.crop_left = shape.crop_right = crop
                         else: shape.crop_top = shape.crop_bottom = crop
                 shape._element.nvPicPr.cNvPr.set('descr', description)
+            describe(shape)
 
 
 def format_workbook(workbook, options):

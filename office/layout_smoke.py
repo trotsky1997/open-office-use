@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'source.pptx'; deck = Presentation(); slide = deck.slides.add_slide(deck.slide_layouts[6])
     def text(name, x, y, w, h):
         shape = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h)); shape.name = name; shape.text = name; return shape
-    text('Alpha', 1, 1, 2, 1); text('Beta', 2, 1.5, 2, 1); text('Overflow', 9.5, 7, 2, 1)
+    alpha = text('Alpha', 1, 1, 2, 1); alpha._element.nvSpPr.cNvPr.set('descr', 'First metric'); text('Beta', 2, 1.5, 2, 1); text('Overflow', 9.5, 7, 2, 1)
     group = slide.shapes.add_group_shape(); child = group.shapes.add_textbox(Inches(1), Inches(1), Inches(2), Inches(1)); child.name = 'Rotated child'; child.text = 'Group'
     group.left = Inches(5); group.top = Inches(3); group.width = Inches(2); group.height = Inches(1); group.rotation = 90
     text('Group target', 5.5, 2.5, 1, 2)
@@ -31,6 +31,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert result['visibility_known'] and not result['hidden_slides']
     pairs = {frozenset((item['first']['name'], item['second']['name'])): item for item in result['overlaps']}
     alpha_beta = pairs[frozenset(('Alpha', 'Beta'))]
+    alpha_shape = next(item for item in (alpha_beta['first'],alpha_beta['second']) if item['name'] == 'Alpha')
+    assert alpha_shape['description'] == 'First metric' and not alpha_shape['description_truncated']
     assert alpha_beta['area_square_inches'] == 0.5 and alpha_beta['fraction_of_smaller'] == 0.25
     assert len(alpha_beta['first']['polygon_inches']) == 4 and len(alpha_beta['intersection_polygon_inches']) == 4
     grouped = pairs[frozenset(('Rotated child', 'Group target'))]
