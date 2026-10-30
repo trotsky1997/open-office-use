@@ -584,6 +584,57 @@ test('scoped locators disambiguate descendants and recheck the scope before inpu
   assert.equal(keys,0);
 });
 
+test('text filters select unnamed containers and recheck changing text before input', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'});
+  let apple='Apples', changeOnMeasure=false, changeOnFocus=false, unindexed=false, mouse=0, keys=0;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    const command=params.method,args=params.commandParams;
+    if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(command==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(command==='Accessibility.getFullAXTree')return {nodes:[
+      {nodeId:'item1',backendDOMNodeId:10,role:{value:'listitem'},name:{value:''}},
+      {backendDOMNodeId:11,role:{value:'listitem'},name:{value:''}},
+      {backendDOMNodeId:12,role:{value:'listitem'},name:{value:'Apples'}},
+      {backendDOMNodeId:20,role:{value:'StaticText'},name:{value:apple}},
+      {backendDOMNodeId:21,role:{value:'StaticText'},name:{value:'Pears'}},
+      {backendDOMNodeId:30,role:{value:'button'},name:{value:'Add'}},
+      {backendDOMNodeId:31,role:{value:'button'},name:{value:'Add'}},
+      ...(unindexed ? [{nodeId:'outside',backendDOMNodeId:99,role:{value:'generic'},name:{value:''}}, {parentId:unindexed==='related'?'item1':unindexed==='unrelated'?'outside':undefined,role:{value:'StaticText'},name:{value:'unindexed content'}}] : [])
+    ]};
+    if(command==='DOM.resolveNode')return {object:{objectId:String(args.backendNodeId)}};
+    if(command==='DOM.focus'){if(changeOnFocus)apple='Bananas';return {};}
+    if(command==='Input.dispatchKeyEvent')keys++;
+    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('activeElement')) return {result:{value:true}};
+    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('target===this')) return {result:{value:args.objectId==='10' && ['20','30'].includes(args.arguments[0].objectId) || args.objectId==='11' && ['21','31'].includes(args.arguments[0].objectId)}};
+    if(command==='Runtime.callFunctionOn'){if(changeOnMeasure)apple='Bananas';return {result:{value:{x:10,y:10,width:10,height:10}}};}
+    if(command==='Input.dispatchMouseEvent')mouse++;
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1), items=tab.playwright.getByRole('listitem');
+  assert.equal(await items.filter({hasText:'apples'}).count(),1);
+  assert.equal(await items.filter({hasText:'apples',hasNotText:'pears'}).count(),1);
+  assert.equal(await items.filter({hasNotText:'pears'}).count(),2);
+  assert.equal(await items.nth(0).filter({hasText:'pears'}).count(),0);
+  assert.equal(await items.filter({hasText:'pears'}).nth(0).count(),1);
+  const button=items.filter({hasText:'Apples'}).getByRole('button',{name:'Add'});
+  await button.click(); assert.equal(mouse,2);
+  changeOnMeasure=true;
+  await assert.rejects(button.click({timeoutMs:0}),/text changed/);
+  assert.equal(mouse,2);
+  apple='Apples'; changeOnMeasure=false; changeOnFocus=true;
+  await assert.rejects(button.press('Enter',{timeoutMs:1000}),/text changed/);
+  assert.equal(keys,0);
+  apple='Apples'; changeOnFocus=false; unindexed='unrelated';
+  assert.equal(await items.filter({hasText:'Apples'}).count(),1);
+  unindexed='related';
+  await assert.rejects(items.filter({hasNotText:'unindexed'}).count(),/cannot be indexed/);
+  unindexed='unknown';
+  await assert.rejects(items.filter({hasNotText:'unindexed'}).count(),/cannot be indexed/);
+  unindexed=false; apple='x'.repeat(30001);
+  await assert.rejects(items.filter({hasText:'x'}).count(),/30000 character limit/);
+});
+
 test('truncated alt text rejects locator matching and invalidates stale observations', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let alt='x'.repeat(512)+'first', mouse=0;

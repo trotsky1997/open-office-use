@@ -155,6 +155,8 @@ await tab.playwright.getByAltText("Product photo", { exact: true }).click();
 const dialog = tab.playwright.getByRole("dialog", { name: "Sign in", exact: true });
 await dialog.hover();
 await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+await tab.playwright.getByRole("listitem").filter({ hasText: "Apples" })
+  .getByRole("button", { name: "Add", exact: true }).click();
 ```
 
 This locator covers the interactive roles exposed by `observe`, including
@@ -182,6 +184,16 @@ checks cross shadow roots and iframe boundaries. Scope roles and containment are
 checked again before input; a focus handler can also change the scope, so
 `press()` checks it after focusing. This API follows the accessible tree and
 requires all observed frames to be readable.
+
+`filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
+locator by its accessible static-text descendants. Matching is a case-insensitive
+substring after whitespace normalization; text fragments are joined with spaces.
+This includes readable child frames and shadow roots. The filter uses indexed
+accessibility text, so `aria-label` alone does not count as descendant text.
+The operation rejects a candidate when unindexed text may belong to it or
+the text relationship cannot be determined, when frames are inaccessible, or
+when the candidate contains more than 30,000 characters. Text is checked again before input and after focus; pages with many
+text nodes can require many browser requests. Only string filters are supported.
 
 `getByText` matches individual accessible static-text nodes after collapsing
 whitespace; text split across multiple elements is matched separately. Text

@@ -59,9 +59,9 @@ app.whenReady().then(async () => {
     await dialog.hover();
     assert.equal(await evaluate('window.dialogHoverTrusted'),true);
     await evaluate("document.querySelector('dialog').close();document.querySelector('dialog').remove();document.querySelector('#outside-confirm').remove();window.scrollTo(0,0)");
-    await evaluate(`(()=>{const group=document.createElement('section');group.id='products';group.setAttribute('role','group');group.setAttribute('aria-label','Shop');group.innerHTML='<ul aria-label="Products"><li aria-label="Apples"><button>Add</button></li><li aria-label="Pears"><button>Add</button></li></ul>';group.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.listClick={item:i,trusted:e.isTrusted});document.body.append(group)})()`);
+    await evaluate(`(()=>{const group=document.createElement('section');group.id='products';group.setAttribute('role','group');group.setAttribute('aria-label','Shop');group.innerHTML='<ul aria-label="Products"><li>Apples <button>Add</button></li><li>Pears <button>Add</button></li></ul>';group.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.listClick={item:i,trusted:e.isTrusted});document.body.append(group)})()`);
     assert.equal(await sdkTab.playwright.getByRole('button',{name:'Add',exact:true}).count(),2);
-    await sdkTab.playwright.getByRole('group',{name:'Shop',exact:true}).getByRole('list',{name:'Products',exact:true}).getByRole('listitem',{name:'Apples',exact:true}).getByRole('button',{name:'Add',exact:true}).click();
+    await sdkTab.playwright.getByRole('group',{name:'Shop',exact:true}).getByRole('list',{name:'Products',exact:true}).getByRole('listitem').filter({hasText:'Apples',hasNotText:'Pears'}).getByRole('button',{name:'Add',exact:true}).click();
     assert.deepEqual(await evaluate('window.listClick'),{item:0,trusted:true});
     await evaluate("document.querySelector('#products').remove();window.scrollTo(0,0)");
     await evaluate(`(()=>{const table=document.createElement('table');table.id='inventory';table.setAttribute('aria-label','Inventory');table.innerHTML='<thead><tr><th>Item</th><th>Action</th></tr></thead><tbody><tr aria-label="Apples row"><td>Apples</td><td><button>Remove</button></td></tr><tr aria-label="Pears row"><td>Pears</td><td><button>Remove</button></td></tr></tbody>';table.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.tableClick={item:i,trusted:e.isTrusted});document.body.append(table)})()`);
@@ -76,7 +76,7 @@ app.whenReady().then(async () => {
     const crossUrl = fixture.url.replace('127.0.0.1','localhost') + '/cross-frame';
     await evaluate(`(async()=>{window.crossMessages=[];window.addEventListener('message',e=>crossMessages.push(e.data));const container=document.createElement('section');container.setAttribute('role','dialog');container.setAttribute('aria-label','Frame container');Object.assign(container.style,{position:'fixed',left:'20px',top:'150px'});const inner=document.createElement('section');inner.setAttribute('role','dialog');inner.setAttribute('aria-label','Inner container');container.append(inner);const f=document.createElement('iframe');f.id='cross-frame';f.src=${JSON.stringify(crossUrl)};Object.assign(f.style,{width:'500px',height:'300px'});inner.append(f);document.body.append(container);await new Promise(resolve=>f.onload=resolve)})()`);
     assert.equal((await sdkTab.observe({includeFrames:true})).frameCoverage,'cross-process');
-    await sdkTab.playwright.getByRole('dialog',{name:'Frame container',exact:true}).getByRole('dialog',{name:'Inner container',exact:true}).getByRole('button',{name:'Cross-frame action',exact:true}).hover();
+    await sdkTab.playwright.getByRole('dialog',{name:'Frame container',exact:true}).filter({hasText:'Cross-frame action'}).getByRole('dialog',{name:'Inner container',exact:true}).getByRole('button',{name:'Cross-frame action',exact:true}).hover();
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-hover',trusted:true});
     assert.equal(await evaluate(`window.crossMessages.some(message=>message.kind==='cross-click')`),false);

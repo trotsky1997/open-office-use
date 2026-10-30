@@ -6,6 +6,32 @@ const defaultNavigationTimeoutMs = 10_000;
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 class RetryablePreflightError extends Error {
 }
+function unindexedTextAncestors(tree) {
+    if (!isObject(tree) || !Array.isArray(tree.nodes))
+        return [];
+    const nodes = tree.nodes.filter(isObject);
+    const byId = new Map(nodes.filter(node => typeof node.nodeId === "string").map(node => [node.nodeId, node]));
+    return nodes.filter(node => node.ignored !== true && isObject(node.role) && node.role.value === "StaticText" &&
+        isObject(node.name) && typeof node.name.value === "string" && node.name.value.length > 0 && typeof node.backendDOMNodeId !== "number").map(node => {
+        const seen = new Set();
+        let parent = node.parentId;
+        while (typeof parent === "string" && !seen.has(parent)) {
+            seen.add(parent);
+            const ancestor = byId.get(parent);
+            if (!ancestor)
+                break;
+            if (typeof ancestor.backendDOMNodeId === "number")
+                return ancestor.backendDOMNodeId;
+            parent = ancestor.parentId;
+        }
+        return undefined;
+    });
+}
+function matchesTextFilters(text, filters) {
+    const normalized = text.toLowerCase();
+    const needle = (value) => value.replace(/\s+/g, " ").trim().toLowerCase();
+    return filters.every(filter => (filter.hasText === undefined || normalized.includes(needle(filter.hasText))) && (filter.hasNotText === undefined || !normalized.includes(needle(filter.hasNotText))));
+}
 export class OpenBrowserUseClient {
     socketPath;
     sessionId;
@@ -319,6 +345,7 @@ export class OpenBrowserUseTab {
         const documentId = await this.documentId();
         const tree = await this.getAXState();
         const nodes = interactiveNodes(tree, 0, options.includeText);
+        const unindexedText = options.includeText ? unindexedTextAncestors(tree).map(backendNodeId => ({ backendNodeId })) : [];
         const valueBudget = { remaining: 8_000, truncated: false };
         if (options.includeValues)
             await this.readAXValues(tree, nodes, valueBudget);
@@ -331,6 +358,8 @@ export class OpenBrowserUseTab {
             for (const frame of frames.slice(1)) {
                 try {
                     const childTree = await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: frame.id }, { sessionId: frame.sessionId });
+                    if (options.includeText)
+                        unindexedText.push(...unindexedTextAncestors(childTree).map(backendNodeId => ({ backendNodeId, frameId: frame.id, frameChain: frameAncestry(frame, frames) })));
                     const childNodes = interactiveNodes(childTree, nodes.length, options.includeText).map(node => ({ ...node, frameId: frame.id, frameChain: frameAncestry(frame, frames) }));
                     if (options.includeValues)
                         await this.readAXValues(childTree, childNodes, valueBudget, frame.sessionId);
@@ -351,7 +380,7 @@ export class OpenBrowserUseTab {
         if (documentId !== await this.documentId())
             throw new RetryablePreflightError("Page changed during observation; observe again");
         const id = randomUUID();
-        this.#observation = { id, documentId, nodes, guards: new Map() };
+        this.#observation = { id, documentId, nodes, unindexedText, guards: new Map() };
         const previous = this.#lastText;
         const useDiff = options.diff === true && previous?.documentId === documentId && previous.includeFrames === !!options.includeFrames && previous.includeValues === !!options.includeValues && previous.includeText === !!options.includeText && !previous.truncated && !full.truncated && !valueBudget.truncated && !unavailableFrames.length;
         const output = useDiff ? diffAXState(previous.text, full.text) : full;
@@ -416,11 +445,67 @@ export class OpenBrowserUseTab {
         return this.scopeContains(observation, scopeIndex, targetIndex);
     }
     /** @internal */
-    bindLocatorScope(snapshotId, targetIndex, scopeIndices) {
+    bindLocatorScope(snapshotId, targetIndex, scopeIndices, filters) {
         const observation = this.#observation;
         if (!observation || observation.id !== snapshotId)
             throw new RetryablePreflightError("Observation is stale; observe again");
-        observation.guards.set(targetIndex, [...scopeIndices]);
+        observation.guards.set(targetIndex, { scopes: [...scopeIndices], filters: filters.map(item => ({ index: item.index, filters: item.filters.map(filter => ({ ...filter })) })) });
+    }
+    /** @internal */
+    async locatorText(snapshotId, index) {
+        const observation = this.#observation;
+        if (!observation || observation.id !== snapshotId)
+            throw new RetryablePreflightError("Observation is stale; observe again");
+        return this.scopeText(observation, index);
+    }
+    async scopeText(observation, index) {
+        const scope = observation.nodes.find(node => node.index === index);
+        if (!scope)
+            throw new RetryablePreflightError("Scope changed; observe again");
+        const seen = new Set();
+        for (const item of observation.unindexedText) {
+            if (item.backendNodeId === undefined)
+                throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
+            const key = `${item.frameId ?? "root"}:${item.backendNodeId}`;
+            if (seen.has(key))
+                continue;
+            seen.add(key);
+            if (scope.frameId === item.frameId && scope.backendNodeId === item.backendNodeId)
+                throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
+            const probe = { index: -1, role: "", name: "", stateKey: "", backendNodeId: item.backendNodeId, frameId: item.frameId, frameChain: item.frameChain };
+            const withProbe = { ...observation, nodes: [...observation.nodes, probe] };
+            if (await this.scopeContains(withProbe, index, -1) || await this.scopeContains(withProbe, -1, index))
+                throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
+        }
+        const parts = [];
+        let length = 0;
+        for (const node of observation.nodes) {
+            if (!node.name || node.role !== "StaticText")
+                continue;
+            if (node.index !== index && !await this.scopeContains(observation, index, node.index))
+                continue;
+            length += node.name.length + 1;
+            if (length > 30_000)
+                throw new Error("Locator text exceeds the 30000 character limit");
+            parts.push(node.name);
+        }
+        return parts.join(" ").replace(/\s+/g, " ").trim();
+    }
+    async freshFilterObservation() {
+        const documentId = await this.documentId();
+        await this.browser.cdp.enableFrameSessions(this.id);
+        const frames = await this.frameTree();
+        const tree = await this.getAXState();
+        const unindexedText = unindexedTextAncestors(tree).map(backendNodeId => ({ backendNodeId }));
+        const nodes = interactiveNodes(tree, 0, true);
+        for (const frame of frames.slice(1)) {
+            const tree = await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: frame.id }, { sessionId: frame.sessionId });
+            unindexedText.push(...unindexedTextAncestors(tree).map(backendNodeId => ({ backendNodeId, frameId: frame.id, frameChain: frameAncestry(frame, frames) })));
+            nodes.push(...interactiveNodes(tree, nodes.length, true).map(node => ({ ...node, frameId: frame.id, frameChain: frameAncestry(frame, frames) })));
+        }
+        if (documentId !== await this.documentId() || JSON.stringify(frames) !== JSON.stringify(await this.frameTree()))
+            throw new RetryablePreflightError("Page changed; observe again");
+        return { id: "", documentId, nodes, unindexedText, guards: new Map() };
     }
     async scopeContains(observation, scopeIndex, targetIndex) {
         const scope = observation.nodes.find(node => node.index === scopeIndex);
@@ -476,7 +561,8 @@ export class OpenBrowserUseTab {
         }
     }
     async verifyLocatorScope(observation, target) {
-        const scopes = observation.guards.get(target.index) ?? [];
+        const guard = observation.guards.get(target.index);
+        const scopes = guard?.scopes ?? [];
         for (let i = 0; i < scopes.length; i++) {
             const scope = observation.nodes.find(node => node.index === scopes[i]);
             if (!scope)
@@ -488,6 +574,19 @@ export class OpenBrowserUseTab {
                 throw new RetryablePreflightError("Scope changed; observe again");
             if (!await this.scopeContains(observation, scope.index, scopes[i + 1] ?? target.index))
                 throw new RetryablePreflightError("Target moved outside scope; observe again");
+        }
+        if (guard?.filters.length) {
+            const fresh = await this.freshFilterObservation();
+            if (fresh.documentId !== observation.documentId)
+                throw new RetryablePreflightError("Page changed; observe again");
+            for (const item of guard.filters) {
+                const original = observation.nodes.find(node => node.index === item.index);
+                const current = original && fresh.nodes.find(node => node.backendNodeId === original.backendNodeId && node.frameId === original.frameId && node.role === original.role);
+                if (!original || !current || current.name !== original.name || current.stateKey !== original.stateKey)
+                    throw new RetryablePreflightError("Filtered target changed; observe again");
+                if (!matchesTextFilters(await this.scopeText(fresh, current.index), item.filters))
+                    throw new RetryablePreflightError("Locator text changed; observe again");
+            }
         }
     }
     async click(index, snapshotId) {
@@ -1077,7 +1176,9 @@ export class OpenBrowserUseRoleLocator {
     textMatch;
     field;
     scope;
-    constructor(tab, roles, options, position, textMatch = false, field = "name", scope) {
+    filtersBefore;
+    filtersAfter;
+    constructor(tab, roles, options, position, textMatch = false, field = "name", scope, filtersBefore = [], filtersAfter = []) {
         this.tab = tab;
         this.roles = roles;
         this.options = options;
@@ -1085,25 +1186,36 @@ export class OpenBrowserUseRoleLocator {
         this.textMatch = textMatch;
         this.field = field;
         this.scope = scope;
+        this.filtersBefore = filtersBefore;
+        this.filtersAfter = filtersAfter;
     }
     nth(index) {
         if (!Number.isSafeInteger(index) || index < 0)
             throw new Error("Locator index must be a non-negative integer");
         if (this.position !== undefined)
-            return index === 0 ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, Number.MAX_SAFE_INTEGER, this.textMatch, this.field, this.scope);
-        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, index, this.textMatch, this.field, this.scope);
+            return index === 0 ? this : new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, Number.MAX_SAFE_INTEGER, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter);
+        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, index, this.textMatch, this.field, this.scope, this.filtersBefore, this.filtersAfter);
     }
     first() { return this.nth(0); }
     child(locator) {
-        return new OpenBrowserUseRoleLocator(this.tab, locator.roles, locator.options, locator.position, locator.textMatch, locator.field, this);
+        return new OpenBrowserUseRoleLocator(this.tab, locator.roles, locator.options, locator.position, locator.textMatch, locator.field, this, locator.filtersBefore, locator.filtersAfter);
     }
     getByRole(role, options = {}) { return this.child(this.tab.playwright.getByRole(role, options)); }
     getByLabel(name, options = {}) { return this.child(this.tab.playwright.getByLabel(name, options)); }
     getByText(text, options = {}) { return this.child(this.tab.playwright.getByText(text, options)); }
     getByAltText(text, options = {}) { return this.child(this.tab.playwright.getByAltText(text, options)); }
     getByPlaceholder(text, options = {}) { return this.child(this.tab.playwright.getByPlaceholder(text, options)); }
+    filter(options) {
+        if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["hasText", "hasNotText"].includes(key)) ||
+            (options.hasText === undefined && options.hasNotText === undefined) ||
+            (options.hasText !== undefined && (typeof options.hasText !== "string" || options.hasText.length > 30_000)) ||
+            (options.hasNotText !== undefined && (typeof options.hasNotText !== "string" || options.hasNotText.length > 30_000)))
+            throw new Error("Invalid text filter");
+        const filter = { ...options };
+        return new OpenBrowserUseRoleLocator(this.tab, this.roles, this.options, this.position, this.textMatch, this.field, this.scope, this.position === undefined ? [...this.filtersBefore, filter] : this.filtersBefore, this.position === undefined ? this.filtersAfter : [...this.filtersAfter, filter]);
+    }
     needsText() {
-        return this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText();
+        return this.filtersBefore.length > 0 || this.filtersAfter.length > 0 || this.roles.some(role => supplementalRoles.includes(role)) || !!this.scope?.needsText();
     }
     async matches(state) {
         if (this.field === "placeholder" && state.nodes.some(node => this.roles.includes(node.role) && node.placeholderTruncated))
@@ -1119,18 +1231,29 @@ export class OpenBrowserUseRoleLocator {
         const matches = [];
         if (!this.scope)
             for (const node of candidates)
-                matches.push({ node, path: [] });
+                matches.push({ node, path: [], filters: [] });
         else {
             const scopes = await this.scope.matches(state);
             for (const node of candidates)
                 for (const scope of scopes) {
                     if (await this.tab.locatorContains(state.snapshotId, scope.node.index, node.index)) {
-                        matches.push({ node, path: [...scope.path, scope.node.index] });
+                        matches.push({ node, path: [...scope.path, scope.node.index], filters: [...scope.filters] });
                         break;
                     }
                 }
         }
-        return this.position === undefined ? matches : matches.slice(this.position, this.position + 1);
+        const apply = async (items, filters) => {
+            if (!filters.length)
+                return items;
+            const accepted = [];
+            for (const item of items) {
+                if (matchesTextFilters(await this.tab.locatorText(state.snapshotId, item.node.index), filters))
+                    accepted.push({ ...item, filters: [...item.filters, { index: item.node.index, filters }] });
+            }
+            return accepted;
+        };
+        const before = await apply(matches, this.filtersBefore);
+        return apply(this.position === undefined ? before : before.slice(this.position, this.position + 1), this.filtersAfter);
     }
     async find() {
         const state = await this.tab.observe({ includeFrames: true, ...(this.needsText() ? { includeText: true } : {}) });
@@ -1150,8 +1273,8 @@ export class OpenBrowserUseRoleLocator {
                 if (matches.length > 1)
                     throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
                 if (matches.length === 1) {
-                    if (matches[0].path.length)
-                        this.tab.bindLocatorScope(state.snapshotId, matches[0].node.index, matches[0].path);
+                    if (matches[0].path.length || matches[0].filters.length)
+                        this.tab.bindLocatorScope(state.snapshotId, matches[0].node.index, matches[0].path, matches[0].filters);
                     return await action(matches[0].node, state.snapshotId);
                 }
                 lastError = new Error(`Locator matched 0 elements before timeout (${timeoutMs} ms)`);

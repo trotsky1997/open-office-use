@@ -38,9 +38,9 @@ try {
  const state=await tab.observe();const button=state.nodes.find(n=>n.role==='button'&&n.name==='Save');assert.ok(button);await tab.click(button.index,state.snapshotId);
  assert.deepEqual(await tab.evaluate('({text:document.querySelector("button").textContent,trusted:window.trusted})'),{text:'Done',trusted:true});
  assert.match((await tab.observe({diff:true})).text,/\+ .*button.*Done/);
- await tab.evaluate(`(()=>{const group=document.createElement('section');group.id='products';group.setAttribute('role','group');group.setAttribute('aria-label','Shop');group.innerHTML='<ul aria-label="Products"><li aria-label="Apples"><button>Add</button></li><li aria-label="Pears"><button>Add</button></li></ul>';group.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.listClick={item:i,trusted:e.isTrusted});document.body.append(group)})()`);
+ await tab.evaluate(`(()=>{const group=document.createElement('section');group.id='products';group.setAttribute('role','group');group.setAttribute('aria-label','Shop');group.innerHTML='<ul aria-label="Products"><li>Apples <button>Add</button></li><li>Pears <button>Add</button></li></ul>';group.querySelectorAll('button').forEach((b,i)=>b.onclick=e=>window.listClick={item:i,trusted:e.isTrusted});document.body.append(group)})()`);
  assert.equal(await tab.playwright.getByRole('button',{name:'Add',exact:true}).count(),2);
- await tab.playwright.getByRole('group',{name:'Shop',exact:true}).getByRole('list',{name:'Products',exact:true}).getByRole('listitem',{name:'Apples',exact:true}).getByRole('button',{name:'Add',exact:true}).click();
+ await tab.playwright.getByRole('group',{name:'Shop',exact:true}).getByRole('list',{name:'Products',exact:true}).getByRole('listitem').filter({hasText:'Apples',hasNotText:'Pears'}).getByRole('button',{name:'Add',exact:true}).click();
  assert.deepEqual(await tab.evaluate('window.listClick'),{item:0,trusted:true});
  await tab.evaluate("document.querySelector('#products').remove()");
 
@@ -81,7 +81,7 @@ try {
  await tab.evaluate(`document.querySelector('[aria-label="Editable"]').remove()`);
  await tab.evaluate(`(()=>{const host=document.createElement('div');host.setAttribute('role','dialog');host.setAttribute('aria-label','Shadow container');document.body.append(host);const outer=host.attachShadow({mode:'open'});outer.innerHTML='<div></div>';const inner=outer.querySelector('div').attachShadow({mode:'closed'});inner.innerHTML='<button>Shadow Action</button>';inner.querySelector('button').onclick=e=>window.shadowTrusted=e.isTrusted})()`);
  const shadow=await tab.observe();const shadowButton=shadow.nodes.find(node=>node.role==='button'&&node.name==='Shadow Action');assert.ok(shadowButton);
- await tab.playwright.getByRole('dialog',{name:'Shadow container',exact:true}).getByRole('button',{name:'Shadow Action',exact:true}).click();assert.equal(await tab.evaluate('window.shadowTrusted'),true);
+ await tab.playwright.getByRole('dialog',{name:'Shadow container',exact:true}).filter({hasText:'Shadow Action'}).getByRole('button',{name:'Shadow Action',exact:true}).click();assert.equal(await tab.evaluate('window.shadowTrusted'),true);
  const framed=await tab.observe({includeFrames:true});const frameButton=framed.nodes.find(node=>node.role==='button'&&node.name==='Frame action');assert.ok(frameButton?.frameId);
  await tab.click(frameButton.index,framed.snapshotId);assert.equal(await tab.evaluate('document.querySelector("iframe").contentWindow.frameTrusted'),true);
  const nextFrame=await tab.observe({includeFrames:true});assert.ok(nextFrame.nodes.some(node=>node.name==='Frame done'));

@@ -56,6 +56,10 @@ export type InteractiveState = {
     unavailableFrames?: string[];
     valuesTruncated?: boolean;
 };
+type TextFilter = {
+    hasText?: string;
+    hasNotText?: string;
+};
 export declare class OpenBrowserUseClient {
     #private;
     readonly socketPath: string;
@@ -123,6 +127,8 @@ export declare class OpenBrowserUseTab {
         includeText?: boolean;
     }): Promise<InteractiveState>;
     private readAXValues;
+    private scopeText;
+    private freshFilterObservation;
     private scopeContains;
     private verifyLocatorScope;
     click(index: number, snapshotId: string): Promise<void>;
@@ -185,10 +191,12 @@ export declare class OpenBrowserUseRoleLocator {
     private textMatch;
     private field;
     private scope?;
+    private filtersBefore;
+    private filtersAfter;
     constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: {
         name?: string;
         exact?: boolean;
-    }, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined);
+    }, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[]);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
     private child;
@@ -207,6 +215,10 @@ export declare class OpenBrowserUseRoleLocator {
     }): OpenBrowserUseRoleLocator;
     getByPlaceholder(text: string, options?: {
         exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    filter(options: {
+        hasText?: string;
+        hasNotText?: string;
     }): OpenBrowserUseRoleLocator;
     private needsText;
     private matches;
@@ -273,3 +285,4 @@ export declare class OpenBrowserUseCdp {
     ensureAttached(tabId: number): Promise<void>;
 }
 export declare function encodeFrame(value: JsonValue | Record<string, unknown>): Buffer;
+export {};
