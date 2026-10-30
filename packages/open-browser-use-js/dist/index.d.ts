@@ -152,6 +152,22 @@ export declare class OpenBrowserUseDownloadWait {
     constructor(client: OpenBrowserUseClient, result: Promise<JsonValue>);
     wait(): Promise<OpenBrowserUseDownload>;
 }
+export declare class OpenBrowserUseFileChooser {
+    #private;
+    private client;
+    readonly id: string;
+    private multiple;
+    constructor(client: OpenBrowserUseClient, id: string, multiple: boolean);
+    isMultiple(): boolean;
+    setFiles(files: string | string[]): Promise<void>;
+}
+export declare class OpenBrowserUseFileChooserWait {
+    #private;
+    private client;
+    private result;
+    constructor(client: OpenBrowserUseClient, result: Promise<JsonValue>);
+    wait(): Promise<OpenBrowserUseFileChooser>;
+}
 export declare class OpenBrowserUseTab {
     #private;
     readonly browser: OpenBrowserUseBrowser;
@@ -181,9 +197,13 @@ export declare class OpenBrowserUseTab {
     private freshFilterObservation;
     private scopeContains;
     private verifyLocatorScope;
+    private prepareBrowserEvent;
     prepareDownload(options?: {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseDownloadWait>;
+    prepareFileChooser(options?: {
+        timeoutMs?: number;
+    }): Promise<OpenBrowserUseFileChooserWait>;
     watchDialogs(): Promise<void>;
     currentDialog(): OpenBrowserUseDialog | null;
     waitForDialog(options?: {

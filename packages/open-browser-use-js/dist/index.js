@@ -2,6 +2,7 @@ import { createConnection } from "node:net";
 import { endianness } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { types } from "node:util";
+import { isAbsolute } from "node:path";
 const headerBytes = 4;
 const defaultNavigationTimeoutMs = 10_000;
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
@@ -374,6 +375,45 @@ export class OpenBrowserUseDownloadWait {
         if (!isObject(result) || typeof result.downloadId !== "string" || !result.downloadId)
             throw new Error("Browser returned an invalid download ID");
         return new OpenBrowserUseDownload(this.client, result.downloadId);
+    }
+}
+export class OpenBrowserUseFileChooser {
+    client;
+    id;
+    multiple;
+    #issued = false;
+    constructor(client, id, multiple) {
+        this.client = client;
+        this.id = id;
+        this.multiple = multiple;
+    }
+    isMultiple() { return this.multiple; }
+    async setFiles(files) {
+        const paths = typeof files === "string" ? [files] : Array.isArray(files) ? [...files] : [];
+        if (!paths.length || paths.some(path => typeof path !== "string" || !isAbsolute(path)))
+            throw new Error("File paths must be absolute");
+        if (!this.multiple && paths.length > 1)
+            throw new Error("File chooser does not accept multiple files");
+        if (this.#issued)
+            throw new Error("File chooser decision has already been issued; observe again");
+        this.#issued = true;
+        await this.client.setFileChooserFiles(this.id, paths);
+    }
+}
+export class OpenBrowserUseFileChooserWait {
+    client;
+    result;
+    #chooser;
+    constructor(client, result) {
+        this.client = client;
+        this.result = result;
+    }
+    wait() {
+        return this.#chooser ??= this.result.then(result => {
+            if (!isObject(result) || typeof result.fileChooserId !== "string" || !result.fileChooserId || typeof result.isMultiple !== "boolean")
+                throw new Error("Browser returned an invalid file chooser");
+            return new OpenBrowserUseFileChooser(this.client, result.fileChooserId, result.isMultiple);
+        });
     }
 }
 export class OpenBrowserUseTab {
@@ -775,27 +815,38 @@ export class OpenBrowserUseTab {
             }
         }
     }
-    async prepareDownload(options = {}) {
-        const timeoutMs = options.timeoutMs ?? 10_000;
-        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000)
-            throw new Error("Invalid download timeout");
+    async prepareBrowserEvent(method, readyMethod, timeoutMs) {
         const waitId = randomUUID(), client = this.browser.client;
         let remove = () => { };
         const ready = new Promise(resolve => {
             remove = client.onNotification(event => {
-                if (event.method === "onDownloadWaitReady" && isObject(event.params) && event.params.waitId === waitId)
+                if (event.method === readyMethod && isObject(event.params) && event.params.waitId === waitId)
                     resolve();
             });
         });
-        const result = Promise.resolve().then(() => client.request("waitForDownload", { tabId: this.id, timeoutMs, waitId }, undefined, Math.max(client.timeoutMs, timeoutMs + 2000)));
+        const result = Promise.resolve().then(() => client.request(method, { tabId: this.id, timeoutMs, waitId }, undefined, Math.max(client.timeoutMs, timeoutMs + 2000)));
         void result.catch(() => { });
         try {
-            await Promise.race([ready, result.then(() => { throw new Error("Download wait ended before registration was confirmed"); })]);
-            return new OpenBrowserUseDownloadWait(client, result);
+            await Promise.race([ready, result.then(() => { throw new Error("Event wait ended before registration was confirmed"); })]);
+            return { result };
         }
         finally {
             remove();
         }
+    }
+    async prepareDownload(options = {}) {
+        const timeoutMs = options.timeoutMs ?? 10_000;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000)
+            throw new Error("Invalid download timeout");
+        const prepared = await this.prepareBrowserEvent("waitForDownload", "onDownloadWaitReady", timeoutMs);
+        return new OpenBrowserUseDownloadWait(this.browser.client, prepared.result);
+    }
+    async prepareFileChooser(options = {}) {
+        const timeoutMs = options.timeoutMs ?? 10_000;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000)
+            throw new Error("Invalid file chooser timeout");
+        const prepared = await this.prepareBrowserEvent("waitForFileChooser", "onFileChooserWaitReady", timeoutMs);
+        return new OpenBrowserUseFileChooserWait(this.browser.client, prepared.result);
     }
     async watchDialogs() { await this.browser.cdp.enableDialogs(this.id); }
     currentDialog() {

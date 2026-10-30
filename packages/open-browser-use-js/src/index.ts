@@ -2,6 +2,7 @@ import { Socket, createConnection } from "node:net";
 import { endianness } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { types } from "node:util";
+import { isAbsolute } from "node:path";
 
 export type JsonValue =
   | null
@@ -441,6 +442,31 @@ export class OpenBrowserUseDownloadWait {
   }
 }
 
+export class OpenBrowserUseFileChooser {
+  #issued = false;
+  constructor(private client: OpenBrowserUseClient, readonly id: string, private multiple: boolean) {}
+  isMultiple(): boolean { return this.multiple; }
+  async setFiles(files: string | string[]): Promise<void> {
+    const paths = typeof files === "string" ? [files] : Array.isArray(files) ? [...files] : [];
+    if (!paths.length || paths.some(path => typeof path !== "string" || !isAbsolute(path))) throw new Error("File paths must be absolute");
+    if (!this.multiple && paths.length > 1) throw new Error("File chooser does not accept multiple files");
+    if (this.#issued) throw new Error("File chooser decision has already been issued; observe again");
+    this.#issued = true;
+    await this.client.setFileChooserFiles(this.id, paths);
+  }
+}
+
+export class OpenBrowserUseFileChooserWait {
+  #chooser?: Promise<OpenBrowserUseFileChooser>;
+  constructor(private client: OpenBrowserUseClient, private result: Promise<JsonValue>) {}
+  wait(): Promise<OpenBrowserUseFileChooser> {
+    return this.#chooser ??= this.result.then(result => {
+      if (!isObject(result) || typeof result.fileChooserId !== "string" || !result.fileChooserId || typeof result.isMultiple !== "boolean") throw new Error("Browser returned an invalid file chooser");
+      return new OpenBrowserUseFileChooser(this.client,result.fileChooserId,result.isMultiple);
+    });
+  }
+}
+
 export class OpenBrowserUseTab {
   readonly browser: OpenBrowserUseBrowser;
   readonly id: number;
@@ -767,22 +793,34 @@ export class OpenBrowserUseTab {
     }
   }
 
-  async prepareDownload(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownloadWait> {
-    const timeoutMs = options.timeoutMs ?? 10_000;
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) throw new Error("Invalid download timeout");
+  private async prepareBrowserEvent(method: string, readyMethod: string, timeoutMs: number): Promise<{result: Promise<JsonValue>}> {
     const waitId = randomUUID(), client = this.browser.client;
     let remove = () => {};
     const ready = new Promise<void>(resolve => {
       remove = client.onNotification(event => {
-        if (event.method === "onDownloadWaitReady" && isObject(event.params) && event.params.waitId === waitId) resolve();
+        if (event.method === readyMethod && isObject(event.params) && event.params.waitId === waitId) resolve();
       });
     });
-    const result = Promise.resolve().then(() => client.request("waitForDownload", {tabId:this.id,timeoutMs,waitId}, undefined, Math.max(client.timeoutMs,timeoutMs + 2000)));
+    const result = Promise.resolve().then(() => client.request(method, {tabId:this.id,timeoutMs,waitId}, undefined, Math.max(client.timeoutMs,timeoutMs + 2000)));
     void result.catch(() => {});
     try {
-      await Promise.race([ready, result.then(() => { throw new Error("Download wait ended before registration was confirmed"); })]);
-      return new OpenBrowserUseDownloadWait(client,result);
+      await Promise.race([ready, result.then(() => { throw new Error("Event wait ended before registration was confirmed"); })]);
+      return {result};
     } finally { remove(); }
+  }
+
+  async prepareDownload(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownloadWait> {
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) throw new Error("Invalid download timeout");
+    const prepared = await this.prepareBrowserEvent("waitForDownload", "onDownloadWaitReady", timeoutMs);
+    return new OpenBrowserUseDownloadWait(this.browser.client,prepared.result);
+  }
+
+  async prepareFileChooser(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseFileChooserWait> {
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000) throw new Error("Invalid file chooser timeout");
+    const prepared = await this.prepareBrowserEvent("waitForFileChooser", "onFileChooserWaitReady", timeoutMs);
+    return new OpenBrowserUseFileChooserWait(this.browser.client,prepared.result);
   }
 
   async watchDialogs(): Promise<void> { await this.browser.cdp.enableDialogs(this.id); }

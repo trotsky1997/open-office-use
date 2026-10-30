@@ -40,6 +40,16 @@ try {
  await tab.goto(`http://127.0.0.1:${http.address().port}/#same-document`,{timeoutMs:1500});
  assert.match(await tab.evaluate('location.href'),/#same-document$/);
  await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:1500});
+ const fixtureFile=join(dir,'upload-fixture.txt');await writeFile(fixtureFile,'isolated fixture');
+ await tab.evaluate(`(()=>{const input=document.createElement('input');input.id='chooser-fixture';input.type='file';Object.assign(input.style,{position:'fixed',left:'20px',top:'150px',width:'250px',height:'40px',zIndex:'999999'});document.body.append(input)})()`);
+ const preparedChooser=await tab.prepareFileChooser({timeoutMs:20000});const choosing=preparedChooser.wait();void choosing.catch(()=>{});
+ const chooserRect=await tab.evaluate(`(()=>{const r=document.querySelector('#chooser-fixture').getBoundingClientRect();return {x:r.x+20,y:r.y+8}})()`);
+ const chooserClick=tab.clickAt(chooserRect.x,chooserRect.y);void chooserClick.catch(()=>{});
+ const chooser=await choosing;assert.equal(chooser.isMultiple(),false);await chooser.setFiles(fixtureFile);await chooserClick;
+ assert.deepEqual(await tab.evaluate(`Array.from(document.querySelector('#chooser-fixture').files,f=>f.name)`),['upload-fixture.txt']);
+ await assert.rejects(chooser.setFiles(fixtureFile),/already been issued/);
+ await tab.evaluate("document.querySelector('#chooser-fixture').remove()");
+
  await tab.evaluate(`(()=>{const a=document.createElement('a');a.href='/download?run=1';a.textContent='Download fixture';a.id='download-fixture';document.body.append(a)})()`);
  for(let run=1;run<=2;run++){
    await tab.evaluate(`document.querySelector('#download-fixture').href='/download?run=${run}'`);

@@ -309,6 +309,7 @@ class BrowserBackend {
     this.downloadWaiters = new Set();
     this.downloadChangeListeners = new Set();
     this.downloadReadyListeners = new Set();
+    this.fileChooserReadyListeners = new Set();
     this.cursorArrivalWaitersByKey = new Map();
     this.fileChoosersById = new Map();
     this.fileChooserWaitersByTabId = new Map();
@@ -316,6 +317,7 @@ class BrowserBackend {
     chrome.debugger.onDetach.addListener((source) => {
       if (typeof source.tabId === "number") {
         this.attachedTabs.delete(source.tabId);
+        this.invalidateFileChoosers(source.tabId);
       }
     });
   }
@@ -693,11 +695,13 @@ class BrowserBackend {
       typeof params.timeoutMs === "number" && params.timeoutMs > 0
         ? params.timeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
+    if (params.waitId !== undefined && (typeof params.waitId !== "string" || !/^[0-9a-f-]{36}$/.test(params.waitId))) throw new Error("Invalid file chooser wait ID");
     const waitForEvent = this.waitForFileChooserEvent(tabId);
     try {
       await chrome.debugger.sendCommand({ tabId }, "Page.setInterceptFileChooserDialog", {
         enabled: true
       });
+      if (params.waitId) for (const listener of this.fileChooserReadyListeners) listener(params.waitId);
       return await withTimeout(timeoutMs, () => waitForEvent);
     } finally {
       this.fileChooserWaitersByTabId.delete(tabId);
@@ -729,11 +733,12 @@ class BrowserBackend {
     if (!chooser.isMultiple && files.length > 1) {
       throw new Error("File chooser does not accept multiple files");
     }
-    await chrome.debugger.sendCommand({ tabId: chooser.tabId }, "DOM.setFileInputFiles", {
+    if (this.fileChoosersById.get(params.fileChooserId) !== chooser) throw new Error("File chooser is no longer available");
+    this.fileChoosersById.delete(params.fileChooserId);
+    await chrome.debugger.sendCommand({ tabId: chooser.tabId, ...(chooser.sessionId ? { sessionId: chooser.sessionId } : {}) }, "DOM.setFileInputFiles", {
       backendNodeId: chooser.backendNodeId,
       files
     });
-    this.fileChoosersById.delete(params.fileChooserId);
   }
 
   async waitForDownload(params) {
@@ -951,12 +956,16 @@ class BrowserBackend {
     return Boolean(waiter);
   }
 
+  invalidateFileChoosers(tabId) {
+    for (const [id, chooser] of this.fileChoosersById) if (chooser.tabId === tabId) this.fileChoosersById.delete(id);
+  }
+
   handleCdpEvent(source, method, params) {
-    if (method !== "Page.fileChooserOpened" || typeof source?.tabId !== "number") {
-      return;
-    }
+    if (typeof source?.tabId !== "number") return;
+    if (["Page.frameNavigated", "Page.frameDetached", "Target.detachedFromTarget"].includes(method)) this.invalidateFileChoosers(source.tabId);
+    if (method !== "Page.fileChooserOpened") return;
     const waiter = this.fileChooserWaitersByTabId.get(source.tabId);
-    waiter?.resolve(params ?? {});
+    waiter?.resolve(params ?? {}, source.sessionId);
   }
 
   waitForFileChooserEvent(tabId) {
@@ -965,7 +974,7 @@ class BrowserBackend {
     }
     return new Promise((resolve, reject) => {
       this.fileChooserWaitersByTabId.set(tabId, {
-        resolve: (event) => {
+        resolve: (event, sessionId) => {
           this.fileChooserWaitersByTabId.delete(tabId);
           if (!Number.isInteger(event.backendNodeId)) {
             reject(new Error("File chooser event did not include backendNodeId"));
@@ -974,6 +983,7 @@ class BrowserBackend {
           const fileChooserId = crypto.randomUUID();
           const chooser = {
             tabId,
+            ...(typeof sessionId === "string" ? { sessionId } : {}),
             backendNodeId: event.backendNodeId,
             isMultiple: event.mode === "selectMultiple"
           };
@@ -1584,6 +1594,9 @@ backend.addDownloadChangeListener((change) => {
 });
 backend.downloadReadyListeners.add((waitId) => {
   safeSendNotification(peer, "onDownloadWaitReady", { waitId });
+});
+backend.fileChooserReadyListeners.add((waitId) => {
+  safeSendNotification(peer, "onFileChooserWaitReady", { waitId });
 });
 chrome.downloads.onCreated.addListener((item) => {
   backend.handleDownloadCreated(item);

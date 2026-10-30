@@ -230,7 +230,7 @@ each individual browser operation.
 
 ## File Choosers, Downloads, And Clipboard
 
-- File uploads use the intercepted file chooser flow: start waiting, trigger the chooser in the page, then set absolute local paths with `set-file-chooser-files` or the SDK equivalent.
+- On Chrome, use `await tab.prepareFileChooser()` to confirm interception before opening the chooser. Start `ready.wait()` and the page click concurrently, then set absolute local paths on the chooser and await the click. Inspect the page if the decision outcome is uncertain. Electron does not expose uploads.
 - On Chrome, `const ready = await tab.prepareDownload()` confirms registration before triggering a download; use `(await ready.wait()).path()` for its path. The wait observes the next Chrome download across tabs; verify its identity before using the path, especially when downloads may be concurrent. Electron does not expose downloads.
 - Clipboard helpers operate through the current controlled tab and should be treated as sensitive user actions.
 

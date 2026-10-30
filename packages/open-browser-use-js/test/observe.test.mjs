@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import assert from "node:assert/strict";
 import test from "node:test";
-import { OpenBrowserUseBrowser, OpenBrowserUseClient } from "../dist/index.js";
+import { OpenBrowserUseBrowser, OpenBrowserUseClient, OpenBrowserUseFileChooser } from "../dist/index.js";
 
 test("browser discovers and claims a user tab before returning its handle", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
@@ -221,6 +221,29 @@ test('prepared download waits for registration and retains the eventual result',
   complete({downloadId:'123'});const download=await wait.wait();assert.equal(download.id,'123');assert.equal(await download.path(),'/tmp/fixture');
   client.request=()=>{throw new Error('connection unavailable');};
   await assert.rejects(tab.prepareDownload(),/connection unavailable/);assert.equal(handlers.size,1);
+});
+
+test('prepared file chooser validates paths and permits one file decision',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let complete,waitId,chosen;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=(method,params)=>{
+    if(method==='waitForFileChooser'){waitId=params.waitId;return new Promise(resolve=>{complete=resolve;});}
+    if(method==='setFileChooserFiles'){chosen=params;return Promise.resolve({});}
+    throw new Error('Unexpected request');
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const preparing=tab.prepareFileChooser();await new Promise(resolve=>setImmediate(resolve));
+  for(const handler of handlers)handler({method:'onFileChooserWaitReady',params:{waitId}});
+  const prepared=await preparing;complete({fileChooserId:'chooser',isMultiple:false});
+  const chooser=await prepared.wait();assert.equal(await prepared.wait(),chooser);assert.equal(chooser.isMultiple(),false);
+  await assert.rejects(chooser.setFiles('relative.txt'),/absolute/);
+  await assert.rejects(chooser.setFiles(['/tmp/a','/tmp/b']),/multiple/);
+  await chooser.setFiles('/tmp/a');assert.deepEqual(chosen,{fileChooserId:'chooser',files:['/tmp/a']});
+  await assert.rejects(chooser.setFiles('/tmp/a'),/already been issued/);
+  client.setFileChooserFiles=async()=>{throw new Error('outcome unknown');};
+  const uncertain=new OpenBrowserUseFileChooser(client,'other',true);
+  await assert.rejects(uncertain.setFiles('/tmp/a'),/outcome unknown/);
+  await assert.rejects(uncertain.setFiles('/tmp/a'),/already been issued/);
 });
 
 test('dialog waits fail promptly on tab detach or client close, without crossing tabs', async () => {

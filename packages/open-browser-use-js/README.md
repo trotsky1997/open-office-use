@@ -530,6 +530,29 @@ await client.request("executeCdp", {
 });
 ```
 
+## File chooser
+
+On the Chrome extension backend, register the chooser before opening it:
+
+```js
+const ready = await tab.prepareFileChooser({timeoutMs: 30000});
+const choosing = ready.wait();
+const click = tab.clickAt(x, y);
+void click.catch(() => {});
+const chooser = await choosing;
+console.log(chooser.isMultiple());
+await chooser.setFiles("/absolute/path/to/file.txt");
+await click;
+```
+
+`prepareFileChooser` returns after the extension enables interception. `setFiles`
+accepts an absolute path or an array of absolute paths and permits one decision
+per chooser. Frame navigation or debugger detachment invalidates outstanding
+chooser handles. An error after issuing a decision can leave the outcome
+unknown; inspect the page before another action. Cross-process frame chooser
+handling has not been verified in a real browser. Electron does not expose
+uploads.
+
 ## Waiting for a download
 
 On the Chrome extension backend, register the listener before triggering the
