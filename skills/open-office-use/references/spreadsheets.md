@@ -24,3 +24,5 @@ Use `session_rename_table_column` to update a supported table header and column 
 For new workbook dropdowns, `author_file` accepts `sheet_options.list_validations` with a target `range` and either literal `values` or a one-dimensional same-sheet `source`. The local grid displays supported suggestions; spreadsheet applications enforce the saved validation rule.
 
 Use `sheet_options.conditional_formats` to create native numeric threshold, formula, color-scale, or data-bar rules in authored workbooks. Rules evaluate in spreadsheet applications; inspect rendered output.
+
+`session_read_grid` reports intersecting standard conditional-format rules and coverage issues. It does not evaluate rules or include complete rule styles; use a rendered workbook or spreadsheet application to inspect effective appearance.

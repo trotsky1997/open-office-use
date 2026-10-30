@@ -313,6 +313,8 @@ The preview page offers historical preview, revision restore and a limited eleme
 
 “Search document text” searches the displayed revision using the format-specific search described above, including continuation batches. Word and PowerPoint results can load a candidate into the element editor when viewing the latest revision; inspect it before editing. Excel results can open a matching cell in the grid when viewing the latest revision; changing the grid prompts before discarding unsaved cell edits. Search results clear when the displayed revision or query changes, and the format-specific coverage limits still apply.
 
+Grid reads and the viewer also report standard conditional-formatting rules intersecting the loaded range. The `conditional_formatting` result includes affected cells, rule attributes and up to three formula strings, along with coverage issues and `evaluated: false`. It summarizes metadata without returning the rule's complete styling. Inspection scans up to 1,000 containers and 1,000 rules, returns at most 50 intersecting rules and marks unsupported extensions, malformed references or truncation as incomplete. The grid displays direct cell styles; use a rendered workbook or a compatible spreadsheet application to review conditional appearance.
+
 ## PowerPoint speaker notes
 
 ```sh

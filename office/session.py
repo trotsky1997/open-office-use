@@ -775,6 +775,52 @@ def grid_validations(root, bounds):
     return {'rules': rules, 'complete': not issues, 'issues': sorted(issues), 'evaluated': False}
 
 
+def grid_conditional_formats(root, bounds):
+    """Summarize standard conditional-format rules intersecting the grid."""
+    ns = grid_styles.X; issues, rules = set(), []; scanned = 0
+    # shortcut: summarize standard rules without evaluating styles; inspect extension rules in the target application.
+    if any(isinstance(node.tag, str) and node.tag.endswith('}conditionalFormatting') and (node.tag != ns+'conditionalFormatting' or node.getparent() is not root) for node in root.iter()): issues.add('unsupported_conditional_format_extension')
+    containers = root.findall(ns+'conditionalFormatting')
+    if len(containers) > 1000: issues.add('container_scan_limit')
+    min_col, min_row, max_col, max_row = bounds
+    for container in containers[:1000]:
+        refs = container.get('sqref', '')
+        if len(refs) > 32000 or len(refs.split()) > 500:
+            issues.add('reference_limit'); continue
+        addresses = set()
+        if not refs.strip(): issues.add('invalid_reference')
+        for ref in refs.split():
+            try:
+                a, b, c, d = range_boundaries(ref)
+                if not all(isinstance(v, int) for v in (a,b,c,d)) or not (1 <= a <= c <= 16384 and 1 <= b <= d <= 1048576): raise ValueError()
+            except (ValueError, TypeError):
+                issues.add('invalid_reference'); continue
+            for row in range(max(b,min_row), min(d,max_row)+1):
+                for col in range(max(a,min_col), min(c,max_col)+1): addresses.add(f'{get_column_letter(col)}{row}')
+        for item in container:
+            scanned += 1
+            if scanned > 1000: issues.add('rule_scan_limit'); break
+            if item.tag != ns+'cfRule': issues.add('unsupported_rule'); continue
+            priority = item.get('priority', '')
+            if not item.get('type') or not priority.isascii() or not priority.isdigit() or len(priority) > 10 or int(priority) < 1: issues.add('invalid_rule_metadata')
+            if not addresses: continue
+            if len(rules) >= 50: issues.add('rule_output_limit'); continue
+            attributes = {}
+            for key,value in item.attrib.items():
+                if len(value) > 256: issues.add('field_truncated')
+                attributes[key] = value[:256]
+            formulas = item.findall(ns+'formula')
+            if len(formulas) > 3: issues.add('formula_limit')
+            values = []
+            for formula in formulas[:3]:
+                value = formula.text or ''
+                if len(value) > 256: issues.add('field_truncated')
+                values.append(value[:256])
+            rules.append({'cells': sorted(addresses), 'attributes': attributes, 'formulas': values})
+        if scanned > 1000: break
+    return {'rules': rules, 'complete': not issues, 'issues': sorted(issues), 'evaluated': False, 'style_details_included': False}
+
+
 def resolve_grid_lists(source, sheet, validation):
     """Resolve bounded absolute list ranges containing verified plain text."""
     candidates = [rule for rule in validation['rules'] if rule['attributes'].get('type') == 'list' and rule.get('formula1') and not rule['formula1'].startswith('"')]
@@ -884,6 +930,7 @@ def read_grid(directory, base_revision, sheet, cell_range):
     with zipfile.ZipFile(source) as archive:
         root = ooxml.parse_xml(archive.read(part)).getroot(); views = root.findall(grid_styles.X + 'sheetViews')
         validations = grid_validations(root, (min_col, min_row, max_col, max_row))
+        conditional_formats = grid_conditional_formats(root, (min_col, min_row, max_col, max_row))
         if len(views) != 1 or len(views[0]) != 1 or views[0][0].tag != grid_styles.X + 'sheetView':
             view_info = {'pane': None, 'issue': 'unsupported_worksheet_views'}
         else:
@@ -894,7 +941,7 @@ def read_grid(directory, base_revision, sheet, cell_range):
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'], 'dimensions': constraints['dimensions'], 'worksheet_view': view_info,
-            'rows': rows, 'data_validation': validations, 'cache_freshness': 'unknown'}
+            'rows': rows, 'data_validation': validations, 'conditional_formatting': conditional_formats, 'cache_freshness': 'unknown'}
 
 
 def table_formula_node(part, node):

@@ -110,7 +110,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
-<div id="grid-output" class="grid-scroll"></div><details><summary>Data validation rules for this range</summary><p>Fixed list values and resolved text ranges from the loaded revision can be selected in the grid. Rules are retained but are not evaluated when saving.</p><pre id="grid-validation"></pre></details><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
+<div id="grid-output" class="grid-scroll"></div><details><summary>Data validation rules for this range</summary><p>Fixed list values and resolved text ranges from the loaded revision can be selected in the grid. Rules are retained but are not evaluated when saving.</p><pre id="grid-validation"></pre></details><details><summary>Conditional formatting for this range</summary><p>The grid shows direct formatting only. Rules are not evaluated; inspect the rendered workbook for effective appearance.</p><pre id="grid-conditional-formatting"></pre></details><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
 <fieldset id="grid-format-fields"><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
@@ -421,6 +421,8 @@ async function loadGrid(target=null) {
     const mode=document.createElement('select'); mode.setAttribute('aria-label', `${sheet} ${cell.cell} input type`);
     for (const [value,label] of [['default','Default'],['auto','Automatic'],['text','Literal text']]) { const option=document.createElement('option'); option.value=value; option.textContent=label; mode.appendChild(option); }
     mode.disabled=!cell.editable; td.append(input,mode);
+    if (data.conditional_formatting.rules.some(rule=>rule.cells.includes(cell.cell))) input.title+='; conditional formatting may change appearance';
+    if (!data.conditional_formatting.complete) input.title+='; conditional formatting inspection incomplete';
     const choices=validationList(data.data_validation,cell.cell);
     if (choices) {
      const list=document.createElement('select'); list.setAttribute('aria-label', `${sheet} ${cell.cell} suggested list values`);
@@ -439,7 +441,8 @@ async function loadGrid(target=null) {
   document.getElementById('grid-freeze').disabled=false; document.getElementById('grid-unfreeze').disabled=false;
   document.getElementById('grid-freeze-info').textContent=data.worksheet_view.issue ? 'Worksheet view requires review.' : !pane ? 'No frozen panes.' : pane.state==='frozen' && pane.topLeftCell ? `Frozen panes; first scrollable cell: ${pane.topLeftCell}.` : 'Existing pane requires review before editing.';
   document.getElementById('grid-validation').textContent=JSON.stringify(data.data_validation,null,2);
-  document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=data.sheet_protected; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-size-range').value=cell_range; document.getElementById('grid-resize').disabled=data.sheet_protected; document.getElementById('grid-dimensions').textContent=JSON.stringify({revision,sheet,range:cell_range,...data.dimensions},null,2); document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.${data.sheet_protected ? ' Worksheet protection is enabled; locked cells and grid formatting are read-only.' : ''}`;
+  document.getElementById('grid-conditional-formatting').textContent=JSON.stringify(data.conditional_formatting,null,2);
+  document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=data.sheet_protected; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-size-range').value=cell_range; document.getElementById('grid-resize').disabled=data.sheet_protected; document.getElementById('grid-dimensions').textContent=JSON.stringify({revision,sheet,range:cell_range,...data.dimensions},null,2); document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.${data.sheet_protected ? ' Worksheet protection is enabled; locked cells and grid formatting are read-only.' : ''}${data.conditional_formatting.rules.length ? ' Conditional formatting is not evaluated in this grid.' : ''}${!data.conditional_formatting.complete ? ' Conditional formatting inspection is incomplete.' : ''}`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
 }

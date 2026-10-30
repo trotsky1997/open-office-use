@@ -321,3 +321,5 @@ Added native workbook conditional-format authoring for numeric thresholds, formu
 Word table authoring now supports rich runs, links and multiple paragraphs in cells using the same run validation as body text. Checked CLI, OOXML validation and LibreOffice rendering; native Word remains unverified.
 
 Added editable speaker notes to newly authored slides, including source-based appended slides. Verified notes search, targeted session edits, saved parts and OfficeCLI validation; native PowerPoint remains unverified.
+
+Grid reads and the viewer now report bounded conditional-format rule metadata and affected cells, including incomplete coverage. Rules are not evaluated and complete style details are not included.

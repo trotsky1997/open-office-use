@@ -196,7 +196,7 @@ def session_sheets(directory: str, base_revision: int) -> dict[str, Any]:
 
 @server.tool()
 def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Read up to 200 cells with direct styles, stored row/column dimensions, protection, text completeness and bounded data-validation metadata. Rules are not evaluated; simple absolute list ranges and scoped names of verified text include bounded choices and source details."""
+    """Read up to 200 cells with direct styles, stored row/column dimensions, protection, text completeness and bounded data-validation and conditional-formatting metadata. Rules are not evaluated; simple absolute list ranges and scoped names of verified text include bounded choices and source details."""
     return session.read_grid(directory, base_revision, sheet, cell_range)
 
 
@@ -214,7 +214,7 @@ def session_edit_slide_chart_grid(directory: str, base_revision: int, part: str,
 
 @server.tool()
 def session_rename_table_column(directory: str, base_revision: int, sheet: str, table_name: str, old_name: str, new_name: str) -> dict[str, Any]:
-    """Rename a table column and rewrite supported simple structured references in one revision; complex and indirect references are rejected."""
+    """Rename a table column and rewrite supported explicit and table-local structured references in one revision; indirect references are rejected."""
     return session.rename_table_column(directory, base_revision, sheet, table_name, old_name, new_name)
 
 

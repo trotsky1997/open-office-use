@@ -218,3 +218,5 @@ Workbook authoring supports threshold and formula conditional fills, color scale
 Word table cells support formatted runs, hyperlinks and multiple aligned paragraphs. CLI and OfficeCLI validation and LibreOffice page rendering are covered; native Word remains unverified.
 
 Slide authoring now accepts speaker notes on each new slide; authored notes work with the existing read, search and targeted revision workflows.
+
+Grid inspection now summarizes intersecting conditional-format rules and coverage, and the viewer warns when direct styles may differ from evaluated formatting.

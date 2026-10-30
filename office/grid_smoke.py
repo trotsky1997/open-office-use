@@ -13,6 +13,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.formatting.rule import CellIsRule, ColorScaleRule
 import session
 import review
 
@@ -22,6 +23,9 @@ malformed = etree.fromstring(f'<worksheet xmlns="{ns}"><dataValidations><dataVal
 assert not session.grid_validations(malformed, (1, 1, 2, 2))['complete']
 extended = etree.fromstring(f'<worksheet xmlns="{ns}" xmlns:x="urn:extension"><extLst><x:dataValidations/></extLst></worksheet>')
 assert session.grid_validations(extended, (1, 1, 2, 2))['issues'] == ['unsupported_validation_extension']
+malformed_cf = etree.fromstring(f'<worksheet xmlns="{ns}" xmlns:x="urn:extension"><conditionalFormatting sqref="bad!"><cfRule type="expression" priority="1"/></conditionalFormatting><extLst><x:conditionalFormatting/></extLst></worksheet>')
+assert set(session.grid_conditional_formats(malformed_cf, (1,1,2,2))['issues']) == {'invalid_reference','unsupported_conditional_format_extension'}
+
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'source.xlsx'; draft = root / 'draft'
@@ -29,17 +33,23 @@ with tempfile.TemporaryDirectory() as tmp:
     validation = DataValidation(type='list', formula1='"Low,Medium,High"', allow_blank=True)
     sheet.add_data_validation(validation); validation.add('A2:A3'); validation.add('C2')
     sheet['A1'] = 'Name'; sheet['B1'] = 4; sheet['B2'] = '=B1*2'; sheet['C2'] = 'Remove'
+    sheet.conditional_formatting.add('B1:B3',CellIsRule(operator='greaterThan',formula=['3']))
+    sheet.conditional_formatting.add('C1:C2',ColorScaleRule(start_type='min',start_color='F8696B',end_type='max',end_color='63BE7B'))
     workbook.save(source); original = source.read_bytes()
     session.start(draft, source=source)
     assert session.sheet_names(draft, 0)['sheets'] == ['Sales Data']
     grid = session.read_grid(draft, 0, 'Sales Data', 'A1:C2')
     assert grid['data_validation']['complete'] and grid['data_validation']['rules'][0]['cells'] == ['A2', 'C2']
     assert grid['data_validation']['rules'][0]['formula1'] == '"Low,Medium,High"'
+    cf=grid['conditional_formatting']; assert cf['complete'] and not cf['evaluated'] and not cf['style_details_included']
+    assert cf['rules'][0]['cells']==['B1','B2'] and cf['rules'][0]['attributes']['type']=='cellIs' and cf['rules'][0]['formulas']==['3']
+    assert cf['rules'][1]['cells']==['C1','C2'] and cf['rules'][1]['attributes']['type']=='colorScale'
     assert grid['rows'][1][1]['formula'] == '=B1*2' and grid['rows'][1][0]['value'] is None
     result = session.edit_grid(draft, 0, 'Sales Data', 'A1:C2', [
         {'cell': 'B1', 'value': '7'}, {'cell': 'B2', 'value': '=B1*3'}, {'cell': 'C2', 'value': ''}])
     assert result['data_validation'] == {'evaluated': False, 'coverage_complete': True, 'affected_cells': ['C2']}
     changed = load_workbook(result['file']).active
+    assert len(changed.conditional_formatting)==2
     assert str(changed.data_validations.dataValidation[0].sqref) == 'A2:A3 C2'
     assert changed['A1'].value == 'Name' and changed['B1'].value == 7
     assert changed['B2'].value == '=B1*3' and changed['C2'].value is None
