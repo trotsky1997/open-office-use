@@ -46,6 +46,49 @@ with tempfile.TemporaryDirectory() as tmp:
     literal_report=slide_charts.inspect(literal); literal_chart=literal_report['charts'][0]
     assert literal_report['complete'] and literal_chart['workbook']['status']=='absent' and literal_chart['series'][0]['values']==[100,120]
     assert literal_chart['categories']==['Q1','Q2'] and all(literal_chart['series'][0]['references'][role]['status']=='literal' for role in ('tx','cat','val'))
+    text_draft=root/'literal-text-draft'; session.start(text_draft,source=literal)
+    assert literal_chart['series'][0]['name']=='Revenue'
+    for text in ('', 'x'*256, 'bad\x01', 'bad\nline'):
+        try: session.set_slide_chart_literal_text(text_draft,0,literal_chart['chart_part'],'series_name',text,series=1)
+        except ValueError: pass
+        else: raise AssertionError('Invalid literal chart text accepted')
+    try: session.set_slide_chart_literal_text(text_draft,0,literal_chart['chart_part'],'category','New',point=1,expected_sha256='0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale chart text snapshot accepted')
+    changed_name=session.set_slide_chart_literal_text(text_draft,0,literal_chart['chart_part'],'series_name','Sales',series=1,expected_sha256=literal_report['snapshot_sha256'])
+    assert session.inspect_slide_charts(text_draft,1)['charts'][0]['series'][0]['name']=='Sales'
+    with zipfile.ZipFile(literal) as before, zipfile.ZipFile(changed_name['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name != literal_chart['chart_part'].lstrip('/'))
+    cli=Path(__file__).with_name('open_office_use.py')
+    command=[sys.executable,str(cli),'session','set-slide-chart-literal-text',str(text_draft),'--base','1','--part',literal_chart['chart_part'],'--kind','category','--point','1','--text','North & East']
+    assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2
+    assert session.inspect_slide_charts(text_draft,2)['charts'][0]['categories']==['North & East','Q2']
+    multi=root/'literal-multi.pptx'
+    with zipfile.ZipFile(literal) as src,zipfile.ZipFile(multi,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename==literal_chart['chart_part'].lstrip('/'):
+                tree=etree.fromstring(data); ser=tree.find('.//'+slide_charts.C+'ser'); duplicate=copy.deepcopy(ser)
+                duplicate.find(slide_charts.C+'idx').set('val','1'); duplicate.find(slide_charts.C+'order').set('val','1'); ser.addnext(duplicate); data=etree.tostring(tree)
+            dst.writestr(entry,data)
+    multi_draft=root/'literal-multi-draft'; session.start(multi_draft,source=multi)
+    session.set_slide_chart_literal_text(multi_draft,0,literal_chart['chart_part'],'category','Revised',point=2)
+    with zipfile.ZipFile(multi_draft/'revision-000001.pptx') as archive:
+        tree=etree.fromstring(archive.read(literal_chart['chart_part'].lstrip('/')))
+        labels=tree.findall('.//'+slide_charts.C+'cat/'+slide_charts.C+'strLit/'+slide_charts.C+'pt[@idx="1"]/'+slide_charts.C+'v')
+        assert len(labels)==2 and all(node.text=='Revised' for node in labels)
+    mismatch=root/'literal-mismatch.pptx'
+    with zipfile.ZipFile(multi) as src,zipfile.ZipFile(mismatch,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename==literal_chart['chart_part'].lstrip('/'):
+                tree=etree.fromstring(data); nodes=tree.findall('.//'+slide_charts.C+'cat/'+slide_charts.C+'strLit/'+slide_charts.C+'pt[@idx="1"]/'+slide_charts.C+'v'); nodes[-1].text='Different'; data=etree.tostring(tree)
+            dst.writestr(entry,data)
+    mismatch_draft=root/'literal-text-mismatch'; session.start(mismatch_draft,source=mismatch)
+    try: session.set_slide_chart_literal_text(mismatch_draft,0,literal_chart['chart_part'],'category','Revised',point=2)
+    except ValueError: pass
+    else: raise AssertionError('Divergent literal categories accepted')
+    assert session.info(mismatch_draft)['latest_revision']==0
     literal_draft=root/'literal-draft'; session.start(literal_draft,source=literal)
     axis_id=next(item['id'] for item in literal_chart['axis_inventory']['axes'] if item['type']=='valAx')
     session.set_slide_chart_axis_bounds(literal_draft,0,literal_chart['chart_part'],axis_id,0,110,literal_report['snapshot_sha256'])

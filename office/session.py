@@ -191,6 +191,17 @@ def inspect_slide_charts(directory, revision):
     return {'revision': revision, **slide_charts.inspect(source)}
 
 
+def set_slide_chart_literal_text(directory, base_revision, part, kind, text, series=None, point=None, expected_sha256=None):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'pptx': raise ValueError('Slide chart text editing requires a PPTX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
+    try: result = slide_charts.set_literal_text(source, output, part, kind, text, series, point, expected_sha256)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, **result}
+
+
 def set_slide_chart_literal_value(directory, base_revision, part, series, point, value, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Slide chart value editing requires a PPTX session')

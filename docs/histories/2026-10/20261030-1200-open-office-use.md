@@ -447,3 +447,5 @@ Added bounded slide-chart axis range candidates and review flags based on saved 
 Probed OfficeCLI reference artifacts and added PowerPoint literal chart category, name and numeric value inspection, including axis range checks. Source DOCX and PPTX schema diagnostics were present before edits.
 
 Added snapshot-bound editing of existing numeric literal chart points, with shared-placement reporting and preservation checks.
+
+Added direct literal chart series-name and shared-category editing, and fixed inspection of literal series names.

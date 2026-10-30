@@ -59,3 +59,5 @@ Inspect `axis_range_candidates` for saved cache points outside explicit value-ax
 Chart inspection also reads directly embedded literal category and numeric series data. Check workbook status: literal-only charts may have no embedded worksheet to reconcile or edit.
 
 For a numeric literal chart series, `session_set_slide_chart_literal_value` updates an existing point by one-based series and point positions from chart inspection. It edits the chart part directly, with no embedded workbook update; inspect affected paths and render the slide.
+
+Use `session_set_slide_chart_literal_text` to edit a direct literal series name or shared category. Series category arrays must match; the operation updates every series and does not update an embedded workbook. Inspect shared chart placements and render after editing.

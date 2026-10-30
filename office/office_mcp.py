@@ -117,6 +117,12 @@ def session_sync_chart_cache(directory: str, base_revision: int, part: str, refe
 
 
 @server.tool()
+def session_set_slide_chart_literal_text(directory: str, base_revision: int, part: str, kind: Literal['series_name', 'category'], text: str, series: StrictInt | None = None, point: StrictInt | None = None, expected_sha256: str | None = None) -> dict[str, Any]:
+    """Set a literal series name or category. Use series for a name, or point for a shared category; indices are one-based."""
+    return session.set_slide_chart_literal_text(directory, base_revision, part, kind, text, series, point, expected_sha256)
+
+
+@server.tool()
 def session_set_slide_chart_literal_value(directory: str, base_revision: int, part: str, series: StrictInt, point: StrictInt, value: StrictFloat, expected_sha256: str | None = None) -> dict[str, Any]:
     """Set one existing numeric literal chart point using one-based series and point indices from inspection. Shared chart parts affect all placements."""
     return session.set_slide_chart_literal_value(directory, base_revision, part, series, point, value, expected_sha256)

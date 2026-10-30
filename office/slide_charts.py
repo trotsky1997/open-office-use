@@ -269,7 +269,8 @@ def inspect(file):
                         if value_count is None or value_count > 200:
                             issue(slide_no, path, 'series_value_limit' if value_count is not None else 'unavailable_values'); values = ()
                         else: values = item.values
-                        name = item.name
+                        literal_name = item._element.find(C + 'tx/' + C + 'v')
+                        name = literal_name.text if literal_name is not None and refs['tx']['status'] == 'literal' else item.name
                         if name is not None and len(name) > 500: issue(slide_no, path, 'series_name_truncated')
                         clipped = []; unverified_values = False
                         for value in values[:200]:
@@ -379,6 +380,59 @@ def set_literal_value(source, output, part, series, point, value, expected_sha25
         nodes[0].text = str(value)
     ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
     return {'output': str(output), 'chart_part': part, 'series': series, 'point': point, 'old_value': selected['old_value'], 'value': value, 'affected_paths': selected['paths'], 'affected_paths_complete': selected['complete']}
+
+
+def set_literal_text(source, output, part, kind, text, series=None, point=None, expected_sha256=None):
+    """Edit a literal series name or shared literal category in a single-plot chart."""
+    if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from inspection')
+    if kind not in ('series_name', 'category'): raise ValueError('Text kind must be series_name or category')
+    if kind == 'series_name':
+        if isinstance(series, bool) or not isinstance(series, int) or not 1 <= series <= 30 or point is not None: raise ValueError('Series name requires a one-based series index and no point')
+    elif isinstance(point, bool) or not isinstance(point, int) or not 1 <= point <= 200 or series is not None: raise ValueError('Category requires a one-based point index and no series')
+    if not isinstance(text, str) or not 1 <= len(text) <= 255 or any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF or (ord(char) & 0xFFFF) in (0xFFFE, 0xFFFF) for char in text): raise ValueError('Chart text must contain 1 to 255 valid single-line characters')
+    selected = {}
+    def select(file):
+        inventory = inspect(file); charts = [item for item in inventory['charts'] if item.get('chart_part') == part]
+        if not charts or any(item.get('plot_count') != 1 for item in charts): raise ValueError('Chart must have one inspectable plot')
+        chart = charts[0]; items = chart['series']
+        if len(items) != chart['series_total'] or not items: raise ValueError('Series inventory is incomplete')
+        if kind == 'series_name':
+            if series > len(items) or items[series - 1]['references']['tx']['status'] != 'literal': raise ValueError('Series name must be a literal value')
+        elif any(item['references']['cat']['status'] != 'literal' or item['references']['cat'].get('count') is None or item['references']['cat']['count'] > 200 for item in items): raise ValueError('Every series must have bounded literal categories')
+        selected['paths'] = [item['path'] for item in charts]; selected['complete'] = inventory['complete']
+        return part.lstrip('/')
+    def edit(tree, _archive):
+        areas = tree.getroot().findall(C + 'chart/' + C + 'plotArea')
+        if len(areas) != 1: raise ValueError('Chart plot area is ambiguous')
+        plots = [node for node in areas[0] if isinstance(node.tag, str) and node.tag.startswith(C) and node.tag.endswith('Chart')]
+        if len(plots) != 1: raise ValueError('Chart plot structure is unsupported')
+        items = plots[0].findall(C + 'ser')
+        if kind == 'series_name':
+            if series > len(items): raise ValueError('Chart series changed')
+            nodes = items[series - 1].findall(C + 'tx/' + C + 'v')
+            if len(nodes) != 1 or len(nodes[0]) or nodes[0].attrib: raise ValueError('Literal series name has unsupported structure')
+        else:
+            if not items: raise ValueError('Chart has no series')
+            nodes = []; baseline = None
+            for item in items:
+                categories = item.findall(C + 'cat/' + C + 'strLit')
+                if len(categories) != 1: raise ValueError('Category is not a string literal')
+                counts = categories[0].findall(C + 'ptCount'); points = categories[0].findall(C + 'pt')
+                if len(counts) != 1: raise ValueError('Category count is ambiguous')
+                values = {}
+                for entry in points:
+                    index = entry.get('idx'); value = entry.findall(C + 'v')
+                    if not index or not index.isdecimal() or int(index) in values or len(value) != 1 or len(value[0]) or value[0].attrib: raise ValueError('Category values are ambiguous')
+                    values[int(index)] = value[0].text or ''
+                    if int(index) == point - 1: nodes.append(value[0])
+                current = (counts[0].get('val'), values)
+                if baseline is not None and current != baseline: raise ValueError('Series categories do not match')
+                baseline = current
+            if len(nodes) != len(items): raise ValueError('Category point is missing')
+        selected['old_text'] = nodes[0].text or ''
+        for node in nodes: node.text = text
+    ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+    return {'output': str(output), 'chart_part': part, 'kind': kind, 'series': series, 'point': point, 'old_text': selected['old_text'], 'text': text, 'affected_paths': selected['paths'], 'affected_paths_complete': selected['complete']}
 
 
 def sync(source, output, part, reference, allow_formula_caches=False, expected_sha256=None):
