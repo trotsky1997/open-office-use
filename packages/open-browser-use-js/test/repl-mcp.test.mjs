@@ -109,6 +109,19 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     const busyReset=await call('tools/call',{name:'js_reset',arguments:{}});assert.equal(busyReset.isError,true);assert.match(busyReset.content[0].text,/still running/);
     await new Promise(resolve=>setTimeout(resolve,250));const recovered=await js("nodeRepl.write(tab.id)");assert.deepEqual(recovered.content,[{type:'text',text:'42'}]);
     assert.equal((await js("1",{timeout_ms:-1})).isError,true);
+    const workId=++id,pingId=++id,resetId=++id,busyId=++id;
+    for (const request of [
+      {id:workId,method:'tools/call',params:{name:'js',arguments:{code:'await new Promise(resolve => setTimeout(resolve, 200)); nodeRepl.write("done")'}}},
+      {id:pingId,method:'ping'},
+      {id:resetId,method:'tools/call',params:{name:'js_reset',arguments:{}}},
+      {id:busyId,method:'tools/call',params:{name:'js',arguments:{code:'nodeRepl.write("unexpected")'}}}
+    ]) child.stdin.write(JSON.stringify({jsonrpc:'2.0',...request})+'\n');
+    const replies=[];for(let i=0;i<4;i++)replies.push(JSON.parse((await lines.next()).value));
+    assert.equal(replies.at(-1).id,workId);
+    assert.deepEqual(replies.find(r=>r.id===pingId).result,{});
+    assert.equal(replies.find(r=>r.id===resetId).result.isError,true);
+    assert.equal(replies.find(r=>r.id===busyId).result.isError,true);
+    assert.equal(replies.find(r=>r.id===workId).result.content[0].text,'done');
     const reset=await call('tools/call',{name:'js_reset',arguments:{}});assert.equal(reset.isError,undefined);assert.equal((await js("typeof tab")).content[0].text,"'undefined'");
     assert.equal((await js("nodeRepl.write((await agent.browsers.get('extension')).browserId)")).content[0].text,socketPath);
     assert.equal((await js("nodeRepl.write((await getBrowserState()).sessions.some(s => s.tabs?.some(t => t.id === 42)))")).content[0].text,'true');

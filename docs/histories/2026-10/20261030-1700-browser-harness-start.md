@@ -451,3 +451,5 @@ macOS Electron 44.7 完整 smoke 扩展 isEditable 实页验证：开放 Shadow 
 定位器状态查询增加 timeoutMs；isVisible/isHidden 对当前匹配立即判断，同时为浏览器读取设置正数期限；enabled、disabled、checked、editable 复用目标等待及读取期限。waitFor 使用独立总期限，零期限保留单次读取。SDK 93 项测试及 macOS Electron 44.7 完整 smoke 通过；Linux 与 Windows 本轮未测。
 
 CSS 与语义定位器新增 clear，复用 fill 空字符串的焦点、目标复核与输入检查。SDK 93 项测试及 macOS Electron 44.7 完整 smoke 通过，两类定位器在真实文本框中均验证清空值与可信 input 事件；Linux 与 Windows 本轮未测。
+
+持久 JavaScript MCP 并发处理协议请求：异步执行期间 ping 可响应，新的 js 与 js_reset 报告忙碌，退出时等待已接收请求结束。SDK 93 项测试、macOS Electron 44.7 完整 smoke 及 Linux ARM64 Chromium 150 原生扩展/REPL 并发实测通过。同步阻塞代码仍会阻塞 Node 事件循环；Windows 未测。

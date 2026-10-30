@@ -223,18 +223,24 @@ async function handle(request: any): Promise<unknown> {
 
 async function main(): Promise<void> {
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
-  for await (const line of lines) {
+  const pending=new Set<Promise<void>>();
+  const processLine=async (line:string):Promise<void> => {
     let request: any;
     try {
       request = JSON.parse(line);
       if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string") throw new Error("Invalid JSON-RPC request");
-      if (request.id === undefined) continue;
+      if (request.id === undefined) return;
       const result = await handle(request);
       process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
     } catch (error) {
       process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: request?.id ?? null, error: { code: -32600, message: error instanceof Error ? error.message : String(error) } })}\n`);
     }
+  };
+  for await (const line of lines) {
+    const task=processLine(line);pending.add(task);
+    void task.then(()=>pending.delete(task),()=>pending.delete(task));
   }
+  await Promise.allSettled([...pending]);
   for (const browser of browsers) browser.close();
   repl.close();
 }

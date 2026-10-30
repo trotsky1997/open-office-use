@@ -769,6 +769,10 @@ the browser before retrying. Restart the MCP process if it never settles. A
 synchronous infinite loop blocks the Node event loop and cannot be interrupted
 by this timer.
 
+Protocol requests can complete independently while asynchronous JavaScript is
+running. `ping` remains responsive; additional `js` and `js_reset` calls report
+that the session is busy. Synchronous JavaScript still blocks the event loop.
+
 The `js_reset` tool clears JavaScript bindings and restores the built-in
 helpers while retaining connected browser sessions and their tabs. Reacquire a
 browser with `agent.browsers.get(...)` after reset. Reset is rejected while an
