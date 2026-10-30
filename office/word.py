@@ -38,6 +38,77 @@ def find_paragraph(tree, path):
     return paragraph
 
 
+def anchor_runs(paragraph, anchor):
+    """Find and split a unique literal range within adjacent simple paragraph runs."""
+    from copy import deepcopy
+
+    groups = []; current = []
+    def flush():
+        if current:
+            groups.append((current[:], ''.join(node.text or '' for run in current for node in run.findall(W + 't')))); current.clear()
+    def run_text(run):
+        if any(child.tag not in (W + 'rPr', W + 't') for child in run):
+            raise ValueError('Paragraph contains unsupported run content')
+        if any(node.get(W + 'id') is not None or node.get('{http://www.w3.org/XML/1998/namespace}id') is not None or node.tag in {W + 'rPrChange', W + 'ins', W + 'del', W + 'moveFrom', W + 'moveTo'} for node in run.iter()):
+            raise ValueError('Run contains tracked or identity-bearing formatting')
+        return ''.join(node.text or '' for node in run.findall(W + 't'))
+    boundaries = {W + name for name in ('bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'proofErr')}
+    for child in paragraph:
+        if child.tag == W + 'pPr': continue
+        if child.tag == W + 'r':
+            tags = {node.tag for node in child}
+            if tags <= {W + 'rPr', W + 'commentReference'} and W + 'commentReference' in tags:
+                flush(); continue
+            run_text(child); current.append(child)
+        elif child.tag == W + 'hyperlink':
+            flush()
+            if any(run.tag != W + 'r' for run in child): raise ValueError('Hyperlink contains unsupported content')
+            groups.append((None, ''.join(run_text(run) for run in child)))
+        elif child.tag in boundaries:
+            flush()
+        else:
+            raise ValueError('Paragraph contains unsupported structures such as fields or tracked changes')
+    flush()
+    text = ''.join(value for _, value in groups)
+    start = ooxml.match_index(text, anchor, ''); end = start + len(anchor); offset = 0
+    for runs, value in groups:
+        next_offset = offset + len(value)
+        if runs is not None and offset <= start and end <= next_offset:
+            start -= offset; end -= offset
+            break
+        offset = next_offset
+    else:
+        raise ValueError('Anchor crosses or lies within a hyperlink or annotation boundary')
+
+    def split_at(position):
+        offset = 0
+        for index, run in enumerate(runs):
+            value = run_text(run); next_offset = offset + len(value)
+            if offset < position < next_offset:
+                allowed = {W + 'rsidR', W + 'rsidRPr', W + 'rsidDel'}
+                if any(name not in allowed for name in run.attrib): raise ValueError('Run has unsupported identity attributes')
+                if any(name != '{http://www.w3.org/XML/1998/namespace}space' for node in run.findall(W + 't') for name in node.attrib):
+                    raise ValueError('Text has unsupported attributes for splitting')
+                right = deepcopy(run); left_nodes = run.findall(W + 't'); right_nodes = right.findall(W + 't')
+                local = position - offset; cursor = 0
+                for left_node, right_node in zip(left_nodes, right_nodes):
+                    original = left_node.text or ''; cut = max(0, min(len(original), local - cursor))
+                    left_node.text = original[:cut]; right_node.text = original[cut:]; cursor += len(original)
+                    for node in (left_node, right_node):
+                        value = node.text or ''
+                        if value.startswith(' ') or value.endswith(' '): node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+                run.addnext(right); runs.insert(index + 1, right); return
+            offset = next_offset
+    split_at(end); split_at(start)
+    selected = []; offset = 0
+    for run in runs:
+        length = len(run_text(run)); next_offset = offset + length
+        if length and offset >= start and next_offset <= end: selected.append(run)
+        offset = next_offset
+    if not selected: raise ValueError('Anchor has no selectable runs')
+    return selected[0], selected[-1]
+
+
 def replace_text(source, output, path, find, replacement):
     if not paragraph_path(path):
         raise ValueError('Target must be a body or table paragraph path such as /body/p[1]')
@@ -91,8 +162,8 @@ def replace_text(source, output, path, find, replacement):
     return ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
 
 
-def add_comment(source, output, path, text, author):
-    """Attach a plain-text comment to all runs of a simple body paragraph."""
+def add_comment(source, output, path, text, author, anchor=None):
+    """Attach a plain-text comment to a paragraph or a unique literal range."""
     import posixpath
     import secrets
     import uuid
@@ -114,15 +185,19 @@ def add_comment(source, output, path, text, author):
     def edit(tree, archive):
         nonlocal created_id
         paragraph = find_paragraph(tree, path)
-        runs = []
-        for child in paragraph:
-            if child.tag == W + 'pPr':
-                continue
-            if child.tag != W + 'r' or any(node.tag not in (W + 'rPr', W + 't') for node in child):
-                raise ValueError('Comment requires a simple paragraph without fields, links, existing anchors or tracked changes')
-            runs.append(child)
-        if not runs or not ''.join(node.text or '' for run in runs for node in run.findall(W + 't')).strip():
-            raise ValueError('Comment requires a nonempty paragraph')
+        if anchor is not None:
+            first, last = anchor_runs(paragraph, anchor)
+        else:
+            runs = []
+            for child in paragraph:
+                if child.tag == W + 'pPr':
+                    continue
+                if child.tag != W + 'r' or any(node.tag not in (W + 'rPr', W + 't') for node in child):
+                    raise ValueError('Comment requires a simple paragraph without fields, links, existing anchors or tracked changes')
+                runs.append(child)
+            if not runs or not ''.join(node.text or '' for run in runs for node in run.findall(W + 't')).strip():
+                raise ValueError('Comment requires a nonempty paragraph')
+            first, last = runs[0], runs[-1]
         names = set(archive.namelist())
         rel_bytes = archive.read(rel_path) if rel_path in names else None
         rel_tree = ooxml.parse_xml(rel_bytes) if rel_bytes else etree.ElementTree(etree.Element(rel_ns + 'Relationships', nsmap={None: rel_ns[1:-1]}))
@@ -222,7 +297,6 @@ def add_comment(source, output, path, text, author):
             additional.update(append_modern_comment(modern, para_id, timestamp))
         start = etree.Element(W + 'commentRangeStart', {W + 'id': comment_id})
         end = etree.Element(W + 'commentRangeEnd', {W + 'id': comment_id})
-        first, last = runs[0], runs[-1]
         first.addprevious(start); last.addnext(end)
         reference_run = etree.Element(W + 'r'); props = etree.SubElement(reference_run, W + 'rPr')
         etree.SubElement(props, W + 'rStyle', {W + 'val': 'CommentReference'})

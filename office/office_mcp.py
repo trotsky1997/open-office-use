@@ -151,9 +151,9 @@ def session_resolve_comment(directory: str, base_revision: int, comment_id: str,
 
 
 @server.tool()
-def session_add_comment(directory: str, base_revision: int, path: str, text: str, author: str) -> dict[str, Any]:
-    """Add a Word comment to a simple body paragraph and create a new revision."""
-    return session.add_comment(directory, base_revision, path, text, author)
+def session_add_comment(directory: str, base_revision: int, path: str, text: str, author: str, anchor: str | None = None) -> dict[str, Any]:
+    """Add a Word comment to a paragraph or unique literal anchor and create a new revision."""
+    return session.add_comment(directory, base_revision, path, text, author, anchor)
 
 
 @server.tool()

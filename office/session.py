@@ -314,7 +314,7 @@ def resolve_comment(directory, base_revision, comment_id, resolved):
     return {'revision': base_revision + 1, 'file': str(output), 'comment_id': comment_id, 'resolved': resolved}
 
 
-def add_comment(directory, base_revision, path, text, author):
+def add_comment(directory, base_revision, path, text, author, anchor=None):
     state = info(directory)
     source = revision_file(state, base_revision)
     if state['format'] != 'docx':
@@ -325,7 +325,7 @@ def add_comment(directory, base_revision, path, text, author):
         raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
     try:
-        result = word.add_comment(source, output, path, text, author)
+        result = word.add_comment(source, output, path, text, author, anchor)
     except FileExistsError as exc:
         raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'path': path, 'comment_id': result['comment_id']}

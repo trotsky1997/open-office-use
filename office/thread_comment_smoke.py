@@ -125,9 +125,10 @@ if __name__ == '__main__':
             assert session.info(bad_draft)['latest_revision'] == 1
         for variant in ('normal', 'modern_both', 'modern_ids_only'):
             new_source = fixture(tmp, variant); new_draft = Path(tmp) / (variant + '-root-draft'); session.start(new_draft, source=new_source)
-            added = session.add_comment(new_draft, 0, '/body/p[4]', 'New root\nSecond line', 'Editor')
+            anchor = 'paragraph' if variant == 'modern_both' else None
+            added = session.add_comment(new_draft, 0, '/body/p[4]', 'New root\nSecond line', 'Editor', anchor)
             added_listing = session.list_comments(new_draft, 1); item = added_listing['comments'][-1]
-            assert item['resolved'] is False and item['reply_parent_status'] == 'root' and item['anchor_text'] == 'Fresh paragraph', added_listing
+            assert item['resolved'] is False and item['reply_parent_status'] == 'root' and item['anchor_text'] == (anchor or 'Fresh paragraph'), added_listing
             with zipfile.ZipFile(new_source) as before, zipfile.ZipFile(added['file']) as after:
                 old_parts = {name: before.read(name) for name in before.namelist()}
                 comment_nodes = etree.fromstring(after.read('word/comments.xml')).findall(W + 'comment')

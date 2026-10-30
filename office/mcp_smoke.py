@@ -83,10 +83,10 @@ async def main():
                 comment_source = root / 'comment.docx'; comment_doc = Document(); comment_doc.add_paragraph('Needs review'); comment_doc.save(comment_source)
                 comment_draft = root / 'comment-draft'; comment_started = await session.call_tool('start_session', {'directory': str(comment_draft), 'source': str(comment_source)})
                 assert not comment_started.isError, comment_started
-                comment_result = await session.call_tool('session_add_comment', {'directory': str(comment_draft), 'base_revision': 0, 'path': '/body/p[1]', 'text': 'Review this', 'author': 'Reviewer'})
+                comment_result = await session.call_tool('session_add_comment', {'directory': str(comment_draft), 'base_revision': 0, 'path': '/body/p[1]', 'text': 'Review this', 'author': 'Reviewer', 'anchor': 'review'})
                 assert not comment_result.isError and next(iter(Document(comment_draft / 'revision-000001.docx').comments)).text == 'Review this', comment_result
                 listed_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 1})
-                assert not listed_comments.isError and listed_comments.structuredContent['comments'][0]['anchor_text'] == 'Needs review', listed_comments
+                assert not listed_comments.isError and listed_comments.structuredContent['comments'][0]['anchor_text'] == 'review', listed_comments
                 empty_comments = await session.call_tool('list_word_comments', {'file': str(comment_source)})
                 assert not empty_comments.isError and empty_comments.structuredContent['total_comments'] == 0, empty_comments
                 threaded = await session.call_tool('list_word_comments', {'file': str(thread_fixture(root))})

@@ -35,7 +35,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
 #visual-diff-image{display:block;max-width:100%;height:auto}#visual-diff-image[hidden]{display:none}#compare-sheet{width:min(14rem,70vw)}#compare-range{width:8rem}#cell-comparison-output td{max-width:24rem;overflow-wrap:anywhere}
-#word-find,#word-replacement{width:min(14rem,65vw)}#edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
+#word-find,#word-replacement,#comment-anchor{width:min(24rem,65vw)}#edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
 
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
 <details><summary>Restore a previous revision</summary><form id="restore-form">
@@ -58,9 +58,10 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Requires one exact match in supported Word, PowerPoint or Excel text. Replacement takes the first matched run's formatting. Word matches must stay within link or annotation boundaries; fields and complex content require another workflow.</p></fieldset>
 <fieldset id="comment-panel" hidden><legend>Add a comment to this paragraph</legend>
 <label>Author <input id="comment-author" maxlength="100"></label>
+<label>Anchor text (optional) <input id="comment-anchor" maxlength="4000"></label>
 <label>Comment <textarea id="comment-text" maxlength="4000"></textarea></label>
 <button id="comment-add" type="button">Add comment as new revision</button>
-<p>For simple nonempty Word paragraphs. The comment covers the paragraph; existing anchors, links and tracked changes require another workflow.</p></fieldset>
+<p>For simple nonempty Word paragraphs. Leave anchor text empty to cover the paragraph. A specified anchor must match exactly once within adjacent text runs; fields and tracked changes require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="comments-panel" hidden><summary>Word comments</summary>
@@ -364,7 +365,7 @@ async function loadElement(path) {
   editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=tableCell;
   document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
-  document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported); document.getElementById('comment-text').value='';
+  document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported); document.getElementById('comment-text').value=''; document.getElementById('comment-anchor').value='';
   document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
   document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
@@ -391,11 +392,11 @@ document.getElementById('comment-add').addEventListener('click', async () => {
  if (editBusy) return;
  if (!loaded || loaded.format!=='docx' || loaded.type!=='paragraph' || pinned!==null || loaded.revision!==current) { invalidateEdit('Version changed; load the paragraph again.'); return; }
  if (elementDirty()) { document.getElementById('edit-status').textContent='Save or copy pending element edits before adding a comment.'; return; }
- const target=loaded, author=document.getElementById('comment-author').value, text=document.getElementById('comment-text').value, button=document.getElementById('comment-add');
+ const target=loaded, author=document.getElementById('comment-author').value, text=document.getElementById('comment-text').value, anchor=document.getElementById('comment-anchor').value || null, button=document.getElementById('comment-add');
  if (!author.trim() || !text.trim()) { document.getElementById('edit-status').textContent='Enter an author and comment.'; return; }
  editBusy=true; button.disabled=true;
  try {
-  const response=await fetch('add-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,text,author})});
+  const response=await fetch('add-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,text,author,anchor})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not add comment');
   invalidateEdit(`Comment saved as revision ${result.revision}.`); await refresh();
  } catch(error) { document.getElementById('edit-status').textContent=`Comment error: ${error.message}`; }
@@ -887,9 +888,9 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Comment state requires revision, comment ID and resolved')
                             saved = session.resolve_comment(directory, payload['base_revision'], payload['comment_id'], payload['resolved'])
                         elif route.endswith('/add-comment'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'text', 'author'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'text', 'author'}, {'base_revision', 'path', 'text', 'author', 'anchor'}):
                                 raise ValueError('Comment requires revision, path, text and author')
-                            saved = session.add_comment(directory, payload['base_revision'], payload['path'], payload['text'], payload['author'])
+                            saved = session.add_comment(directory, payload['base_revision'], payload['path'], payload['text'], payload['author'], payload.get('anchor'))
                         elif route.endswith('/replace-text'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement'}:
                                 raise ValueError('Text replacement requires revision, path, find and replacement')
