@@ -1001,7 +1001,7 @@ export class OpenBrowserUseTab {
         }
     }
     /** @internal */
-    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked, selection) {
+    async actCss(snapshot, id, hover, key, text, doubleClick = false, checked, selection, append = false) {
         if (key !== undefined)
             this.parseKey(key);
         const frame = snapshot.frame;
@@ -1127,13 +1127,15 @@ export class OpenBrowserUseTab {
                 return selected;
             }
             if (text !== undefined) {
-                const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }], functionDeclaration: `function(value) {
+                const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text }, { value: append }], functionDeclaration: `function(value,append) {
           if (!this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly') === 'true') return 'unsupported';
-          if (this instanceof HTMLInputElement && ['date','time','month','week','datetime-local'].includes(this.type)) { const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;return probe.value===value ? 'temporal' : 'invalid'; }
-          if (this instanceof HTMLInputElement && this.type==='number') {const probe=this.ownerDocument.createElement('input');probe.type='number';probe.value=value;if(probe.value!==value)return 'invalid-number';}
+          if (this instanceof HTMLInputElement && ['date','time','month','week','datetime-local'].includes(this.type)) { if(append)return 'temporal-append';const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;return probe.value===value ? 'temporal' : 'invalid'; }
+          if (!append && this instanceof HTMLInputElement && this.type==='number') {const probe=this.ownerDocument.createElement('input');probe.type='number';probe.value=value;if(probe.value!==value)return 'invalid-number';}
           return this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type)) ? 'text' : 'unsupported';
         }` }, { sessionId });
                 const status = isObject(editable) && isObject(editable.result) ? editable.result.value : undefined;
+                if (status === 'temporal-append')
+                    throw new Error("Use fill for date and time inputs");
                 if (status === 'invalid')
                     throw new Error("Invalid date or time value");
                 if (status === 'invalid-number')
@@ -1163,7 +1165,7 @@ export class OpenBrowserUseTab {
                         throw new Error("Selector target changed after focus; observe again");
                     if ((await this.focusedInputFrame()).id !== frame.id)
                         throw new Error("Target frame lost focus; observe again");
-                    const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text !== undefined }, { value: text ?? '' }], functionDeclaration: `function(editable,value) { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; if (editable && (this.readOnly || this.getAttribute('aria-readonly') === 'true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))) return false; if(editable && this instanceof HTMLInputElement && this.type==='number'){const probe=this.ownerDocument.createElement('input');probe.type='number';probe.value=value;if(probe.value!==value)return 'invalid-number';} let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }` }, { sessionId });
+                    const focused = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: text !== undefined }, { value: text ?? '' }, { value: append }], functionDeclaration: `function(editable,value,append) { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; if (editable && (this.readOnly || this.getAttribute('aria-readonly') === 'true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))) return false; if(editable && !append && this instanceof HTMLInputElement && this.type==='number'){const probe=this.ownerDocument.createElement('input');probe.type='number';probe.value=value;if(probe.value!==value)return 'invalid-number';} let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }` }, { sessionId });
                     if (isObject(focused) && isObject(focused.result) && focused.result.value === 'invalid-number')
                         throw new Error("Invalid number value");
                     if (!isObject(focused) || !isObject(focused.result) || focused.result.value !== true)
@@ -1176,6 +1178,11 @@ export class OpenBrowserUseTab {
                 }
                 if (text === undefined)
                     throw new Error("Text is unavailable");
+                if (append) {
+                    if (text)
+                        await this.browser.cdp.call(this.id, "Input.insertText", { text }, { sessionId });
+                    return;
+                }
                 await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A", sessionId);
                 await verifyFocus();
                 const selected = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function() { if (this.isContentEditable) { const selection=this.getRootNode().getSelection?.() ?? getSelection(); return !!selection && selection.toString()===this.innerText; } return this.selectionStart===null || (this.selectionStart===0 && this.selectionEnd===this.value.length); }` }, { sessionId });
@@ -2704,6 +2711,11 @@ export class OpenBrowserUseCssLocator {
         if (typeof text !== "string")
             throw new Error("Text must be a string");
         return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, text); }, options.timeoutMs);
+    }
+    type(text, options = {}) {
+        if (typeof text !== "string")
+            throw new Error("Text must be a string");
+        return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, false, undefined, text, false, undefined, undefined, true); }, options.timeoutMs);
     }
     async selectOption(values, options = {}) {
         const specs = selectSpecs(values);
