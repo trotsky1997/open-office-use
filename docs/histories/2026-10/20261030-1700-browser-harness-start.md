@@ -406,4 +406,6 @@ URL 与加载状态检查改用主 frame 的隔离 world，避免页面脚本篡
 
 修复 macOS Electron 隐藏标签或窗口鼠标命令超时：输入期间临时启用焦点仿真，结束后恢复；恢复失败或超时断开调试器并保留结果未知提示。增加 debugger 代次保护，防止迟到的清理影响重连；断开后重新准备鼠标。Electron 55 项通过，macOS Electron 44.7 完整示例通过隐藏标签可信输入、REPL 双通道与 CLI 演示；同步修正 smoke 将悬停消息计入点击的断言。焦点仿真可能触发页面可见性或焦点变化；Linux 与 Windows 本轮未测。
 
-隔离 Linux ARM64 Electron 44.7 / Xvfb 实测：创建两个标签并展示第二个标签后，对隐藏的第一个标签首次派发鼠标输入，在输入准备阶段返回 IAB_INPUT_PREPARATION_TIMEOUT，命令尚未发出；该环境下隐藏标签鼠标输入仍需修复。此前 macOS 实测与单元测试结果保持不变。Windows 未测。
+隔离 Linux ARM64 Electron 44.7 / Xvfb 实测：创建两个标签并展示第二个标签后，对从未挂载到窗口的第一个标签首次派发鼠标输入，在输入准备阶段返回 IAB_INPUT_PREPARATION_TIMEOUT，命令尚未发出；该环境下隐藏标签鼠标输入仍需修复。此前 macOS 实测与单元测试结果保持不变。Windows 未测。
+
+Linux ARM64 Electron / Xvfb 进一步定位：焦点仿真命令成功，首次输入前 Page.captureScreenshot 未返回；关闭后台渲染节流仍超时。实验中跳过截图后输入结果未知，因此未将该变更用于正式代码。将第一个标签挂载到窗口后隐藏整个窗口，原实现同样在首次输入准备阶段超时。上述实验使用隔离显示服务；实际 Linux 桌面窗口管理器下的表现尚未验证。
