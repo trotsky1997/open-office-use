@@ -78,6 +78,9 @@ app.whenReady().then(async () => {
     await sdkTab.playwright.getByLabel('Cross-frame text',{exact:true}).press('Space');
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-text',value:'aB ',trusted:true});
+    for (const key of ['1','Shift+1','@','.','+']) await sdkTab.playwright.getByLabel('Cross-frame text',{exact:true}).press(key);
+    await new Promise(resolve=>setTimeout(resolve,100));
+    assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-text',value:'aB 1!@.+',trusted:true});
     await sdkTab.playwright.getByLabel('Cross updates',{exact:true}).press('Space');
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-check',value:true,trusted:true});

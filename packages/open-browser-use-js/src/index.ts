@@ -530,14 +530,23 @@ export class OpenBrowserUseTab {
       ArrowRight: ["ArrowRight", 39], ArrowDown: ["ArrowDown", 40], Home: ["Home", 36], End: ["End", 35],
       PageUp: ["PageUp", 33], PageDown: ["PageDown", 34], Space: ["Space", 32]
     };
-    const parts = key.split("+");
+    const parts = key === "+" ? ["+"] : key.split("+");
     const name = parts.pop() ?? "";
     const modifierBits: Record<string, number> = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
     const modifiers = parts.map(part => part === "ControlOrMeta" ? (process.platform === "darwin" ? "Meta" : "Control") : part);
-    if (new Set(modifiers).size !== modifiers.length || modifiers.some(modifier => !(modifier in modifierBits))) throw new Error("Invalid keyboard modifiers");
-    const definition = definitions[name] ?? (/^[a-zA-Z]$/.test(name) ? [`Key${name.toUpperCase()}`, name.toUpperCase().charCodeAt(0)] as [string, number] : undefined);
+    if (new Set(modifiers).size !== modifiers.length || modifiers.some(modifier => !Object.hasOwn(modifierBits, modifier))) throw new Error("Invalid keyboard modifiers");
+    const pairs: Array<[string, string, string, number]> = [
+      ...Array.from({length:10}, (_,digit) => [String(digit), ")!@#$%^&*("[digit], `Digit${digit}`, 48+digit] as [string,string,string,number]),
+      ["-","_","Minus",189],["=","+","Equal",187],["[","{","BracketLeft",219],
+      ["]","}","BracketRight",221],["\\","|","Backslash",220],[";",":","Semicolon",186],
+      ["'",'"',"Quote",222],[",","<","Comma",188],[".",">","Period",190],
+      ["/","?","Slash",191],["`","~","Backquote",192]
+    ];
+    const printablePair = pairs.find(([plain,shifted]) => name === plain || name === shifted);
+    if (printablePair && name === printablePair[1] && !modifiers.includes("Shift")) modifiers.push("Shift");
+    const definition = definitions[name] ?? (printablePair ? [printablePair[2],printablePair[3]] : /^[a-zA-Z]$/.test(name) ? [`Key${name.toUpperCase()}`, name.toUpperCase().charCodeAt(0)] : undefined) as [string,number] | undefined;
     if (!definition) throw new Error("Unsupported key");
-    return {name, modifiers, modifierBits, definition};
+    return {name, modifiers, modifierBits, definition, printablePair};
   }
 
   async pressKey(key: string): Promise<void> {
@@ -546,7 +555,7 @@ export class OpenBrowserUseTab {
   }
 
   private async sendKey(key: string, sessionId?: string): Promise<void> {
-    const {name, modifiers, modifierBits, definition} = this.parseKey(key);
+    const {name, modifiers, modifierBits, definition, printablePair} = this.parseKey(key);
     const modifierCodes: Record<string, [string, number]> = { Alt: ["AltLeft", 18], Control: ["ControlLeft", 17], Meta: ["MetaLeft", 91], Shift: ["ShiftLeft", 16] };
     let mask = 0;
     const pressed: string[] = [];
@@ -558,12 +567,12 @@ export class OpenBrowserUseTab {
         pressed.push(modifier);
         await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, {sessionId});
       }
-      const actualKey = name === "Space" ? " " : /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
+      const actualKey = name === "Space" ? " " : printablePair ? printablePair[mask & 8 ? 1 : 0] : /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
       const params = { key: actualKey, code: definition[0], windowsVirtualKeyCode: definition[1], modifiers: mask };
       const selectAll = actualKey === "a" && (mask === 2 || mask === 4);
-      const printable = (name === "Space" || /^[a-zA-Z]$/.test(name)) && !(mask & 7);
+      const printable = (name === "Space" || !!printablePair || /^[a-zA-Z]$/.test(name)) && !(mask & 7);
       activeKey = params;
-      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? {text:actualKey, unmodifiedText:name === "Space" ? " " : name.toLowerCase()} : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, {sessionId});
+      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? {text:actualKey, unmodifiedText:name === "Space" ? " " : printablePair ? printablePair[0] : name.toLowerCase()} : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, {sessionId});
       await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "keyUp" }, {sessionId});
       activeKey = undefined;
     } finally {

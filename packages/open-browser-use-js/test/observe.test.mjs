@@ -250,11 +250,24 @@ test("keyboard input validates keys and sends paired events with modifiers", asy
   assert.equal(events[7].text,"B");
   assert.equal(events[7].unmodifiedText,"b");
   await assert.rejects(tab.pressKey("Unknown+Enter"), /modifiers/);
+  await assert.rejects(tab.pressKey("toString+Enter"), /modifiers/);
   await assert.rejects(tab.pressKey("F42"), /Unsupported/);
   assert.equal(events.length, 10);
   failDown = true;
   await assert.rejects(tab.pressKey("Control+A"),/unknown outcome/);
   assert.deepEqual(events.slice(-4).map(event=>event.type),["rawKeyDown","rawKeyDown","keyUp","keyUp"]);
+});
+
+test("number and symbol keys use their physical code and shifted text", async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), events=[];
+  client.request=async(method,params)=>{if(method==='attach')return {}; if(params.method==='Input.dispatchKeyEvent')events.push(params.commandParams);return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await tab.pressKey('1'); await tab.pressKey('Shift+1'); await tab.pressKey('@'); await tab.pressKey('.'); await tab.pressKey('+');
+  const keys=events.filter(event=>event.type==='keyDown');
+  assert.deepEqual(keys.map(event=>[event.key,event.code,event.text,event.unmodifiedText]),[['1','Digit1','1','1'],['!','Digit1','!','1'],['@','Digit2','@','2'],['.','Period','.','.'],['+','Equal','+','=']]);
+  await tab.pressKey('Control+1');
+  assert.equal(events.at(-2).type,'keyUp');
+  assert.ok(events.some(event=>event.type==='rawKeyDown' && event.key==='1' && event.modifiers===2 && event.text===undefined));
 });
 
 test("text input requires an editable focused observed textbox", async () => {

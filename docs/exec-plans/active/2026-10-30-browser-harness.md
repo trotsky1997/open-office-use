@@ -47,6 +47,7 @@
 - [x] 按 CSS viewport 坐标点击和滚动；本机隔离 Chrome 验证真实鼠标和滚轮行为。
 - [x] 语义定位器与 CSS viewport 坐标悬停；macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证可信 mouseenter，Electron 验证坐标悬停。
 - [x] CSS viewport 拖拽；隔离 Chromium 和 macOS Electron 页面验证可信滑块输入。
+- [x] US 键盘数字和常见标点，包括 Shift 和快捷键组合；真实输入产生可信事件。
 - [x] 定位器按键先聚焦并校验目标，在跨进程 frame 中路由可信按键；输入失败后尝试释放按键。
 - [x] 常用按键与修饰键组合；Chrome 和 Electron 真实页面验证可信 Enter 和全选。
 - [x] Electron 已呈现的隐藏窗口通过可信 wheel 事件滚动，并限制等待时间；超时后恢复队列。

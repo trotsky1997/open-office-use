@@ -243,15 +243,17 @@ the SDK attempts to release the button if a move fails.
 
 A locator’s `press("Enter")` focuses its matched target, verifies focus and
 then sends the key; focus handlers can change the page. Frame targets use their
-own debugger session. Unmodified letters and Space produce text in editable
-targets; `Shift+B` produces an uppercase letter. A focus or key event that has
+own debugger session. Letters, digits, Space and common ASCII punctuation
+produce text in editable targets. `Shift+B`, `Shift+1` and `@` use US keyboard
+key mappings. A focus or key event that has
 been issued is not retried after an error.
 
 `await tab.pressKey("Enter")` sends a key press to the currently focused
 element. Supported keys include Enter, Tab, Escape, Backspace, Delete, arrows,
-Home, End, PageUp, PageDown, Space and letters. Prefix modifiers with `+`, for example
-`ControlOrMeta+A` selects all on the host platform. Letter keys send keyboard
-events; use `typeText` to insert text. Pressing a key invalidates the previous
+Home, End, PageUp, PageDown, Space, letters, digits and common ASCII punctuation.
+Prefix modifiers with `+`, for example `ControlOrMeta+A` selects all on the
+host platform. `+` is supported alone; use `Shift+=` with other modifiers.
+For arbitrary Unicode text, use `typeText`. Pressing a key invalidates the previous
 observation.
 
 ## Persistent JavaScript MCP
