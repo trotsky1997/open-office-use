@@ -166,7 +166,7 @@ def compare_files(before: str, after: str) -> dict[str, Any]:
 
 @server.tool()
 def compare_cells(before: str, after: str, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Compare formulas, values and cached value types in a bounded XLSX range."""
+    """Compare formulas, cached values and direct cell formatting in a bounded XLSX range."""
     return review.compare_cells(before, after, sheet, cell_range)
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
 import session
+import review
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'source.xlsx'; draft = root / 'draft'
@@ -83,6 +84,9 @@ with tempfile.TemporaryDirectory() as tmp:
     cells = load_workbook(formatted['file']).active
     assert cells['B1'].value == 4 and cells['B2'].value == '=B1*2'
     assert cells['B1'].font.bold and cells['B2'].fill.fgColor.rgb[-6:] == 'FFCC00' and cells['B1'].number_format == '0.00'
+    diff = review.compare_cells(source, formatted['file'], 'Sales Data', 'A1:C2')
+    assert {entry['cell'] for entry in diff['changes']} == {'B1', 'B2'}
+    assert {'format.font', 'format.fill', 'format.number_format'} <= set(diff['changes'][0]['changed_fields'])
     style = session.read_grid(format_draft, 1, 'Sales Data', 'B1')['rows'][0][0]['style']
     assert style == {'bold': True, 'fill_rgb': 'FFCC00', 'number_format': '0.00'}
     for base, target, properties in [(0, 'B1', {'bold': True}), (1, 'D1', {'bold': True}), (1, 'B1', {'fill': 'evil'}), (1, 'B1', {'value': 'bad'})]:

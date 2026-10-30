@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from xml.etree.ElementTree import tostring
 
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
@@ -51,9 +52,24 @@ def read_range(file, sheet, cell_range, include_style=False):
                     font, fill = getattr(f, 'font', None), getattr(f, 'fill', None)
                     color = getattr(fill, 'fgColor', None)
                     rgb = color.rgb if fill and fill.patternType == 'solid' and color and color.type == 'rgb' else None
-                    cell['style'] = {'bold': bool(getattr(font, 'bold', False)),
-                                     'fill_rgb': rgb[-6:] if isinstance(rgb, str) else None,
-                                     'number_format': getattr(f, 'number_format', 'General')}
+                    if include_style == 'review':
+                        # Style IDs are workbook-local, so compare resolved components instead.
+                        style = formulas._cell_styles[getattr(f, '_style_id', 0)]
+                        cell['format'] = {
+                            name: tostring(collection[index].to_tree(), encoding='unicode')
+                            for name, collection, index in (
+                                ('font', formulas._fonts, style.fontId),
+                                ('fill', formulas._fills, style.fillId),
+                                ('border', formulas._borders, style.borderId),
+                                ('alignment', formulas._alignments, style.alignmentId),
+                                ('protection', formulas._protections, style.protectionId),
+                            )
+                        }
+                        cell['format']['number_format'] = getattr(f, 'number_format', 'General')
+                    else:
+                        cell['style'] = {'bold': bool(getattr(font, 'bold', False)),
+                                         'fill_rgb': rgb[-6:] if isinstance(rgb, str) else None,
+                                         'number_format': getattr(f, 'number_format', 'General')}
             rows.append(row)
         return {'sheet': sheet, 'range': cell_range, 'rows': rows, 'cache_freshness': 'unknown'}
     finally:

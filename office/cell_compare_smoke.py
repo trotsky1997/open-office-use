@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side, Color
 
 cli = Path(__file__).with_name('open_office_use.py')
 def run(*args, ok=True):
@@ -24,6 +25,30 @@ with tempfile.TemporaryDirectory() as tmp:
     assert changes['A2']['before']['formula'] == '=A1*3' and changes['A2']['after']['formula'] == '=A1*4'
     assert 'formula' in changes['A2']['changed_fields'] and compared['cache_freshness'] == 'unknown'
     assert not run('compare-cells', before, before, '--sheet', 'Forecast', '--range', 'A1:B3')['changes']
+    styled = root / 'styled.xlsx'; styles = Workbook(); sheet = styles.active; sheet.title = 'Forecast'
+    sheet['A1'] = 4; sheet['A2'] = '=A1*3'
+    sheet['A1'].font = Font(bold=True, color=Color(theme=4))
+    sheet['A1'].fill = PatternFill('solid', fgColor='FFCC00')
+    sheet['A1'].border = Border(bottom=Side(style='thin'))
+    sheet['A1'].alignment = Alignment(horizontal='center')
+    sheet['A1'].protection = Protection(locked=False)
+    sheet['A1'].number_format = '0.00'
+    sheet['B1'] = 'temporary'; sheet['B1'] = None
+    styles.save(styled)
+    formatting = run('compare-cells', before, styled, '--sheet', 'Forecast', '--range', 'A1:B2')
+    assert formatting['changed_count'] == 1, formatting
+    change = formatting['changes'][0]
+    assert change['cell'] == 'A1' and set(change['changed_fields']) == {'format.font', 'format.fill', 'format.border', 'format.alignment', 'format.protection', 'format.number_format'}, change
+    assert 'theme="4"' in change['after']['format']['font'] and change['after']['format']['number_format'] == '0.00'
+    reindexed = root / 'reindexed.xlsx'; other = Workbook(); other_sheet = other.active; other_sheet.title = 'Forecast'
+    other_sheet['Z1'].font = Font(italic=True); other_sheet['A1'] = 4; other_sheet['A2'] = '=A1*3'
+    other_sheet['A1'].font = Font(bold=True, color=Color(theme=4))
+    other_sheet['A1'].fill = PatternFill('solid', fgColor='FFCC00')
+    other_sheet['A1'].border = Border(bottom=Side(style='thin'))
+    other_sheet['A1'].alignment = Alignment(horizontal='center')
+    other_sheet['A1'].protection = Protection(locked=False)
+    other_sheet['A1'].number_format = '0.00'; other.save(reindexed)
+    assert run('compare-cells', styled, reindexed, '--sheet', 'Forecast', '--range', 'A1:B2')['changed_count'] == 0
     calculated = root / 'calculated.xlsx'; run('recalculate', before, '--out', calculated)
     cached = run('compare-cells', before, calculated, '--sheet', 'Forecast', '--range', 'A2')
     assert cached['changes'][0]['before']['value'] is None and cached['changes'][0]['after']['value'] == 12, cached

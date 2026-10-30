@@ -73,7 +73,7 @@ def changes(before, after):
 
 
 def compare_cells(before, after, sheet, cell_range):
-    """Compare formulas, values and cached value types in a bounded XLSX range."""
+    """Compare formulas, values and direct cell formatting in a bounded XLSX range."""
     before, after = Path(before).resolve(strict=True), Path(after).resolve(strict=True)
     if before.suffix.lower() != '.xlsx' or after.suffix.lower() != '.xlsx':
         raise ValueError('Cell comparison requires two .xlsx files')
@@ -81,8 +81,8 @@ def compare_cells(before, after, sheet, cell_range):
         left, right = Path(tmp) / 'before.xlsx', Path(tmp) / 'after.xlsx'
         shutil.copyfile(before, left)
         shutil.copyfile(after, right)
-        left_rows = spreadsheet.read_range(left, sheet, cell_range)['rows']
-        right_rows = spreadsheet.read_range(right, sheet, cell_range)['rows']
+        left_rows = spreadsheet.read_range(left, sheet, cell_range, include_style='review')['rows']
+        right_rows = spreadsheet.read_range(right, sheet, cell_range, include_style='review')['rows']
     min_col, min_row, _, _ = range_boundaries(cell_range)
     if min_col is None or min_row is None:
         raise ValueError('A bounded cell range is required')
@@ -91,6 +91,7 @@ def compare_cells(before, after, sheet, cell_range):
     for row_index, (left_row, right_row) in enumerate(zip(left_rows, right_rows)):
         for col_index, (old, new) in enumerate(zip(left_row, right_row)):
             fields = [field for field in ('formula', 'value', 'type') if old.get(field) != new.get(field)]
+            fields.extend('format.' + key for key in old['format'] if old['format'][key] != new['format'][key])
             if fields:
                 total += 1
                 if len(result) < 500:
