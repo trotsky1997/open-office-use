@@ -1971,3 +1971,17 @@ test('dialog event registration gates subsequent input without blocking its own 
   while(!release)await new Promise(resolve=>setImmediate(resolve));assert.equal(inputs,0);release({});
   const [dialog]=await Promise.all([waiting,action]);assert.equal(inputs,1);assert.equal(dialog.info.message,'Ready?');
 });
+
+test('popup event registration captures baseline before subsequent input',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let release,first=true,inputs=0,tabs=[{id:1}];
+  client.request=async(method,params)=>{
+    if(method==='getTabs'){if(first){first=false;await new Promise(resolve=>{release=resolve;});}return tabs;}
+    if(method==='attach')return {};
+    if(method==='executeCdp' && params.method==='Input.dispatchMouseEvent'){inputs++;tabs=[...tabs,{id:2,openerTabId:1}];return {};}
+    throw new Error('Unexpected request');
+  };
+  const browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1),waiting=tab.playwright.waitForEvent('popup',{timeoutMs:1000});
+  const action=browser.cdp.call(1,'Input.dispatchMouseEvent',{type:'mousePressed',x:1,y:1});
+  while(!release)await new Promise(resolve=>setImmediate(resolve));assert.equal(inputs,0);release();
+  const [popup]=await Promise.all([waiting,action]);assert.equal(popup.id,2);assert.equal(inputs,1);
+});

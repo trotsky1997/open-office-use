@@ -586,3 +586,5 @@ Chrome 文件选择等待向调试器附着传播取消信号，授权延迟返�
 下载开始观察向 frame 自动附着传递取消信号，并使挂起的 frame 等待可取消。SDK 118 项检查通过；Linux ARM64 Chromium 原生消息注入附着准备延迟，确认超时后取消、无迟到 Page.enable，随后重新注册并观察真实下载开始。已提交给浏览器的准备命令可能完成；Windows 未测。
 
 Playwright 风格 waitForEvent("dialog") 在后续 SDK 输入前注册监听，监听准备和事件等待共享期限；Page.enable 允许通过准备屏障以避免自锁。SDK 119 项检查通过；Linux ARM64 Chromium 原生消息注入监听准备延迟，随后真实点击触发 confirm，显式拒绝并验证页面结果。低层客户端请求可绕过 SDK 准备协调；Windows 未测。
+
+新增 Playwright 风格 waitForEvent("popup")，获取标签基线后放行后续 SDK 输入，复用 opener 匹配及歧义检查。SDK 120 项检查通过；Linux ARM64 Chromium 原生消息实测已呈现标签的真实链接和新页 URL。隔离 Chromium 中后台标签打开的新页被浏览器报告为当前选中标签的子页，等待超时；显式呈现发起标签后通过。Windows 未测。

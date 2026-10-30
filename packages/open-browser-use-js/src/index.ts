@@ -3161,7 +3161,16 @@ export class OpenBrowserUseTabPlaywright {
   waitForEvent(event: "download", options?: {timeoutMs?: number}): Promise<OpenBrowserUseDownload>;
   waitForEvent(event: "filechooser", options?: {timeoutMs?: number}): Promise<OpenBrowserUseFileChooser>;
   waitForEvent(event: "dialog", options?: {timeoutMs?: number}): Promise<OpenBrowserUseDialog>;
-  waitForEvent(event: "download" | "filechooser" | "dialog", options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownload | OpenBrowserUseFileChooser | OpenBrowserUseDialog> {
+  waitForEvent(event: "popup", options?: {timeoutMs?: number}): Promise<OpenBrowserUseTab>;
+  waitForEvent(event: "download" | "filechooser" | "dialog" | "popup", options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownload | OpenBrowserUseFileChooser | OpenBrowserUseDialog | OpenBrowserUseTab> {
+    if (event === "popup") {
+      let ready!:()=>void, fail!:(error:unknown)=>void;
+      const preparing=new Promise<void>((resolve,reject)=>{ready=resolve;fail=reject;});
+      const waiting=this.expectPopup(async()=>{ready();},options);
+      void waiting.catch(fail);
+      this.tab.browser.cdp.blockUntilPrepared(this.tab.id,preparing);
+      return waiting;
+    }
     if (event === "dialog") {
       const timeoutMs=options.timeoutMs ?? 10_000;
       if (!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000) throw new Error("Invalid dialog timeout");

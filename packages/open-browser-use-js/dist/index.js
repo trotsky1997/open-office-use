@@ -3991,6 +3991,14 @@ export class OpenBrowserUseTabPlaywright {
         return new Promise(resolve => setTimeout(resolve, timeoutMs));
     }
     waitForEvent(event, options = {}) {
+        if (event === "popup") {
+            let ready, fail;
+            const preparing = new Promise((resolve, reject) => { ready = resolve; fail = reject; });
+            const waiting = this.expectPopup(async () => { ready(); }, options);
+            void waiting.catch(fail);
+            this.tab.browser.cdp.blockUntilPrepared(this.tab.id, preparing);
+            return waiting;
+        }
         if (event === "dialog") {
             const timeoutMs = options.timeoutMs ?? 10_000;
             if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)

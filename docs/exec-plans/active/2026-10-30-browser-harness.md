@@ -162,3 +162,5 @@
 - [x] Chrome 文件选择等待将取消信号传给调试器附着；关闭活动标签时清理会话活动状态和鼠标缓存，同时保留关闭事件归属。Linux ARM64 Chromium 原生消息验证。
 - [x] 下载开始观察超时时取消 frame 自动附着及挂起的 frame 准备；Linux ARM64 Chromium 原生消息验证超时后重新观察实际下载。
 - [x] Playwright 风格 waitForEvent("dialog") 在后续 SDK 输入前准备监听，准备与事件等待共享期限；Linux ARM64 Chromium 原生消息实测延迟准备和真实 confirm 点击。
+- [x] Playwright 风格 waitForEvent("popup") 在后续 SDK 输入前获取所属标签基线，复用 opener 与歧义检查；Linux ARM64 Chromium 原生消息验证前台标签链接。
+- [ ] Linux ARM64 隔离 Chromium 后台标签打开新页时，浏览器报告的 opener 指向当前选中标签；需要可靠的后台归属机制。
