@@ -741,6 +741,7 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<string | null>;
     isEnabled(): Promise<boolean>;
+    isChecked(): Promise<boolean>;
     isVisible(): Promise<boolean>;
     waitFor(options: {
         state: "visible" | "hidden";

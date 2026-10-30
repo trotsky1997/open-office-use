@@ -1582,6 +1582,16 @@ export class OpenBrowserUseTab {
         const fresh = interactiveNodes(tree, 0, true).find(node => node.backendNodeId === target.backendNodeId && node.role === target.role);
         if (!fresh || fresh.name !== target.name || fresh.stateKey !== target.stateKey)
             throw new RetryablePreflightError("Target changed; observe again");
+        if (mode === "checked") {
+            if (typeof fresh.checked !== "boolean")
+                throw new Error("Target does not have a binary checked state");
+            if (await this.documentId() !== observation.documentId)
+                throw new RetryablePreflightError("Page changed; observe again");
+            if (target.frameChain)
+                await this.validateFrames(target.frameChain);
+            await this.verifyLocatorScope(observation, target);
+            return fresh.checked;
+        }
         const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: target.backendNodeId }, { sessionId });
         const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
         if (typeof objectId !== "string")
@@ -3585,6 +3595,7 @@ export class OpenBrowserUseRoleLocator {
     async innerText(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "innerText")), options.timeoutMs); }
     async textContent(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "textContent")), options.timeoutMs); }
     async isEnabled() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "enabled"))); }
+    async isChecked() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "checked"))); }
     async isVisible() {
         const { state, matches } = await this.find();
         if (!matches.length)

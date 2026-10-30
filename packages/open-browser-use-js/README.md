@@ -190,6 +190,8 @@ same match and length checks.
 observation, returning an empty array when there are none. Each value is limited
 to 30000 characters and the total to 1000000. The page can change between reads;
 stale targets are retried within the optional `timeoutMs`.
+`isChecked()` reads a binary checked state from the accessibility tree and rejects
+mixed or unsupported states.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and
 its frame owners; an absent accessible match returns `false`. Offscreen or
 covered elements can still be visible. Locator matching uses the accessibility

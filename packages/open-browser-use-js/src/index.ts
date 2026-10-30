@@ -1380,7 +1380,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async locatorRead(snapshotId: string, index: number, mode: "innerText" | "textContent" | "attribute" | "enabled" | "visible", attribute = ""): Promise<string | boolean | null> {
+  async locatorRead(snapshotId: string, index: number, mode: "innerText" | "textContent" | "attribute" | "enabled" | "visible" | "checked", attribute = ""): Promise<string | boolean | null> {
     const observation = this.#observation;
     if (!observation || observation.id !== snapshotId) throw new RetryablePreflightError("Observation is stale; observe again");
     const target = observation.nodes.find(node => node.index === index);
@@ -1391,6 +1391,13 @@ export class OpenBrowserUseTab {
     const tree = target.frameId ? await this.browser.cdp.call(this.id,"Accessibility.getFullAXTree",{frameId:target.frameId},{sessionId}) : await this.getAXState();
     const fresh = interactiveNodes(tree,0,true).find(node => node.backendNodeId === target.backendNodeId && node.role === target.role);
     if (!fresh || fresh.name !== target.name || fresh.stateKey !== target.stateKey) throw new RetryablePreflightError("Target changed; observe again");
+    if (mode === "checked") {
+      if (typeof fresh.checked !== "boolean") throw new Error("Target does not have a binary checked state");
+      if (await this.documentId() !== observation.documentId) throw new RetryablePreflightError("Page changed; observe again");
+      if (target.frameChain) await this.validateFrames(target.frameChain);
+      await this.verifyLocatorScope(observation,target);
+      return fresh.checked;
+    }
     const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:target.backendNodeId},{sessionId});
     const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
     if (typeof objectId !== "string") throw new RetryablePreflightError("Target is unavailable; observe again");
@@ -2948,6 +2955,7 @@ export class OpenBrowserUseRoleLocator {
   async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs); }
   async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs); }
   async isEnabled(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean); }
+  async isChecked(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"checked")) as boolean); }
   async isVisible(): Promise<boolean> {
     const {state,matches} = await this.find();
     if (!matches.length) return false;
