@@ -646,6 +646,13 @@ test('JavaScript dialogs are observed, scoped and decided only once', async () =
   await assert.rejects(tab.waitForDialog({timeoutMs:0}),/Timed out/);
 });
 
+test('dialog wait includes listener preparation in its timeout',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
+  let release,signal;tab.watchDialogs=value=>{signal=value;return new Promise(resolve=>{release=resolve;});};
+  await assert.rejects(tab.waitForDialog({timeoutMs:20}),/Timed out waiting for a JavaScript dialog/);
+  assert.equal(signal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));
+});
+
 test('dialog decisions cannot cross a reconnect during attachment', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set(), calls=[];
   let generation=0, reconnect=false;

@@ -2070,7 +2070,7 @@ export class OpenBrowserUseTab {
     return new OpenBrowserUseFileChooserWait(this.browser.client,prepared.result);
   }
 
-  async watchDialogs(): Promise<void> { await this.browser.cdp.enableDialogs(this.id); }
+  async watchDialogs(signal?:AbortSignal): Promise<void> { await this.browser.cdp.enableDialogs(this.id,signal); }
 
   currentDialog(): OpenBrowserUseDialog | null {
     const info = this.browser.cdp.currentDialog(this.id);
@@ -2080,16 +2080,20 @@ export class OpenBrowserUseTab {
   async waitForDialog(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDialog> {
     const timeoutMs = options.timeoutMs ?? 10_000;
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid dialog timeout");
+    const deadline=performance.now()+timeoutMs, message="Timed out waiting for a JavaScript dialog";
     let dialog = this.currentDialog();
     if (dialog) return dialog;
-    await this.watchDialogs();
+    const controller=new AbortController();
+    try { await locatorReadBeforeDeadline(this.watchDialogs(controller.signal),timeoutMs,deadline,message); }
+    catch (error) { controller.abort(); throw error; }
     dialog = this.currentDialog();
     if (dialog) return dialog;
+    const remaining=timeoutMs===0 ? 0 : Math.max(0,deadline-performance.now());
     await this.browser.cdp.waitForEvent(this.id,notification => {
       if (notification.method !== "onCDPEvent" || !isObject(notification.params)) return false;
       const source = notification.params.source;
       return isObject(source) && source.tabId === this.id && notification.params.method === "Page.javascriptDialogOpening";
-    },{timeoutMs,timeoutMessage:"Timed out waiting for a JavaScript dialog"});
+    },{timeoutMs:remaining,timeoutMessage:message});
     dialog = this.currentDialog();
     if (!dialog) throw new Error("Dialog closed before it could be observed");
     return dialog;
@@ -3893,9 +3897,9 @@ export class OpenBrowserUseCdp {
   }
 
   /** @internal */
-  async enableDialogs(tabId: number): Promise<void> {
+  async enableDialogs(tabId: number, signal?:AbortSignal): Promise<void> {
     if (this.#dialogEnabled.get(tabId) === this.client.connectionGeneration) return;
-    await this.call(tabId,"Page.enable");
+    await this.call(tabId,"Page.enable",{},{signal});
     this.#dialogEnabled.set(tabId,this.client.connectionGeneration);
   }
 

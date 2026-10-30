@@ -811,6 +811,9 @@ A pending dialog or load-event wait fails promptly when its tab closes, its
 debugger detaches, or the client connection closes. A different tab's lifecycle
 events do not interrupt the wait.
 
+`waitForDialog({timeoutMs})` includes listener preparation in positive timeouts;
+timeout cancels pending setup where possible. `timeoutMs: 0` performs setup and a single event check.
+
 `currentDialog()` returns the active dialog or `null`. Prompt dialogs expose
 `info.defaultPrompt` and can be answered with `dialog.accept('text')`. A dialog
 handle permits one decision; a disconnect invalidates it. If a decision fails

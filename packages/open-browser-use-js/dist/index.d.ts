@@ -413,7 +413,7 @@ export declare class OpenBrowserUseTab {
     prepareFileChooser(options?: {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseFileChooserWait>;
-    watchDialogs(): Promise<void>;
+    watchDialogs(signal?: AbortSignal): Promise<void>;
     currentDialog(): OpenBrowserUseDialog | null;
     waitForDialog(options?: {
         timeoutMs?: number;
