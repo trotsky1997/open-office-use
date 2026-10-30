@@ -467,3 +467,25 @@ func TestRelayDropsUnscopedDownloadChanges(t *testing.T) {
 		t.Fatalf("received unscoped download change: %#v", received)
 	}
 }
+
+func TestRelayDropsUnscopedTabClose(t *testing.T) {
+	source, sink := net.Pipe()
+	defer source.Close()
+	defer sink.Close()
+	relay := NewRelay(Config{}, nil, nil)
+	relay.clients[1] = &clientConn{id: 1, conn: sink, sessions: map[string]bool{"a": true}}
+	payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "onTabClosed", "params": map[string]any{"tabId": 7}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- relay.dispatchExtensionPayload(payload) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("unscoped tab close was sent to a client")
+	}
+}

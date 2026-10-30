@@ -144,3 +144,4 @@
 - [x] 下载开始观察期间，新 frame 的 Page.enable 阻挡后续 SDK CDP 动作直至准备结束；Linux Chromium 与 macOS Electron 实页注入延迟验证。
 - [x] 下载开始观察成功后释放其他仍在准备的 frame 屏障；macOS Electron 实页验证并发情况。
 - [x] SDK CDP 调用等待准备屏障和调试器附着时可取消；Chrome attach 授权后复核取消。Linux ARM64 原生消息实测屏障取消及无迟到输入。
+- [x] Chrome 标签关闭事件按所属会话转发；Linux ARM64 Chromium 原生消息双会话实测等待退出和事件隔离。

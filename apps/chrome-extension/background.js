@@ -318,6 +318,7 @@ class BrowserBackend {
     this.webMcpGate = webMcpGate;
     this.attachedTabs = new Set();
     this.debuggerSessionByTabId = new Map();
+    this.sessionByTabId = new Map();
     this.activeTabsBySession = new Map();
     this.cursorByTabId = new Map();
     this.downloadFilenamesById = new Map();
@@ -554,6 +555,7 @@ class BrowserBackend {
         try { await operation(tabId); }
         catch (error) {
           if (!new RegExp(`^No tab with id: ${tabId}\\.?$`).test(String(error?.message ?? error))) throw error;
+          this.sessionByTabId.delete(tabId);
         }
       }
     };
@@ -565,6 +567,7 @@ class BrowserBackend {
     for (const tabId of [...agentTabsToClose, ...userTabsToRelease, ...deliverableTabs]) {
       delete sessionState.tabOrigins[String(tabId)];
       this.cursorByTabId.delete(tabId);
+      if (!agentTabsToClose.includes(tabId)) this.sessionByTabId.delete(tabId);
     }
     if (handoffTabs.length > 0) {
       sessionState.activeTabId = handoffTabs.includes(sessionState.activeTabId)
@@ -1221,6 +1224,7 @@ class BrowserBackend {
       session.chromeGroupId = groupId;
     }
     session.tabOrigins[String(tabId)] = origin;
+    this.sessionByTabId.set(tabId, sessionId);
     await this.store.save();
     await chrome.tabGroups.update(groupId, {
       title: session.title,
@@ -1243,9 +1247,11 @@ class BrowserBackend {
       return [];
     }
     try {
-      return (await chrome.tabs.query({ groupId: session.chromeGroupId })).filter(
+      const tabs = (await chrome.tabs.query({ groupId: session.chromeGroupId })).filter(
         (tab) => hasTabId(tab) && !tab.url?.startsWith("chrome://")
       );
+      for (const tab of tabs) this.sessionByTabId.set(tab.id, sessionId);
+      return tabs;
     } catch {
       await this.store.removeSession(sessionId);
       return [];
@@ -1723,6 +1729,11 @@ chrome.debugger.onDetach.addListener((source) => {
     if (sessionId) safeSendNotification(peer, "onDebuggerDetach", { tabId: source.tabId }, sessionId);
     backend.debuggerSessionByTabId.delete(source.tabId);
   }
+});
+chrome.tabs?.onRemoved?.addListener((tabId) => {
+  const sessionId = backend.sessionByTabId.get(tabId);
+  if (sessionId) safeSendNotification(peer, "onTabClosed", {tabId}, sessionId);
+  backend.sessionByTabId.delete(tabId);
 });
 backend.downloadReadyListeners.add((waitId, sessionId) => {
   if (sessionId) safeSendNotification(peer, "onDownloadWaitReady", { waitId }, sessionId);

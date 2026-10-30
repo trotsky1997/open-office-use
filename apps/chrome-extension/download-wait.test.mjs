@@ -218,3 +218,10 @@ test('cancelled debugger attachment stops after delayed authorization',async()=>
   try{const controller=new AbortController();const pending=backend.attach({session_id:'owner',tabId:7},controller.signal);while(!release)await new Promise(resolve=>setImmediate(resolve));controller.abort();release();await assert.rejects(pending,/cancelled/);assert.equal(calls,0);assert.equal(backend.debuggerSessionByTabId.size,0);}
   finally{chrome.debugger.attach=previous;}
 });
+
+test('discovered session tabs record their current owner',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.store.state.sessions.owner={chromeGroupId:9,tabOrigins:{}};
+  const previous=chrome.tabs;chrome.tabs={async query(){return [{id:7,url:'https://example.test/'},{id:8,url:'chrome://settings'}];}};
+  try{const tabs=await backend.getSessionTabs('owner');assert.equal(tabs.length,1);assert.equal(backend.sessionByTabId.get(7),'owner');assert.equal(backend.sessionByTabId.has(8),false);}
+  finally{chrome.tabs=previous;}
+});

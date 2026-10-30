@@ -550,3 +550,5 @@ Chrome 对外下载句柄改为随机 UUID，扩展内保存句柄与原生数�
 下载开始事件已经成功观察时，其他仍在准备的 frame 不再让等待中的后续 SDK 操作误报取消；观察失败时保留准备失败的传播。SDK 109 项检查通过；macOS Electron 实页注入一个挂起的动态 frame，确认主 frame 下载事件到达后后续操作恢复。Linux 和 Windows 本轮未测。
 
 SDK CDP 调用在等待准备屏障或调试器附着时响应取消，并阻止延迟恢复后的命令派发；Chrome attach 在授权检查后复核取消信号。SDK 110 项、Electron 58 项、Chrome 扩展 40 项检查通过；Linux ARM64 Chromium 原生消息实测取消可及时结束且屏障释放后无迟到输入。已开始的调试器附着可能完成；Windows 未测。
+
+Chrome 记录创建或发现的标签所属会话，标签关闭时定向发送 onTabClosed，relay 丢弃无会话标记的关闭事件；SDK 现有关闭/断开等待清理可及时结束。扩展 41 项、Go 90 项检查通过；Linux ARM64 Chromium 原生消息双会话实测关闭事件仅到达所属会话，等待及时退出，其他交互继续。Windows 未测。
