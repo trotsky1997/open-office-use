@@ -459,3 +459,5 @@ Added bounded literal chart point samples and targeted numeric literal edits for
 Added synchronized workbook literal-category editing across matching chart series with validation and snapshot protection.
 
 Added workbook chart series-name inventory and targeted literal series-name edits.
+
+Added snapshot-bound viewer controls for workbook literal chart values, categories and series names.

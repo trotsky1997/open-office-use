@@ -5,6 +5,9 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import urllib.request
+import urllib.error
+from urllib.parse import urlsplit
 from pathlib import Path
 from lxml import etree
 from openpyxl import load_workbook
@@ -178,6 +181,32 @@ with tempfile.TemporaryDirectory() as tmp:
     try: session.set_chart_literal_series_name(source_draft,0,baseline['charts'][0]['part'],1,'Wrong')
     except ValueError: pass
     else: raise AssertionError('Referenced chart name accepted')
+    def literal_viewer_fixture(tree):
+        literal_categories(tree); literal_values(tree); literal_name(tree)
+    viewer_source=rewrite('literal-viewer.xlsx',literal_viewer_fixture); viewer_draft=root/'literal-viewer-draft';session.start(viewer_draft,source=viewer_source)
+    server=subprocess.Popen([sys.executable,str(cli),'watch',str(viewer_draft)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        url=json.loads(server.stdout.readline())['url']; origin='http://'+urlsplit(url).netloc
+        def post(route,payload,request_origin=origin):
+            request=urllib.request.Request(url+route,data=json.dumps(payload).encode(),headers={'Origin':request_origin,'Content-Type':'application/json'})
+            with urllib.request.urlopen(request,timeout=30) as response: return json.load(response)
+        report=post('chart-cache-scan',{'revision':0}); chart=report['charts'][0]
+        value_ref=next(item for item in chart['references'] if item['kind']=='numLit' and item['role']=='val')
+        payload={'base_revision':0,'snapshot_sha256':report['snapshot_sha256'],'kind':'value','part':chart['part'],'reference':value_ref['index'],'point':1,'series':None,'value':42}
+        for bad,request_origin,code in [(dict(payload,snapshot_sha256='0'*64),origin,400),(dict(payload,value=True),origin,400),(payload,'http://evil.test',403)]:
+            try: post('chart-literal-save',bad,request_origin)
+            except urllib.error.HTTPError as error: assert error.code==code
+            else: raise AssertionError('Invalid literal viewer edit accepted')
+        assert post('chart-literal-save',payload)['revision']==1
+        report=post('chart-cache-scan',{'revision':1}); category=next(item for item in report['charts'][0]['references'] if item['kind']=='strLit' and item['role']=='cat')
+        category_payload={'base_revision':1,'snapshot_sha256':report['snapshot_sha256'],'kind':'category','part':chart['part'],'reference':category['index'],'point':1,'series':None,'value':'January'}
+        assert post('chart-literal-save',category_payload)['series_updated']==2
+        report=post('chart-cache-scan',{'revision':2})
+        name_payload={'base_revision':2,'snapshot_sha256':report['snapshot_sha256'],'kind':'series_name','part':chart['part'],'reference':None,'point':None,'series':1,'value':'Sales'}
+        assert post('chart-literal-save',name_payload)['revision']==3
+        assert post('chart-cache-scan',{'revision':3})['charts'][0]['series'][0]['name']=='Sales'
+    finally:
+        server.terminate(); server.wait(timeout=10)
     def missing(tree):
         ref=tree.find('.//'+C+'cat/'+C+'strRef'); ref.remove(ref.find(C+'strCache'))
     missing_result=chart_cache.scan(rewrite('missing.xlsx',missing)); assert missing_result['missing_caches']==1 and not missing_result['complete']

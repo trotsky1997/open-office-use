@@ -358,3 +358,5 @@ Existing fixed numeric workbook chart data supports snapshot-bound one-point CLI
 Workbook fixed chart categories can be updated across matching series in snapshot-bound CLI/MCP revisions. The OfficeCLI sales-dashboard reference updated all four series, changed only the chart part and rendered the new label. Native Excel remains unverified.
 
 Workbook chart scans expose bounded series names and indices. Direct literal names can be edited through snapshot-bound CLI/MCP revisions. The OfficeCLI sales-dashboard reference rendered the renamed legend and passed validation; native Excel remains unverified.
+
+The workbook viewer can select and edit fixed chart numeric points, shared categories and literal series names from bounded scan results. Browser interaction on the OfficeCLI reference saved and re-inspected three revisions; route checks covered stale snapshots and cross-origin requests.

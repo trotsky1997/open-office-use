@@ -124,7 +124,12 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p id="formula-status" role="status"></p><pre id="formula-scan-output"></pre></details>
 <details id="chart-cache-panel" hidden><summary>Chart cache checks</summary>
 <p>Compare supported chart caches with stored worksheet values. Literal chart data has no worksheet reference and does not update with cell edits. Sync affects every placement sharing a chart part. Formula caches may be stale; inspect chart rendering and unverified sources separately.</p>
-<button type="button" id="chart-cache-scan">Check displayed revision</button><p id="chart-cache-status" role="status"></p><ul id="chart-cache-actions"></ul><pre id="chart-cache-output"></pre></details>
+<button type="button" id="chart-cache-scan">Check displayed revision</button><p id="chart-cache-status" role="status"></p><ul id="chart-cache-actions"></ul>
+<fieldset><legend>Edit fixed chart data</legend><p>Select an inspected sample. Edits change the chart part and every placement that shares it; worksheet cells stay unchanged.</p>
+<label>Chart item <select id="chart-literal-select" disabled><option value="">Select an item</option></select></label>
+<label>New value <input id="chart-literal-value" maxlength="255" disabled></label>
+<button type="button" id="chart-literal-save" disabled>Save chart item as new revision</button><p id="chart-literal-status" role="status"></p></fieldset>
+<pre id="chart-cache-output"></pre></details>
 <details id="workbook-panel" hidden><summary>Workbook overview</summary>
 <p>Inspect a bounded sample of stored cells in each worksheet. Numbers and dates can be raw stored values; use a cell range for detailed reads.</p>
 <button type="button" id="workbook-load">Inspect displayed revision</button><p id="workbook-status" role="status"></p><div id="workbook-results"></div></details>
@@ -213,7 +218,7 @@ let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparison
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
 let slideOrderLoaded=null, slideOrderBusy=false, slideNavigationLoaded=null, slideNavigationBusy=false, slideNavigationPathHash=null;
-let slideAxisLoaded=null, slideAxisSelection=null, slideAxisBusy=false;
+let slideAxisLoaded=null, slideAxisSelection=null, slideAxisBusy=false, chartLiteralLoaded=null, chartLiteralSelection=null, chartLiteralBusy=false;
 let trackedEpoch=0, trackedRevision=null, trackedHash=null, trackedBusy=false, slideTextRevision=null, slideTextEpoch=0;
 function clearTextSearch() {
  textSearchEpoch++; textSearchState=null; document.getElementById('text-search-next').disabled=true;
@@ -347,9 +352,10 @@ function elementDirty() {
  return editBaseline !== null && (document.getElementById('edit-value').value !== editBaseline.value || document.getElementById('edit-mode').value !== editBaseline.mode);
 }
 function slideAxisDirty() { return !!slideAxisSelection && (document.getElementById('slide-chart-axis-min').value!==slideAxisSelection.min || document.getElementById('slide-chart-axis-max').value!==slideAxisSelection.max); }
+function chartLiteralDirty() { return !!chartLiteralSelection && document.getElementById('chart-literal-value').value!==chartLiteralSelection.initial; }
 function notesDirty() { return notesBaseline!==null && document.getElementById('notes-text').value!==notesBaseline; }
 window.addEventListener('beforeunload', event => {
- if (gridDirty() || elementDirty() || notesDirty() || slideAxisDirty()) { event.preventDefault(); event.returnValue=''; }
+ if (gridDirty() || elementDirty() || notesDirty() || slideAxisDirty() || chartLiteralDirty()) { event.preventDefault(); event.returnValue=''; }
 });
 document.getElementById('formula-scan').addEventListener('click', async () => {
  if (scanBusy || calcBusy || pinned!==null || current<0) return;
@@ -952,6 +958,33 @@ function clearCommentsFor(revision) {
 function clearStoriesFor(revision) {
  if (storiesRevision!==null && storiesRevision!==revision) { storiesEpoch++; storiesRevision=null; document.getElementById('stories-status').textContent=''; document.getElementById('stories-list').replaceChildren(); }
 }
+document.getElementById('chart-literal-select').addEventListener('change', event => {
+ const select=event.target, previous=chartLiteralSelection;
+ if (chartLiteralDirty() && !window.confirm('Discard unsaved chart data?')) { select.value=previous.index; return; }
+ const entry=chartLiteralLoaded?.choices[Number(select.value)];
+ if (select.value==='' || !entry) { chartLiteralSelection=null; document.getElementById('chart-literal-value').disabled=true; document.getElementById('chart-literal-save').disabled=true; return; }
+ chartLiteralSelection={index:select.value,entry,initial:entry.initial}; const input=document.getElementById('chart-literal-value'); input.disabled=false; input.value=entry.initial;
+ const target=chartLiteralLoaded, ready=target.revision===current && target.revision===displayed && target.hash===displayedHash && pinned===null && !comparing;
+ document.getElementById('chart-literal-save').disabled=!ready;
+ document.getElementById('chart-literal-status').textContent=ready ? 'Ready to edit; shared chart placements change together.' : 'Read-only revision.';
+});
+document.getElementById('chart-literal-save').addEventListener('click', async () => {
+ const target=chartLiteralLoaded, selection=chartLiteralSelection, status=document.getElementById('chart-literal-status');
+ if (chartLiteralBusy || !target || !selection || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { status.textContent='Revision changed; inspect the chart again.'; return; }
+ if (gridBusy || editBusy || gridDirty() || elementDirty()) { status.textContent='Save or copy pending edits before changing chart data.'; return; }
+ const entry=selection.entry, text=document.getElementById('chart-literal-value').value;
+ if (text===selection.initial) { status.textContent='No change to save.'; return; }
+ if (!text || (entry.kind==='value' && (!/^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$/.test(text.trim()) || !Number.isFinite(Number(text))))) { status.textContent='Enter a valid value.'; return; }
+ if (entry.kind==='value' && Number.isInteger(Number(text)) && !Number.isSafeInteger(Number(text))) { status.textContent='Large integers require the CLI or MCP; browser numbers cannot preserve them exactly.'; return; }
+ const payload={base_revision:target.revision,snapshot_sha256:target.hash,kind:entry.kind,part:entry.part,reference:entry.reference ?? null,point:entry.point ?? null,series:entry.series ?? null,value:entry.kind==='value' ? Number(text) : text};
+ chartLiteralBusy=true; document.getElementById('chart-literal-save').disabled=true; document.getElementById('chart-literal-select').disabled=true; document.getElementById('chart-literal-value').readOnly=true;
+ try {
+  const response=await fetch('chart-literal-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const result=await response.json();
+  if (!response.ok) throw new Error(result.error || 'Could not update chart data');
+  chartLiteralLoaded=null; chartLiteralSelection=null; status.textContent=`Saved revision ${result.revision}; inspect it to continue.`; await refresh();
+ } catch(error) { status.textContent=`Chart data error: ${error.message}`; if (target.revision===current && target.revision===displayed && target.hash===displayedHash && pinned===null && !comparing) document.getElementById('chart-literal-save').disabled=false; }
+ finally { chartLiteralBusy=false; document.getElementById('chart-literal-value').readOnly=false; if (chartLiteralLoaded===target) document.getElementById('chart-literal-select').disabled=false; }
+});
 function clearWorkbookFor(revision) {
  if (workbookRevision!==null && workbookRevision!==revision) { workbookEpoch++; workbookRevision=null; document.getElementById('workbook-status').textContent=''; document.getElementById('workbook-results').replaceChildren(); }
 }
@@ -1008,7 +1041,8 @@ function clearChartCacheFor(revision) {
  if (chartCacheRevision!==null && chartCacheRevision!==revision) { chartCacheEpoch++; chartCacheRevision=null; document.getElementById('chart-cache-status').textContent=''; document.getElementById('chart-cache-output').textContent=''; document.getElementById('chart-cache-actions').replaceChildren(); }
 }
 document.getElementById('chart-cache-scan').addEventListener('click', async () => {
- if (displayed<0) return;
+ if (displayed<0 || chartLiteralBusy) return;
+ if (chartLiteralDirty() && !window.confirm('Discard unsaved chart data and inspect again?')) return;
  const revision=displayed, epoch=++chartCacheEpoch, button=document.getElementById('chart-cache-scan'), status=document.getElementById('chart-cache-status');
  chartCacheRevision=revision; button.disabled=true; document.getElementById('chart-cache-output').textContent=''; document.getElementById('chart-cache-actions').replaceChildren(); status.textContent=`Checking revision ${revision}…`;
  try {
@@ -1018,6 +1052,18 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
   if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; rescan chart caches');
   status.textContent=`Revision ${revision}: ${result.chart_parts_total} chart part(s), ${result.mismatch_references} mismatch candidate(s), ${result.missing_caches} missing cache(s), ${result.unverified_references} unverified reference(s), ${result.literal_sources} literal data source(s) without worksheet links. ${result.complete ? 'Supported checks completed.' : 'Coverage incomplete.'}`;
   document.getElementById('chart-cache-output').textContent=JSON.stringify(result, null, 2);
+  const choices=[];
+  for (const chart of result.charts) {
+   if (chart.external_data || chart.extensions_present || chart.status!=='scanned') continue;
+   for (const ref of chart.references) if (ref.status==='literal' && ((ref.kind==='numLit' && ref.role==='val') || (ref.kind==='strLit' && ref.role==='cat'))) {
+    for (const example of ref.examples || []) if (!example.value_truncated) choices.push({kind:ref.kind==='numLit' ? 'value' : 'category',part:chart.part,reference:ref.index,point:example.point,initial:example.value});
+   }
+   if (chart.plot_count===1 && chart.series_complete) for (const series of chart.series || []) if (series.name_status==='literal' && !series.name_truncated) choices.push({kind:'series_name',part:chart.part,series:series.index,initial:series.name});
+  }
+  const select=document.getElementById('chart-literal-select'); select.replaceChildren(new Option('Select an item',''),...choices.slice(0,200).map((entry,index)=>new Option(`${entry.part} · ${entry.kind} ${entry.series ?? entry.reference} ${entry.point ? '· point '+entry.point : ''} · ${entry.initial.slice(0,80)}`,String(index))));
+  chartLiteralLoaded={revision,hash:result.snapshot_sha256,choices:choices.slice(0,200)}; chartLiteralSelection=null; select.disabled=false;
+  document.getElementById('chart-literal-value').value=''; document.getElementById('chart-literal-value').disabled=true; document.getElementById('chart-literal-save').disabled=true;
+  document.getElementById('chart-literal-status').textContent=choices.length>200 ? 'Showing the first 200 items. Use the CLI or MCP for additional points.' : `${choices.length} editable candidate(s); unsupported structures may still be rejected on save.`;
   const list=document.getElementById('chart-cache-actions');
   for (const chart of result.charts) for (const ref of chart.references) {
    if (ref.status!=='mismatch' || ref.unverified_points || ref.mismatches_truncated || ref.mismatches.some(m=>!['value_differs','missing_point','extra_point'].includes(m.reason)) || chart.external_data || chart.extensions_present) continue;
@@ -1025,6 +1071,7 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
    const sync=document.createElement('button'); sync.type='button'; sync.textContent='Sync cache as new revision'; sync.disabled=revision!==current || pinned!==null;
    sync.addEventListener('click', async () => {
     if (revision!==current || pinned!==null || displayed!==revision || chartCacheRevision!==revision || result.snapshot_sha256!==displayedHash) { status.textContent='Version changed; check the latest revision again.'; return; }
+    if (chartLiteralDirty() || gridDirty() || elementDirty() || gridBusy || editBusy || chartLiteralBusy) { status.textContent='Save or copy pending edits before syncing.'; return; }
     sync.disabled=true; button.disabled=true; status.textContent='Syncing stored values into this chart cache…';
     try {
      const response=await fetch('chart-cache-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part:chart.part,reference:ref.index,snapshot_sha256:result.snapshot_sha256})});
@@ -1327,6 +1374,7 @@ function showRenderAdvisory(items) {
 }
 function display(state, live) {
  displayedHash=state.snapshot_sha256;
+ if (chartLiteralLoaded && (chartLiteralLoaded.revision!==state.revision || chartLiteralLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('chart-literal-save').disabled=true;
  if (slideAxisLoaded && (slideAxisLoaded.revision!==state.revision || slideAxisLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('slide-chart-axis-save').disabled=true;
  if (slideNavigationLoaded && (slideNavigationLoaded.revision!==state.revision || slideNavigationLoaded.hash!==state.snapshot_sha256 || !live)) { slideNavigationPathHash=null; document.getElementById('slide-navigation-set').disabled=true; document.getElementById('slide-navigation-remove').disabled=true; }
  if (slideOrderLoaded && (slideOrderLoaded.revision!==state.revision || slideOrderLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('slide-order-save').disabled=true;
@@ -1365,7 +1413,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
- displayedHash=null; document.getElementById('slide-chart-axis-save').disabled=true;
+ displayedHash=null; document.getElementById('slide-chart-axis-save').disabled=true; document.getElementById('chart-literal-save').disabled=true;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory],[`Revision ${state.latest_revision}`,state.latest_render_advisory]]);
  clearChartCacheFor(state.revision);
  document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
@@ -1583,7 +1631,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/grid-link', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/slide-chart-axis-read', '/' + token + '/slide-chart-axis-save', '/' + token + '/slide-navigation-read', '/' + token + '/slide-navigation-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/grid-link', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-literal-save', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/slide-chart-axis-read', '/' + token + '/slide-chart-axis-save', '/' + token + '/slide-navigation-read', '/' + token + '/slide-navigation-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1604,6 +1652,17 @@ def serve(directory, preview, port=0, render=None):
                         if state['format'] == 'pptx': options['scope'] = 'notes' if scope == 'notes' else 'slides'
                         saved = {'format': state['format'], **search(*args, **options)}
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
+                    if route.endswith('/chart-literal-save'):
+                        if not isinstance(payload, dict) or set(payload) != {'base_revision', 'snapshot_sha256', 'kind', 'part', 'reference', 'point', 'series', 'value'} or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Chart data edit requires revision, snapshot and target')
+                        with lock:
+                            if payload['kind'] == 'value' and payload['series'] is None:
+                                saved = session.set_chart_literal_value(directory, payload['base_revision'], payload['part'], payload['reference'], payload['point'], payload['value'], payload['snapshot_sha256'])
+                            elif payload['kind'] == 'category' and payload['series'] is None:
+                                saved = session.set_chart_literal_category(directory, payload['base_revision'], payload['part'], payload['reference'], payload['point'], payload['value'], payload['snapshot_sha256'])
+                            elif payload['kind'] == 'series_name' and payload['reference'] is None and payload['point'] is None:
+                                saved = session.set_chart_literal_series_name(directory, payload['base_revision'], payload['part'], payload['series'], payload['value'], payload['snapshot_sha256'])
+                            else: raise ValueError('Invalid chart data edit kind or target')
+                        self.send(200, json.dumps(saved).encode(), 'application/json'); return
                     if route.endswith('/chart-cache-scan'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Chart cache scan requires a revision')
                         saved = session.scan_chart_caches(directory, payload['revision'])

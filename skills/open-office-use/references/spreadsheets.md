@@ -56,3 +56,5 @@ Use `session_set_chart_literal_value` with an inspected chart part, literal refe
 Use `session_set_chart_literal_category` with a scanned literal category reference to update a one-based category point across matching series of a workbook chart. Mismatched or referenced categories are rejected; worksheet cells remain unchanged.
 
 Chart-cache scans expose bounded plot and series indices and direct literal series names. Use `session_set_chart_literal_series_name` to rename an inspected literal series in a single plot; referenced names require changing their source cells.
+
+The viewer’s Chart cache checks panel can select inspected fixed-data samples or literal series names and save a revision. It shows up to 200 candidates and rejects large integers outside JavaScript’s exact range.
