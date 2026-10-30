@@ -26,6 +26,9 @@ with tempfile.TemporaryDirectory() as tmp:
     deck.save(source); original = source.read_bytes(); result = layout.inspect(source)
     assert result['complete'] and result['slides_total'] == 1 and result['off_slide_count'] == 1, result
     assert result['off_slide'][0]['name'] == 'Overflow' and result['off_slide'][0]['bounds_inches'] == [9.5, 7.0, 11.5, 8.0]
+    visible = result['off_slide'][0]['visible_polygon_inches']
+    assert min(x for x, y in visible) == 9.5 and max(x for x, y in visible) == 10 and min(y for x, y in visible) == 7 and max(y for x, y in visible) == 7.5
+    assert result['visibility_known'] and not result['hidden_slides']
     pairs = {frozenset((item['first']['name'], item['second']['name'])): item for item in result['overlaps']}
     alpha_beta = pairs[frozenset(('Alpha', 'Beta'))]
     assert alpha_beta['area_square_inches'] == 0.5 and alpha_beta['fraction_of_smaller'] == 0.25
@@ -51,6 +54,9 @@ with tempfile.TemporaryDirectory() as tmp:
     off_deck.save(outside); off_result = layout.inspect(outside)
     assert off_result['off_slide_count'] == 3 and off_result['overlap_count'] == 0, off_result
     assert any('/picture[@id=' in item['path_hint'] for item in off_result['off_slide'])
+    hidden_deck = Presentation(); hidden_deck.slides.add_slide(hidden_deck.slide_layouts[6]); hidden = hidden_deck.slides.add_slide(hidden_deck.slide_layouts[6]); hidden._element.set('show', '0')
+    hidden_source = root / 'hidden.pptx'; hidden_deck.save(hidden_source); hidden_result = layout.inspect(hidden_source)
+    assert hidden_result['visibility_known'] and hidden_result['hidden_slides'] == [2]
     invalid = root / 'invalid.pptx'; invalid.write_bytes(b'not a presentation')
     try:
         layout.inspect(invalid)

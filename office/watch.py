@@ -29,6 +29,7 @@ details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radi
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
 #comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
 input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}td input{width:10rem}
+.comparison-page{position:relative;width:100%}.comparison-page img{display:block}.layout-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}.layout-overlay polygon{vector-effect:non-scaling-stroke;stroke-width:2}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
 #compare-sheet{width:min(14rem,70vw)}#compare-range{width:8rem}#cell-comparison-output td{max-width:24rem;overflow-wrap:anywhere}
@@ -57,7 +58,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <p id="edit-status" role="status"></p></form></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
-<button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details></details>
+<button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details></details>
 <details id="formula-panel" hidden><summary>Workbook calculation and checks</summary>
 <p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
 <button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
@@ -95,7 +96,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -391,6 +392,7 @@ document.getElementById('selection-form').addEventListener('submit', event => {
 });
 function selectable(image, page, revision, enabled) {
  const wrapper = document.createElement('div'); wrapper.className = 'page'; wrapper.dataset.page = String(page);
+ wrapper.dataset.layoutRevision=String(revision); wrapper.dataset.layoutPage=String(page); wrapper.dataset.layoutSide='single';
  const box = document.createElement('div'); box.className = 'box'; wrapper.append(image, box);
  if (!enabled) { wrapper.style.cursor='default'; return wrapper; }
  let start = null;
@@ -414,24 +416,65 @@ function selectable(image, page, revision, enabled) {
  });
  return wrapper;
 }
+function clearHighlight() {
+ overlayEpoch++; layoutHighlight=null; document.querySelectorAll('.layout-overlay').forEach(item=>item.remove());
+ document.getElementById('layout-clear').hidden=true; document.getElementById('layout-highlight-status').textContent='';
+}
+document.getElementById('layout-clear').addEventListener('click', clearHighlight);
 function clearLayoutFor(revision) {
  if (layoutRevision !== null && layoutRevision !== revision) {
-  layoutRevision=null; document.getElementById('layout-status').textContent=''; document.getElementById('layout-results').replaceChildren(); document.getElementById('layout-scan-output').textContent='';
+  clearHighlight(); layoutReport=null; layoutRevision=null; document.getElementById('layout-status').textContent=''; document.getElementById('layout-results').replaceChildren(); document.getElementById('layout-scan-output').textContent='';
  }
+}
+function layoutMappingAvailable() {
+ return layoutReport && layoutReport.visibility_known && Array.isArray(layoutReport.hidden_slides) && layoutReport.hidden_slides.length===0 && layoutReport.slides_total===displayedPages;
+}
+async function showLayoutHighlight(highlight, scroll) {
+ const epoch=++overlayEpoch; document.querySelectorAll('.layout-overlay').forEach(item=>item.remove());
+ if (!layoutReport || layoutRevision!==displayed || !layoutMappingAvailable()) { document.getElementById('layout-highlight-status').textContent='Highlight unavailable: slide-to-page mapping is uncertain.'; return; }
+ const side=comparing ? 'selected' : 'single';
+ const wrapper=[...document.querySelectorAll('[data-layout-revision]')].find(item=>Number(item.dataset.layoutRevision)===displayed && Number(item.dataset.layoutPage)===highlight.slide && item.dataset.layoutSide===side);
+ if (!wrapper) { document.getElementById('layout-highlight-status').textContent='The matching preview page is unavailable.'; return; }
+ if (scroll) wrapper.scrollIntoView({block:'center'});
+ const img=wrapper.querySelector('img');
+ try { await img.decode(); } catch(error) { if (epoch===overlayEpoch) document.getElementById('layout-highlight-status').textContent='The preview image could not be loaded.'; return; }
+ if (epoch!==overlayEpoch || !wrapper.isConnected || layoutRevision!==displayed) return;
+ const [width,height]=layoutReport.slide_size_inches;
+ if (!(Number.isFinite(width) && Number.isFinite(height) && width>0 && height>0 && img.naturalWidth>0 && img.naturalHeight>0) || Math.abs((img.naturalWidth/img.naturalHeight)/(width/height)-1)>0.015) {
+  document.getElementById('layout-highlight-status').textContent='Highlight unavailable: preview dimensions do not match the slide.'; return;
+ }
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.classList.add('layout-overlay'); svg.setAttribute('viewBox',`0 0 ${width} ${height}`); svg.setAttribute('preserveAspectRatio','none'); svg.setAttribute('aria-hidden','true');
+ let count=0;
+ for (const [points,color] of highlight.polygons) {
+  if (!Array.isArray(points) || points.length<3 || !points.every(pair=>Array.isArray(pair) && pair.length===2 && pair.every(Number.isFinite))) continue;
+  const polygon=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+  polygon.setAttribute('points',points.map(([x,y])=>`${Math.max(0,Math.min(width,x))},${Math.max(0,Math.min(height,y))}`).join(' '));
+  polygon.setAttribute('stroke',color); polygon.setAttribute('fill',color); polygon.setAttribute('fill-opacity','0.14'); svg.appendChild(polygon); count++;
+ }
+ layoutHighlight=highlight; document.getElementById('layout-clear').hidden=false;
+ if (count) { wrapper.appendChild(svg); document.getElementById('layout-highlight-status').textContent=`Slide ${highlight.slide}: highlighted visible geometry.`; }
+ else document.getElementById('layout-highlight-status').textContent=`Slide ${highlight.slide}: the object is outside the visible page; inspect its path.`;
 }
 document.getElementById('layout-scan').addEventListener('click', async () => {
  if (layoutBusy || displayed<0) return;
- const revision=displayed, button=document.getElementById('layout-scan'); layoutBusy=true; layoutRevision=revision; button.disabled=true;
+ const revision=displayed, button=document.getElementById('layout-scan'); clearHighlight(); layoutReport=null; layoutBusy=true; layoutRevision=revision; button.disabled=true;
  document.getElementById('layout-status').textContent=`Checking revision ${revision}…`; document.getElementById('layout-results').replaceChildren(); document.getElementById('layout-scan-output').textContent='';
  try {
   const response=await fetch('layout-scan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Layout check failed');
   if (displayed!==revision || layoutRevision!==revision) return;
   document.getElementById('layout-status').textContent=`Revision ${revision}: ${result.off_slide_count} off-slide candidate(s), ${result.overlap_count} overlap candidate(s). ${result.complete ? 'Scan complete.' : 'Scan incomplete.'}`;
+  layoutReport=result;
   const list=document.getElementById('layout-results');
+  if (!layoutMappingAvailable()) document.getElementById('layout-highlight-status').textContent='Page highlights are unavailable when slides are hidden, visibility is unknown, or preview page counts differ.';
   const describe=item=>`${item.name || 'Object'} (ID ${item.id}, ${item.path_hint || 'no path hint'})${item.text_preview ? ': ' + item.text_preview : ''}`;
-  for (const item of result.off_slide) { const row=document.createElement('li'); row.textContent=`Slide ${item.slide}: off-slide — ${describe(item)}`; list.appendChild(row); }
-  for (const item of result.overlaps) { const row=document.createElement('li'); row.textContent=`Slide ${item.slide}: overlap — ${describe(item.first)} / ${describe(item.second)} (${Math.round(item.fraction_of_smaller*100)}% of smaller object)`; list.appendChild(row); }
+  function addCandidate(label, highlight) {
+   const row=document.createElement('li'); row.appendChild(document.createTextNode(label+' '));
+   const show=document.createElement('button'); show.type='button'; show.textContent='Show on slide'; show.setAttribute('aria-label',`Show ${label} on slide`); show.disabled=!layoutMappingAvailable();
+   show.addEventListener('click',()=>showLayoutHighlight(highlight,true)); row.appendChild(show); list.appendChild(row);
+  }
+  for (const item of result.off_slide) addCandidate(`Slide ${item.slide}: off-slide — ${describe(item)}`, {slide:item.slide,polygons:[[item.visible_polygon_inches,'#c62828']]});
+  for (const item of result.overlaps) addCandidate(`Slide ${item.slide}: overlap — ${describe(item.first)} / ${describe(item.second)} (${Math.round(item.fraction_of_smaller*100)}% of smaller object)`, {slide:item.slide,polygons:[[item.first.visible_polygon_inches,'#0063b1'],[item.second.visible_polygon_inches,'#c62828'],[item.intersection_polygon_inches,'#b26a00']]});
   if (!result.off_slide.length && !result.overlaps.length) { const row=document.createElement('li'); row.textContent='No candidates found in the scanned portion.'; list.appendChild(row); }
   if (result.off_slide_truncated || result.overlaps_truncated) { const row=document.createElement('li'); row.textContent='Some candidates are omitted; see report counts.'; list.appendChild(row); }
   document.getElementById('layout-scan-output').textContent=JSON.stringify(result, null, 2);
@@ -449,7 +492,8 @@ function display(state, live) {
   image.alt=`Revision ${state.revision}, page ${i+1}`; image.loading='lazy'; image.draggable=false;
   fragment.appendChild(selectable(image, i+1, state.revision, live));
  }
- document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; viewKey=key; clearCandidates();
+ document.getElementById('pages').replaceChildren(fragment); displayed=state.revision; displayedPages=state.pages; viewKey=key; clearCandidates();
+ if (layoutHighlight) showLayoutHighlight(layoutHighlight,false);
  document.getElementById('selection').textContent = live ? 'Drag on a page to save a selection for the agent.' : 'Selections are available on the latest revision.';
  document.querySelectorAll('#selection-form input, #selection-form button, #edit-path, #edit-load, #grid-sheets, #grid-sheet, #grid-range, #grid-load').forEach(element => element.disabled=!live);
  document.getElementById('formula-scan').disabled=!live || scanBusy || calcBusy; document.getElementById('formula-recalculate').disabled=!live || scanBusy || calcBusy;
@@ -466,11 +510,13 @@ function displayComparison(state) {
   title.textContent=`${label} · revision ${revision} · ${count} page(s)`; section.appendChild(title);
   for (let i=0; i<count; i++) {
    const image=document.createElement('img'); image.src=`page/${revision}/${i}`; image.loading='lazy';
-   image.alt=`${label} revision ${revision}, page ${i+1}`; section.appendChild(image);
+   image.alt=`${label} revision ${revision}, page ${i+1}`;
+   const wrapper=document.createElement('div'); wrapper.className='comparison-page'; wrapper.dataset.layoutRevision=String(revision); wrapper.dataset.layoutPage=String(i+1); wrapper.dataset.layoutSide=label.toLowerCase(); wrapper.appendChild(image); section.appendChild(wrapper);
   }
   grid.appendChild(section);
  }
- document.getElementById('pages').replaceChildren(grid); displayed=state.revision; viewKey=key; clearCandidates();
+ document.getElementById('pages').replaceChildren(grid); displayed=state.revision; displayedPages=state.pages; viewKey=key; clearCandidates();
+ if (layoutHighlight) showLayoutHighlight(layoutHighlight,false);
  document.getElementById('comparison-details').hidden=false;
  document.getElementById('changes-status').textContent='';
  document.getElementById('comparison-text').textContent=''; document.getElementById('comparison-parts').textContent='';

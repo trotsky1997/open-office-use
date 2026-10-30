@@ -122,6 +122,10 @@ def inspect(file):
                     raise ValueError('Presentation exceeds package limits or contains duplicate parts')
             presentation = Presentation(snapshot)
             slide_width, slide_height = presentation.slide_width, presentation.slide_height
+            slides = presentation.slides
+            visibility = [slide._element.get('show') for slide in slides]
+            hidden_slides = [index for index, value in enumerate(visibility, 1) if value in ('0', 'false')]
+            visibility_known = all(value in (None, '0', '1', 'false', 'true') for value in visibility)
             if not slide_width or not slide_height or slide_width <= 0 or slide_height <= 0:
                 raise ValueError('Presentation has no valid slide size')
             off_slide, overlaps, skipped = [], [], []
@@ -134,7 +138,7 @@ def inspect(file):
                 nonlocal complete
                 complete = False; totals['skipped_count'] += 1
                 issue(skipped, {'slide': slide, 'path_hint': path, 'reason': str(reason)[:300]})
-            for slide_number, slide in enumerate(presentation.slides, 1):
+            for slide_number, slide in enumerate(slides, 1):
                 objects = []
                 def walk(shapes, matrix, prefix, depth):
                     nonlocal shape_limit
@@ -184,6 +188,7 @@ def inspect(file):
                                 totals['text_shapes'] += 1
                             full_area = area(points)
                             visible = intersect(points[:], [(0, 0), (slide_width, 0), (slide_width, slide_height), (0, slide_height)])
+                            descriptor['visible_polygon_inches'] = [[round(x / EMU, 4), round(y / EMU, 4)] for x, y in visible]
                             if full_area > 1 and area(visible) > 1:
                                 visible_box = (min(p[0] for p in visible), min(p[1] for p in visible), max(p[0] for p in visible), max(p[1] for p in visible))
                                 objects.append((descriptor, visible, visible_box, full_area))
@@ -213,7 +218,8 @@ def inspect(file):
                                              'fraction_of_smaller': round(min(1, intersection / min(first_area, second_area)), 8)})
                 if shape_limit:
                     break
-            return {**totals, 'slides_total': len(presentation.slides), 'slide_size_inches': [round(slide_width / EMU, 4), round(slide_height / EMU, 4)], 'complete': complete and overlap_complete,
+            return {**totals, 'slides_total': len(slides), 'slide_size_inches': [round(slide_width / EMU, 6), round(slide_height / EMU, 6)],
+                    'hidden_slides': hidden_slides, 'visibility_known': visibility_known, 'complete': complete and overlap_complete,
                     'geometry_complete': complete, 'overlap_complete': overlap_complete,
                     'off_slide': off_slide, 'off_slide_truncated': totals['off_slide_count'] > len(off_slide),
                     'overlaps': overlaps, 'overlaps_truncated': totals['overlap_count'] > len(overlaps),
