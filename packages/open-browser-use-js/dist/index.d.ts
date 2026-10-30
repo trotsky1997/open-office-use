@@ -847,6 +847,10 @@ export declare class OpenBrowserUseCdp {
     }): Promise<JsonValue>;
     navigate(tabId: number, url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
     waitForLoadState(tabId: number, options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
+    readDocumentStateStrict(tabId: number): Promise<{
+        href?: string;
+        readyState?: string;
+    }>;
     readDocumentState(tabId: number): Promise<{
         href?: string;
         readyState?: string;

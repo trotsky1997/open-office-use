@@ -625,6 +625,9 @@ load state, or a specific page element instead. Chrome can replay an old
 network-idle lifecycle event while a later request remains in flight, so that
 event alone cannot establish the current network state.
 
+URL and readiness checks read the main document in an isolated browser world,
+so page scripts cannot replace the getters used by these waits.
+
 `waitForLoadState({state, timeoutMs})` includes setup and state reads in a
 positive timeout and removes its event listener on timeout. With `timeoutMs: 0`
 it checks the current state once and waits for that read to finish. A read

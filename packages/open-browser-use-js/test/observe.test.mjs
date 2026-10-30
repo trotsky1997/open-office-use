@@ -241,7 +241,7 @@ test('expectNavigation arms before the action and ignores child-frame navigation
     if(params.method==='Runtime.evaluate')return {result:{value:{href,readyState:'complete'}}};
     return {};
   };
-  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);tab.browser.cdp.readDocumentStateStrict=id=>tab.browser.cdp.evaluate(id,'document-state');
   const emit=(method,params)=>{for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method,params}});};
   const result=await tab.playwright.expectNavigation(async()=>{emit('Page.navigatedWithinDocument',{frameId:'root'});return 'done';},{url:href,timeoutMs:500});
   assert.equal(result,'done');assert.equal(handlers.size,1);
@@ -310,7 +310,7 @@ test('goto does not treat a loaded previous document as a completed navigation',
     if(params.method==='Runtime.evaluate')return {result:{value:{href:'https://example.test/old#section',readyState:'complete'}}};
     return {};
   };
-  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);tab.browser.cdp.readDocumentStateStrict=id=>tab.browser.cdp.evaluate(id,'document-state');
   await assert.rejects(tab.goto('https://example.test/new',{timeoutMs:15}),/Timed out waiting for load/);
   sameDocument=true;
   await tab.goto('https://example.test/old#section',{timeoutMs:1000});
@@ -360,7 +360,7 @@ test('navigation waits clean up on failure and observe load events during state 
     }
     return {};
   };
-  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);tab.browser.cdp.readDocumentStateStrict=id=>tab.browser.cdp.evaluate(id,'document-state');
   await tab.waitForLoadState({timeoutMs:1000});assert.equal(handlers.size,1);
   mode='ready';await tab.waitForLoadState({timeoutMs:1000});assert.equal(handlers.size,1);
   let settled=false;
@@ -383,7 +383,7 @@ test('URL wait checks the matching document state and propagates transport error
     if(step++===0)throw new Error('Execution context was destroyed');
     return {result:{value:{href:'https://example.test/done',readyState:step===2?'loading':'complete'}}};
   };
-  const tab=new OpenBrowserUseBrowser({client}).tab(1), pattern=/\/done$/g;
+  const tab=new OpenBrowserUseBrowser({client}).tab(1), pattern=/\/done$/g;tab.browser.cdp.readDocumentStateStrict=id=>tab.browser.cdp.evaluate(id,'document-state');
   await tab.playwright.waitForURL(pattern,{timeoutMs:1000});
   assert.equal(calls,3);assert.equal(pattern.lastIndex,0);
   await tab.waitForURL(runInNewContext('/done$/'),{timeoutMs:0});
@@ -393,10 +393,17 @@ test('URL wait checks the matching document state and propagates transport error
   await assert.rejects(tab.waitForURL(/done/),/scope revoked/);
 });
 
+test('document state is read from an isolated main-frame context',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];
+  client.request=async(method,params)=>{if(method==='attach')return {};calls.push(params);if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'main'}}};if(params.method==='Page.createIsolatedWorld')return {executionContextId:42};if(params.method==='Runtime.evaluate')return {result:{value:{href:'https://example.test/',readyState:'loading'}}};return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);assert.deepEqual(await tab.browser.cdp.readDocumentStateStrict(1),{href:'https://example.test/',readyState:'loading'});
+  assert.equal(calls.find(call=>call.method==='Page.createIsolatedWorld').commandParams.frameId,'main');assert.equal(calls.find(call=>call.method==='Runtime.evaluate').commandParams.contextId,42);
+});
+
 test('waitForURL commit accepts a matching loading document',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'});let state='loading';
   client.request=async(method)=>method==='attach'?{}:{result:{value:{href:'https://example.test/done',readyState:state}}};
-  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);tab.browser.cdp.readDocumentStateStrict=id=>tab.browser.cdp.evaluate(id,'document-state');
   await tab.waitForURL(/\/done$/,{waitUntil:'commit',timeoutMs:0});
   await assert.rejects(tab.waitForURL(/\/done$/,{waitUntil:'domcontentloaded',timeoutMs:0}),/Timed out/);
   state='interactive';await tab.playwright.waitForURL('https://example.test/done',{waitUntil:'domcontentloaded',timeoutMs:0});
@@ -446,7 +453,7 @@ test('load state deadline covers preparation and leaves no late listener',async(
   const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let release,reads=0;
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
   client.request=async(method,params)=>{if(method==='attach')return {};if(params.method==='Page.enable')await new Promise(resolve=>{release=resolve;});if(params.method==='Runtime.evaluate')reads++;return {};};
-  const tab=new OpenBrowserUseBrowser({client}).tab(1);await assert.rejects(tab.waitForLoadState({timeoutMs:10}),/Timed out waiting for load/);assert.equal(handlers.size,1);
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);tab.browser.cdp.readDocumentStateStrict=id=>tab.browser.cdp.evaluate(id,'document-state');await assert.rejects(tab.waitForLoadState({timeoutMs:10}),/Timed out waiting for load/);assert.equal(handlers.size,1);
   release();await new Promise(resolve=>setImmediate(resolve));assert.equal(handlers.size,1);assert.equal(reads,0);
   client.request=async(method,params)=>{if(method==='attach')return {};if(params.method==='Runtime.evaluate')return await new Promise(resolve=>{release=resolve;});return {};};
   await assert.rejects(tab.waitForLoadState({timeoutMs:10}),/Timed out waiting for load/);assert.equal(handlers.size,1);release({result:{value:{readyState:'complete'}}});
@@ -458,7 +465,7 @@ test('load state deadline covers preparation and leaves no late listener',async(
 
 test('waitForURL bounds a stalled read without retrying it',async()=>{
   const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);let resolveRead,reads=0;
-  tab.browser.cdp.evaluate=async()=>{reads++;return await new Promise(resolve=>{resolveRead=resolve;});};
+  tab.browser.cdp.readDocumentStateStrict=async()=>{reads++;return await new Promise(resolve=>{resolveRead=resolve;});};
   await assert.rejects(tab.waitForURL('https://example.test/done',{timeoutMs:10}),/Timed out waiting for URL/);assert.equal(reads,1);
   resolveRead({href:'https://example.test/done',readyState:'complete'});await new Promise(resolve=>setImmediate(resolve));assert.equal(reads,1);
 });

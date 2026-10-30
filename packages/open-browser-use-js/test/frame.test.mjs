@@ -161,6 +161,8 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
           result = expression.includes("readyState")
             ? { result: { value: { href: "https://example.test/issues", readyState: "interactive" } } }
             : { result: { value: "Open\nClosed\nIssues\nStarred" } };
+        } else if (request.params.method === "Page.createIsolatedWorld") {
+          result = { executionContextId: 101 };
         } else if (request.params.method === "DOM.getDocument") {
           result = { root: { backendNodeId: 1 } };
         } else if (request.params.method === "Page.getFrameTree") {

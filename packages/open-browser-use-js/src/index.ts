@@ -845,7 +845,7 @@ export class OpenBrowserUseTab {
       if(timeoutMs>0 && performance.now()>=deadline)throw timedOut();
       let state: JsonValue = null, timer:ReturnType<typeof setTimeout>|undefined;
       try {
-        const read=this.browser.cdp.evaluate(this.id, "({ href: window.location.href, readyState: document.readyState })");
+        const read=this.browser.cdp.readDocumentStateStrict(this.id);
         state=timeoutMs===0 ? await read : await Promise.race([read,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(timedOut()),Math.max(0,deadline-performance.now()));})]);
       } catch (error) {
         if (!(error instanceof Error) || !/Execution context was destroyed|Cannot find context with specified id/i.test(error.message)) throw error;
@@ -3557,13 +3557,21 @@ export class OpenBrowserUseCdp {
     } finally {if(timer)clearTimeout(timer);controller.abort();}
   }
 
+  async readDocumentStateStrict(tabId:number):Promise<{href?:string;readyState?:string}> {
+    const tree=await this.call(tabId,"Page.getFrameTree");
+    const frame=isObject(tree) && isObject(tree.frameTree) && isObject(tree.frameTree.frame) ? tree.frameTree.frame : undefined;
+    if(!frame || typeof frame.id!=="string")throw new Error("Main frame is unavailable");
+    const generation=this.client.connectionGeneration;
+    const world=await this.call(tabId,"Page.createIsolatedWorld",{frameId:frame.id,worldName:"open-browser-use-selector"},{expectedGeneration:generation});
+    if(!isObject(world) || typeof world.executionContextId!=="number")throw new Error("Document state context is unavailable");
+    const response=await this.call(tabId,"Runtime.evaluate",{contextId:world.executionContextId,expression:"({ href: window.location.href, readyState: document.readyState })",returnByValue:true},{expectedGeneration:generation});
+    const value=isObject(response) && isObject(response.result) ? response.result.value : undefined;
+    if(!isObject(value))throw new Error("Document state is unavailable");
+    return {href:stringValue(value.href),readyState:stringValue(value.readyState)};
+  }
+
   async readDocumentState(tabId: number): Promise<{ href?: string; readyState?: string } | undefined> {
-    try {
-      const value = await this.evaluate(tabId, "({ href: window.location.href, readyState: document.readyState })");
-      return isObject(value) ? { href: stringValue(value.href), readyState: stringValue(value.readyState) } : undefined;
-    } catch {
-      return undefined;
-    }
+    try { return await this.readDocumentStateStrict(tabId); } catch { return undefined; }
   }
 
   waitForEvent(
