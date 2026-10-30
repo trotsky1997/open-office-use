@@ -293,7 +293,7 @@ def session_resolve_tracked_runs(directory: str, base_revision: int, part: str, 
 
 @server.tool()
 def session_reorder_slides(directory: str, base_revision: int, order: list[StrictInt]) -> dict[str, Any]:
-    """Reorder every slide by one-based position in a new PPTX revision; extensions are rejected."""
+    """Reorder every slide by one-based position in a new PPTX revision; supported sections remain contiguous and keep their members."""
     return session.reorder_slides(directory, base_revision, order)
 
 

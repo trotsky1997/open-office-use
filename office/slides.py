@@ -15,6 +15,7 @@ P = '{http://schemas.openxmlformats.org/presentationml/2006/main}'
 A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
 R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
 MC = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+P14 = '{http://schemas.microsoft.com/office/powerpoint/2010/main}'
 INDEX = r'[1-9][0-9]{0,5}'
 SELECTOR = r'(?:' + INDEX + r'|@id=' + INDEX + r')'
 PATH = re.compile(r'/slide\[(' + INDEX + r')\](?:/group\[' + SELECTOR + r'\]){0,8}(?:/shape\[' + SELECTOR + r'\]|/table\[' + SELECTOR + r'\]/tr\[' + INDEX + r'\]/tc\[' + INDEX + r'\])(?:/paragraph\[(' + INDEX + r')\])?\Z')
@@ -151,8 +152,8 @@ def reorder(source, output, order):
         return str(presentation.part.partname).lstrip('/')
     def edit(tree, archive):
         root = tree.getroot()
-        if root.tag != P + 'presentation' or root.find(P + 'extLst') is not None or root.find(MC + 'AlternateContent') is not None:
-            raise ValueError('Presentation extensions or alternate content are unsupported for slide reorder')
+        if root.tag != P + 'presentation' or root.find(MC + 'AlternateContent') is not None:
+            raise ValueError('Presentation alternate content is unsupported for slide reorder')
         lists = root.findall(P + 'sldIdLst')
         if len(lists) != 1: raise ValueError('Presentation slide list is missing or ambiguous')
         listing = lists[0]; entries = list(listing)
@@ -160,6 +161,36 @@ def reorder(source, output, order):
             raise ValueError('Slide order must contain every slide number exactly once')
         ids = [item.get('id') for item in entries]; relationships = [item.get(R + 'id') for item in entries]
         if any(not value for value in ids + relationships) or len(set(ids)) != len(ids) or len(set(relationships)) != len(relationships): raise ValueError('Presentation slide IDs or relationships are ambiguous')
+        extensions = root.findall(P + 'extLst')
+        if len(extensions) > 1: raise ValueError('Presentation extensions are ambiguous')
+        if extensions:
+            extension_items = list(extensions[0])
+            if len(extension_items) != 1 or extension_items[0].tag != P + 'ext' or extension_items[0].get('uri', '').upper() != '{521415D9-36F7-43E2-AB2F-B90AF26B5E84}' or len(extension_items[0]) != 1 or extension_items[0][0].tag != P14 + 'sectionLst':
+                raise ValueError('Unsupported presentation extensions for slide reorder')
+            sections = extension_items[0][0]; section_items = list(sections); groups = []; members = []
+            if not section_items: raise ValueError('Presentation section list is empty')
+            section_ids = [section.get('id') for section in section_items]
+            if any(not value for value in section_ids) or len({value.casefold() for value in section_ids}) != len(section_ids): raise ValueError('Presentation section IDs are ambiguous')
+            for section in section_items:
+                if section.tag != P14 + 'section' or len(section) != 1 or section[0].tag != P14 + 'sldIdLst': raise ValueError('Unsupported presentation section structure')
+                group = list(section[0]); group_ids = [node.get('id') for node in group]
+                if not group or any(node.tag != P14 + 'sldId' or len(node) or set(node.attrib) != {'id'} for node in group) or any(not item or not item.isascii() or not item.isdecimal() for item in group_ids): raise ValueError('Unsupported presentation section slide list')
+                groups.append((section, group)); members.extend(int(item) for item in group_ids)
+            if any(not item.isascii() or not item.isdecimal() for item in ids) or members != [int(item) for item in ids] or len(set(members)) != len(members):
+                raise ValueError('Presentation section membership or order is ambiguous')
+            owner = {int(node.get('id')): index for index, (_, group) in enumerate(groups) for node in group}
+            reordered_ids = [int(ids[number - 1]) for number in order]
+            owners = [owner[value] for value in reordered_ids]
+            section_order = list(dict.fromkeys(owners))
+            if any(owners.count(index) != len(groups[index][1]) or owners.index(index) + owners.count(index) - 1 != len(owners) - 1 - owners[::-1].index(index) for index in section_order):
+                raise ValueError('Reorder must keep each section contiguous')
+            for section in section_items: sections.remove(section)
+            for index in section_order:
+                section, group = groups[index]; group_list = section[0]; by_id = {int(node.get('id')): node for node in group}
+                for node in group: group_list.remove(node)
+                for value in reordered_ids:
+                    if owner[value] == index: group_list.append(by_id[value])
+                sections.append(section)
         presentation = Presentation(source)
         targets = []
         for relationship_id in relationships:

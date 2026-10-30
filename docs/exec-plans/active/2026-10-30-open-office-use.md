@@ -252,3 +252,5 @@ Workbook chart authoring supports series colors, legend and gridline visibility,
 Workbook charts can display value labels. Independent label number formats and native Excel rendering remain to be verified.
 
 Session slide reordering retains slide IDs and related parts, rejects presentation extensions, and requires rediscovering positional slide paths. Custom shows retain their own order.
+
+Slide reordering supports contiguous nonempty PowerPoint 2010 sections and updates section/member ordering; other presentation extensions remain unsupported.

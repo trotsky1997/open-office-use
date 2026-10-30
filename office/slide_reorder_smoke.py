@@ -48,4 +48,38 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as exc: assert 'extensions' in str(exc)
     else: raise AssertionError('Presentation extensions accepted')
     assert session.info(extended_draft)['latest_revision'] == 0
+    section_source = root/'section-source.pptx'
+    open_office_use.author({'slides':[{'title':name} for name in ('One','Two','Three','Four')]}, section_source)
+    section_file = root/'sections.pptx'
+    p = '{http://schemas.openxmlformats.org/presentationml/2006/main}'
+    p14 = '{http://schemas.microsoft.com/office/powerpoint/2010/main}'
+    with zipfile.ZipFile(section_source) as original, zipfile.ZipFile(section_file, 'w') as modified:
+        for item in original.infolist():
+            data = original.read(item)
+            if item.filename == 'ppt/presentation.xml':
+                tree = etree.fromstring(data); ids = [node.get('id') for node in tree.find(p+'sldIdLst')]
+                extension = etree.SubElement(etree.SubElement(tree,p+'extLst'),p+'ext',uri='{521415D9-36F7-43E2-AB2F-B90AF26B5E84}')
+                sections = etree.SubElement(extension,p14+'sectionLst',nsmap={'p14':p14[1:-1]})
+                for index in range(2):
+                    section = etree.SubElement(sections,p14+'section',name=f'Section {index+1}',id=f'{{00000000-0000-0000-0000-00000000000{index+1}}}')
+                    members = etree.SubElement(section,p14+'sldIdLst')
+                    for value in ids[index*2:index*2+2]: etree.SubElement(members,p14+'sldId',id=value)
+                data = etree.tostring(tree,xml_declaration=True,encoding='UTF-8',standalone=True)
+            modified.writestr(item,data)
+    section_draft = root/'sections-draft'; session.start(section_draft,source=section_file)
+    try: session.reorder_slides(section_draft,0,[1,3,2,4])
+    except ValueError as exc: assert 'contiguous' in str(exc)
+    else: raise AssertionError('Interleaved sections accepted')
+    assert session.info(section_draft)['latest_revision'] == 0
+    section_result = session.reorder_slides(section_draft,0,[4,3,2,1])
+    with zipfile.ZipFile(section_result['file']) as archive:
+        presentation_xml = etree.fromstring(archive.read('ppt/presentation.xml'))
+        section_nodes = presentation_xml.find(p+'extLst/'+p+'ext/'+p14+'sectionLst')
+        assert [item.get('name') for item in section_nodes] == ['Section 2','Section 1']
+        assert [[item.get('id') for item in section[0]] for section in section_nodes] == [ids[2:4][::-1],ids[0:2][::-1]]
+    assert [slide.shapes.title.text for slide in Presentation(section_result['file']).slides] == ['Four','Three','Two','One']
+    code, validation, _ = officecli_backend.invoke('validate',section_result['file']); assert code == 0 and validation['success'], validation
+    section_pdf = open_office_use.render(section_result['file'],root/'section-render')
+    pages = subprocess.run(['pdftotext','-layout',str(section_pdf),'-'],capture_output=True,text=True,check=True).stdout.split('\f')
+    assert [next(name for name in ('One','Two','Three','Four') if name in page) for page in pages if page.strip()] == ['Four','Three','Two','One']
 print('Slide reorder passed: notes, package preservation, validation and conflicts')

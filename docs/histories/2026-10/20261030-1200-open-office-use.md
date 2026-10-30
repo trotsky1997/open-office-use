@@ -355,3 +355,5 @@ Added series colors, legend and gridline visibility, and Y-axis bounds for autho
 Added value labels for authored workbook column, line and scatter charts; explicit label number formats need further interoperability work.
 
 Added revision-bound PowerPoint slide reordering via CLI and MCP; the slide list changes while all other package parts are preserved, and presentation extensions are rejected.
+
+Extended slide reordering to verified PowerPoint 2010 sections, keeping membership intact and updating section and member ordering. Rejects empty or interleaved sections and other presentation extensions.

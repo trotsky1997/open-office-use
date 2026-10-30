@@ -571,4 +571,4 @@ python3 office/selection_geometry_smoke.py # slide selection with real PDF rende
 python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
 ```
 
-`session_reorder_slides` (CLI: `session reorder-slides --base REV --order '[3,1,2]'`) creates a new PPTX revision with the requested complete one-based ordering. Slide IDs and related parts stay attached; custom shows retain their own order. Presentation extensions and alternate content are rejected, and slide-number paths must be rediscovered after the edit.
+`session_reorder_slides` (CLI: `session reorder-slides --base REV --order '[3,1,2]'`) creates a new PPTX revision with the requested complete one-based ordering. Slide IDs and related parts stay attached; custom shows retain their own order. Supported nonempty PowerPoint sections retain their members and may move as contiguous groups. Interleaved or empty sections, other presentation extensions and alternate content are rejected. Slide-number paths must be rediscovered after the edit.
