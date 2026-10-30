@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -60,4 +61,16 @@ with tempfile.TemporaryDirectory() as tmp:
         assert Path(edited['file']).exists() and source.read_bytes() == source_bytes
     blank = run('start', root / 'blank', '--format', 'docx')
     assert blank['latest_revision'] == 0
+    invalid = root / 'invalid.docx'; invalid.write_bytes(b'not an Office package')
+    assert 'invalid office package' in run('start', root / 'invalid-draft', '--source', invalid, ok=False).lower()
+    assert not (root / 'invalid-draft').exists()
+    mismatch = root / 'mismatch.xlsx'; mismatch.write_bytes((root / 'source.docx').read_bytes())
+    assert 'type does not match' in run('start', root / 'mismatch-draft', '--source', mismatch, ok=False).lower()
+    assert not (root / 'mismatch-draft').exists()
+    malformed = root / 'malformed.docx'
+    with zipfile.ZipFile(malformed, 'w') as package:
+        package.writestr('[Content_Types].xml', '<broken')
+        package.writestr('_rels/.rels', '')
+    assert 'invalid office package' in run('start', root / 'malformed-draft', '--source', malformed, ok=False).lower()
+    assert not (root / 'malformed-draft').exists()
 print('Session smoke passed: three formats, failed edits, exports and concurrent revision conflict')

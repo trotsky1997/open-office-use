@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import tempfile
+import zipfile
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -14,12 +15,39 @@ import chart_cache
 import layout
 import notes
 import officecli_backend
+import ooxml
 import review
 import spreadsheet
 import slides
 import word
 
 FORMATS = ('.docx', '.xlsx', '.pptx')
+MAIN_TYPES = {
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml',
+}
+
+
+def validate_source(source, suffix):
+    """Check the saved snapshot is an Office package of the requested type."""
+    try:
+        with zipfile.ZipFile(source) as archive:
+            names = archive.namelist()
+            if names.count('[Content_Types].xml') != 1 or '_rels/.rels' not in names:
+                raise ValueError('Missing or ambiguous Office package metadata')
+            metadata = archive.getinfo('[Content_Types].xml')
+            if metadata.file_size > 1024 * 1024:
+                raise ValueError('Office package content types exceed 1 MiB')
+            root = ooxml.parse_xml(archive.read(metadata)).getroot()
+            namespace = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+            if root.tag != namespace + 'Types': raise ValueError('Invalid Office package content types')
+            overrides = {item.get('PartName', '').lstrip('/'): item.get('ContentType') for item in root.findall(namespace + 'Override')}
+            defaults = {item.get('Extension', '').lower(): item.get('ContentType') for item in root.findall(namespace + 'Default')}
+            if not any((overrides.get(name) or defaults.get(name.rsplit('.', 1)[-1].lower())) == MAIN_TYPES[suffix] for name in names):
+                raise ValueError('Office package type does not match the file extension')
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, EOFError, ooxml.etree.XMLSyntaxError) as exc:
+        raise ValueError('Invalid Office package') from exc
 
 
 def start(directory, source=None, format=None):
@@ -40,6 +68,7 @@ def start(directory, source=None, format=None):
         initial = directory / ('revision-000000' + suffix)
         if source:
             shutil.copyfile(source, initial)
+            validate_source(initial, suffix)
         else:
             officecli_backend.batch([], initial)
         with (directory / 'session.json').open('x', encoding='utf-8') as f:

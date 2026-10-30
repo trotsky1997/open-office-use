@@ -94,6 +94,8 @@ To inspect one rendered page without producing all page PNGs, use `office-use re
 
 A session is a local directory of saved revision files. Start from a saved source, or pass `--format docx`, `xlsx` or `pptx` to start blank. The directory must be new and its parent must exist.
 
+For an existing source, startup checks the copied snapshot for ZIP packaging, required package metadata and a main content type matching its extension. This is a basic format check; use `audit` and visual review to assess document validity and fidelity. If startup fails, the new session directory is removed.
+
 ```sh
 office-use session start ./draft --source original.docx
 office-use session info ./draft
