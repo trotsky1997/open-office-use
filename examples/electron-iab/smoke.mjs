@@ -75,6 +75,10 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#editable-test').readOnly=true;document.querySelector('#editable-custom').setAttribute('aria-readonly','true');document.querySelector('#editable-select').disabled=true");
   for (const locator of [nativeEditable,cssEditable,customEditable,sdkTab.playwright.locator('#editable-select')]) assert.equal(await locator.isEditable(),false);
   await assert.rejects(cssFirst.isEditable(),/does not support editable state/);
+  await evaluate(a.id,`document.querySelector('#bulk-text-test').insertAdjacentHTML('beforeend','<table role="grid"><tbody><tr><td id="implicit-gridcell" aria-readonly="true">Cell</td></tr></tbody></table>')`);
+  const gridCell=sdkTab.playwright.locator('#implicit-gridcell');assert.equal(await gridCell.isEditable(),false);
+  await evaluate(a.id,"document.querySelector('#implicit-gridcell').setAttribute('aria-readonly','false')");assert.equal(await gridCell.isEditable(),true);
+
   await evaluate(a.id,`(()=>{const host=document.createElement('div');host.id='editable-shadow-host';document.querySelector('#bulk-text-test').append(host);host.attachShadow({mode:'open'}).innerHTML='<fieldset disabled><input aria-label="Shadow disabled"></fieldset>'})()`);
   assert.equal(await sdkTab.playwright.locator('#editable-shadow-host').locator('input').isEditable(),false);
   assert.equal(await sdkTab.playwright.getByRole('textbox',{name:'Shadow disabled'}).isEditable(),false);

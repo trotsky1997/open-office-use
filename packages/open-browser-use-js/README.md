@@ -264,8 +264,8 @@ Locator action timeouts bound the initial target query; a timed-out query cannot
 issue a late action. Later action preparation and issued input may take longer.
 `waitFor()` bounds browser reads when `timeoutMs` is positive. Timed-out reads may finish later; `timeoutMs: 0` performs one read.
 `isEditable()` checks enabled and readonly states for native inputs, textarea,
-select, contenteditable elements, and supported explicit ARIA roles. Other
-elements raise an error. This state check does not guarantee that every input
+select, contenteditable elements, and supported ARIA roles, including implicit
+roles reported by the browser accessibility tree. Other elements raise an error. This state check does not guarantee that every input
 method supports the target control.
 `isVisible()`, `isHidden()`, `isEnabled()`, `isDisabled()`, `isChecked()` and
 `isEditable()` accept `timeoutMs` for their browser reads. `isVisible()` and
