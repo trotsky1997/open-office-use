@@ -59,6 +59,7 @@ def scan(file):
                 if len({name for name, _ in chart_parts}) != len(chart_parts): raise ValueError('Duplicate chart part declaration')
                 workbook = load_workbook(snapshot, read_only=True, data_only=True, keep_links=False)
                 try:
+                    spreadsheet.prepare_shared_strings(workbook, archive)
                     sheets = {sheet.title: sheet for sheet in workbook.worksheets}; results = []; complete = True; points_read = 0; limit_hit = False
                     # shortcut: inspect 50 chart parts, 100 references and 10,000 source cells; split or inspect larger workbooks separately.
                     for part, kind in chart_parts[:50]:
@@ -123,7 +124,7 @@ def scan(file):
                                             if left != right: reason = 'value_differs'
                                         except InvalidOperation: unknown += 1; continue
                                 else:
-                                    if not isinstance(value, str): unknown += 1; continue
+                                    if not isinstance(value, str) or isinstance(value, spreadsheet.UnverifiedSharedString): unknown += 1; continue
                                     if ESCAPED.search(value) or cached is not None and ESCAPED.search(cached): unknown += 1; continue
                                     if cached is None: reason = 'missing_point'
                                     elif cached != value: reason = 'value_differs'
@@ -203,7 +204,7 @@ def sync(source, output, part, reference, allow_formula_caches=False):
             for index, cell in enumerate(cells):
                 value = cell.get('value'); node_value = points.get(index)
                 if node_value is None: raise ValueError('Chart cache has missing points; sync does not add points')
-                if value is None or isinstance(value, bool) or cell.get('type') == 'e': raise ValueError('Chart source contains unverified values')
+                if value is None or isinstance(value, bool) or cell.get('type') == 'e' or cell.get('text_complete') is False: raise ValueError('Chart source contains unverified values')
                 old = node_value.text or ''
                 if node.tag == C+'numRef':
                     if not isinstance(value, (int,float)) or isinstance(value,float) and not math.isfinite(value) or len(old)>256:

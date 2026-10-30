@@ -20,6 +20,10 @@ with tempfile.TemporaryDirectory() as tmp:
     sheet.write_column('A1',['Month','Jan','Feb']); sheet.write_column('B1',['Revenue',10,20])
     chart=book.add_chart({'type':'column'}); chart.set_title({'name':'Revenue'}); chart.add_series({'name':"='Sales Data'!$B$1",'categories':"='Sales Data'!$A$2:$A$3",'values':"='Sales Data'!$B$2:$B$3"}); sheet.insert_chart('D2',chart); book.close()
     baseline=chart_cache.scan(source); assert baseline['chart_parts_total']==1 and baseline['complete'] and baseline['mismatch_references']==0,baseline
+    shared_source=root/'shared-text-chart.xlsx'; shared_book=xlsxwriter.Workbook(str(shared_source)); shared_sheet=shared_book.add_worksheet('Data')
+    shared_sheet.write('A1','prefix x005F_text'); shared_sheet.write('B1',10)
+    shared_chart=shared_book.add_chart({'type':'column'}); shared_chart.add_series({'categories':'=Data!$A$1','values':'=Data!$B$1'}); shared_sheet.insert_chart('D1',shared_chart); shared_book.close()
+    shared_scan=chart_cache.scan(shared_source); assert shared_scan['complete'] and shared_scan['mismatch_references']==0,shared_scan
     session.start(draft,source=source); changed=session.replace_text(draft,0,'/Sales Data/A2','Jan','March')
     result=session.scan_chart_caches(draft,1); assert result['mismatch_references']==1 and result['complete'],result
     mismatch=next(r for r in result['charts'][0]['references'] if r['status']=='mismatch')

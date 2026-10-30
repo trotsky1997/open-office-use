@@ -30,6 +30,7 @@ def inspect_workbook(file):
                     raise ValueError('Workbook exceeds package limits or contains duplicate parts')
                 workbook = load_workbook(snapshot, read_only=True, data_only=False, keep_links=False)
                 try:
+                    prepare_shared_strings(workbook, archive)
                     worksheets = workbook.worksheets; sheet_names = workbook.sheetnames; worksheet_names = {sheet.title for sheet in worksheets}
                     chart_names = [name for name in sheet_names if name not in worksheet_names]
                     results = []
@@ -64,7 +65,7 @@ def inspect_workbook(file):
                                             if raw is None or not raw.isdecimal() or len(raw) > 10 or int(raw) >= len(strings):
                                                 raise ValueError(f'Invalid shared string index in {sheet.title}')
                                             text = strings[int(raw)]
-                                            text_complete = None
+                                            text_complete = not isinstance(text, UnverifiedSharedString)
                                         elif cell_type == 'inlineStr' and inline is not None:
                                             x = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
                                             text = ''.join(node.text or '' for child in inline for node in ([child] if child.tag == x + 't' else child.findall(x + 't') if child.tag == x + 'r' else []))
@@ -106,7 +107,7 @@ def read_range(file, sheet, cell_range, include_style=False):
                 if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
                     raise ValueError('Workbook exceeds package limits or contains duplicate parts')
             return _read_range(snapshot, sheet, cell_range, include_style)
-        except zipfile.BadZipFile as exc:
+        except (zipfile.BadZipFile, ET.ParseError, KeyError) as exc:
             raise ValueError('Invalid workbook package') from exc
 
 
@@ -125,6 +126,10 @@ def _read_range(file, sheet, cell_range, include_style=False):
     values = None
     try:
         values = load_workbook(file, read_only=True, data_only=True)
+        with zipfile.ZipFile(file) as archive:
+            raw_strings = search_shared_strings(archive)
+        prepare_shared_strings(formulas, raw_strings=raw_strings)
+        prepare_shared_strings(values, raw_strings=raw_strings)
         if sheet not in formulas.sheetnames:
             raise ValueError(f'Worksheet not found: {sheet}')
         f_rows = formulas[sheet].iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col)
@@ -144,6 +149,9 @@ def _read_range(file, sheet, cell_range, include_style=False):
                     row.append({'formula': formula, 'value': v.value if v else None, 'type': v.data_type if v else 'n'})
                 else:
                     row.append({'value': f.value if f else None, 'type': f.data_type if f else 'n'})
+                value = row[-1]['value']
+                if isinstance(value, str):
+                    row[-1]['text_complete'] = not isinstance(value, UnverifiedSharedString) and not re.search(r'_x[0-9a-fA-F]{4}_', value)
                 size += len(json.dumps(row[-1], ensure_ascii=False, default=str))
                 if size > 1000000: raise ValueError('Cell data exceeds the 1,000,000-character response limit; request a smaller range')
             if include_style:
@@ -185,6 +193,10 @@ FORMULA_SCAN_MAX_CELLS = 1000000
 FORMULA_SCAN_MAX_ISSUES = 200
 
 
+class UnverifiedSharedString(str):
+    """A shared value whose displayed text cannot be verified from the package."""
+
+
 def search_shared_strings(archive):
     """Read verifiable plain and rich strings from the package's shared string table."""
     types_ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'
@@ -217,6 +229,46 @@ def search_shared_strings(archive):
                 if re.search(r'_x[0-9a-fA-F]{4}_', text): valid = False
                 strings.append((text, valid)); root.remove(node); node.clear()
     return strings
+
+
+def prepare_shared_strings(workbook, archive=None, raw_strings=None):
+    if archive is not None: raw_strings = search_shared_strings(archive)
+    seen = set()
+    for sheet in workbook.worksheets:
+        strings = getattr(sheet, '_shared_strings', None)
+        if not isinstance(strings, list) or id(strings) in seen: continue
+        seen.add(id(strings))
+        for index, value in enumerate(strings):
+            if raw_strings is not None and len(raw_strings) == len(strings) and raw_strings[index][1]:
+                strings[index] = raw_strings[index][0]
+            else:
+                strings[index] = UnverifiedSharedString(value)
+
+
+def load_author_workbook(source):
+    """Load an editable workbook without silently normalizing shared strings."""
+    from openpyxl.reader.excel import ExcelReader
+
+    source = Path(source)
+    if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+    class UnverifiedText(Exception): pass
+    class Reader(ExcelReader):
+        def read_strings(self):
+            super().read_strings()
+            if not self.shared_strings: return
+            raw = search_shared_strings(self.archive)
+            if raw is None or len(raw) != len(self.shared_strings) or any(not valid for _, valid in raw):
+                raise UnverifiedText('Workbook contains unverified shared strings; use a targeted session edit')
+            self.shared_strings = [text for text, _ in raw]
+    reader = Reader(source)
+    try:
+        entries = reader.archive.infolist(); names = [entry.filename for entry in entries]
+        if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+            raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+        try: reader.read()
+        except UnverifiedText as exc: raise ValueError(str(exc)) from exc
+        return reader.wb
+    finally: reader.archive.close()
 
 
 def search_cells(file, query, sheet=None, offset=0, snapshot_sha256=None):

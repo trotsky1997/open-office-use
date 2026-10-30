@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 from docx import Document
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 from pptx import Presentation
 
 import layout
@@ -102,7 +102,7 @@ def author(spec, output, source=None):
             doc.add_paragraph(text)
         obj = doc
     elif suffix == '.xlsx':
-        obj = load_workbook(source) if source else Workbook()
+        obj = spreadsheet.load_author_workbook(source) if source else Workbook()
         for name, cells in spec.get('sheets', {}).items():
             ws = obj[name] if name in obj.sheetnames else obj.create_sheet(name)
             for address, value in cells.items():

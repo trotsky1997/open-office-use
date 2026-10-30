@@ -339,7 +339,7 @@ async function loadGrid(target=null) {
     }
     input.title=`Number format: ${cell.style.number_format}`;
     if (typeof formula==='string') input.title+=`; cached result: ${cell.value == null ? 'unknown' : cell.value}`;
-    if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : cell.read_only_reason==='value_too_long' ? 'Cell content exceeds the 4,000 UTF-16-unit editing limit' : 'Protected formula range';
+    if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : cell.read_only_reason==='value_too_long' ? 'Cell content exceeds the 4,000 UTF-16-unit editing limit' : cell.read_only_reason==='unverified_text' ? 'Text could not be verified; inspect the source before editing' : 'Protected formula range';
     else if (cell.merged_anchor) input.title+=`; merged region anchor ${cell.merged_anchor}`;
     td.appendChild(input); tr.appendChild(td);
    }
@@ -960,7 +960,7 @@ document.getElementById('cell-comparison-form').addEventListener('submit', async
    body.appendChild(row);
   }
   table.appendChild(body); if (result.changes.length) output.appendChild(table);
-  document.getElementById('cell-comparison-status').textContent=`Revision ${before} → ${after}: ${result.changed_count} changed cell(s). ${result.truncated ? 'Showing the first 500 cells.' : ''}`;
+  document.getElementById('cell-comparison-status').textContent=`Revision ${before} → ${after}: ${result.changed_count} changed cell(s). ${result.truncated ? 'Showing the first 500 cells. ' : ''}${result.text_comparison_complete ? '' : 'Some text values could not be verified. '}`;
  } catch(error) { if (epoch === cellComparisonEpoch && comparing && pinned === before && comparedLatest === after) document.getElementById('cell-comparison-status').textContent=`Cell comparison error: ${error.message}`; }
  finally { button.disabled=false; }
 });

@@ -515,6 +515,8 @@ def read_grid(directory, base_revision, sheet, cell_range):
             col, row_number = min_col + col_index, min_row + row_index
             reason, origin = spreadsheet.cell_constraint(constraints, col, row_number, cell['locked'], isinstance(cell.get('formula'), dict))
             display = cell.get('formula') if isinstance(cell.get('formula'), str) else cell.get('value')
+            if reason is None and 'formula' not in cell and cell.get('text_complete') is False:
+                reason = 'unverified_text'
             if reason is None and isinstance(display, str) and len(display.encode('utf-16-le')) // 2 > 4000:
                 reason = 'value_too_long'
             cells.append({'cell': f'{get_column_letter(col)}{row_number}', **cell,

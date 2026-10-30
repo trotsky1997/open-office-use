@@ -113,6 +113,7 @@ def compare_cells(before, after, sheet, cell_range):
     min_col, min_row, _, _ = range_boundaries(cell_range)
     if min_col is None or min_row is None:
         raise ValueError('A bounded cell range is required')
+    text_comparison_complete = all(cell.get('text_complete') is not False for rows in (left_rows, right_rows) for row in rows for cell in row)
     result = []
     total = 0
     for row_index, (left_row, right_row) in enumerate(zip(left_rows, right_rows)):
@@ -124,5 +125,5 @@ def compare_cells(before, after, sheet, cell_range):
                 if len(result) < 500:
                     address = f'{get_column_letter(min_col + col_index)}{min_row + row_index}'
                     result.append({'cell': address, 'changed_fields': fields, 'before': old, 'after': new})
-    return {'sheet': sheet, 'range': cell_range, 'changed_count': total, 'changes': result,
+    return {'sheet': sheet, 'range': cell_range, 'changed_count': total, 'changes': result, 'text_comparison_complete': text_comparison_complete,
             'truncated': total > len(result), 'cache_freshness': 'unknown'}

@@ -156,7 +156,7 @@ def session_sheets(directory: str, base_revision: int) -> dict[str, Any]:
 
 @server.tool()
 def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Read up to 200 cells, including merged-anchor, locked and read-only reasons."""
+    """Read up to 200 cells, including read-only reasons and text completeness; unverified text is read-only."""
     return session.read_grid(directory, base_revision, sheet, cell_range)
 
 
@@ -372,13 +372,13 @@ def compare_files(before: str, after: str) -> dict[str, Any]:
 
 @server.tool()
 def compare_cells(before: str, after: str, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Compare formulas, cached values and direct cell formatting in a bounded XLSX range."""
+    """Compare formulas, cached values and direct formatting; check text_comparison_complete."""
     return review.compare_cells(before, after, sheet, cell_range)
 
 
 @server.tool()
 def read_cells(file: str, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Read up to 10,000 cells, including formulas and stored cached values; freshness is unknown."""
+    """Read up to 10,000 cells; check text completeness. Formula cache freshness is unknown."""
     return spreadsheet.read_range(file, sheet, cell_range)
 
 

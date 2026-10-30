@@ -9,6 +9,8 @@ from openpyxl import Workbook
 import xlsxwriter
 import session
 import spreadsheet
+import review
+import open_office_use
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'source.xlsx'; book = Workbook(); sheet = book.active
@@ -49,6 +51,27 @@ with tempfile.TemporaryDirectory() as tmp:
     assert spreadsheet.search_cells(mixed, 'needle')['matches'][0]['cell'] == 'A3'
     escaped = spreadsheet.search_cells(mixed, '_x0041_')
     assert escaped['matches'][0]['cell'] == 'A2' and not escaped['matches'][0]['text_complete'] and escaped['unverified_text_cells'] == 1
+    cells = spreadsheet.read_range(mixed, 'Sheet1', 'A1:A3')['rows']
+    assert cells[0][0]['value'] == 'prefix x005F_text' and cells[0][0]['text_complete']
+    assert not cells[1][0]['text_complete'] and cells[2][0]['value'] == 'rich needle'
+    mixed_draft = root / 'mixed-draft'; session.start(mixed_draft, source=mixed)
+    grid = session.read_grid(mixed_draft, 0, 'Sheet1', 'A1:A3')['rows']
+    assert grid[0][0]['value'] == 'prefix x005F_text' and grid[0][0]['editable']
+    assert not grid[1][0]['editable'] and grid[1][0]['read_only_reason'] == 'unverified_text'
+    edited = session.replace_text(mixed_draft, 0, '/Sheet1/A1', 'x005F_text', 'fixed')
+    assert spreadsheet.read_range(edited['file'], 'Sheet1', 'A1')['rows'][0][0]['value'] == 'prefix fixed'
+    try: session.edit_grid(mixed_draft, 1, 'Sheet1', 'A2', [{'cell': 'A2', 'value': 'overwrite'}])
+    except ValueError: pass
+    else: raise AssertionError('unverified text was editable')
+    assert not review.compare_cells(mixed, mixed, 'Sheet1', 'A1:A3')['text_comparison_complete']
+    refused = root / 'unverified-author.xlsx'
+    try: open_office_use.author({'sheets': {'Sheet1': {'B1': 'new'}}}, refused, mixed)
+    except ValueError as exc: assert 'unverified shared strings' in str(exc)
+    else: raise AssertionError('author accepted unverified shared strings')
+    assert not refused.exists()
+    safe = root / 'safe.xlsx'; writer = xlsxwriter.Workbook(str(safe)); writer.add_worksheet().write('A1', 'prefix x005F_text'); writer.close()
+    authored = root / 'authored.xlsx'; open_office_use.author({'sheets': {'Sheet1': {'B1': 'new'}}}, authored, safe)
+    assert spreadsheet.read_range(authored, 'Sheet1', 'A1')['rows'][0][0]['value'] == 'prefix x005F_text'
     phonetic = root / 'phonetic.xlsx'
     with zipfile.ZipFile(shared) as original, zipfile.ZipFile(phonetic, 'w') as output:
         for entry in original.infolist():
