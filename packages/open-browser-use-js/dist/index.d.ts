@@ -679,6 +679,8 @@ export declare class OpenBrowserUseCssLocator {
         timeoutMs?: number;
     }): Promise<string>;
     isVisible(): Promise<boolean>;
+    isHidden(): Promise<boolean>;
+    isDisabled(): Promise<boolean>;
     waitFor(options: {
         state: "attached" | "detached" | "visible" | "hidden";
         timeoutMs?: number;
@@ -797,6 +799,8 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<string>;
     isVisible(): Promise<boolean>;
+    isHidden(): Promise<boolean>;
+    isDisabled(): Promise<boolean>;
     waitFor(options: {
         state: "visible" | "hidden";
         timeoutMs?: number;

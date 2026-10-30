@@ -415,3 +415,5 @@ Linux ARM64 Electron / Xvfb 进一步定位：焦点仿真命令成功，首次�
 CSS 与语义定位器新增 allInnerTexts，沿用批量文本读取的匹配复核、长度限制与失效重试；SDK 88 项测试通过，包含两类定位器的接口检查。本轮未进行浏览器实机验证。
 
 macOS Electron 44.7 完整示例验证 allInnerTexts：CSS 与语义定位器均读取两个真实按钮的可见文本，allTextContents 同时包含隐藏子节点文本，清空节点后返回空数组；完整 smoke 通过。
+
+CSS 与语义定位器新增 isHidden 和 isDisabled，分别复用可见性与启用状态读取；缺失目标的 isHidden 返回 true，isDisabled 延续等待目标的行为。SDK 88 项测试和 macOS Electron 44.7 完整 smoke 通过，实测两类定位器的可见、禁用及目标移除状态。Linux 与 Windows 本轮未测。

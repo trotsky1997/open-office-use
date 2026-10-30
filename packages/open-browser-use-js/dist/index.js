@@ -3591,6 +3591,8 @@ export class OpenBrowserUseCssLocator {
             throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
         return await this.tab.readCss(snapshot, ids[0], "visible");
     }
+    async isHidden() { return !(await this.isVisible()); }
+    async isDisabled() { return !(await this.isEnabled()); }
     async waitFor(options) {
         if (!options || !["attached", "detached", "visible", "hidden"].includes(options.state))
             throw new Error("Invalid locator wait state");
@@ -3981,6 +3983,8 @@ export class OpenBrowserUseRoleLocator {
         this.tab.bindLocatorScope(state.snapshotId, match.node.index, match.path, match.filters, this.framePath ? [...this.framePath] : undefined, match.css, this.guard(state.snapshotId, matches));
         return await this.tab.locatorRead(state.snapshotId, match.node.index, "visible");
     }
+    async isHidden() { return !(await this.isVisible()); }
+    async isDisabled() { return !(await this.isEnabled()); }
     async waitFor(options) {
         if (!options || !["visible", "hidden"].includes(options.state))
             throw new Error("Locator wait supports visible and hidden states");

@@ -43,8 +43,13 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
     assert.deepEqual(await locator.allInnerTexts(),['Alpha','Beta']);
     assert.deepEqual(await locator.allTextContents(),['Alpha concealed','Beta']);
   }
+  const cssFirst=cssBulk.first(),roleFirst=roleBulk.first();
+  for (const locator of [cssFirst,roleFirst]) { assert.equal(await locator.isHidden(),false);assert.equal(await locator.isDisabled(),false); }
+  await evaluate(a.id,"document.querySelector('#bulk-text-test button').disabled=true");
+  for (const locator of [cssFirst,roleFirst]) assert.equal(await locator.isDisabled(),true);
   await evaluate(a.id,"document.querySelector('#bulk-text-test').replaceChildren()");
   assert.deepEqual(await cssBulk.allInnerTexts(),[]);assert.deepEqual(await roleBulk.allInnerTexts(),[]);
+  assert.equal(await cssFirst.isHidden(),true);assert.equal(await roleFirst.isHidden(),true);
   await evaluate(a.id,"document.querySelector('#bulk-text-test').remove()");
   check('SDK locators: bulk inner text, hidden descendants and empty matches');
 

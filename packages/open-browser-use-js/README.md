@@ -250,6 +250,8 @@ coordinates can be negative; rotated or skewed ancestor frames are rejected.
 The locator and frame geometry are rechecked, but can change after the call.
 `isChecked()` reads a binary checked state from the accessibility tree and rejects
 mixed or unsupported states.
+`isHidden()` returns the inverse of `isVisible()`, including for an absent match;
+`isDisabled()` returns the inverse of `isEnabled()` and waits for a match.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and
 its frame owners; an absent accessible match returns `false`. Offscreen or
 covered elements can still be visible. Locator matching uses the accessibility
@@ -338,7 +340,7 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 ```
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
-`textContent`, `allTextContents`, `allInnerTexts`, `getAttribute`, `isVisible`, `isEnabled`,
+`textContent`, `allTextContents`, `allInnerTexts`, `getAttribute`, `isVisible`, `isHidden`, `isEnabled`, `isDisabled`,
 `isChecked`, `inputValue`, `boundingBox`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
 `uncheck`, `setChecked` and `selectOption`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a

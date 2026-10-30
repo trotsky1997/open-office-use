@@ -2913,6 +2913,8 @@ export class OpenBrowserUseCssLocator {
     if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
     return await this.tab.readCss(snapshot,ids[0],"visible") as boolean;
   }
+  async isHidden(): Promise<boolean> { return !(await this.isVisible()); }
+  async isDisabled(): Promise<boolean> { return !(await this.isEnabled()); }
   async waitFor(options: {state: "attached" | "detached" | "visible" | "hidden"; timeoutMs?: number}): Promise<void> {
     if (!options || !["attached","detached","visible","hidden"].includes(options.state)) throw new Error("Invalid locator wait state");
     const timeoutMs=options.timeoutMs ?? 5000;
@@ -3208,6 +3210,8 @@ export class OpenBrowserUseRoleLocator {
     this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css,this.guard(state.snapshotId,matches));
     return await this.tab.locatorRead(state.snapshotId,match.node.index,"visible") as boolean;
   }
+  async isHidden(): Promise<boolean> { return !(await this.isVisible()); }
+  async isDisabled(): Promise<boolean> { return !(await this.isEnabled()); }
   async waitFor(options: {state: "visible" | "hidden"; timeoutMs?: number}): Promise<void> {
     if (!options || !["visible","hidden"].includes(options.state)) throw new Error("Locator wait supports visible and hidden states");
     const timeoutMs = options.timeoutMs ?? 5_000;
