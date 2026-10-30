@@ -370,3 +370,5 @@ The reference workbook pie omitted visible slices in LibreOffice until explicit 
 Workbook chart inspection now reports pie point fills and flags inherited-default candidates for visual review. The viewer saves user-selected slice colors in snapshot-bound revisions. The OfficeCLI reference workbook was edited through the viewer; stale and cross-origin requests were rejected. Native Excel remains unverified.
 
 Workbook pie inspection compares fully sampled literal percentage-bearing categories with saved values, exposing review candidates through the viewer and review bundle. The OfficeCLI sales-dashboard reference had matching original labels; changing 45 to 50 flagged three points. Labels may express other quantities, and referenced or larger datasets are outside this check.
+
+The workbook viewer now supports atomic multi-point editing of complete fixed numeric series with up to 20 sampled points. Browser testing changed three points in the OfficeCLI reference pie in one revision, preserving other package parts; stale and cross-origin writes were rejected. Native Excel remains unverified.

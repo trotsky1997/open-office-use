@@ -265,7 +265,14 @@ with tempfile.TemporaryDirectory() as tmp:
         report=post('chart-cache-scan',{'revision':2})
         name_payload={'base_revision':2,'snapshot_sha256':report['snapshot_sha256'],'kind':'series_name','part':chart['part'],'reference':None,'point':None,'series':1,'value':'Sales'}
         assert post('chart-literal-save',name_payload)['revision']==3
-        assert post('chart-cache-scan',{'revision':3})['charts'][0]['series'][0]['name']=='Sales'
+        report=post('chart-cache-scan',{'revision':3}); assert report['charts'][0]['series'][0]['name']=='Sales'
+        batch_payload={'base_revision':3,'snapshot_sha256':report['snapshot_sha256'],'part':chart['part'],'changes':[{'reference':value_ref['index'],'point':1,'value':11},{'reference':value_ref['index'],'point':2,'value':22}]}
+        for bad,request_origin,code in [(dict(batch_payload,snapshot_sha256='0'*64),origin,400),(dict(batch_payload,changes=batch_payload['changes']*2),origin,400),(batch_payload,'http://evil.test',403)]:
+            try: post('chart-batch-save',bad,request_origin)
+            except urllib.error.HTTPError as error: assert error.code==code
+            else: raise AssertionError('Invalid batch viewer edit accepted')
+        assert post('chart-batch-save',batch_payload)['revision']==4
+        updated=post('chart-cache-scan',{'revision':4}); values=next(item for item in updated['charts'][0]['references'] if item['index']==value_ref['index']); assert [item['value'] for item in values['examples']]==['11','22']
     finally:
         server.terminate(); server.wait(timeout=10)
     def missing(tree):

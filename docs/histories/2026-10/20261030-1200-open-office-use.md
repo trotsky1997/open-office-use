@@ -471,3 +471,5 @@ Added workbook pie/doughnut point-color edits after a reference chart rendered w
 Added pie fill inspection, review-bundle candidates and snapshot-bound viewer controls for slice colors.
 
 Added review candidates for fixed pie category percentage labels that differ from saved point shares.
+
+Added snapshot-bound viewer editing for multiple fixed numeric chart points in a single revision.

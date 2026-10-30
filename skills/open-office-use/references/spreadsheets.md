@@ -66,3 +66,5 @@ For a simple workbook pie or doughnut chart, `session_set_chart_pie_point_colors
 Chart cache inspection and the review bundle identify simple pie charts with inherited default fills as visual review candidates. The workbook viewer can select a chart and save explicit point colors as a new revision; review the rendered result.
 
 For supported literal pie and doughnut data, chart inspection flags trailing category percentages that differ from the saved point shares. Review the meaning of the text and update fixed labels when appropriate; the check covers up to 20 complete points.
+
+The workbook viewer can update up to 20 fully sampled fixed numeric points of one series together in a snapshot-bound revision. Review fixed labels after changing values.

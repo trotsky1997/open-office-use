@@ -129,6 +129,10 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <label>Chart item <select id="chart-literal-select" disabled><option value="">Select an item</option></select></label>
 <label>New value <input id="chart-literal-value" maxlength="255" disabled></label>
 <button type="button" id="chart-literal-save" disabled>Save chart item as new revision</button><p id="chart-literal-status" role="status"></p></fieldset>
+<fieldset><legend>Edit a fixed numeric series</legend><p>One value per line in point order. Changes are saved together; shared chart placements change together. Worksheet cells and fixed category labels stay unchanged.</p>
+<label>Numeric series <select id="chart-batch-select" disabled><option value="">Select a series</option></select></label>
+<label>Values <textarea id="chart-batch-values" rows="6" maxlength="12000" disabled></textarea></label>
+<button type="button" id="chart-batch-save" disabled>Save values as new revision</button><p id="chart-batch-status" role="status"></p></fieldset>
 <fieldset><legend>Pie slice colors</legend><p>Default fills are candidates for visual review. Enter one six-digit RGB color per value, in chart order; shared chart placements change together.</p>
 <label>Pie chart <select id="pie-colors-select" disabled><option value="">Select a chart</option></select></label>
 <label>Colors, separated by commas <input id="pie-colors-value" maxlength="1600" disabled></label>
@@ -223,6 +227,7 @@ let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesCo
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
 let slideOrderLoaded=null, slideOrderBusy=false, slideNavigationLoaded=null, slideNavigationBusy=false, slideNavigationPathHash=null;
 let slideAxisLoaded=null, slideAxisSelection=null, slideAxisBusy=false, chartLiteralLoaded=null, chartLiteralSelection=null, chartLiteralBusy=false;
+let chartBatchLoaded=null, chartBatchSelection=null, chartBatchBusy=false;
 let pieColorsLoaded=null, pieColorsSelection=null, pieColorsBusy=false;
 let trackedEpoch=0, trackedRevision=null, trackedHash=null, trackedBusy=false, slideTextRevision=null, slideTextEpoch=0;
 function clearTextSearch() {
@@ -358,10 +363,11 @@ function elementDirty() {
 }
 function slideAxisDirty() { return !!slideAxisSelection && (document.getElementById('slide-chart-axis-min').value!==slideAxisSelection.min || document.getElementById('slide-chart-axis-max').value!==slideAxisSelection.max); }
 function chartLiteralDirty() { return !!chartLiteralSelection && document.getElementById('chart-literal-value').value!==chartLiteralSelection.initial; }
+function chartBatchDirty() { return !!chartBatchSelection && document.getElementById('chart-batch-values').value!==chartBatchSelection.initial; }
 function pieColorsDirty() { return !!pieColorsSelection && document.getElementById('pie-colors-value').value!==pieColorsSelection.initial; }
 function notesDirty() { return notesBaseline!==null && document.getElementById('notes-text').value!==notesBaseline; }
 window.addEventListener('beforeunload', event => {
- if (gridDirty() || elementDirty() || notesDirty() || slideAxisDirty() || chartLiteralDirty() || pieColorsDirty()) { event.preventDefault(); event.returnValue=''; }
+ if (gridDirty() || elementDirty() || notesDirty() || slideAxisDirty() || chartLiteralDirty() || pieColorsDirty() || chartBatchDirty()) { event.preventDefault(); event.returnValue=''; }
 });
 document.getElementById('formula-scan').addEventListener('click', async () => {
  if (scanBusy || calcBusy || pinned!==null || current<0) return;
@@ -977,7 +983,7 @@ document.getElementById('chart-literal-select').addEventListener('change', event
 document.getElementById('chart-literal-save').addEventListener('click', async () => {
  const target=chartLiteralLoaded, selection=chartLiteralSelection, status=document.getElementById('chart-literal-status');
  if (chartLiteralBusy || !target || !selection || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { status.textContent='Revision changed; inspect the chart again.'; return; }
- if (gridBusy || editBusy || gridDirty() || elementDirty() || pieColorsDirty() || pieColorsBusy) { status.textContent='Save or copy pending edits before changing chart data.'; return; }
+ if (gridBusy || editBusy || gridDirty() || elementDirty() || pieColorsDirty() || pieColorsBusy || chartBatchDirty() || chartBatchBusy) { status.textContent='Save or copy pending edits before changing chart data.'; return; }
  const entry=selection.entry, text=document.getElementById('chart-literal-value').value;
  if (text===selection.initial) { status.textContent='No change to save.'; return; }
  if (!text || (entry.kind==='value' && (!/^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$/.test(text.trim()) || !Number.isFinite(Number(text))))) { status.textContent='Enter a valid value.'; return; }
@@ -990,6 +996,37 @@ document.getElementById('chart-literal-save').addEventListener('click', async ()
   chartLiteralLoaded=null; chartLiteralSelection=null; status.textContent=`Saved revision ${result.revision}; inspect it to continue.`; await refresh();
  } catch(error) { status.textContent=`Chart data error: ${error.message}`; if (target.revision===current && target.revision===displayed && target.hash===displayedHash && pinned===null && !comparing) document.getElementById('chart-literal-save').disabled=false; }
  finally { chartLiteralBusy=false; document.getElementById('chart-literal-value').readOnly=false; if (chartLiteralLoaded===target) document.getElementById('chart-literal-select').disabled=false; }
+});
+document.getElementById('chart-batch-select').addEventListener('change', event => {
+ const select=event.target, previous=chartBatchSelection, input=document.getElementById('chart-batch-values');
+ if (chartBatchDirty() && !window.confirm('Discard unsaved numeric values?')) { select.value=previous.index; return; }
+ const entry=chartBatchLoaded?.choices[Number(select.value)];
+ if (select.value==='' || !entry) { chartBatchSelection=null; input.disabled=true; document.getElementById('chart-batch-save').disabled=true; return; }
+ const initial=entry.values.join('\\n'); chartBatchSelection={index:select.value,entry,initial}; input.value=initial; input.disabled=false;
+ const target=chartBatchLoaded, ready=target.revision===current && target.revision===displayed && target.hash===displayedHash && pinned===null && !comparing;
+ document.getElementById('chart-batch-save').disabled=!ready;
+ document.getElementById('chart-batch-status').textContent=ready ? `${entry.values.length} points; keep the same line count.` : 'Read-only revision.';
+});
+document.getElementById('chart-batch-save').addEventListener('click', async () => {
+ const target=chartBatchLoaded, selection=chartBatchSelection, input=document.getElementById('chart-batch-values'), status=document.getElementById('chart-batch-status');
+ if (chartBatchBusy || !target || !selection || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { status.textContent='Revision changed; inspect charts again.'; return; }
+ if (gridBusy || editBusy || chartLiteralBusy || pieColorsBusy || gridDirty() || elementDirty() || chartLiteralDirty() || pieColorsDirty()) { status.textContent='Save or copy pending edits before changing chart values.'; return; }
+ const lines=input.value.split('\\n');
+ if (lines.length!==selection.entry.values.length) { status.textContent='Keep one value per point and the same line count.'; return; }
+ const changes=[];
+ for (let index=0; index<lines.length; index++) {
+  const text=lines[index].trim(); if (text===selection.entry.values[index]) continue;
+  if (!/^[+-]?(?:[0-9]+(?:[.][0-9]*)?|[.][0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(text) || !Number.isFinite(Number(text)) || (Number(text)===0 && /[1-9]/.test(text.split(/[eE]/)[0])) || (Number.isInteger(Number(text)) && !Number.isSafeInteger(Number(text)))) { status.textContent=`Point ${index+1}: enter a finite number within the browser's exact integer range.`; return; }
+  changes.push({reference:selection.entry.reference,point:index+1,value:Number(text)});
+ }
+ if (!changes.length) { status.textContent='No change to save.'; return; }
+ chartBatchBusy=true; document.getElementById('chart-batch-save').disabled=true; document.getElementById('chart-batch-select').disabled=true; input.readOnly=true;
+ try {
+  const response=await fetch('chart-batch-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,snapshot_sha256:target.hash,part:selection.entry.part,changes})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not update chart values');
+  chartBatchLoaded=null; chartBatchSelection=null; status.textContent=`Saved ${changes.length} point(s) as revision ${result.revision}; inspect the chart and labels.`; await refresh();
+ } catch(error) { status.textContent=`Chart values error: ${error.message}`; if (target.revision===current && target.revision===displayed && target.hash===displayedHash && pinned===null && !comparing) document.getElementById('chart-batch-save').disabled=false; }
+ finally { chartBatchBusy=false; input.readOnly=false; if (chartBatchLoaded===target) document.getElementById('chart-batch-select').disabled=false; }
 });
 document.getElementById('pie-colors-select').addEventListener('change', event => {
  const select=event.target, previous=pieColorsSelection;
@@ -1005,7 +1042,7 @@ document.getElementById('pie-colors-select').addEventListener('change', event =>
 document.getElementById('pie-colors-save').addEventListener('click', async () => {
  const target=pieColorsLoaded, selection=pieColorsSelection, status=document.getElementById('pie-colors-status'), input=document.getElementById('pie-colors-value');
  if (pieColorsBusy || !target || !selection || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { status.textContent='Revision changed; inspect charts again.'; return; }
- if (gridBusy || editBusy || chartLiteralBusy || gridDirty() || elementDirty() || chartLiteralDirty()) { status.textContent='Save or copy pending edits before changing slice colors.'; return; }
+ if (gridBusy || editBusy || chartLiteralBusy || gridDirty() || elementDirty() || chartLiteralDirty() || chartBatchDirty() || chartBatchBusy) { status.textContent='Save or copy pending edits before changing slice colors.'; return; }
  const colors=input.value.split(',').map(color=>color.trim());
  if (colors.length!==selection.entry.pie_point_appearance.point_count || colors.some(color=>!/^[0-9a-fA-F]{6}$/.test(color))) { status.textContent='Enter one six-digit RGB color per point, separated by commas.'; return; }
  if (input.value===selection.initial) { status.textContent='No change to save.'; return; }
@@ -1073,8 +1110,8 @@ function clearChartCacheFor(revision) {
  if (chartCacheRevision!==null && chartCacheRevision!==revision) { chartCacheEpoch++; chartCacheRevision=null; document.getElementById('chart-cache-status').textContent=''; document.getElementById('chart-cache-output').textContent=''; document.getElementById('chart-cache-actions').replaceChildren(); }
 }
 document.getElementById('chart-cache-scan').addEventListener('click', async () => {
- if (displayed<0 || chartLiteralBusy || pieColorsBusy) return;
- if ((chartLiteralDirty() || pieColorsDirty()) && !window.confirm('Discard unsaved chart edits and inspect again?')) return;
+ if (displayed<0 || chartLiteralBusy || pieColorsBusy || chartBatchBusy) return;
+ if ((chartLiteralDirty() || pieColorsDirty() || chartBatchDirty()) && !window.confirm('Discard unsaved chart edits and inspect again?')) return;
  const revision=displayed, epoch=++chartCacheEpoch, button=document.getElementById('chart-cache-scan'), status=document.getElementById('chart-cache-status');
  chartCacheRevision=revision; button.disabled=true; document.getElementById('chart-cache-output').textContent=''; document.getElementById('chart-cache-actions').replaceChildren(); status.textContent=`Checking revision ${revision}…`;
  try {
@@ -1098,6 +1135,17 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
   chartLiteralLoaded={revision,hash:result.snapshot_sha256,choices:choices.slice(0,200)}; chartLiteralSelection=null; select.disabled=false;
   document.getElementById('chart-literal-value').value=''; document.getElementById('chart-literal-value').disabled=true; document.getElementById('chart-literal-save').disabled=true;
   document.getElementById('chart-literal-status').textContent=choices.length>200 ? 'Showing the first 200 items. Use the CLI or MCP for additional points.' : `${choices.length} editable candidate(s); unsupported structures may still be rejected on save.`;
+  const batchChoices=[];
+  // shortcut: scans expose at most 20 point samples; use CLI or MCP for larger series.
+  for (const chart of result.charts) if (!chart.external_data && !chart.extensions_present && chart.status==='scanned' && chart.plot_count===1) for (const ref of chart.references) {
+   if (ref.role!=='val' || ref.kind!=='numLit' || ref.status!=='literal' || ref.points<1 || ref.points>20 || ref.stored_points!==ref.points || ref.examples_truncated || ref.examples.length!==ref.points || ref.examples.some(item=>item.value_truncated)) continue;
+   const samples=[...ref.examples].sort((a,b)=>a.point-b.point); if (!samples.every((item,index)=>item.point===index+1)) continue;
+   batchChoices.push({part:chart.part,reference:ref.index,values:samples.map(item=>item.value)});
+  }
+  const batchSelect=document.getElementById('chart-batch-select'); batchSelect.replaceChildren(new Option('Select a series',''),...batchChoices.map((entry,index)=>new Option(`${entry.part} · reference ${entry.reference} · ${entry.values.length} points`,String(index))));
+  chartBatchLoaded={revision,hash:result.snapshot_sha256,choices:batchChoices}; chartBatchSelection=null; batchSelect.disabled=false;
+  document.getElementById('chart-batch-values').value=''; document.getElementById('chart-batch-values').disabled=true; document.getElementById('chart-batch-save').disabled=true;
+  document.getElementById('chart-batch-status').textContent=`${batchChoices.length} complete numeric series candidate(s); unsupported structures may be rejected on save.`;
   const pieChoices=result.charts.filter(chart=>!chart.external_data && !chart.extensions_present && chart.status==='scanned' && chart.pie_point_appearance?.status==='inspected');
   const pieSelect=document.getElementById('pie-colors-select'); pieSelect.replaceChildren(new Option('Select a chart',''),...pieChoices.map((chart,index)=>new Option(`${chart.part} · ${chart.pie_point_appearance.point_count} points${chart.pie_point_appearance.default_fill_candidate ? ' · review default fills' : ''}`,String(index))));
   pieColorsLoaded={revision,hash:result.snapshot_sha256,choices:pieChoices}; pieColorsSelection=null; pieSelect.disabled=false;
@@ -1111,7 +1159,7 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
    const sync=document.createElement('button'); sync.type='button'; sync.textContent='Sync cache as new revision'; sync.disabled=revision!==current || pinned!==null;
    sync.addEventListener('click', async () => {
     if (revision!==current || pinned!==null || displayed!==revision || chartCacheRevision!==revision || result.snapshot_sha256!==displayedHash) { status.textContent='Version changed; check the latest revision again.'; return; }
-    if (chartLiteralDirty() || pieColorsDirty() || gridDirty() || elementDirty() || gridBusy || editBusy || chartLiteralBusy || pieColorsBusy) { status.textContent='Save or copy pending edits before syncing.'; return; }
+    if (chartLiteralDirty() || pieColorsDirty() || chartBatchDirty() || gridDirty() || elementDirty() || gridBusy || editBusy || chartLiteralBusy || pieColorsBusy || chartBatchBusy) { status.textContent='Save or copy pending edits before syncing.'; return; }
     sync.disabled=true; button.disabled=true; status.textContent='Syncing stored values into this chart cache…';
     try {
      const response=await fetch('chart-cache-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part:chart.part,reference:ref.index,snapshot_sha256:result.snapshot_sha256})});
@@ -1414,6 +1462,7 @@ function showRenderAdvisory(items) {
 }
 function display(state, live) {
  displayedHash=state.snapshot_sha256;
+ if (chartBatchLoaded && (chartBatchLoaded.revision!==state.revision || chartBatchLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('chart-batch-save').disabled=true;
  if (pieColorsLoaded && (pieColorsLoaded.revision!==state.revision || pieColorsLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('pie-colors-save').disabled=true;
  if (chartLiteralLoaded && (chartLiteralLoaded.revision!==state.revision || chartLiteralLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('chart-literal-save').disabled=true;
  if (slideAxisLoaded && (slideAxisLoaded.revision!==state.revision || slideAxisLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('slide-chart-axis-save').disabled=true;
@@ -1454,7 +1503,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
- displayedHash=null; document.getElementById('pie-colors-save').disabled=true; document.getElementById('slide-chart-axis-save').disabled=true; document.getElementById('chart-literal-save').disabled=true;
+ displayedHash=null; document.getElementById('chart-batch-save').disabled=true; document.getElementById('pie-colors-save').disabled=true; document.getElementById('slide-chart-axis-save').disabled=true; document.getElementById('chart-literal-save').disabled=true;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory],[`Revision ${state.latest_revision}`,state.latest_render_advisory]]);
  clearChartCacheFor(state.revision);
  document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
@@ -1672,7 +1721,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/grid-link', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-literal-save', '/' + token + '/chart-pie-colors-save', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/slide-chart-axis-read', '/' + token + '/slide-chart-axis-save', '/' + token + '/slide-navigation-read', '/' + token + '/slide-navigation-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/grid-link', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-literal-save', '/' + token + '/chart-batch-save', '/' + token + '/chart-pie-colors-save', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/slide-chart-axis-read', '/' + token + '/slide-chart-axis-save', '/' + token + '/slide-navigation-read', '/' + token + '/slide-navigation-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1693,6 +1742,11 @@ def serve(directory, preview, port=0, render=None):
                         if state['format'] == 'pptx': options['scope'] = 'notes' if scope == 'notes' else 'slides'
                         saved = {'format': state['format'], **search(*args, **options)}
                         self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
+                    if route.endswith('/chart-batch-save'):
+                        if not isinstance(payload, dict) or set(payload) != {'base_revision', 'snapshot_sha256', 'part', 'changes'} or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Chart values edit requires revision, snapshot, chart and changes')
+                        with lock:
+                            saved = session.set_chart_literal_values(directory, payload['base_revision'], payload['part'], payload['changes'], payload['snapshot_sha256'])
+                        self.send(200, json.dumps(saved).encode(), 'application/json'); return
                     if route.endswith('/chart-pie-colors-save'):
                         if not isinstance(payload, dict) or set(payload) != {'base_revision', 'snapshot_sha256', 'part', 'colors'} or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Slice color edit requires revision, snapshot, chart and colors')
                         with lock:
