@@ -220,6 +220,12 @@ def session_rename_table_column(directory: str, base_revision: int, sheet: str, 
 
 
 @server.tool()
+def session_set_grid_hyperlink(directory: str, base_revision: int, sheet: str, cell: str, url: str | None, expected_sha256: str | None = None) -> dict[str, Any]:
+    """Set an HTTP(S)/mailto hyperlink or remove one with null; keep cell content and formatting in a new revision."""
+    return session.set_grid_hyperlink(directory, base_revision, sheet, cell, url, expected_sha256)
+
+
+@server.tool()
 def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]], expected_sha256: str | None = None) -> dict[str, Any]:
     """Edit grid values; each change may set type to text. Unrelated caches are retained; dynamic formula anchors are returned for spill review, validation rules are not evaluated, and recalculation is requested."""
     return session.edit_grid(directory, base_revision, sheet, cell_range, changes, expected_sha256)

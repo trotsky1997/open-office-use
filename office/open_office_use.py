@@ -1188,7 +1188,7 @@ def author(spec, output, source=None):
                     if value.get('type') == 'hyperlink':
                         if set(value) != {'type', 'value', 'url'} or not isinstance(value['value'], str) or not value['value']: raise ValueError('Hyperlink cell requires nonempty text and a URL')
                         link_url = value['url']
-                        if not isinstance(link_url, str) or len(link_url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in link_url): raise ValueError('Invalid hyperlink URL')
+                        if not isinstance(link_url, str) or len(link_url) > 2048 or any(char.isspace() or ord(char) < 32 or ord(char) == 127 or 0xd800 <= ord(char) <= 0xdfff or ord(char) in (0xfffe, 0xffff) for char in link_url): raise ValueError('Invalid hyperlink URL')
                         try: parsed = urlsplit(link_url); hostname = parsed.hostname
                         except ValueError: raise ValueError('Invalid hyperlink URL') from None
                         if parsed.scheme.lower() not in ('http', 'https', 'mailto') or (parsed.scheme.lower() in ('http', 'https') and not hostname) or (parsed.scheme.lower() == 'mailto' and not parsed.path): raise ValueError('Hyperlink must be an HTTP, HTTPS or mailto URL')
@@ -1396,6 +1396,7 @@ def main():
     chart_grid = sub.add_parser('read-slide-chart-grid'); chart_grid.add_argument('directory'); chart_grid.add_argument('--revision', type=int, required=True); chart_grid.add_argument('--part', required=True); chart_grid.add_argument('--sheet', required=True); chart_grid.add_argument('--range', dest='cell_range', required=True)
     chart_grid_edit = sub.add_parser('edit-slide-chart-grid'); chart_grid_edit.add_argument('directory'); chart_grid_edit.add_argument('--base', type=int, required=True); chart_grid_edit.add_argument('--part', required=True); chart_grid_edit.add_argument('--sheet', required=True); chart_grid_edit.add_argument('--range', dest='cell_range', required=True); chart_grid_edit.add_argument('--changes', required=True, help='JSON array of cell/value objects'); chart_grid_edit.add_argument('--sync-caches', action='store_true')
     table_column = sub.add_parser('rename-table-column'); table_column.add_argument('directory'); table_column.add_argument('--base', type=int, required=True); table_column.add_argument('--sheet', required=True); table_column.add_argument('--table', required=True); table_column.add_argument('--old', required=True); table_column.add_argument('--new', required=True)
+    link_edit = sub.add_parser('set-grid-hyperlink'); link_edit.add_argument('directory'); link_edit.add_argument('--base', type=int, required=True); link_edit.add_argument('--sheet', required=True); link_edit.add_argument('--cell', required=True); link_mode = link_edit.add_mutually_exclusive_group(required=True); link_mode.add_argument('--url'); link_mode.add_argument('--remove', action='store_true'); link_edit.add_argument('--expected-sha256')
     grid_edit = sub.add_parser('edit-grid'); grid_edit.add_argument('directory'); grid_edit.add_argument('--base', type=int, required=True); grid_edit.add_argument('--sheet', required=True); grid_edit.add_argument('--range', required=True, dest='cell_range'); grid_edit.add_argument('--changes', required=True, help='JSON array of cell/value objects')
     grid_resize = sub.add_parser('resize-grid'); grid_resize.add_argument('directory'); grid_resize.add_argument('--base', type=int, required=True); grid_resize.add_argument('--sheet', required=True); grid_resize.add_argument('--range', required=True, dest='cell_range'); grid_resize.add_argument('--target-range', required=True); grid_resize.add_argument('--column-width', type=float); grid_resize.add_argument('--row-height', type=float)
     merge = sub.add_parser('merge-cells'); merge.add_argument('directory'); merge.add_argument('--base', type=int, required=True); merge.add_argument('--sheet', required=True); merge.add_argument('--range', required=True, dest='cell_range'); merge.add_argument('--unmerge', action='store_true')
@@ -1479,6 +1480,8 @@ def main():
                 result = session.edit_slide_chart_grid(args.directory, args.base, args.part, args.sheet, args.cell_range, json.loads(args.changes), args.sync_caches)
             elif args.action == 'rename-table-column':
                 result = session.rename_table_column(args.directory, args.base, args.sheet, args.table, args.old, args.new)
+            elif args.action == 'set-grid-hyperlink':
+                result = session.set_grid_hyperlink(args.directory, args.base, args.sheet, args.cell, None if args.remove else args.url, args.expected_sha256)
             elif args.action == 'edit-grid':
                 result = session.edit_grid(args.directory, args.base, args.sheet, args.cell_range, json.loads(args.changes))
             elif args.action == 'resize-grid':

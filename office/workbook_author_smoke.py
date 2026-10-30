@@ -10,7 +10,7 @@ from datetime import datetime
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 from openpyxl.chart.axis import DateAxis, TextAxis, NumericAxis
 from openpyxl.chart import ScatterChart
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -195,6 +195,50 @@ with tempfile.TemporaryDirectory() as tmp:
         except ValueError: pass
         else: raise AssertionError('Invalid hyperlink accepted')
         assert not invalid.exists()
+    internal_draft = root/'internal-link-draft'; session.start(internal_draft,source=links_file)
+    internal_removed = session.set_grid_hyperlink(internal_draft,0,'Sources','A3',None)
+    with zipfile.ZipFile(links_file) as before, zipfile.ZipFile(internal_removed['file']) as after:
+        assert before.read('xl/worksheets/_rels/sheet1.xml.rels') == after.read('xl/worksheets/_rels/sheet1.xml.rels')
+    edit_links = root/'edit-links'; session.start(edit_links,source=links_file)
+    existing_grid = session.read_grid(edit_links,0,'Sources','A1')
+    try: session.set_grid_hyperlink(edit_links,0,'Sources','A1','https://example.org/new','0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale hyperlink edit accepted')
+    changed_link = session.set_grid_hyperlink(edit_links,0,'Sources','A1','https://example.org/new',existing_grid['snapshot_sha256'])
+    changed_cell = load_workbook(changed_link['file'])['Sources']['A1']
+    assert changed_cell.value == '=Source' and changed_cell.data_type == 's' and changed_cell.hyperlink.target == 'https://example.org/new'
+    changed_relationships = review.external_relationships(changed_link['file'])
+    assert {item['target'] for item in changed_relationships['relationships']} == {'https://example.org/new','mailto:author@example.com'}
+    with zipfile.ZipFile(links_file) as old, zipfile.ZipFile(changed_link['file']) as new:
+        assert all(old.read(name) == new.read(name) for name in old.namelist() if name not in ('xl/worksheets/sheet1.xml','xl/worksheets/_rels/sheet1.xml.rels'))
+    removed_link = session.set_grid_hyperlink(edit_links,1,'Sources','A1',None)
+    assert load_workbook(removed_link['file'])['Sources']['A1'].hyperlink is None and review.external_relationships(removed_link['file'])['external_count'] == 1
+    code,validation,_ = officecli_backend.invoke('validate',removed_link['file']); assert code == 0 and validation['success'],validation
+    link_cli = subprocess.run([sys.executable,str(cli),'session','set-grid-hyperlink',str(edit_links),'--base','2','--sheet','Sources','--cell','A1','--url','https://example.net/source'],capture_output=True,text=True,check=True)
+    assert json.loads(link_cli.stdout)['revision'] == 3 and session.read_grid(edit_links,3,'Sources','A1')['rows'][0][0]['hyperlink']['target'] == 'https://example.net/source'
+    for index,url in enumerate(('file:///tmp/x','javascript:alert(1)','https://')):
+        try: session.set_grid_hyperlink(edit_links,3,'Sources','A1',url)
+        except ValueError: pass
+        else: raise AssertionError('Invalid link target accepted')
+    assert session.info(edit_links)['latest_revision'] == 3
+    plain_draft = root/'plain-link-draft'; session.start(plain_draft,source=output)
+    inserted = session.set_grid_hyperlink(plain_draft,0,'Forecast','A2','https://example.org/new')
+    assert load_workbook(inserted['file'])['Forecast']['A2'].value == 'Q1' and load_workbook(inserted['file'])['Forecast']['A2'].hyperlink.target == 'https://example.org/new'
+    code,validation,_ = officecli_backend.invoke('validate',inserted['file']); assert code == 0 and validation['success'],validation
+    shared_base = root/'shared-base.xlsx'; book = Workbook(); book.active['A1'] = 'First'; book.active['A2'] = 'Second'
+    book.active['A1'].hyperlink = 'https://example.com/shared'; book.active['A2'].hyperlink = 'https://example.com/shared'; book.save(shared_base)
+    shared = root/'shared.xlsx'; rels_name = 'xl/worksheets/_rels/sheet1.xml.rels'; sheet_name = 'xl/worksheets/sheet1.xml'
+    rel_uri = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
+    with zipfile.ZipFile(shared_base) as original, zipfile.ZipFile(shared,'w') as replacement:
+        sheet_xml = etree.fromstring(original.read(sheet_name)); links_xml = sheet_xml.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}hyperlink')
+        first_id, second_id = (item.get(rel_uri+'id') for item in links_xml); links_xml[1].set(rel_uri+'id',first_id)
+        rel_xml = etree.fromstring(original.read(rels_name)); rel_xml.remove(next(item for item in rel_xml if item.get('Id') == second_id))
+        for entry in original.infolist(): replacement.writestr(entry,etree.tostring(sheet_xml,xml_declaration=True,encoding='UTF-8') if entry.filename == sheet_name else etree.tostring(rel_xml,xml_declaration=True,encoding='UTF-8') if entry.filename == rels_name else original.read(entry.filename))
+    shared_draft = root/'shared-link-draft'; session.start(shared_draft,source=shared)
+    shared_result = session.set_grid_hyperlink(shared_draft,0,'Sheet','A1','https://example.org/changed')
+    shared_sheet = load_workbook(shared_result['file']).active
+    assert shared_sheet['A1'].hyperlink.target == 'https://example.org/changed' and shared_sheet['A2'].hyperlink.target == 'https://example.com/shared'
+    assert review.external_relationships(shared_result['file'])['external_count'] == 2
     typed_file=root/'literal-cells.xlsx'
     typed_spec={'sheets':{'Data':{'A1':{'type':'text','value':'=Heading'},'A2':{'type':'text','value':'=SUM(1,2)'},'A3':{'type':'text','value':'#N/A'},'A4':{'type':'text','value':'00123'},'B1':'=1+2'}},'sheet_options':{'Data':{'tables':[{'name':'TextTable','range':'A1:A4'}]}}}
     typed_json=root/'literal-cells.json';typed_json.write_text(json.dumps(typed_spec))
