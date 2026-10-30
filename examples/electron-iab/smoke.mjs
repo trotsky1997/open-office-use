@@ -242,12 +242,12 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
         assert.equal((await run('await chrome.client.finalizeTabs([])')).isError,undefined);
       }
       assert.equal((await run('nodeRepl.write((await tab.observe()).nodes.some(node => node.name === "加 1"))')).content[0].text, 'true');
-      const messageCount = await evaluate(a.id,'window.crossMessages.length');
+      const messageCount = await evaluate(a.id,"window.crossMessages.filter(message=>message.kind==='cross-click').length");
       const cross = await run('const frameState = await tab.observe({includeFrames:true}); const frameButton = frameState.nodes.find(node => node.name === "Cross-frame action"); await tab.click(frameButton.index,frameState.snapshotId)');
       assert.equal(cross.isError,undefined,JSON.stringify(cross));
       await new Promise(resolve=>setTimeout(resolve,100));
-      assert.equal(await evaluate(a.id,'window.crossMessages.length'),messageCount+1);
-      assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-click',trusted:true});
+      assert.equal(await evaluate(a.id,"window.crossMessages.filter(message=>message.kind==='cross-click').length"),messageCount+1);
+      assert.deepEqual(await evaluate(a.id,"window.crossMessages.filter(message=>message.kind==='cross-click').at(-1)"),{kind:'cross-click',trusted:true});
       assert.equal((await run('nodeRepl.emitImage(await tab.getScreenshot())')).content[0].type, 'image');
       assert.equal((await run(`const tab = browser.tab(${a.id}); class Again {}\n(() => nodeRepl.write(tab.id))()`)).content[0].text,String(a.id));
       assert.equal((await repl.callTool('js_reset',{})).isError,undefined);

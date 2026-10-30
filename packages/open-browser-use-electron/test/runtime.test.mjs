@@ -278,19 +278,19 @@ test('background scroll uses wheel input and restores throttling', async t => {
   surface.present(tab.id);
   assert.deepEqual(await a.call('getTabPresentation',{tabId:tab.id}),{backend:'electron',selected:true,visible:false,windowFocused:null});
   await send('Input.synthesizeScrollGesture', params);
-  assert.deepEqual(wc.debugger.commands.at(-1).params, {type:'mouseWheel',x:100,y:100,deltaX:-0,deltaY:250});
+  assert.deepEqual(wc.debugger.commands.filter(command=>command.method.startsWith('Input.')).at(-1).params, {type:'mouseWheel',x:100,y:100,deltaX:-0,deltaY:250});
   assert.equal(wc.backgroundThrottling, true);
   assert.ok(wc.isolatedCalls.some(call => call.scripts[0].code.includes('requestAnimationFrame')));
   await assert.rejects(send('Input.synthesizeScrollGesture', {...params, speed:100}), /IAB_BACKGROUND_SCROLL_UNSUPPORTED_GESTURE/);
   visible = true; minimized = true;
   await send('Input.synthesizeScrollGesture', params);
-  assert.equal(wc.debugger.commands.at(-1).method, 'Input.dispatchMouseEvent');
+  assert.equal(wc.debugger.commands.filter(command=>command.method.startsWith('Input.')).at(-1).method, 'Input.dispatchMouseEvent');
   minimized = false;
   assert.equal((await a.call('getTabPresentation',{tabId:tab.id})).visible,true);
   await send('Input.synthesizeScrollGesture', params);
-  assert.equal(wc.debugger.commands.at(-1).method, 'Input.synthesizeScrollGesture');
+  assert.equal(wc.debugger.commands.filter(command=>command.method.startsWith('Input.')).at(-1).method, 'Input.synthesizeScrollGesture');
   wc.mainFrame={visibilityState:'hidden'};await send('Input.synthesizeScrollGesture', params);
-  assert.equal(wc.debugger.commands.at(-1).method,'Input.dispatchMouseEvent');assert.equal(wc.backgroundThrottling,true);
+  assert.equal(wc.debugger.commands.filter(command=>command.method.startsWith('Input.')).at(-1).method,'Input.dispatchMouseEvent');assert.equal(wc.backgroundThrottling,true);
 });
 test('visible window with hidden main frame prepares and restores mouse input',async t=>{
   const {runtime,adapter,a}=setup(t),tab=await a.tabs.create(),wc=adapter.views[0].webContents,states=[];
@@ -298,7 +298,7 @@ test('visible window with hidden main frame prepares and restores mouse input',a
   const window=Object.assign(new EventEmitter(),{isVisible:()=>true,isMinimized:()=>false,contentView:{addChildView(){},removeChildView(){}}});
   runtime.surfaces.register({id:'panel',window,owner:wc}).present(tab.id);
   await a.call('executeCdp',{target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:10,y:10}});
-  assert.deepEqual(states,[false,true]);assert.deepEqual(wc.debugger.commands.map(command=>command.method),['Page.captureScreenshot','Input.dispatchMouseEvent']);
+  assert.deepEqual(states,[false,true]);assert.deepEqual(wc.debugger.commands.map(command=>command.method),['Emulation.setFocusEmulationEnabled','Page.captureScreenshot','Input.dispatchMouseEvent','Emulation.setFocusEmulationEnabled']);
 });
 test('a stalled background scroll releases the tab queue', async t => {
   const { runtime, adapter, a } = setup(t), tab = await a.tabs.create();
@@ -513,6 +513,32 @@ test('revoking a selector context request prevents world creation', async t => {
   const pending=runtime.dispatch('a','executeCdp',{target:{tabId:tab.id},method:'Page.createIsolatedWorld',commandParams:{frameId:'root',worldName:'open-browser-use-selector'}},['page.control'],()=>allowed);
   await new Promise(resolve=>setImmediate(resolve));allowed=false;release({frameTree:{frame:{id:'root'}}});
   await assert.rejects(pending,/IAB_AUTH_REVOKED/);assert.equal(commands.includes('Page.createIsolatedWorld'),false);
+});
+
+test('hidden unpresented mouse input temporarily emulates focus and restores it',async t=>{
+  const {adapter,a}=setup(t),tab=await a.tabs.create(),wc=adapter.views[0].webContents,commands=[];wc.mainFrame={visibilityState:'hidden'};
+  wc.debugger.sendCommand=async(method,params)=>{commands.push({method,params});if(method==='Input.dispatchMouseEvent' && params.type==='mousePressed')throw new Error('input failed');return {};};
+  const send=type=>a.call('executeCdp',{target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type,x:1,y:1}});
+  await send('mouseMoved');assert.deepEqual(commands.map(c=>c.method),['Emulation.setFocusEmulationEnabled','Page.captureScreenshot','Input.dispatchMouseEvent','Emulation.setFocusEmulationEnabled']);
+  assert.equal(commands[0].params.enabled,true);assert.equal(commands.at(-1).params.enabled,false);commands.length=0;
+  await assert.rejects(send('mousePressed'),/input failed/);assert.deepEqual(commands.map(c=>c.method),['Emulation.setFocusEmulationEnabled','Input.dispatchMouseEvent','Emulation.setFocusEmulationEnabled']);assert.equal(commands.at(-1).params.enabled,false);commands.length=0;
+  wc.debugger.sendCommand=async(method,params)=>{commands.push({method,params});if(method==='Emulation.setFocusEmulationEnabled' && params.enabled)throw new Error('focus setup failed');return {};};
+  await assert.rejects(send('mouseMoved'),/focus setup failed/);assert.deepEqual(commands.map(c=>c.params.enabled),[true,false]);
+});
+
+test('failure to restore hidden focus detaches after issued input',async t=>{
+  const {adapter,a}=setup(t),tab=await a.tabs.create(),wc=adapter.views[0].webContents;wc.mainFrame={visibilityState:'hidden'};
+  wc.debugger.sendCommand=async(method,params)=>{if(method==='Emulation.setFocusEmulationEnabled' && !params.enabled)throw new Error('restore failed');return {};};
+  await assert.rejects(a.call('executeCdp',{target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:1,y:1}}),/IAB_INPUT_OUTCOME_UNKNOWN/);
+  assert.equal(wc.debugger.isAttached(),false);
+});
+
+test('late hidden-focus preparation does not touch a reattached debugger',async t=>{
+  const {adapter,a}=setup(t),tab=await a.tabs.create(),wc=adapter.views[0].webContents,commands=[];wc.mainFrame={visibilityState:'hidden'};let release;
+  wc.debugger.sendCommand=async(method,params)=>{commands.push({method,params});if(method==='Emulation.setFocusEmulationEnabled' && params.enabled)await new Promise(resolve=>{release=resolve;});return {};};
+  await assert.rejects(a.call('executeCdp',{target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:1,y:1}}),/IAB_INPUT_PREPARATION_TIMEOUT/);
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});release();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(commands.map(c=>c.method),['Emulation.setFocusEmulationEnabled','Runtime.evaluate']);assert.equal(wc.debugger.isAttached(),true);
 });
 
 test('socket distinguishes input already issued from preparation timeout', {skip:!['darwin','linux'].includes(process.platform)}, async t => {

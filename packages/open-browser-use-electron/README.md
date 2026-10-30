@@ -230,6 +230,11 @@ host details. A background scroll timeout or `IAB_INPUT_OUTCOME_UNKNOWN` can
 leave the input outcome unknown; inspect the page before retrying. A mouse
 preparation timeout occurs before input is sent.
 
+For mouse input on a hidden tab or window, the runtime temporarily enables
+Chromium focus emulation and restores it afterward. The page can briefly observe
+focus or visibility changes. If restoration fails after input, the runtime
+detaches the debugger and reports an unknown input outcome.
+
 FD 3 carries a private bootstrap followed by framed JSON-RPC. The bootstrap
 fixes instance, scope, grant and credential. Credentials are not passed in
 argv, environment variables or discovery files. The tool must never log its

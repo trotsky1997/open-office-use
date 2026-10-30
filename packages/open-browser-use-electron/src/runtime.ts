@@ -24,7 +24,7 @@ export type ElectronAdapter = {
 type Tab = {
   id: number; scopeId: string; openerTabId?:number; view: WebContentsView; contents: WebContents; lifetime: 'temporary' | 'persistent';
   touched: Set<string>; marks: Map<string, 'handoff' | 'deliverable'>;
-  attached: boolean; webMcpReady:boolean; mouseReady: boolean; pending: number; queue: Promise<any>; removers: (() => void)[];
+  attached: boolean; debuggerEpoch:number; webMcpReady:boolean; mouseReady: boolean; pending: number; queue: Promise<any>; removers: (() => void)[];
   frameSessions: Map<string, string | undefined>;
   loading: boolean; pendingUrl?: string; loadError?: { code: number; description: string; url: string };
 };
@@ -141,7 +141,7 @@ export class IabRuntime implements Backend {
     if (contents && contents.session !== profile) throw new Error('Popup profile mismatch');
     const view = this.adapter.createView(profile, contents, scope.webmcp);
     view.setBounds({ x: 0, y: 0, width: 800, height: 600 }); view.setVisible(false);
-    const tab: Tab = { id: this.nextTabId++, scopeId, ...(openerTabId === undefined ? {} : {openerTabId}), view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, webMcpReady:false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
+    const tab: Tab = { id: this.nextTabId++, scopeId, ...(openerTabId === undefined ? {} : {openerTabId}), view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, debuggerEpoch:0, webMcpReady:false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false, frameSessions: new Map() };
     scope.tabs.set(tab.id, tab); this.tabsById.set(tab.id, tab);
     const wc = view.webContents;
     this.feedbackController.register(wc);
@@ -190,7 +190,7 @@ export class IabRuntime implements Backend {
       }
       if (this.states.get(scopeId)?.tabs.has(tab.id)) this.emit(scopeId, 'onCDPEvent', { source: { tabId: tab.id, ...(sessionId ? {sessionId} : {}) }, method, params });
     });
-    listen(wc.debugger, 'detach', () => { this.invalidateChoosers(tab.id); tab.attached = false; tab.webMcpReady=false; tab.frameSessions.clear(); this.emit(scopeId, 'onDebuggerDetach', { tabId: tab.id }); });
+    listen(wc.debugger, 'detach', () => { this.invalidateChoosers(tab.id); tab.attached = false; tab.debuggerEpoch++; tab.mouseReady=false; tab.webMcpReady=false; tab.frameSessions.clear(); this.emit(scopeId, 'onDebuggerDetach', { tabId: tab.id }); });
     wc.setWindowOpenHandler(details => {
       try { assertUrl(details.url); } catch { return { action: 'deny' }; }
       if (!this.hasScope(scopeId) || scope.tabs.size >= 32 || this.tabsById.size >= 128) return { action: 'deny' };
@@ -290,8 +290,9 @@ export class IabRuntime implements Backend {
     const scroll = method === 'Input.synthesizeScrollGesture' || (method === 'Input.dispatchMouseEvent' && params.type === 'mouseWheel');
     const mouse = method === 'Input.dispatchMouseEvent' || method === 'Input.synthesizeScrollGesture';
     const preparingMouse = mouse && !tab.mouseReady;
-    const surface = scroll || preparingMouse ? [...this.surfaceStates.values()].find(item => item.tabId === tab.id) : undefined;
+    const surface = mouse ? [...this.surfaceStates.values()].find(item => item.tabId === tab.id) : undefined;
     const backgroundInput = (scroll || preparingMouse) && !!surface && (!surface.window.isVisible() || surface.window.isMinimized() || tab.contents.mainFrame?.visibilityState === 'hidden');
+    const emulateHiddenFocus = mouse && (tab.contents.mainFrame?.visibilityState === 'hidden' || (!!surface && (!surface.window.isVisible() || surface.window.isMinimized())));
     if (scroll && !surface) throw new Error('IAB_SCROLL_REQUIRES_PRESENTED_SURFACE');
     let command = method, commandParams = params;
     if (backgroundInput && method === 'Input.synthesizeScrollGesture') {
@@ -303,10 +304,10 @@ export class IabRuntime implements Backend {
     }
     const previousThrottling = backgroundInput ? tab.contents.backgroundThrottling : undefined;
     if (backgroundInput) tab.contents.setBackgroundThrottling(false);
-    const bounded = backgroundInput || preparingMouse || command === 'Page.captureScreenshot' || command === 'Page.createIsolatedWorld';
+    const bounded = backgroundInput || preparingMouse || emulateHiddenFocus || command === 'Page.captureScreenshot' || command === 'Page.createIsolatedWorld';
     let expired = false, inputIssued = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutError = () => command === 'Page.createIsolatedWorld' ? 'IAB_SELECTOR_CONTEXT_TIMEOUT' : preparingMouse && !inputIssued ? 'IAB_INPUT_PREPARATION_TIMEOUT' : scroll ? 'IAB_BACKGROUND_SCROLL_TIMEOUT' : inputIssued ? 'IAB_INPUT_OUTCOME_UNKNOWN' : 'IAB_SCREENSHOT_TIMEOUT';
+    const timeoutError = () => command === 'Page.createIsolatedWorld' ? 'IAB_SELECTOR_CONTEXT_TIMEOUT' : mouse && !inputIssued ? 'IAB_INPUT_PREPARATION_TIMEOUT' : scroll ? 'IAB_BACKGROUND_SCROLL_TIMEOUT' : inputIssued ? 'IAB_INPUT_OUTCOME_UNKNOWN' : 'IAB_SCREENSHOT_TIMEOUT';
     const check = () => { if (expired) throw new Error(timeoutError()); if (!authorized()) throw new Error('IAB_AUTH_REVOKED'); };
     const run = async () => {
       if (!tab.contents.debugger.isAttached()) tab.contents.debugger.attach('1.3');
@@ -346,11 +347,30 @@ export class IabRuntime implements Backend {
       if (['Page.navigate', 'Page.reload', 'Page.navigateToHistoryEntry'].includes(method)) tab.mouseReady = false;
       return result;
     };
+    const runWithHiddenFocus = async () => {
+      if (!emulateHiddenFocus) return run();
+      if (!tab.contents.debugger.isAttached()) tab.contents.debugger.attach('1.3');
+      tab.attached = true;
+      const epoch=tab.debuggerEpoch;
+      try {
+        await tab.contents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
+        check(); return await run();
+      } finally {
+        if (tab.debuggerEpoch===epoch && !tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) {
+          try { await tab.contents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false}); }
+          catch (error) {
+            try { if (tab.contents.debugger.isAttached()) tab.contents.debugger.detach(); } catch {}
+            if(inputIssued)throw new Error('IAB_INPUT_OUTCOME_UNKNOWN');
+            throw error;
+          }
+        }
+      }
+    };
     try {
-      if (!bounded) return await run();
-      return await Promise.race([run(),new Promise<never>((_,reject) => { timer=setTimeout(() => {
+      if (!bounded) return await runWithHiddenFocus();
+      return await Promise.race([runWithHiddenFocus(),new Promise<never>((_,reject) => { timer=setTimeout(() => {
         expired = true;
-        try { if (!tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) tab.contents.debugger.detach(); } catch {}
+        try { if (!tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) {tab.debuggerEpoch++;tab.mouseReady=false;tab.contents.debugger.detach();} } catch {}
         reject(new Error(timeoutError()));
       },3000); })]);
     } finally {
