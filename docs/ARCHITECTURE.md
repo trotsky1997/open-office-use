@@ -328,3 +328,5 @@ XLSX sessions expose worksheet listing and bounded 200-cell grid reads and atomi
 Bounded spreadsheet comparison resolves per-workbook direct style components before reporting font, fill, border, alignment, protection and number-format changes. It does not evaluate theme resolution, conditional formatting or inherited row/column styles.
 
 The XLSX revision comparison viewer can request a bounded cell diff for the displayed revision pair. It rejects stale latest revisions and clears results when the pair or inputs change.
+
+The viewer preserves stale grid and element input in selectable read-only controls, confirms before replacing unsaved input, and warns before browser navigation with pending edits. Grid and element requests serialize their own loading and saving actions.

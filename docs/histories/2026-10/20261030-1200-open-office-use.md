@@ -47,3 +47,5 @@ Added version-bound grid formatting for bold, RGB fill and number formats, with 
 Extended bounded cell comparison to direct formatting, resolving workbook-local style IDs for font, fill, border, alignment, protection and number formats.
 
 Connected bounded worksheet cell and formatting diffs to the visual revision comparison, including stale-result rejection and clearing.
+
+Protected unsaved grid and element input during reload and navigation; stale element text remains selectable and in-flight editor actions are serialized.

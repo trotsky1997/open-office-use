@@ -63,7 +63,7 @@ The local viewer can preview a selected historical revision before restoration, 
 
 ## Element editing
 
-Added limited element editing through the viewer and MCP: load one target at a specified latest revision, review content, and save a new revision. Tested Word text, spreadsheet formulas, PowerPoint titles, stale writes, cross-origin rejection and real Chrome interaction. Direct canvas editing, collaborative synchronization and advanced formatting remain open.
+Added limited element editing through the viewer and MCP: load one target at a specified latest revision, review content, and save a new revision. Tested Word text, spreadsheet formulas, PowerPoint titles, stale writes, cross-origin rejection and real Chrome interaction. Unsaved element input stays selectable when stale and requires confirmation before replacement; pending edits also trigger a browser navigation warning. Direct canvas editing, collaborative synchronization and advanced formatting remain open.
 
 ## Viewer candidates
 

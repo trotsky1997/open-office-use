@@ -82,7 +82,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -115,14 +115,22 @@ document.getElementById('candidate-search').addEventListener('click', async () =
    const use=document.createElement('button'); use.type='button'; use.textContent=`Use ${item.path}`;
    use.addEventListener('click', () => {
     if (epoch !== selectionEpoch || current !== result.revision || pinned !== null) return;
-    document.getElementById('edit-panel').open=true; document.getElementById('edit-path').value=item.path;
-    invalidateEdit('Load and verify this candidate.'); document.getElementById('edit-load').click();
+    document.getElementById('edit-panel').open=true; loadElement(item.path);
    });
    row.append(label, document.createTextNode(' '), use); list.appendChild(row);
   }
   document.getElementById('candidate-status').textContent = result.candidates.length ? `${result.candidates.length} candidate(s). Verify the target; matches may be incomplete.` : 'No candidates found. Try a different selection or enter a path.';
  } catch (error) { if (epoch === selectionEpoch) document.getElementById('candidate-status').textContent=`Candidate error: ${error.message}`; }
  finally { if (epoch === selectionEpoch && pinned === null && savedSelection) button.disabled=false; }
+});
+function gridDirty() {
+ return [...document.querySelectorAll('#grid-output input')].some(input=>input.value!==input.dataset.baseline);
+}
+function elementDirty() {
+ return editBaseline !== null && (document.getElementById('edit-value').value !== editBaseline.value || document.getElementById('edit-mode').value !== editBaseline.mode);
+}
+window.addEventListener('beforeunload', event => {
+ if (gridDirty() || elementDirty()) { event.preventDefault(); event.returnValue=''; }
 });
 function invalidateGrid(message) {
  gridLoaded=null; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true;
@@ -131,6 +139,7 @@ function invalidateGrid(message) {
 }
 for (const id of ['grid-sheet','grid-range']) document.getElementById(id).addEventListener('change', () => invalidateGrid('Reload the range before saving.'));
 document.getElementById('grid-sheets').addEventListener('click', async () => {
+ if (gridBusy) return; gridBusy=true;
  const button=document.getElementById('grid-sheets'); button.disabled=true; invalidateGrid('Loading sheets…'); const revision=current;
  try {
   const response=await fetch('sheets', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
@@ -139,10 +148,12 @@ document.getElementById('grid-sheets').addEventListener('click', async () => {
   const select=document.getElementById('grid-sheet'); select.replaceChildren(...data.sheets.map(name=>{const option=document.createElement('option');option.value=name;option.textContent=name;return option;}));
   document.getElementById('grid-status').textContent=`${data.sheets.length} sheet(s) available at revision ${revision}.`;
  } catch(error) { document.getElementById('grid-status').textContent=`Sheet error: ${error.message}`; }
- finally { button.disabled=pinned !== null; }
+ finally { gridBusy=false; button.disabled=pinned !== null; }
 });
 document.getElementById('grid-load').addEventListener('click', async () => {
- const button=document.getElementById('grid-load'); button.disabled=true; invalidateGrid('Loading range…');
+ if (gridBusy) return;
+ if (gridDirty() && !window.confirm('Discard unsaved cell edits and load another range?')) return;
+ gridBusy=true; const button=document.getElementById('grid-load'); button.disabled=true; invalidateGrid('Loading range…');
  const revision=current, sheet=document.getElementById('grid-sheet').value, cell_range=document.getElementById('grid-range').value;
  try {
   const response=await fetch('grid', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,sheet,cell_range})});
@@ -175,26 +186,29 @@ document.getElementById('grid-load').addEventListener('click', async () => {
   table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range};
   document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=false; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
- finally { button.disabled=pinned !== null; }
+ finally { gridBusy=false; button.disabled=pinned !== null; }
 });
 document.getElementById('grid-form').addEventListener('submit', async event => {
- event.preventDefault(); if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
+ event.preventDefault(); if (gridBusy) return;
+ if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
  const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output input')];
  const changes=inputs.filter(input=>input.dataset.editable==='true' && input.value!==input.dataset.baseline).map(input=>({cell:input.dataset.cell,value:input.value}));
  if (!changes.length) { document.getElementById('grid-status').textContent='No changed cells.'; return; }
  const body=JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,changes});
  if (new TextEncoder().encode(body).length > 20000) { document.getElementById('grid-status').textContent='Changes exceed 20 KB; save fewer cells at a time.'; return; }
- const button=document.getElementById('grid-save'); button.disabled=true; document.getElementById('grid-format').disabled=true; inputs.forEach(input=>input.readOnly=true);
+ gridBusy=true; const button=document.getElementById('grid-save'); button.disabled=true; document.getElementById('grid-format').disabled=true; inputs.forEach(input=>input.readOnly=true);
  try {
   const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
+  inputs.forEach(input=>input.dataset.baseline=input.value);
   invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-format').disabled=false; }
- }
+ } finally { gridBusy=false; }
 });
 document.getElementById('grid-format').addEventListener('click', async () => {
+ if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
  const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output input')];
  if (inputs.some(input=>input.value!==input.dataset.baseline)) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before formatting.'; return; }
@@ -203,7 +217,7 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  if (document.getElementById('grid-fill-enabled').checked) properties.fill=document.getElementById('grid-fill').value.slice(1);
  if (numberformat) properties.numberformat=numberformat;
  if (!Object.keys(properties).length) { document.getElementById('grid-status').textContent='Choose a formatting change.'; return; }
- const button=document.getElementById('grid-format'); button.disabled=true; document.getElementById('grid-save').disabled=true; inputs.forEach(input=>input.readOnly=true);
+ gridBusy=true; const button=document.getElementById('grid-format'); button.disabled=true; document.getElementById('grid-save').disabled=true; inputs.forEach(input=>input.readOnly=true);
  try {
   const response=await fetch('grid-format', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,style_range:document.getElementById('grid-style-range').value,properties})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Formatting failed');
@@ -211,18 +225,20 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-save').disabled=false; }
- }
+ } finally { gridBusy=false; }
 });
 function invalidateEdit(message) {
  loaded=null; document.getElementById('edit-save').disabled=true;
- document.getElementById('edit-mode').disabled=true; document.getElementById('edit-value').disabled=true;
+ document.getElementById('edit-mode').disabled=true; document.getElementById('edit-value').readOnly=true;
  if (message) document.getElementById('edit-status').textContent=message;
 }
 document.getElementById('edit-path').addEventListener('input', () => invalidateEdit('Load the element before saving.'));
-document.getElementById('edit-load').addEventListener('click', async () => {
- const button=document.getElementById('edit-load'); button.disabled=true; invalidateEdit('Loading…');
+async function loadElement(path) {
+ if (editBusy) return;
+ if (elementDirty() && !window.confirm('Discard unsaved element edits and load another element?')) return;
+ const button=document.getElementById('edit-load'); button.disabled=true; editBusy=true;
+ document.getElementById('edit-path').value=path; invalidateEdit('Loading…');
  try {
-  const path=document.getElementById('edit-path').value;
   const response=await fetch('element', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:current,path})});
   const target=await response.json(); if (!response.ok) throw new Error(target.error || 'Could not load element');
   if (target.revision !== current || pinned !== null || document.getElementById('edit-path').value !== path) throw new Error('Version or path changed; load the element again.');
@@ -230,20 +246,29 @@ document.getElementById('edit-load').addEventListener('click', async () => {
   const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula'] : ['text'];
   mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind;return option;}));
   mode.value=target.mode; mode.disabled=false;
-  const value=document.getElementById('edit-value'); value.disabled=false; value.value=target.value;
+  const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=false; value.value=target.value;
+  editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=false;
   document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
- finally { button.disabled = pinned !== null; }
-});
+ finally { editBusy=false; button.disabled = pinned !== null; }
+}
+document.getElementById('edit-load').addEventListener('click', () => loadElement(document.getElementById('edit-path').value));
 document.getElementById('edit-form').addEventListener('submit', async event => {
- event.preventDefault(); if (!loaded || pinned !== null || loaded.revision !== current) { invalidateEdit('Version changed; load the element again.'); return; }
- const button=document.getElementById('edit-save'); button.disabled=true;
+ event.preventDefault(); if (editBusy) return;
+ if (!loaded || pinned !== null || loaded.revision !== current) { invalidateEdit('Version changed; load the element again.'); return; }
+ const target=loaded, button=document.getElementById('edit-save'), path=document.getElementById('edit-path');
+ const mode=document.getElementById('edit-mode'), value=document.getElementById('edit-value'), snapshot={value:value.value,mode:mode.value};
+ editBusy=true; button.disabled=true; document.getElementById('edit-load').disabled=true; path.disabled=true; mode.disabled=true; value.readOnly=true;
  try {
-  const response=await fetch('edit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:loaded.revision,path:loaded.path,mode:document.getElementById('edit-mode').value,value:document.getElementById('edit-value').value})});
+  const response=await fetch('edit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,mode:snapshot.mode,value:snapshot.value})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Edit failed');
-  invalidateEdit(`Saved as revision ${result.revision}.`); await refresh();
- } catch (error) { document.getElementById('edit-status').textContent=`Edit error: ${error.message}`; button.disabled=false; }
+  editBaseline=snapshot; invalidateEdit(`Saved as revision ${result.revision}.`); await refresh();
+ } catch (error) {
+  document.getElementById('edit-status').textContent=`Edit error: ${error.message}`;
+  if (loaded === target && current === target.revision && pinned === null) { value.readOnly=false; mode.disabled=false; button.disabled=false; }
+ }
+ finally { editBusy=false; path.disabled=pinned !== null; document.getElementById('edit-load').disabled=pinned !== null; }
 });
 document.getElementById('restore-form').addEventListener('submit', async event => {
  event.preventDefault(); const button = event.currentTarget.querySelector('button'); button.disabled = true;
