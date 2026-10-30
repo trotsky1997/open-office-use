@@ -124,7 +124,7 @@ def session_format_grid(directory: str, base_revision: int, sheet: str, cell_ran
 
 @server.tool()
 def session_edit_target(directory: str, base_revision: int, path: str) -> dict[str, Any]:
-    """Read one editable element in the latest revision before editing it."""
+    """Read one element in the latest revision, including replacement eligibility."""
     return session.edit_target(directory, base_revision, path)
 
 

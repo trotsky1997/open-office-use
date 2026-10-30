@@ -50,6 +50,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <fieldset id="word-replace-panel" hidden><legend>Replace text while retaining run formatting</legend>
 <label>Find text <input id="word-find" maxlength="4000"></label>
 <label>Replace with <input id="word-replacement" maxlength="4000"></label>
+<label id="replace-paragraph-label" hidden>Paragraph number <input id="replace-paragraph" inputmode="numeric" maxlength="6" placeholder="Auto"></label>
 <button type="button" id="word-replace">Replace once</button>
 <p>Requires one exact match in a simple Word or PowerPoint paragraph. Replacement takes the first matched run's formatting. Word matches must stay within link or annotation boundaries; fields and complex content require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
@@ -292,11 +293,13 @@ async function loadElement(path) {
   loaded=target; document.getElementById('edit-path').value=target.path;
   const mode=document.getElementById('edit-mode'); const kinds=target.format==='xlsx' ? ['value','formula'] : ['text'];
   mode.replaceChildren(...kinds.map(kind=>{const option=document.createElement('option');option.value=kind;option.textContent=kind;return option;}));
-  mode.value=target.mode; mode.disabled=false;
-  const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=false; value.value=target.value;
+  const tableCell=target.format==='pptx' && target.type==='tc';
+  mode.value=target.mode; mode.disabled=tableCell;
+  const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=tableCell; value.value=target.value;
   editBaseline={value:value.value,mode:mode.value};
-  document.getElementById('edit-save').disabled=false;
+  document.getElementById('edit-save').disabled=tableCell;
   document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
+  document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
   document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
  finally { editBusy=false; button.disabled = pinned !== null; }
@@ -324,14 +327,17 @@ document.getElementById('word-replace').addEventListener('click', async () => {
  if (elementDirty()) { document.getElementById('edit-status').textContent='Save or copy pending element edits before replacing text.'; return; }
  const target=loaded, path=document.getElementById('edit-path'), mode=document.getElementById('edit-mode'), value=document.getElementById('edit-value');
  const find=document.getElementById('word-find'), replacement=document.getElementById('word-replacement'), button=document.getElementById('word-replace');
+ const paragraph=document.getElementById('replace-paragraph'), number=paragraph.value;
+ if (number && !/^[1-9][0-9]{0,5}$/.test(number)) { document.getElementById('edit-status').textContent='Paragraph number must be a positive integer.'; return; }
+ const replacementPath=number && !paragraph.parentElement.hidden ? `${target.path}/paragraph[${number}]` : target.path;
  editBusy=true; button.disabled=true; find.disabled=true; replacement.disabled=true; document.getElementById('edit-save').disabled=true; document.getElementById('edit-load').disabled=true; path.disabled=true; mode.disabled=true; value.readOnly=true;
  try {
-  const response=await fetch('replace-text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,find:find.value,replacement:replacement.value})});
+  const response=await fetch('replace-text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:replacementPath,find:find.value,replacement:replacement.value})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Replacement failed');
   invalidateEdit(`Replacement saved as revision ${result.revision}. Reload the element to see its updated content.`); await refresh();
  } catch(error) {
   document.getElementById('edit-status').textContent=`Replacement error: ${error.message}`;
-  if (loaded===target && current===target.revision && pinned===null) { value.readOnly=false; mode.disabled=false; document.getElementById('edit-save').disabled=false; }
+  if (loaded===target && current===target.revision && pinned===null) { const tableCell=target.format==='pptx' && target.type==='tc'; value.readOnly=tableCell; mode.disabled=tableCell; document.getElementById('edit-save').disabled=tableCell; }
  } finally { editBusy=false; button.disabled=false; find.disabled=false; replacement.disabled=false; path.disabled=pinned!==null; document.getElementById('edit-load').disabled=pinned!==null; }
 });
 document.getElementById('restore-form').addEventListener('submit', async event => {

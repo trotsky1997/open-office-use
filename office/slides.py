@@ -13,8 +13,8 @@ R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
 MC = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
 INDEX = r'[1-9][0-9]{0,5}'
 SELECTOR = r'(?:' + INDEX + r'|@id=' + INDEX + r')'
-PATH = re.compile(r'/slide\[(' + INDEX + r')\](?:/group\[' + SELECTOR + r'\]){0,8}/shape\[' + SELECTOR + r'\](?:/paragraph\[(' + INDEX + r')\])?\Z')
-SEGMENT = re.compile(r'/(group|shape)\[([^]]+)\]')
+PATH = re.compile(r'/slide\[(' + INDEX + r')\](?:/group\[' + SELECTOR + r'\]){0,8}(?:/shape\[' + SELECTOR + r'\]|/table\[' + SELECTOR + r'\]/tr\[' + INDEX + r'\]/tc\[' + INDEX + r'\])(?:/paragraph\[(' + INDEX + r')\])?\Z')
+SEGMENT = re.compile(r'/(group|shape|table|tr|tc)\[([^]]+)\]')
 
 
 def paragraph_path(path):
@@ -41,7 +41,7 @@ def slide_part(file, index):
 def replace_text(source, output, path, find, replacement):
     match = PATH.fullmatch(path) if paragraph_path(path) else None
     if not match:
-        raise ValueError('Target must be a slide shape or paragraph path')
+        raise ValueError('Target must be a slide shape or table-cell paragraph path')
     if Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx':
         raise ValueError('Text replacement requires PPTX input and output')
     slide_index = int(match.group(1)) - 1
@@ -55,29 +55,45 @@ def replace_text(source, output, path, find, replacement):
             raise ValueError('Slide has no shape tree')
         for kind, selector in SEGMENT.findall(path):
             if parent.find(MC + 'AlternateContent') is not None:
-                raise ValueError('Shape container contains unsupported alternate content')
-            tag = 'grpSp' if kind == 'group' else 'sp'
-            children = parent.findall(P + tag)
-            if selector.startswith('@id='):
-                requested = selector.partition('=')[2]
-                nonvisual = 'nvGrpSpPr' if kind == 'group' else 'nvSpPr'
-                children = [child for child in children if child.find(P + nonvisual + '/' + P + 'cNvPr') is not None
-                            and child.find(P + nonvisual + '/' + P + 'cNvPr').get('id') == requested]
-                if len(children) != 1:
-                    raise ValueError('Shape ID must identify exactly one shape in its container')
-                parent = children[0]
+                raise ValueError('Target container contains unsupported alternate content')
+            if kind in ('group', 'shape', 'table'):
+                tag = {'group': 'grpSp', 'shape': 'sp', 'table': 'graphicFrame'}[kind]
+                children = parent.findall(P + tag)
+                if kind == 'table':
+                    children = [child for child in children if child.find(A + 'graphic/' + A + 'graphicData/' + A + 'tbl') is not None]
+                if selector.startswith('@id='):
+                    requested = selector.partition('=')[2]
+                    nonvisual = {'group': 'nvGrpSpPr', 'shape': 'nvSpPr', 'table': 'nvGraphicFramePr'}[kind]
+                    children = [child for child in children if child.find(P + nonvisual + '/' + P + 'cNvPr') is not None
+                                and child.find(P + nonvisual + '/' + P + 'cNvPr').get('id') == requested]
+                    if len(children) != 1:
+                        raise ValueError('Shape ID must identify exactly one shape in its container')
+                    parent = children[0]
+                else:
+                    index = int(selector) - 1
+                    if index >= len(children):
+                        raise ValueError('Shape path does not exist')
+                    parent = children[index]
+                if kind == 'table':
+                    tables = parent.findall(A + 'graphic/' + A + 'graphicData/' + A + 'tbl')
+                    if len(tables) != 1:
+                        raise ValueError('Table frame must contain exactly one table')
+                    parent = tables[0]
             else:
+                children = parent.findall(A + kind)
                 index = int(selector) - 1
                 if index >= len(children):
-                    raise ValueError('Shape path does not exist')
+                    raise ValueError('Table cell path does not exist')
                 parent = children[index]
-        text_body = parent.find(P + 'txBody')
+                if kind == 'tc' and any(parent.get(key) not in (None, '0', 'false') for key in ('hMerge', 'vMerge')):
+                    raise ValueError('Merged-cell placeholders cannot be edited; use the merged cell origin')
+        text_body = parent.find(A + 'txBody') if parent.tag == A + 'tc' else parent.find(P + 'txBody')
         if text_body is None:
-            raise ValueError('Shape has no editable text body')
+            raise ValueError('Target has no editable text body')
         paragraphs = text_body.findall(A + 'p')
         if paragraph_index is None:
             if len(paragraphs) != 1:
-                raise ValueError('Choose a paragraph in a shape with multiple paragraphs')
+                raise ValueError('Choose a paragraph in a target with multiple paragraphs')
             paragraph_index_value = 0
         else:
             paragraph_index_value = paragraph_index

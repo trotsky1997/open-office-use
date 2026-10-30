@@ -182,7 +182,7 @@ def edit_target(directory, base_revision, path):
         raise ValueError('The path must identify exactly one editable element')
     item = result['results'][0]
     supported = {'docx': {'paragraph', 'run'}, 'xlsx': {'cell'},
-                 'pptx': {'title', 'shape', 'textbox', 'placeholder', 'paragraph', 'run'}}
+                 'pptx': {'title', 'shape', 'textbox', 'placeholder', 'paragraph', 'run', 'tc'}}
     if not isinstance(item, dict) or item.get('type') not in supported[state['format']] or not isinstance(item.get('path'), str):
         raise ValueError('Element type is not supported by this editor')
     format_data = item.get('format')
@@ -205,13 +205,15 @@ def edit_target(directory, base_revision, path):
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'path': item['path'], 'type': item['type'],
             'format': state['format'], 'mode': mode, 'value': value,
-            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder'} and slides.paragraph_path(item['path']))}
+            'replace_text_path_supported': (state['format'] == 'docx' and item['type'] == 'paragraph' and word.paragraph_path(item['path'])) or (state['format'] == 'pptx' and item['type'] in {'paragraph', 'title', 'shape', 'textbox', 'placeholder', 'tc'} and slides.paragraph_path(item['path']))}
 
 
 def edit(directory, base_revision, path, mode, value):
     if not isinstance(value, str) or len(value) > 4000:
         raise ValueError('Value must be text of at most 4,000 characters')
     target = edit_target(directory, base_revision, path)
+    if target['format'] == 'pptx' and target['type'] == 'tc':
+        raise ValueError('Use text replacement to edit PowerPoint table cells')
     allowed = {'xlsx': {'value', 'formula'}, 'docx': {'text'}, 'pptx': {'text'}}
     if mode not in allowed[target['format']]:
         raise ValueError('Edit mode is not supported for this format')
