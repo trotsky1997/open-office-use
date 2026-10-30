@@ -1,158 +1,53 @@
-# Open Browser Use
+# Open Office Use
 
-[![English](https://img.shields.io/badge/English-Click-yellow)](./README.md)
-[![简体中文](https://img.shields.io/badge/简体中文-点击查看-orange)](./README.zh-CN.md)
-[![Release](https://img.shields.io/github/v/release/iFurySt/open-browser-use)](https://github.com/iFurySt/open-browser-use/releases)
-[![npm SDK](https://img.shields.io/npm/v/open-browser-use-sdk?label=npm%20SDK)](https://www.npmjs.com/package/open-browser-use-sdk)
-[![PyPI SDK](https://img.shields.io/pypi/v/open-browser-use-sdk?label=PyPI%20SDK)](https://pypi.org/project/open-browser-use-sdk/)
-[![Go SDK](https://pkg.go.dev/badge/github.com/ifuryst/open-browser-use/packages/open-browser-use-go.svg)](https://pkg.go.dev/github.com/ifuryst/open-browser-use/packages/open-browser-use-go)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/iFurySt/open-browser-use)
+[English](README.md) · [简体中文](README.zh-CN.md)
 
----
+A local Office authoring harness for agents and people. Create, inspect, edit and review DOCX, XLSX and PPTX files through a CLI, a local MCP server and a revision-aware browser viewer. This is an early project; supported operations and fidelity limits are documented in the [Office guide](office/README.md).
 
-> [!TIP]
-> Interested in Computer Use? Check out [open-computer-use](https://github.com/iFurySt/open-codex-computer-use).
+- **Agent interface:** MCP tools for structured inspection, targeted edits, spreadsheet grids, search, rendering and visual review. An [agent skill](skills/open-office-use/SKILL.md) provides format-specific guidance.
+- **Versioned drafts:** work from a saved file or a blank document, create revisions, compare and restore them, and export to a new file.
+- **Visual review:** render to PDF and page images; the local viewer offers revision previews, selections and selected editing controls.
+- **Structured operations:** use the installed [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) for richer document operations and schema discovery.
 
-`open-browser-use` is a browser automation layer that stays neutral across
-agent runtimes. It is also an open-source alternative to the Chrome Browser Use
-capability recently shipped in Codex.app. For the story behind it, see the
-[Browser Use Deep Dive](https://www.ifuryst.com/en/blog/2026/open-browser-use/).
+## Quick start
 
-Under the hood, it pairs a browser extension with the `open-browser-use` CLI.
-You can integrate it through the JavaScript SDK, Python SDK, Go SDK, or the CLI.
+Python 3.10+ is required. From a clone of this repository:
 
-For an embedded Electron browser, the workspace now includes
-[`open-browser-use-electron`](packages/open-browser-use-electron/README.md):
-multi-tab task scopes, named profiles, private tool channels and authenticated
-local sockets. Run `pnpm install && pnpm example:iab` to try the
-[reference app](examples/electron-iab/README.md), or `pnpm smoke:iab` for real
-Electron integration checks. This source feature is not yet published to npm.
-
-https://github.com/user-attachments/assets/bcfba878-f6a8-44b9-b84b-29c7e0285687
-
-## Quick Start
-
-```bash
-npm i -g open-browser-use
-open-browser-use setup
+```sh
+python3 -m pip install './office[mcp]'
+office-use doctor
 ```
 
-### Install the CLI
+Create and inspect a small Word document:
 
-```bash
-# npm (macOS, Linux, Windows)
-npm i -g open-browser-use
-
-# Homebrew (macOS, Linux)
-brew tap iFurySt/open-browser-use && brew install open-browser-use
-
-# Upgrade
-npm update -g open-browser-use
+```sh
+printf '%s\n' '{"paragraphs":["Hello, Office!"]}' > hello.json
+office-use author --spec hello.json --out hello.docx
+office-use inspect hello.docx
 ```
 
-### Set Up Chrome
+Output paths must be new. The `doctor` report identifies optional system dependencies: OfficeCLI for structured operations, LibreOffice for PDF rendering, and Poppler for page images and selected-text extraction. Install those separately for the workflows you need. See [installation and usage](office/README.md) for commands and format-specific limits.
 
-Register the native host for the extension. The setup command also opens the
-Chrome Web Store page so you can install or enable the matching Chrome
-extension, then restart Chrome if needed.
+## Agent setup
 
-```bash
-open-browser-use setup
+Install the skill separately:
+
+```sh
+npx skills add trotsky1997/open-office-use -g -a codex --skill open-office-use -y
 ```
 
-If the Chrome Web Store item is temporarily unavailable, use
-`open-browser-use setup beta` to prepare a keyed release ZIP for manual
-installation from `chrome://extensions/`.
-
-To use an extension ZIP that is already available locally, pass its path
-directly to setup. This skips the GitHub Release download while keeping the
-same keyed manual-install flow:
-
-```bash
-open-browser-use setup --zip /absolute/path/to/open-browser-use-chrome-extension.zip
-```
-
-### Use It
-
-#### SDK
-
-```bash
-# JavaScript / TypeScript
-npm install open-browser-use-sdk
-
-# Python
-pip install open-browser-use-sdk
-
-# Go
-go get github.com/ifuryst/open-browser-use/packages/open-browser-use-go
-```
-
-The SDK package name is `open-browser-use-sdk` on both npm and PyPI. Python
-code imports it as `open_browser_use`; Go code imports the SDK package as
-`obu`.
-
-#### Skill
-
-For Office files, see the [Open Office Use guide](./office/README.md) and its
-[agent skill](./skills/open-office-use). Install the Office CLI and MCP extra
-separately as described in the guide.
-
-Install the skill directly:
-
-```bash
-# Install for Codex
-npx skills add iFurySt/open-browser-use -g -a codex --skill open-browser-use -y
-npx skills ls -g -a codex | rg 'open-browser-use'
-codex exec --skip-git-repo-check "Use open-browser-use to check today’s Hacker News and summarize the most worth-reading posts."
-
-# Install for Claude Code
-npx skills add iFurySt/open-browser-use -g -a claude-code --skill open-browser-use -y
-```
-
-Update an existing global install, including the Codex install created above:
-
-```bash
-npx skills update open-browser-use -g -y
-
-# `upgrade` is an alias for `update`
-npx skills upgrade open-browser-use -g -y
-```
-
-You can also manually download and install the
-[`open-browser-use` skill](./skills/open-browser-use), then start using it from
-your agent.
-
-Downloadable `.skill` and `.zip` packages are available in
-[GitHub Releases](https://github.com/iFurySt/open-browser-use/releases).
-
-#### MCP
-
-Install the MCP server into all supported global agent configs:
-
-```bash
-npx add-mcp "obu mcp" --name open_browser_use --all -g -y
-npx add-mcp list -g
-```
-
-You can also configure an agent runtime with local MCP stdio support manually:
+For a local stdio MCP client, such as Codex:
 
 ```toml
-[mcp_servers.open_browser_use]
-command = "obu"
+[mcp_servers.open_office_use]
+command = "office-use"
 args = ["mcp"]
 ```
 
-The server exposes browser tools for tab listing, opening, claiming,
-navigation, CDP, action plans, and cleanup.
+The server accesses local files with its process permissions. Configure it in a trusted environment. The [Office guide](office/README.md#mcp-for-agents) lists the tools and explains revision, rendering and fidelity constraints.
 
-For an embedded Electron browser, use the host-authorized **`obu iab mcp`**
-route instead. See the [Electron IAB MCP integration](packages/open-browser-use-electron/README.md#iab-mcp-for-agents)
-for private/socket authorization, tools and managed stdio setup.
+## Project history
 
-## License
+Forked from [iFurySt/open-browser-use](https://github.com/iFurySt/open-browser-use). The inherited browser tooling is still in this checkout; see its [English](BROWSER.md) and [Chinese](BROWSER.zh-CN.md) documentation. Office work also draws on [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) and [GenOffice](https://github.com/genspark-ai/genoffice).
 
-[MIT](./LICENSE)
-
-## Open Office Use fork
-
-This checkout also contains the early [Open Office Use file harness](office/README.md), with local DOCX, XLSX and PPTX authoring, inspection and PDF rendering. Browser tools remain available as inherited upstream functionality.
+[MIT license](LICENSE)

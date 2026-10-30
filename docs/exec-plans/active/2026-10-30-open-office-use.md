@@ -118,3 +118,7 @@ Ordinary footnote and endnote paragraphs can be searched with snapshot-bound pag
 Grid reads report bounded standard data-validation rules intersecting the loaded cells, with explicit coverage issues for malformed metadata, unsupported extensions and output limits. Grid edits preserve rules and report affected cells without evaluating values. Compatible spreadsheet applications remain necessary to evaluate formula-based and custom rules.
 
 The viewer offers fixed literal list suggestions for unambiguous supported validation rules, preserving values such as `001` and `=text` as text. Absolute one-dimensional references containing verified plain text can also be resolved from the loaded revision, within bounded source limits; simple scoped names resolving to those ranges are supported, while dynamic names, relative references and computed or non-text values remain unresolved.
+
+## Office-first project entry point
+
+Replaced the inherited browser-first root README with English and Chinese Office setup, a runnable authoring example, MCP and skill configuration, and clear links to preserved upstream browser documentation. The project remains early and its full capability and fidelity limits are documented in the Office guide.

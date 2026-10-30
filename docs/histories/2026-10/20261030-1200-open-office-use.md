@@ -167,3 +167,7 @@ Resolved bounded absolute one-dimensional list references containing verified pl
 ### Named validation lists
 
 Added workbook- and sheet-scoped defined names that resolve directly to supported absolute text ranges, with case-insensitive matching, sheet-scope precedence, duplicate-name detection and explicit scope reporting. Checked real workbooks including colliding names and dynamic expressions, plus grid, control and paste regression smoke tests. Dynamic expressions, multi-range names and relative references remain unresolved.
+
+### Office-first repository entry
+
+Made the repository landing pages describe the Office harness, installation, authoring, MCP and skill setup. Preserved upstream browser instructions in separate root documents and retained attribution. Validated the author/inspect quick start and isolated package installation and MCP handshake.
