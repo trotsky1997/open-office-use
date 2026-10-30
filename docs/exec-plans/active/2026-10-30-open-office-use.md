@@ -24,3 +24,7 @@ The optional stdio MCP server exposes structured reads, isolated batch edits, PD
 ## Formula workflow
 
 Added bounded cell reads with formula text, cached values and errors, plus explicit LibreOffice recalculation to a protected copy. Verified basic arithmetic, error results and empty ranges through CLI, and calculation through MCP. Advanced formula compatibility, external links and workbook fidelity remain unverified.
+
+## Review
+
+Added saved-file text diffs and OOXML part-change summaries through CLI and MCP. Tested text changes in three formats, identical files and a formatting-only DOCX edit. Text views are bounded and may omit formulas or styling; per-element review, rich diffs, live sessions and visual comparison remain open.

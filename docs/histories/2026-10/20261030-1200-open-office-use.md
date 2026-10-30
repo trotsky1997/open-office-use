@@ -9,3 +9,5 @@ Added optional OfficeCLI structured reads and isolated batch authoring, with exc
 Added optional MCP stdio access to the office workbench with image delivery for page inspection. Verified discovery, authoring, structured reads, visual output and error propagation with the official MCP client.
 
 Added bounded spreadsheet formula/cache inspection and explicit LibreOffice recalculation through CLI and MCP. Verified basic formulas, errors, empty ranges and source protection with a real local calculation engine.
+
+Added bounded saved-file comparison through CLI and MCP, reporting textual excerpts and changed OOXML parts. Verified three formats and formatting-only change detection.

@@ -304,3 +304,5 @@ The optional OfficeCLI integration exposes structured outline/get/query and batc
 `office-use mcp` exposes the same local operations over MCP stdio with the optional Python MCP SDK. The MCP server runs with its caller’s filesystem access and returns page PNG images for visual inspection.
 
 The spreadsheet module provides bounded formula/cache inspection and explicit LibreOffice recalculation into a new XLSX. Cached values carry no freshness guarantee. The source remains unchanged; LibreOffice conversion can alter unsupported features.
+
+`compare` and MCP `compare_files` take disk snapshots, compare OOXML part hashes and provide bounded OfficeCLI text-view diffs. The text view is not a complete semantic comparison.

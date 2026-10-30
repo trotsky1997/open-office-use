@@ -17,13 +17,18 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files'}
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
                 assert not created.isError and output.exists(), created
                 readback = await session.call_tool('structured_read', {'file': str(output), 'mode': 'get', 'target': '/body/p[1]'})
                 assert not readback.isError and 'MCP works' in str(readback), readback
+                revised = root / 'revised.docx'
+                edit = await session.call_tool('apply_batch', {'source': str(output), 'output': str(revised), 'operations': [{'command': 'set', 'path': '/body/p[1]', 'props': {'text': 'Revised'}}]})
+                assert not edit.isError, edit
+                compared = await session.call_tool('compare_files', {'before': str(output), 'after': str(revised)})
+                assert not compared.isError and 'Revised' in str(compared.structuredContent['text_diff']), compared
                 invalid = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
                 assert invalid.isError and 'already exists' in str(invalid), invalid
                 images = await session.call_tool('preview_pages', {'file': str(output), 'output_dir': str(root / 'pages')})

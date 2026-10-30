@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 import officecli_backend
 import spreadsheet
+import review
 from open_office_use import inspect, preview, render
 
 server = FastMCP(
@@ -34,6 +35,12 @@ def structured_read(file: str, mode: Literal['outline', 'get', 'query'], target:
 def apply_batch(output: str, operations: list[dict[str, Any]], source: str | None = None) -> dict[str, Any]:
     """Apply OfficeCLI operations to a new file or a saved source copy. Existing output is protected."""
     return officecli_backend.batch(operations, output, source)
+
+
+@server.tool()
+def compare_files(before: str, after: str) -> dict[str, Any]:
+    """Compare saved Office files: changed package parts and a bounded text-view diff."""
+    return review.compare(before, after)
 
 
 @server.tool()
