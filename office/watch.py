@@ -178,6 +178,13 @@ async function textSearch(next) {
      if (loaded && loaded!==old && loaded.revision===revision && current===revision && pinned===null && item.occurrences===1 && !document.getElementById('word-replace-panel').hidden) document.getElementById('word-find').value=query;
     });
     row.append(document.createTextNode(' '),use);
+   } else if (result.format==='xlsx' && typeof item.sheet==='string' && /^[A-Z]{1,3}[1-9][0-9]{0,6}$/.test(item.cell || '')) {
+    const use=document.createElement('button'); use.type='button'; use.textContent='Open cell in grid'; use.disabled=pinned!==null || current!==revision;
+    use.addEventListener('click', async () => {
+     if (displayed!==revision || current!==revision || pinned!==null || !textSearchState || textSearchState.revision!==revision || textSearchState.query!==query) return;
+     document.getElementById('grid-panel').open=true; await loadGrid({sheet:item.sheet,cell:item.cell,revision});
+    });
+    row.append(document.createTextNode(' '),use);
    }
    results.appendChild(row);
   }
@@ -286,7 +293,9 @@ function invalidateGrid(message) {
 }
 for (const id of ['grid-sheet','grid-range']) document.getElementById(id).addEventListener('change', () => invalidateGrid('Reload the range before saving.'));
 document.getElementById('grid-sheets').addEventListener('click', async () => {
- if (gridBusy) return; gridBusy=true;
+ if (gridBusy) return;
+ if (gridDirty() && !window.confirm('List sheets and make the unsaved grid read-only? You can still copy its values.')) return;
+ gridBusy=true;
  const button=document.getElementById('grid-sheets'); button.disabled=true; invalidateGrid('Loading sheets…'); const revision=current;
  try {
   const response=await fetch('sheets', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision})});
@@ -297,9 +306,14 @@ document.getElementById('grid-sheets').addEventListener('click', async () => {
  } catch(error) { document.getElementById('grid-status').textContent=`Sheet error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
 });
-document.getElementById('grid-load').addEventListener('click', async () => {
- if (gridBusy) return;
+async function loadGrid(target=null) {
+ if (gridBusy || pinned!==null || target && (target.revision!==current || displayed!==current)) return;
  if (gridDirty() && !window.confirm('Discard unsaved cell edits and load another range?')) return;
+ if (target) {
+  const select=document.getElementById('grid-sheet');
+  if (![...select.options].some(option=>option.value===target.sheet)) { const option=document.createElement('option'); option.value=target.sheet; option.textContent=target.sheet; select.appendChild(option); }
+  select.value=target.sheet; document.getElementById('grid-range').value=target.cell;
+ }
  gridBusy=true; const button=document.getElementById('grid-load'); button.disabled=true; invalidateGrid('Loading range…');
  const revision=current, sheet=document.getElementById('grid-sheet').value, cell_range=document.getElementById('grid-range').value;
  try {
@@ -335,7 +349,8 @@ document.getElementById('grid-load').addEventListener('click', async () => {
   document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=data.sheet_protected; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.${data.sheet_protected ? ' Worksheet protection is enabled; locked cells and grid formatting are read-only.' : ''}`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
-});
+}
+document.getElementById('grid-load').addEventListener('click', () => loadGrid());
 function parseGridPaste(text) {
  const rows=[], row=[]; let field='', quoted=false, closed=false, atEnd=false;
  for (let i=0; i<text.length; i++) {
