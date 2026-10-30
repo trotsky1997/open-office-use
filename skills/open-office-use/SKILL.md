@@ -52,3 +52,5 @@ Use `session_replace_text_batch` for 1–25 ordered, explicit text replacements 
 Grid and XLSX single-cell editing can create supported dynamic-array formulas when XLDAPR metadata and candidate tokens validate. Their spill range and cached results require review in a compatible calculation application; local LibreOffice testing did not populate a SEQUENCE spill. Existing array anchors and saved ranges are read-only.
 
 Before LibreOffice recalculation, check `dynamic_array_metadata` and `dynamic_array_metadata_issue` in the formula scan. Recalculation rejects detected or uninspectable metadata by default; `allow_dynamic_arrays: true` explicitly permits conversion with potentially incomplete spill results.
+
+Check the XLSX `render_advisory` returned by structured rendering commands. LibreOffice previews may omit dynamic-array spills. Image-only MCP responses have no structured advisory; scan the exact workbook separately.

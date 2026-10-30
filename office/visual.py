@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+import spreadsheet
 
 
 def pdf_page_count(pdf):
@@ -66,7 +67,7 @@ def page_image(source, page, render, box=None):
         data = output.getvalue()
         if len(data) > 10 * 1024 * 1024:
             raise ValueError('Rendered page exceeds 10 MiB')
-        return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box, 'raster_scale': scale}
+        return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box, 'raster_scale': scale, 'render_advisory': spreadsheet.render_advisory(source)}
 
 
 def compare_pages(before, after, before_page, after_page, render):
@@ -106,7 +107,7 @@ def compare_pages(before, after, before_page, after_page, render):
     return data, {'before_page': before_page, 'after_page': after_page,
                   'before_total_pages': before_info['total_pages'], 'after_total_pages': after_info['total_pages'],
                   'page_size': list(mask.size), 'changed_pixels': changed, 'total_pixels': total,
-                  'changed_fraction': changed / total, 'channel_threshold': 16}
+                  'changed_fraction': changed / total, 'channel_threshold': 16, 'before_render_advisory': before_info['render_advisory'], 'after_render_advisory': after_info['render_advisory']}
 
 
 def contact_sheet(source, start, count, render):
@@ -145,7 +146,7 @@ def contact_sheet(source, start, count, render):
                 draw.rectangle((x_image, y_image, x_image + image.width - 1, y_image + image.height - 1), outline='#9ca3af')
             draw.text((x, y + 266), f'Page {start + index}', fill='#1f2937', font=font)
         output = io.BytesIO(); sheet.save(output, format='PNG')
-        return output.getvalue(), {'start_page': start, 'end_page': end, 'total_pages': total}
+        return output.getvalue(), {'start_page': start, 'end_page': end, 'total_pages': total, 'render_advisory': spreadsheet.render_advisory(source)}
 
 
 def save_png(output, generate):

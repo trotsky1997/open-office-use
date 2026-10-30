@@ -11,6 +11,8 @@ import grid_values
 import officecli_backend
 import session
 import spreadsheet
+import visual
+import open_office_use
 
 X = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
 with tempfile.TemporaryDirectory() as tmp:
@@ -37,6 +39,16 @@ with tempfile.TemporaryDirectory() as tmp:
         assert cells['D1'].find(X+'f').text == '_xlfn.SEQUENCE(3)' and cells['E1'].find(X+'f').text == '_xlfn.LET(_xlpm.x,1,_xlpm.x+1)'
         assert cells['D1'].find(X+'v') is None and cells['E1'].find(X+'v') is None
     assert officecli_backend.audit(result['file'])['validation']['exit_code'] == 0
+    assert spreadsheet.render_advisory(result['file'])['dynamic_array_metadata'] is True
+    assert spreadsheet.render_advisory(source)['dynamic_array_metadata'] is False
+    _, page = visual.page_image(result['file'], 1, open_office_use.render)
+    assert page['render_advisory']['dynamic_array_metadata'] is True
+    _, contact = visual.contact_sheet(result['file'], 1, 1, open_office_use.render)
+    assert contact['render_advisory']['dynamic_array_metadata'] is True
+    _, comparison = visual.compare_pages(result['file'], result['file'], 1, 1, open_office_use.render)
+    assert comparison['before_render_advisory']['dynamic_array_metadata'] and comparison['after_render_advisory']['dynamic_array_metadata']
+    cli_render = subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'render', result['file'], '--out-dir', str(root / 'pdf')], capture_output=True, text=True, check=True)
+    assert json.loads(cli_render.stdout)['render_advisory']['dynamic_array_metadata']
     grid = session.read_grid(draft, 1, 'Sheet', 'D1:E1'); assert all(not item['editable'] and item['read_only_reason'] == 'formula_range' for item in grid['rows'][0])
     added = session.edit_grid(draft, 1, 'Sheet', 'F1', [{'cell':'F1','value':'=XLOOKUP(A1,D1:D3,E1:E3)'}])
     with zipfile.ZipFile(added['file']) as archive:
@@ -68,6 +80,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 metadata = next(item for item in tree if item.get('ContentType') == grid_values.META_TYPE)
                 etree.SubElement(tree, ct_ns + 'Override', PartName=metadata.get('PartName'), ContentType=grid_values.META_TYPE); data = etree.tostring(tree)
             after.writestr(entry, data)
+    assert spreadsheet.render_advisory(ambiguous)['dynamic_array_metadata'] is None
     scan = spreadsheet.scan_formulas(ambiguous); assert scan['dynamic_array_metadata'] is None and scan['dynamic_array_metadata_issue']
     try: spreadsheet.recalculate(ambiguous, root / 'ambiguous-out.xlsx')
     except ValueError as error: assert 'Cannot inspect dynamic-array metadata' in str(error)

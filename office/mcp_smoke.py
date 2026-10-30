@@ -377,6 +377,8 @@ async def main():
                 assert not dynamic.isError and dynamic.structuredContent['recalculation_requested'] and dynamic.structuredContent['dynamic_formula_cells'] == ['C1'], dynamic
                 dynamic_read = await session.call_tool('session_read_grid', {'directory': str(dynamic_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'C1'})
                 assert not dynamic_read.isError and not dynamic_read.structuredContent['rows'][0][0]['editable'], dynamic_read
+                dynamic_pdf = await session.call_tool('render_pdf', {'file': str(dynamic_draft / 'revision-000001.xlsx'), 'output_dir': str(root / 'dynamic-pdf')})
+                assert not dynamic_pdf.isError and dynamic_pdf.structuredContent['render_advisory']['dynamic_array_metadata'] is True, dynamic_pdf
                 dynamic_scan = await session.call_tool('session_scan_formulas', {'directory': str(dynamic_draft), 'base_revision': 1})
                 assert not dynamic_scan.isError and dynamic_scan.structuredContent['dynamic_array_metadata'] is True, dynamic_scan
                 denied_calc = await session.call_tool('session_recalculate', {'directory': str(dynamic_draft), 'base_revision': 1})

@@ -387,9 +387,9 @@ def main():
                 spec = json.load(f)
             result = {'output': author(spec, args.out, args.source)}
         elif args.command == 'render':
-            result = {'pdf': render(args.file, args.out_dir)}
+            result = {'pdf': render(args.file, args.out_dir), 'render_advisory': spreadsheet.render_advisory(args.file)}
         elif args.command == 'preview':
-            result = {'pages': preview(args.file, args.out_dir)}
+            result = {'pages': preview(args.file, args.out_dir), 'render_advisory': spreadsheet.render_advisory(args.file)}
         elif args.command == 'render-page':
             result = visual.save_png(args.out, lambda: visual.page_image(args.file, args.page, render, args.box))
         elif args.command == 'compare-pages':

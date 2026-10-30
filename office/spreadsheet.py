@@ -535,6 +535,22 @@ def dynamic_array_metadata(archive):
     if root.tag != x + 'metadata': raise ValueError('Invalid sheet metadata')
     return any(item.get('name') == 'XLDAPR' for item in root.iter() if item.tag in (x + 'metadataType', x + 'futureMetadata')) or any(True for _ in root.iter(xda + 'dynamicArrayProperties'))
 
+
+def render_advisory(source):
+    """Report dynamic-array metadata that may affect LibreOffice previews."""
+    source = Path(source)
+    if source.suffix.lower() != '.xlsx': return None
+    try:
+        if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
+        with zipfile.ZipFile(source) as archive:
+            entries = archive.infolist(); names = [entry.filename for entry in entries]
+            if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                raise ValueError('Workbook exceeds package limits or contains duplicate parts')
+            dynamic = dynamic_array_metadata(archive)
+        return {'dynamic_array_metadata': dynamic, 'issue': None}
+    except Exception as exc:
+        return {'dynamic_array_metadata': None, 'issue': f'{type(exc).__name__}: {str(exc)[:300]}'}
+
 def recalculate(source, output, allow_dynamic_arrays=False):
     if not isinstance(allow_dynamic_arrays, bool): raise ValueError('allow_dynamic_arrays must be a boolean')
     source = Path(source).resolve(strict=True)

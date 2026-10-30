@@ -17,6 +17,7 @@ import review
 import visual
 import selection_candidates
 import session
+import spreadsheet
 
 PAGE = '''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -37,7 +38,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 #visual-diff-image{display:block;max-width:100%;height:auto}#visual-diff-image[hidden]{display:none}#compare-sheet{width:min(14rem,70vw)}#compare-range{width:8rem}#cell-comparison-output td{max-width:24rem;overflow-wrap:anywhere}
 #word-find,#word-replacement,#comment-anchor{width:min(24rem,65vw)}#edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
 
-</style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
+</style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p><p id="render-advisory" role="status" hidden></p></header>
 <details><summary>Restore a previous revision</summary><form id="restore-form">
 <label for="restore-revision">Revision</label> <select id="restore-revision" required></select>
 <button type="button" id="preview-revision">Preview selected revision</button><button type="button" id="compare-revision">Compare with latest</button><button type="button" id="show-latest">Show latest</button><button type="submit">Restore as new revision</button><p id="restore-status" role="status"></p></form></details>
@@ -989,7 +990,12 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
   if (notesLoaded===target && current===target.revision && pinned===null && displayed===target.revision) { text.readOnly=false; document.getElementById('notes-save').disabled=false; document.getElementById('notes-replace-text').disabled=false; }
  } finally { notesBusy=false; }
 });
+function showRenderAdvisory(items) {
+ const messages=items.filter(item=>item[1] && item[1].dynamic_array_metadata !== false).map(([label, info])=>`${label}: ${info.dynamic_array_metadata === true ? 'dynamic-array metadata detected' : 'dynamic-array metadata could not be inspected'}. LibreOffice previews may omit spill results; review in a compatible application.`);
+ const output=document.getElementById('render-advisory'); output.hidden=!messages.length; output.textContent=messages.join(' ');
+}
 function display(state, live) {
+ showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory]]);
  clearTrackedFor(state.revision);
  document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=trackedBusy || !live || item.dataset.supported!=='true');
  document.getElementById('tracked-accept').disabled=trackedBusy || !live || trackedRevision!==state.revision; document.getElementById('tracked-reject').disabled=trackedBusy || !live || trackedRevision!==state.revision;
@@ -1024,6 +1030,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory],[`Revision ${state.latest_revision}`,state.latest_render_advisory]]);
  clearChartCacheFor(state.revision);
  document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
  clearWorkbookFor(state.revision);
@@ -1203,12 +1210,12 @@ def serve(directory, preview, port=0, render=None):
         def pages_for(state, revision):
             source = session.revision_file(state, revision)
             if revision not in cache:
-                cache[revision] = preview(source, root / f'rev-{revision}')
+                cache[revision] = {'pages': preview(source, root / f'rev-{revision}'), 'render_advisory': spreadsheet.render_advisory(source)}
                 if len(cache) > 4:
                     old, _ = cache.popitem(last=False)
                     shutil.rmtree(root / f'rev-{old}', ignore_errors=True)
             cache.move_to_end(revision)
-            return cache[revision]
+            return cache[revision]['pages']
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
@@ -1480,10 +1487,11 @@ def serve(directory, preview, port=0, render=None):
                                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                                 self.send(200, Path(pages[index]).read_bytes(), 'image/png'); return
                             data = {'revision': rev, 'pages': len(pages), 'format': state['format'],
-                                    'revisions': [item['revision'] for item in state['revisions']]}
+                                    'revisions': [item['revision'] for item in state['revisions']], 'render_advisory': cache[rev]['render_advisory']}
                             if comparison:
                                 latest = state['latest_revision']
-                                data.update(latest_revision=latest, latest_pages=len(pages_for(state, latest)))
+                                latest_pages = pages_for(state, latest)
+                                data.update(latest_revision=latest, latest_pages=len(latest_pages), latest_render_advisory=cache[latest]['render_advisory'])
                         self.send(200, json.dumps(data).encode(), 'application/json'); return
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                         self.send(500, json.dumps({'error': str(exc)}).encode(), 'application/json'); return

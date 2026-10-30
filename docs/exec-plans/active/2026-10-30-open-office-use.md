@@ -92,3 +92,7 @@ Added bounded PPTX off-slide and overlap-candidate inspection through CLI, MCP a
 ## Atomic text batches
 
 Added explicit ordered formatting-preserving text replacements across Word, PowerPoint and Excel as a single revision via CLI and MCP. Failure leaves no published batch revision; concurrent writers compete for the same revision. Verified the three formats, rollback and concurrent publication.
+
+## Dynamic-array preview advisory
+
+Rendered XLSX previews disclose XLDAPR metadata or incomplete inspection for the displayed revision and comparison sides. Structured render and image-file results return advisories; image-only MCP tools direct callers to the formula scan. Local LibreOffice preview of SEQUENCE showed only the first result.

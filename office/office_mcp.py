@@ -141,7 +141,7 @@ def session_selection_candidates(directory: str) -> dict[str, Any]:
 
 @server.tool()
 def session_selection_image(directory: str) -> Image:
-    """Render and return the selected region of the exact selected revision as PNG."""
+    """Render the selected region of the exact revision. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     selection = session.get_selection(directory)
     state = session.info(directory)
     source = session.revision_file(state, selection['revision'])
@@ -468,27 +468,27 @@ def recalculate_workbook(file: str, output: str, allow_dynamic_arrays: bool = Fa
 
 
 @server.tool()
-def render_pdf(file: str, output_dir: str) -> dict[str, str]:
+def render_pdf(file: str, output_dir: str) -> dict[str, Any]:
     """Render an Office file to a new PDF using LibreOffice."""
-    return {'pdf': render(file, output_dir)}
+    return {'pdf': render(file, output_dir), 'render_advisory': spreadsheet.render_advisory(file)}
 
 
 @server.tool()
-def preview_pages(file: str, output_dir: str) -> dict[str, list[str]]:
+def preview_pages(file: str, output_dir: str) -> dict[str, Any]:
     """Render page PNGs into a new directory using LibreOffice and Poppler."""
-    return {'pages': preview(file, output_dir)}
+    return {'pages': preview(file, output_dir), 'render_advisory': spreadsheet.render_advisory(file)}
 
 
 @server.tool()
 def view_document_page(file: str, page: int, box: list[float] | None = None) -> Image:
-    """View one rendered PDF page, optionally cropped to normalized [left, top, right, bottom]."""
+    """View a rendered page; for XLSX check scan_formulas first because dynamic-array spills can be incomplete in LibreOffice previews."""
     data, _ = visual.page_image(file, page, render, box)
     return Image(data=data, format='png')
 
 
 @server.tool()
 def session_view_page(directory: str, revision: int, page: int, box: list[float] | None = None) -> Image:
-    """View one page of an exact session revision, optionally cropped to normalized page coordinates."""
+    """View a session revision page; for XLSX inspect dynamic-array metadata because LibreOffice previews may omit spill results."""
     state = session.info(directory)
     source = session.revision_file(state, revision)
     data, _ = visual.page_image(source, page, render, box)
@@ -497,14 +497,14 @@ def session_view_page(directory: str, revision: int, page: int, box: list[float]
 
 @server.tool()
 def compare_page_images(before: str, after: str, before_page: int, after_page: int) -> Image:
-    """Compare rendered pages visually; red shows RGB differences of at least 16/255."""
+    """Compare rendered pages visually; red shows RGB differences of at least 16/255. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     data, _ = visual.compare_pages(before, after, before_page, after_page, render)
     return Image(data=data, format='png')
 
 
 @server.tool()
 def session_compare_page_images(directory: str, before_revision: int, after_revision: int, before_page: int, after_page: int) -> Image:
-    """Compare rendered pages from two exact session revisions; red marks visible pixel differences."""
+    """Compare rendered pages from exact session revisions; check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     state = session.info(directory)
     before = session.revision_file(state, before_revision)
     after = session.revision_file(state, after_revision)
@@ -514,14 +514,14 @@ def session_compare_page_images(directory: str, before_revision: int, after_revi
 
 @server.tool()
 def view_contact_sheet(file: str, start_page: int = 1, count: int = 12) -> Image:
-    """Render up to 12 numbered pages as a PNG overview. Page numbers refer to rendered PDF pages."""
+    """Render up to 12 numbered pages as a PNG overview. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     data, _ = visual.contact_sheet(file, start_page, count, render)
     return Image(data=data, format='png')
 
 
 @server.tool()
 def session_contact_sheet(directory: str, revision: int, start_page: int = 1, count: int = 12) -> Image:
-    """Render a numbered overview of an exact session revision, up to 12 PDF pages."""
+    """Render a numbered overview of an exact revision. Check XLSX dynamic-array metadata because LibreOffice may omit spill results."""
     state = session.info(directory)
     source = session.revision_file(state, revision)
     data, _ = visual.contact_sheet(source, start_page, count, render)

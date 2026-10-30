@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory() as tmp:
     for _ in range(8): deck.slides.add_slide(deck.slide_layouts[6])
     source = root / 'slides.pptx'; deck.save(source)
     data, meta = visual.contact_sheet(source, 2, 2, open_office_use.render)
-    assert meta == {'start_page': 2, 'end_page': 3, 'total_pages': 12}, meta
+    assert meta == {'start_page': 2, 'end_page': 3, 'total_pages': 12, 'render_advisory': None}, meta
     sheet = Image.open(io.BytesIO(data)); assert sheet.size == (776, 360)
     assert sheet.getpixel((196, 170))[1] > 200 and sheet.getpixel((576, 170))[2] > 200
     assert visual.contact_sheet(source, 10, 12, open_office_use.render)[1]['end_page'] == 12
