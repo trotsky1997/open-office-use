@@ -109,6 +109,7 @@ type CssTextFilter = {
     hasNotText?: CssMatcher;
     has?: readonly CssStep[];
     hasNot?: readonly CssStep[];
+    and?: readonly CssStep[];
     visible?: boolean;
 };
 type CssStep = {
@@ -470,6 +471,8 @@ export declare class OpenBrowserUseCssLocator {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
     private step;
+    private innerSteps;
+    and(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator;
     filter(options: {
         hasText?: TextMatcher;
         hasNotText?: TextMatcher;

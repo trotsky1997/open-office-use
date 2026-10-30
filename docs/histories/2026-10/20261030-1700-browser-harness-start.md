@@ -259,3 +259,5 @@ CSS filter 增加 has/hasNot，接受同一 browser、tab 和 frame 的 CSS 定�
 CSS filter 增加 visible 条件，组合文本、后代及位置条件，并在隔离 world 内检查元素与 frame 的可见样式和非零尺寸；frame 可见性查询前后发生变化时重试。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证显示/隐藏元素、嵌套条件、顺序、输入前隐藏及跨进程零宽 frame；Electron 44/Xvfb socket 验证跨进程 frame 隐藏和异步恢复。可见性筛选不检查遮挡；macOS/Windows 本轮未测。
 
 CSS 作用域新增 getByRole/getByLabel/getByText/getByAltText/getByPlaceholder，语义目标通过隔离 world 检查同 frame 后代关系，并在读取和输入前复核 CSS 匹配、筛选结果与包含关系；支持语义后续链和位置选择。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证 shadow root 混合链可信点击、作用域改变后停止、跨进程 role/label/placeholder/alt；Electron 44/Xvfb socket 验证跨进程语义读取。语义作用域到 CSS 和语义内层 has 条件仍待实现；macOS/Windows 本轮未测。
+
+CSS locator 增加 and 交集，接受同一 browser/tab/frame 的 CSS 定位器，保留位置与筛选顺序，并支持在 has/hasNot 内相对候选元素求值；操作前重新计算交集。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证 shadow root、嵌套条件、位置顺序、跨 frame 拒绝和条件改变时停止点击，Electron 44/Xvfb socket 验证跨进程 frame。语义定位器参与交集、or 和语义作用域到 CSS 仍待实现；macOS/Windows 本轮未测。
