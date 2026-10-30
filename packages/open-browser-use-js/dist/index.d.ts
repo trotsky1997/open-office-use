@@ -106,6 +106,17 @@ export type InteractiveState = {
     unavailableFrames?: string[];
     valuesTruncated?: boolean;
 };
+type LocatorClickOptions = {
+    timeoutMs?: number;
+    button?: "left" | "middle" | "right";
+    modifiers?: Array<"Alt" | "Control" | "ControlOrMeta" | "Meta" | "Shift">;
+    force?: boolean;
+};
+type MouseClick = {
+    button: "left" | "middle" | "right";
+    buttons: number;
+    modifiers: number;
+};
 type CssMatcher = string | {
     source: string;
     flags: string;
@@ -270,8 +281,8 @@ export declare class OpenBrowserUseTab {
     waitForDialog(options?: {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseDialog>;
-    click(index: number, snapshotId: string): Promise<void>;
-    dblclick(index: number, snapshotId: string): Promise<void>;
+    click(index: number, snapshotId: string, mouse?: MouseClick): Promise<void>;
+    dblclick(index: number, snapshotId: string, mouse?: MouseClick): Promise<void>;
     hover(index: number, snapshotId: string): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;
     hoverAt(x: number, y: number, modifiers?: number): Promise<void>;
@@ -503,12 +514,8 @@ export declare class OpenBrowserUseCssLocator {
         state: "attached" | "detached" | "visible" | "hidden";
         timeoutMs?: number;
     }): Promise<void>;
-    click(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
-    dblclick(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
+    click(options?: LocatorClickOptions): Promise<void>;
+    dblclick(options?: LocatorClickOptions): Promise<void>;
     hover(options?: {
         timeoutMs?: number;
     }): Promise<void>;
@@ -608,12 +615,8 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<string | null>;
     private perform;
-    click(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
-    dblclick(options?: {
-        timeoutMs?: number;
-    }): Promise<void>;
+    click(options?: LocatorClickOptions): Promise<void>;
+    dblclick(options?: LocatorClickOptions): Promise<void>;
     hover(options?: {
         timeoutMs?: number;
     }): Promise<void>;

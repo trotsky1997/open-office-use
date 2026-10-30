@@ -208,7 +208,9 @@ changes can alter which element occupies a position.
 Role names, labels, text, placeholders, alt text and text filters accept strings
 or `RegExp` objects. Regular expressions retain their own case-sensitivity;
 the `exact` option applies to string matching.
-`dblclick()` rechecks the target and its position between clicks. If the first
+`click()` and `dblclick()` accept `button` (left, middle, or right) and
+`modifiers` (Alt, Control, ControlOrMeta, Meta, Shift). Forced clicks are
+rejected. `dblclick()` rechecks the target and its position between clicks. If the first
 click changes the page or a later input fails, inspect the result before retrying.
 
 This locator covers the interactive roles exposed by `observe`, including

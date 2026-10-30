@@ -81,6 +81,15 @@ function applyLocatorOptions(locator:OpenBrowserUseCssLocator, options?:LocatorL
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key=>!["hasText","hasNotText","has","hasNot"].includes(key))) throw new Error("Invalid locator options");
   return Object.values(options).every(value=>value === undefined) ? locator : locator.filter(options);
 }
+type LocatorClickOptions = {timeoutMs?:number; button?:"left" | "middle" | "right"; modifiers?:Array<"Alt" | "Control" | "ControlOrMeta" | "Meta" | "Shift">; force?:boolean};
+type MouseClick = {button:"left" | "middle" | "right"; buttons:number; modifiers:number};
+function locatorClickOptions(options:LocatorClickOptions):MouseClick {
+  if (!options || typeof options!=="object" || Array.isArray(options) || Object.keys(options).some(key=>!["timeoutMs","button","modifiers","force"].includes(key)) || (options.force!==undefined && typeof options.force!=="boolean")) throw new Error("Invalid locator click options");
+  if (options.force) throw new Error("Forced locator clicks are not supported");
+  const button=options.button ?? "left", masks={left:1,middle:4,right:2};
+  if (!Object.hasOwn(masks,button)) throw new Error("Invalid mouse button");
+  return {button,buttons:masks[button],modifiers:cuaModifiers(options.modifiers)};
+}
 type CssMatcher = string | {source:string; flags:string};
 type CssTextFilter = {hasText?:CssMatcher; hasNotText?:CssMatcher; has?:readonly CssStep[]; hasNot?:readonly CssStep[]; and?:readonly CssStep[]; visible?:boolean};
 type CssStep = {selector:string; position?:number; before?:readonly CssTextFilter[]; after?:readonly CssTextFilter[]; union?:readonly [readonly CssStep[],readonly CssStep[]]};
@@ -948,7 +957,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false): Promise<void | string[]> {
+  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}): Promise<void | string[]> {
     if (key !== undefined) this.parseKey(key);
     const frame = snapshot.frame;
     if (!frame || !snapshot.ids.includes(id)) throw new RetryablePreflightError("Selector target changed; observe again");
@@ -1103,8 +1112,8 @@ export class OpenBrowserUseTab {
       }
       if (hover) await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseMoved",...second.inputPoint,button:"none",buttons:0},options);
       else {
-        await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:"left",buttons:1,clickCount:1},options);
-        await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:"left",buttons:0,clickCount:1},options);
+        await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:mouse.button,buttons:mouse.buttons,modifiers:mouse.modifiers,clickCount:1},options);
+        await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:mouse.button,buttons:0,modifiers:mouse.modifiers,clickCount:1},options);
         if (checked !== undefined) {
           const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids) || (await checkedState()).value!==checked) throw new Error("Target did not retain the requested checked state");
@@ -1114,8 +1123,8 @@ export class OpenBrowserUseTab {
           if (moving(second.geometry.x,after.geometry.x) || moving(second.geometry.y,after.geometry.y) || moving(second.geometry.width,after.geometry.width) || moving(second.geometry.height,after.geometry.height) || moving(second.point.x,after.point.x) || moving(second.point.y,after.point.y)) throw new Error("Target moved after the first click; observe again");
           const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
           if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after the first click; observe again");
-          await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:"left",buttons:1,clickCount:2},options);
-          await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:"left",buttons:0,clickCount:2},options);
+          await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:mouse.button,buttons:mouse.buttons,modifiers:mouse.modifiers,clickCount:2},options);
+          await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:mouse.button,buttons:0,modifiers:mouse.modifiers,clickCount:2},options);
         }
       }
     } catch (error) {
@@ -1438,12 +1447,12 @@ export class OpenBrowserUseTab {
     return dialog;
   }
 
-  async click(index: number, snapshotId: string): Promise<void> {
-    await this.act(index, snapshotId);
+  async click(index: number, snapshotId: string, mouse?:MouseClick): Promise<void> {
+    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, false, mouse);
   }
 
-  async dblclick(index: number, snapshotId: string): Promise<void> {
-    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true);
+  async dblclick(index: number, snapshotId: string, mouse?:MouseClick): Promise<void> {
+    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true, mouse);
   }
 
   async hover(index: number, snapshotId: string): Promise<void> {
@@ -1671,7 +1680,7 @@ export class OpenBrowserUseTab {
     return result as string[];
   }
 
-  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false): Promise<void | string[]> {
+  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}): Promise<void | string[]> {
     const observation = this.#observation;
     this.#observation = undefined;
     const node = observation?.nodes.find((item) => item.index === index);
@@ -1862,8 +1871,8 @@ export class OpenBrowserUseTab {
         await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, inputOptions);
         return;
       }
-      await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 1, clickCount: 1 }, inputOptions);
-      await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 0, clickCount: 1 }, inputOptions);
+      await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: mouse.button, buttons: mouse.buttons, modifiers: mouse.modifiers, clickCount: 1 }, inputOptions);
+      await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: mouse.button, buttons: 0, modifiers: mouse.modifiers, clickCount: 1 }, inputOptions);
       if (doubleClick) {
         const after = await measure();
         if (moving(second.geometry.x, after.geometry.x) || moving(second.geometry.y, after.geometry.y) || moving(second.geometry.width, after.geometry.width) || moving(second.geometry.height, after.geometry.height) || moving(point.x as number, after.point.x as number) || moving(point.y as number, after.point.y as number)) throw new Error("Target moved after the first click; observe again");
@@ -1871,8 +1880,8 @@ export class OpenBrowserUseTab {
         const latest = interactiveNodes(tree,0,supplementalRoles.includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
         if (!latest || latest.name !== node.name || latest.stateKey !== node.stateKey) throw new Error("Target changed after the first click; observe again");
         await this.verifyLocatorScope(observation,node);
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 1, clickCount: 2 }, inputOptions);
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 0, clickCount: 2 }, inputOptions);
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: mouse.button, buttons: mouse.buttons, modifiers: mouse.modifiers, clickCount: 2 }, inputOptions);
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: mouse.button, buttons: 0, modifiers: mouse.modifiers, clickCount: 2 }, inputOptions);
       }
       if (checked !== undefined) {
         if (await this.documentId() !== observation.documentId) throw new Error("Page changed after input; observe again");
@@ -2339,8 +2348,8 @@ export class OpenBrowserUseCssLocator {
       await new Promise(resolve=>setTimeout(resolve,Math.min(100,remaining)));
     }
   }
-  click(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false);},options.timeoutMs); }
-  dblclick(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,true);},options.timeoutMs); }
+  click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,mouse);},options.timeoutMs); }
+  dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,true,undefined,undefined,false,mouse);},options.timeoutMs); }
   hover(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,true);},options.timeoutMs); }
   check(options: {timeoutMs?: number} = {}): Promise<void> { return this.setChecked(true,options); }
   uncheck(options: {timeoutMs?: number} = {}): Promise<void> { return this.setChecked(false,options); }
@@ -2619,8 +2628,8 @@ export class OpenBrowserUseRoleLocator {
     }
   }
 
-  async click(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.click(node.index,id), options.timeoutMs); }
-  async dblclick(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.dblclick(node.index,id), options.timeoutMs); }
+  async click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id)=>this.tab.click(node.index,id,mouse), options.timeoutMs); }
+  async dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id)=>this.tab.dblclick(node.index,id,mouse), options.timeoutMs); }
   async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.hover(node.index,id), options.timeoutMs); }
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }
   async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }
