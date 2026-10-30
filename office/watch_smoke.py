@@ -77,17 +77,17 @@ with tempfile.TemporaryDirectory() as tmp:
         request = urllib.request.Request(url + 'selection', data=json.dumps(selection).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         assert json.loads(urllib.request.urlopen(request).read()) == selection
         assert json.loads((directory / 'selection.json').read_text()) == selection
-        candidates_request = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        candidates_request = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection, 'snapshot_sha256': first['snapshot_sha256']}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         candidates = json.loads(urllib.request.urlopen(candidates_request, timeout=60).read())
         assert candidates['revision'] == 0 and any(item['path'] == '/body/p[1]' for item in candidates['candidates']), candidates
         mismatch = dict(selection, box=[0, 0, 0.5, 0.5])
-        wrong_selection = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': mismatch}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        wrong_selection = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': mismatch, 'snapshot_sha256': first['snapshot_sha256']}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         try:
             urllib.request.urlopen(wrong_selection)
             raise AssertionError('Mismatched selection was accepted')
         except urllib.error.HTTPError as error:
             assert error.code == 400
-        forbidden_candidates = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection}).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
+        forbidden_candidates = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection, 'snapshot_sha256': first['snapshot_sha256']}).encode(), headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
         try:
             urllib.request.urlopen(forbidden_candidates)
             raise AssertionError('Cross-origin search was accepted')
@@ -103,7 +103,7 @@ with tempfile.TemporaryDirectory() as tmp:
         run('session', 'apply', directory, '--base', '0', '--spec', spec)
         second = json.loads(get(url + 'state'))
         assert second['revision'] == 1 and second['pages'] > 0
-        stale_candidates = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        stale_candidates = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selection, 'snapshot_sha256': first['snapshot_sha256']}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         try:
             urllib.request.urlopen(stale_candidates)
             raise AssertionError('Stale candidate lookup was accepted')
@@ -215,6 +215,18 @@ with tempfile.TemporaryDirectory() as tmp:
         except urllib.error.HTTPError as error:
             assert error.code == 400
 
+
+        visible = json.loads(get(url + 'state'))
+        selected = {'revision': 3, 'page': 1, 'box': [0, 0, 1, 1]}
+        selection_request = urllib.request.Request(url + 'selection', data=json.dumps(selected).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        assert json.loads(urllib.request.urlopen(selection_request).read())['revision'] == 3
+        external = Document(); external.add_paragraph('External change'); external.save(directory / 'revision-000003.docx')
+        candidate_request = urllib.request.Request(url + 'candidates', data=json.dumps({'selection': selected, 'snapshot_sha256': visible['snapshot_sha256']}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(candidate_request); raise AssertionError('Changed preview source accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400 and 'Preview source changed' in error.read().decode()
+        assert json.loads(get(url + 'state'))['snapshot_sha256'] != visible['snapshot_sha256']
 
         for address, headers, status in [(url.replace('/state', '') + '../state', {}, 404), (url + 'state', {'Host': 'example.com'}, 403)]:
             try:

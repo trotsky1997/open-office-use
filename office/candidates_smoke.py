@@ -1,5 +1,6 @@
 """Verify text candidates are tied to revisions and duplicates stay ambiguous."""
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,9 @@ from docx import Document
 from openpyxl import Workbook
 from pptx import Presentation
 from session import set_selection
+import session
+import selection_candidates
+import open_office_use
 
 cli = Path(__file__).with_name('open_office_use.py')
 def run(*args):
@@ -43,6 +47,16 @@ with tempfile.TemporaryDirectory() as tmp:
             run('session', 'apply', directory, '--base', '0', '--spec', spec)
             stale = run('session', 'selection-candidates', directory)
             assert stale['stale'] and stale['revision'] == 0 and stale['returned_candidate_count'] >= 2, stale
+    snapshot_source = root / 'snapshot.docx'; original = Document(); original.add_paragraph('Snapshot needle'); original.save(snapshot_source)
+    snapshot_draft = root / 'snapshot-draft'; session.start(snapshot_draft, source=snapshot_source)
+    set_selection(snapshot_draft, {'revision': 0, 'page': 1, 'box': [0, 0, 1, 1]})
+    revision_path = snapshot_draft / 'revision-000000.docx'; old_hash = hashlib.sha256(revision_path.read_bytes()).hexdigest()
+    def render_then_change(frozen, destination):
+        pdf = open_office_use.render(frozen, destination)
+        changed = Document(); changed.add_paragraph('Replacement content'); changed.save(revision_path)
+        return pdf
+    consistent = selection_candidates.candidates(snapshot_draft, render_then_change)
+    assert consistent['snapshot_sha256'] == old_hash and any('Snapshot needle' in item['text'] for item in consistent['candidates']), consistent
     empty = root / 'empty'; run('session', 'start', empty, '--format', 'docx')
     set_selection(empty, {'revision': 0, 'page': 1, 'box': [0, 0, 0.05, 0.05]})
     result = run('session', 'selection-candidates', empty)

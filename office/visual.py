@@ -10,6 +10,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 import spreadsheet
+import snapshot
 
 
 def pdf_page_count(pdf):
@@ -36,7 +37,7 @@ def page_image(source, page, render, box=None):
     if not raster:
         raise RuntimeError('Poppler pdftoppm is required for page rendering')
     with tempfile.TemporaryDirectory(prefix='office-page-') as tmp:
-        root = Path(tmp); pdf = render(source, root / 'pdf'); total = pdf_page_count(pdf)
+        root = Path(tmp); frozen, digest = snapshot.copy(source, root); pdf = render(frozen, root / 'pdf'); total = pdf_page_count(pdf)
         if page > total:
             raise ValueError(f'Page exceeds rendered page count ({total})')
         result = subprocess.run([raster, '-f', str(page), '-l', str(page), '-singlefile', '-scale-to', '1800',
@@ -67,7 +68,7 @@ def page_image(source, page, render, box=None):
         data = output.getvalue()
         if len(data) > 10 * 1024 * 1024:
             raise ValueError('Rendered page exceeds 10 MiB')
-        return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box, 'raster_scale': scale, 'render_advisory': spreadsheet.render_advisory(source)}
+        return data, {'page': page, 'total_pages': total, 'page_size': page_size, 'image_size': image_size, 'box': box, 'raster_scale': scale, 'snapshot_sha256': digest, 'render_advisory': spreadsheet.render_advisory(frozen)}
 
 
 def compare_pages(before, after, before_page, after_page, render):
@@ -107,7 +108,7 @@ def compare_pages(before, after, before_page, after_page, render):
     return data, {'before_page': before_page, 'after_page': after_page,
                   'before_total_pages': before_info['total_pages'], 'after_total_pages': after_info['total_pages'],
                   'page_size': list(mask.size), 'changed_pixels': changed, 'total_pixels': total,
-                  'changed_fraction': changed / total, 'channel_threshold': 16, 'before_render_advisory': before_info['render_advisory'], 'after_render_advisory': after_info['render_advisory']}
+                  'changed_fraction': changed / total, 'channel_threshold': 16, 'before_render_advisory': before_info['render_advisory'], 'after_render_advisory': after_info['render_advisory'], 'before_snapshot_sha256': before_info['snapshot_sha256'], 'after_snapshot_sha256': after_info['snapshot_sha256']}
 
 
 def contact_sheet(source, start, count, render):
@@ -119,7 +120,7 @@ def contact_sheet(source, start, count, render):
     if not raster:
         raise RuntimeError('Poppler pdftoppm is required for contact sheets')
     with tempfile.TemporaryDirectory(prefix='office-contact-sheet-') as tmp:
-        root = Path(tmp); pdf = render(source, root / 'pdf')
+        root = Path(tmp); frozen, digest = snapshot.copy(source, root); pdf = render(frozen, root / 'pdf')
         total = pdf_page_count(pdf)
         if start > total:
             raise ValueError(f'Start page exceeds rendered page count ({total})')
@@ -146,7 +147,7 @@ def contact_sheet(source, start, count, render):
                 draw.rectangle((x_image, y_image, x_image + image.width - 1, y_image + image.height - 1), outline='#9ca3af')
             draw.text((x, y + 266), f'Page {start + index}', fill='#1f2937', font=font)
         output = io.BytesIO(); sheet.save(output, format='PNG')
-        return output.getvalue(), {'start_page': start, 'end_page': end, 'total_pages': total, 'render_advisory': spreadsheet.render_advisory(source)}
+        return output.getvalue(), {'start_page': start, 'end_page': end, 'total_pages': total, 'snapshot_sha256': digest, 'render_advisory': spreadsheet.render_advisory(frozen)}
 
 
 def save_png(output, generate):

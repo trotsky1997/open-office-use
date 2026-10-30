@@ -18,6 +18,7 @@ import visual
 import selection_candidates
 import session
 import spreadsheet
+import snapshot
 
 PAGE = '''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -163,7 +164,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p id="cell-comparison-status" role="status"></p><div id="cell-comparison-output" class="grid-scroll"></div></section></details>
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
-let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
+let current = -1, displayed = -1, displayedHash = null, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1, comparedLatestHash = null;
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
@@ -240,7 +241,7 @@ document.getElementById('candidate-search').addEventListener('click', async () =
  const requested=savedSelection, epoch=selectionEpoch, button=document.getElementById('candidate-search'); button.disabled=true;
  document.getElementById('candidate-status').textContent='Finding candidates…';
  try {
-  const response=await fetch('candidates', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({selection:requested})});
+  const response=await fetch('candidates', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({selection:requested,snapshot_sha256:displayedHash})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Search failed');
   if (epoch !== selectionEpoch || pinned !== null || current !== result.revision) return;
   const list=document.getElementById('candidate-list'); list.replaceChildren();
@@ -995,6 +996,7 @@ function showRenderAdvisory(items) {
  const output=document.getElementById('render-advisory'); output.hidden=!messages.length; output.textContent=messages.join(' ');
 }
 function display(state, live) {
+ displayedHash=state.snapshot_sha256;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory]]);
  clearTrackedFor(state.revision);
  document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=trackedBusy || !live || item.dataset.supported!=='true');
@@ -1013,7 +1015,7 @@ function display(state, live) {
  if (!document.getElementById('comparison-details').hidden) clearVisualDiff();
  clearLayoutFor(state.revision);
  document.getElementById('comparison-details').hidden=true;
- const key = `${state.revision}:${live}`;
+ const key = `${state.revision}:${live}:${state.snapshot_sha256}`;
  if (key === viewKey) return;
  const fragment = document.createDocumentFragment();
  for (let i=0; i<state.pages; i++) {
@@ -1030,6 +1032,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ displayedHash=null;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory],[`Revision ${state.latest_revision}`,state.latest_render_advisory]]);
  clearChartCacheFor(state.revision);
  document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
@@ -1041,7 +1044,7 @@ function displayComparison(state) {
  clearTrackedFor(state.revision);
  document.querySelectorAll('#tracked-results input, #tracked-accept, #tracked-reject').forEach(item=>item.disabled=true);
  clearLayoutFor(state.revision);
- const key=`compare:${state.revision}:${state.latest_revision}`;
+ const key=`compare:${state.revision}:${state.snapshot_sha256}:${state.latest_revision}:${state.latest_snapshot_sha256}`;
  if (key === viewKey) return;
  notesComparisonEpoch++; document.getElementById('notes-comparison-output').textContent=''; document.getElementById('notes-comparison-status').textContent='';
  clearVisualDiff(); document.getElementById('visual-before-page').max=state.pages; document.getElementById('visual-after-page').max=state.latest_pages;
@@ -1137,7 +1140,7 @@ async function loadComparison(revision) {
  const response=await fetch(`comparison/${revision}/state`, {cache:'no-store'}); const state=await response.json();
  if (!response.ok) throw new Error(state.error || 'Comparison unavailable');
  if (!comparing || pinned !== revision || state.latest_revision < current) return;
- displayComparison(state); comparedLatest=state.latest_revision;
+ displayComparison(state); comparedLatest=state.latest_revision; comparedLatestHash=state.latest_snapshot_sha256;
  document.getElementById('status').textContent=`Comparing revision ${revision} with latest ${state.latest_revision}`;
 }
 document.getElementById('compare-revision').addEventListener('click', async () => {
@@ -1172,18 +1175,19 @@ async function refresh() {
   document.getElementById('chart-cache-panel').hidden=state.format !== 'xlsx';
   document.getElementById('workbook-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
-  if (state.revision !== current) {
+  const snapshotChanged = pinned===null && displayed===current && displayedHash && state.snapshot_sha256!==displayedHash;
+  if (state.revision !== current || snapshotChanged) {
    document.getElementById('formula-allow-dynamic').checked=false;
-   if (formulaStatusRevision !== state.revision) { formulaStatusRevision=null; document.getElementById('formula-status').textContent=''; document.getElementById('formula-scan-output').textContent=''; }
-   if (gridLoaded) invalidateGrid('Version changed; copy unsaved edits and reload the range.');
-   if (loaded) invalidateEdit('Version changed; load the element again.');
+   if (snapshotChanged || formulaStatusRevision !== state.revision) { formulaStatusRevision=null; document.getElementById('formula-status').textContent=''; document.getElementById('formula-scan-output').textContent=''; }
+   if (gridLoaded) invalidateGrid('Version or preview source changed; copy unsaved edits and reload the range.');
+   if (loaded) invalidateEdit('Version or preview source changed; load the element again.');
    const select=document.getElementById('restore-revision'); const previous=select.value;
    select.replaceChildren(...state.revisions.map(revision => {const option=document.createElement('option'); option.value=revision; option.textContent=`Revision ${revision}`; return option;}));
    if (state.revisions.some(revision => String(revision) === previous)) select.value=previous;
   }
   current=state.revision;
   if (comparing && pinned !== null) {
-   if (comparedLatest !== current) await loadComparison(pinned);
+   if (comparedLatest !== current || comparedLatestHash !== state.snapshot_sha256) await loadComparison(pinned);
   } else if (pinned === null) {
    display(state, true); document.getElementById('status').textContent=`Revision ${current} · ${state.pages} page(s)`;
   } else if (displayed === pinned) {
@@ -1210,7 +1214,9 @@ def serve(directory, preview, port=0, render=None):
         def pages_for(state, revision):
             source = session.revision_file(state, revision)
             if revision not in cache:
-                cache[revision] = {'pages': preview(source, root / f'rev-{revision}'), 'render_advisory': spreadsheet.render_advisory(source)}
+                with tempfile.TemporaryDirectory(dir=root, prefix='.snapshot-') as tmp_source:
+                    frozen, digest = snapshot.copy(source, tmp_source)
+                    cache[revision] = {'pages': preview(frozen, root / f'rev-{revision}'), 'render_advisory': spreadsheet.render_advisory(frozen), 'snapshot_sha256': digest}
                 if len(cache) > 4:
                     old, _ = cache.popitem(last=False)
                     shutil.rmtree(root / f'rev-{old}', ignore_errors=True)
@@ -1339,18 +1345,23 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Latest revision changed; compare again')
                         self.send(200, json.dumps(result, default=str).encode(), 'application/json'); return
                     if route.endswith('/candidates'):
-                        if not isinstance(payload, dict) or set(payload) != {'selection'}:
-                            raise ValueError('Candidates require a saved selection')
-                        expected = session.validate_selection(payload['selection'])
+                        if not isinstance(payload, dict) or set(payload) != {'selection', 'snapshot_sha256'} or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']):
+                            raise ValueError('Candidates require a saved selection and preview snapshot SHA-256')
+                        expected = session.validate_selection(payload['selection']); expected_hash = payload['snapshot_sha256']
                         with lock:
                             selected = session.get_selection(directory)
                             if selected['stale'] or any(selected[key] != expected[key] for key in expected):
                                 raise ValueError('Selection changed; select the current page again')
+                            state = session.info(directory); pages_for(state, expected['revision'])
+                            if cache[expected['revision']]['snapshot_sha256'] != expected_hash: raise ValueError('Preview snapshot changed; reload the page')
                         if render is None:
                             raise RuntimeError('Candidate rendering is unavailable')
                         result = selection_candidates.candidates(directory, render)
                         with lock:
                             selected = session.get_selection(directory)
+                            if result['snapshot_sha256'] != expected_hash:
+                                cache.pop(expected['revision'], None); shutil.rmtree(root / f"rev-{expected['revision']}", ignore_errors=True)
+                                raise ValueError('Preview source changed; reload the browser page and select again')
                             if selected['stale'] or result['stale'] or result['selection_changed'] or any(selected[key] != expected[key] for key in expected) or any(result[key] != expected[key] for key in expected):
                                 raise ValueError('Selection changed; select the current page again')
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
@@ -1487,11 +1498,11 @@ def serve(directory, preview, port=0, render=None):
                                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                                 self.send(200, Path(pages[index]).read_bytes(), 'image/png'); return
                             data = {'revision': rev, 'pages': len(pages), 'format': state['format'],
-                                    'revisions': [item['revision'] for item in state['revisions']], 'render_advisory': cache[rev]['render_advisory']}
+                                    'revisions': [item['revision'] for item in state['revisions']], 'render_advisory': cache[rev]['render_advisory'], 'snapshot_sha256': cache[rev]['snapshot_sha256']}
                             if comparison:
                                 latest = state['latest_revision']
                                 latest_pages = pages_for(state, latest)
-                                data.update(latest_revision=latest, latest_pages=len(latest_pages), latest_render_advisory=cache[latest]['render_advisory'])
+                                data.update(latest_revision=latest, latest_pages=len(latest_pages), latest_render_advisory=cache[latest]['render_advisory'], latest_snapshot_sha256=cache[latest]['snapshot_sha256'])
                         self.send(200, json.dumps(data).encode(), 'application/json'); return
                     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                         self.send(500, json.dumps({'error': str(exc)}).encode(), 'application/json'); return

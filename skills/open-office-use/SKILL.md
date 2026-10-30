@@ -56,3 +56,5 @@ Before LibreOffice recalculation, check `dynamic_array_metadata` and `dynamic_ar
 Check the XLSX `render_advisory` returned by structured rendering commands. LibreOffice previews may omit dynamic-array spills. MCP rendered-image responses include an image first, then text and structured metadata with warnings and page or revision details; inspect them alongside the image.
 
 Selection text and candidate results include `render_advisory` and `selection_changed`; inspect both before using text extracted from a rendered workbook.
+
+Rendered images, structured renders, selection text and candidates report a snapshot SHA-256. Compare hashes when correlating results; candidate extraction and search use the same copied bytes. Save and close sources before copying.

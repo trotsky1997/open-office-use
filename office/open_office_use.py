@@ -180,6 +180,16 @@ def preview(source, output_dir):
     return [str(page) for page in published]
 
 
+
+def render_with_info(source, output_dir, pages=False):
+    import snapshot
+    with tempfile.TemporaryDirectory(prefix='office-render-snapshot-') as tmp:
+        frozen, digest = snapshot.copy(source, tmp)
+        advisory = spreadsheet.render_advisory(frozen)
+        if pages: result = {'pages': preview(frozen, output_dir)}
+        else: result = {'pdf': render(frozen, output_dir)}
+        return {**result, 'snapshot_sha256': digest, 'render_advisory': advisory}
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -387,9 +397,9 @@ def main():
                 spec = json.load(f)
             result = {'output': author(spec, args.out, args.source)}
         elif args.command == 'render':
-            result = {'pdf': render(args.file, args.out_dir), 'render_advisory': spreadsheet.render_advisory(args.file)}
+            result = render_with_info(args.file, args.out_dir)
         elif args.command == 'preview':
-            result = {'pages': preview(args.file, args.out_dir), 'render_advisory': spreadsheet.render_advisory(args.file)}
+            result = render_with_info(args.file, args.out_dir, pages=True)
         elif args.command == 'render-page':
             result = visual.save_png(args.out, lambda: visual.page_image(args.file, args.page, render, args.box))
         elif args.command == 'compare-pages':

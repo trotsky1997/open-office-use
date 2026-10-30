@@ -10,17 +10,20 @@ from pathlib import Path
 
 import session
 import spreadsheet
+import snapshot
 
 
-def extract(directory, render):
-    selection = session.get_selection(directory)
+def extract(directory, render, *, selection=None, frozen=None, digest=None):
+    if selection is None: selection = session.get_selection(directory)
     state = session.info(directory)
     source = session.revision_file(state, selection['revision'])
     executable = shutil.which('pdftotext')
     if not executable:
         raise RuntimeError('Poppler pdftotext is required for selected text')
     with tempfile.TemporaryDirectory(prefix='office-selection-text-') as tmp:
-        pdf = render(source, Path(tmp) / 'pdf')
+        if frozen is None: frozen, digest = snapshot.copy(source, tmp)
+        pdf = render(frozen, Path(tmp) / 'pdf')
+        advisory = spreadsheet.render_advisory(frozen)
         page_count = None
         if source.suffix.lower() == '.pptx' and shutil.which('pdfinfo'):
             try:
@@ -73,7 +76,7 @@ def extract(directory, render):
     current = session.get_selection(directory); latest = current['latest_revision']
     return {'revision': selection['revision'], 'page': selection['page'], 'box': selection['box'],
             'latest_revision': latest, 'stale': selection['revision'] != latest, 'selection_changed': any(selection[key] != current[key] for key in ('revision', 'page', 'box')),
-            'render_advisory': spreadsheet.render_advisory(source),
+            'render_advisory': advisory, 'snapshot_sha256': digest,
             'text': '\n'.join(lines), 'words': words, 'truncated': truncated,
             'pdf_page_count': page_count, 'pdf_page_size': [width, height],
             'method': 'pdf_word_centers'}

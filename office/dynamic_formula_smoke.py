@@ -3,6 +3,7 @@ import tempfile
 import subprocess
 import sys
 import json
+import hashlib
 import zipfile
 from pathlib import Path
 from lxml import etree
@@ -41,6 +42,24 @@ with tempfile.TemporaryDirectory() as tmp:
     assert officecli_backend.audit(result['file'])['validation']['exit_code'] == 0
     assert spreadsheet.render_advisory(result['file'])['dynamic_array_metadata'] is True
     assert spreadsheet.render_advisory(source)['dynamic_array_metadata'] is False
+    changing = root / 'changing.xlsx'; changing.write_bytes(Path(result['file']).read_bytes())
+    expected_hash = hashlib.sha256(changing.read_bytes()).hexdigest()
+    def render_while_source_changes(frozen, out):
+        changing.write_bytes(source.read_bytes())
+        return open_office_use.render(frozen, out)
+    _, stable_page = visual.page_image(changing, 1, render_while_source_changes)
+    assert stable_page['snapshot_sha256'] == expected_hash and stable_page['render_advisory']['dynamic_array_metadata'] is True
+    assert spreadsheet.render_advisory(changing)['dynamic_array_metadata'] is False
+    changing.write_bytes(Path(result['file']).read_bytes())
+    original_render = open_office_use.render
+    def changed_render(frozen, out):
+        changing.write_bytes(source.read_bytes())
+        return original_render(frozen, out)
+    open_office_use.render = changed_render
+    try: frozen_render = open_office_use.render_with_info(changing, root / 'frozen-pdf')
+    finally: open_office_use.render = original_render
+    assert frozen_render['snapshot_sha256'] == expected_hash and frozen_render['render_advisory']['dynamic_array_metadata'] is True
+    assert spreadsheet.render_advisory(changing)['dynamic_array_metadata'] is False
     _, page = visual.page_image(result['file'], 1, open_office_use.render)
     assert page['render_advisory']['dynamic_array_metadata'] is True
     _, contact = visual.contact_sheet(result['file'], 1, 1, open_office_use.render)
@@ -48,7 +67,7 @@ with tempfile.TemporaryDirectory() as tmp:
     _, comparison = visual.compare_pages(result['file'], result['file'], 1, 1, open_office_use.render)
     assert comparison['before_render_advisory']['dynamic_array_metadata'] and comparison['after_render_advisory']['dynamic_array_metadata']
     cli_render = subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'render', result['file'], '--out-dir', str(root / 'pdf')], capture_output=True, text=True, check=True)
-    assert json.loads(cli_render.stdout)['render_advisory']['dynamic_array_metadata']
+    assert json.loads(cli_render.stdout)['render_advisory']['dynamic_array_metadata'] and json.loads(cli_render.stdout)['snapshot_sha256'] == hashlib.sha256(Path(result['file']).read_bytes()).hexdigest()
     grid = session.read_grid(draft, 1, 'Sheet', 'D1:E1'); assert all(not item['editable'] and item['read_only_reason'] == 'formula_range' for item in grid['rows'][0])
     added = session.edit_grid(draft, 1, 'Sheet', 'F1', [{'cell':'F1','value':'=XLOOKUP(A1,D1:D3,E1:E3)'}])
     with zipfile.ZipFile(added['file']) as archive:

@@ -1,5 +1,6 @@
 """Check the stdio MCP lifecycle and real artifact operations."""
 import asyncio
+import hashlib
 import sys
 import tempfile
 from pathlib import Path
@@ -380,7 +381,7 @@ async def main():
                 dynamic_pdf = await session.call_tool('render_pdf', {'file': str(dynamic_draft / 'revision-000001.xlsx'), 'output_dir': str(root / 'dynamic-pdf')})
                 assert not dynamic_pdf.isError and dynamic_pdf.structuredContent['render_advisory']['dynamic_array_metadata'] is True, dynamic_pdf
                 dynamic_view = await session.call_tool('session_view_page', {'directory': str(dynamic_draft), 'revision': 1, 'page': 1})
-                assert not dynamic_view.isError and dynamic_view.content[0].type == 'image' and dynamic_view.content[1].type == 'text' and dynamic_view.structuredContent['revision'] == 1 and dynamic_view.structuredContent['warnings'], dynamic_view
+                assert not dynamic_view.isError and dynamic_view.content[0].type == 'image' and dynamic_view.content[1].type == 'text' and dynamic_view.structuredContent['revision'] == 1 and dynamic_view.structuredContent['snapshot_sha256'] == hashlib.sha256((dynamic_draft / 'revision-000001.xlsx').read_bytes()).hexdigest() and dynamic_view.structuredContent['warnings'], dynamic_view
                 dynamic_contact = await session.call_tool('view_contact_sheet', {'file': str(dynamic_draft / 'revision-000001.xlsx'), 'count': 1})
                 assert not dynamic_contact.isError and dynamic_contact.content[0].type == 'image' and dynamic_contact.structuredContent['render_advisory']['dynamic_array_metadata'] is True and dynamic_contact.structuredContent['warnings'], dynamic_contact
                 dynamic_comparison = await session.call_tool('session_compare_page_images', {'directory': str(dynamic_draft), 'before_revision': 0, 'after_revision': 1, 'before_page': 1, 'after_page': 1})
@@ -389,9 +390,9 @@ async def main():
                 dynamic_selection = await session.call_tool('session_selection_image', {'directory': str(dynamic_draft)})
                 assert not dynamic_selection.isError and dynamic_selection.structuredContent['stale'] is False and not dynamic_selection.structuredContent['selection_changed'] and dynamic_selection.structuredContent['warnings'], dynamic_selection
                 dynamic_text = await session.call_tool('session_selection_text', {'directory': str(dynamic_draft)})
-                assert not dynamic_text.isError and dynamic_text.structuredContent['render_advisory']['dynamic_array_metadata'] is True and not dynamic_text.structuredContent['selection_changed'], dynamic_text
+                assert not dynamic_text.isError and dynamic_text.structuredContent['render_advisory']['dynamic_array_metadata'] is True and not dynamic_text.structuredContent['selection_changed'] and dynamic_text.structuredContent['snapshot_sha256'] == dynamic_view.structuredContent['snapshot_sha256'], dynamic_text
                 dynamic_candidates = await session.call_tool('session_selection_candidates', {'directory': str(dynamic_draft)})
-                assert not dynamic_candidates.isError and dynamic_candidates.structuredContent['render_advisory']['dynamic_array_metadata'] is True and not dynamic_candidates.structuredContent['selection_changed'], dynamic_candidates
+                assert not dynamic_candidates.isError and dynamic_candidates.structuredContent['render_advisory']['dynamic_array_metadata'] is True and not dynamic_candidates.structuredContent['selection_changed'] and dynamic_candidates.structuredContent['snapshot_sha256'] == dynamic_view.structuredContent['snapshot_sha256'], dynamic_candidates
                 dynamic_scan = await session.call_tool('session_scan_formulas', {'directory': str(dynamic_draft), 'base_revision': 1})
                 assert not dynamic_scan.isError and dynamic_scan.structuredContent['dynamic_array_metadata'] is True, dynamic_scan
                 denied_calc = await session.call_tool('session_recalculate', {'directory': str(dynamic_draft), 'base_revision': 1})

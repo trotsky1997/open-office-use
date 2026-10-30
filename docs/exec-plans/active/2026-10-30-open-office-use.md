@@ -96,3 +96,7 @@ Added explicit ordered formatting-preserving text replacements across Word, Powe
 ## Dynamic-array preview advisory
 
 Rendered XLSX previews disclose XLDAPR metadata or incomplete inspection for the displayed revision and comparison sides. Structured render and image-file results return advisories; MCP image responses include image, text and structured advisory, page and revision metadata. Local LibreOffice preview of SEQUENCE showed only the first result.
+
+## Snapshot-bound rendering
+
+Structured renders, visual results and selection extraction use a copied source and report its SHA-256. Selection candidate text extraction and OfficeCLI queries share one copy. Viewer candidate requests are tied to the displayed preview hash and reject mismatches. External changes during the initial copy can still produce an inconsistent file.

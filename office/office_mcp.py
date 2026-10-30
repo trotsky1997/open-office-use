@@ -21,7 +21,7 @@ import selection_text
 import selection_candidates
 import slides
 import slide_text_check
-from open_office_use import doctor, inspect, preview, render
+from open_office_use import doctor, inspect, render, render_with_info
 
 server = FastMCP(
     'open-office-use',
@@ -484,13 +484,13 @@ def recalculate_workbook(file: str, output: str, allow_dynamic_arrays: bool = Fa
 @server.tool()
 def render_pdf(file: str, output_dir: str) -> dict[str, Any]:
     """Render an Office file to a new PDF using LibreOffice."""
-    return {'pdf': render(file, output_dir), 'render_advisory': spreadsheet.render_advisory(file)}
+    return render_with_info(file, output_dir)
 
 
 @server.tool()
 def preview_pages(file: str, output_dir: str) -> dict[str, Any]:
     """Render page PNGs into a new directory using LibreOffice and Poppler."""
-    return {'pages': preview(file, output_dir), 'render_advisory': spreadsheet.render_advisory(file)}
+    return render_with_info(file, output_dir, pages=True)
 
 
 @server.tool(structured_output=False)
