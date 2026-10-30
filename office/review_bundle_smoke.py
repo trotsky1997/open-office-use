@@ -62,6 +62,17 @@ with tempfile.TemporaryDirectory() as tmp:
     cli = Path(__file__).with_name('open_office_use.py'); out = root / 'revision-review'
     completed = subprocess.run([sys.executable, str(cli), 'session', 'review', str(draft), '--revision', '0', '--out-dir', str(out)], check=True, capture_output=True, text=True)
     assert json.loads(completed.stdout)['revision'] == 0 and json.loads((out / 'report.json').read_text())['checks']['word_comments']['result']['total_comments'] == 0
+    commented = review_bundle.create(draft / 'revision-000001.docx', root / 'comment-review', failed_render)
+    assert 'word_comments_present' in commented['flags']
+    notes_deck = Presentation(); first = notes_deck.slides.add_slide(notes_deck.slide_layouts[1]); first.notes_slide.notes_text_frame.text = 'Private speaker note'
+    hidden = notes_deck.slides.add_slide(notes_deck.slide_layouts[1]); hidden._element.set('show', '0')
+    empty = notes_deck.slides.add_slide(notes_deck.slide_layouts[1]); empty.notes_slide
+    notes_file = root / 'notes.pptx'; notes_deck.save(notes_file)
+    notes_result = review_bundle.create(notes_file, root / 'notes-review', failed_render)
+    report = json.loads(Path(notes_result['report']).read_text())
+    assert {'speaker_notes_parts_present', 'speaker_notes_text_present', 'hidden_slides_present'} <= set(notes_result['flags'])
+    assert report['checks']['speaker_notes']['result']['notes_slides'] == [{'slide': 1, 'body_text_present': True}, {'slide': 3, 'body_text_present': False}]
+    assert 'Private speaker note' not in json.dumps(report)
     rejected = subprocess.run([sys.executable, str(cli), 'session', 'review', str(draft), '--revision', '0', '--out-dir', str(draft / 'bad')], capture_output=True, text=True)
     assert rejected.returncode != 0 and not (draft / 'bad').exists()
 print('Review bundle smoke passed: snapshots, three formats, partial failure and revision isolation')

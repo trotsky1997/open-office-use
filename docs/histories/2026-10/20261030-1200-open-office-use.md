@@ -171,3 +171,7 @@ Added workbook- and sheet-scoped defined names that resolve directly to supporte
 ### Office-first repository entry
 
 Made the repository landing pages describe the Office harness, installation, authoring, MCP and skill setup. Preserved upstream browser instructions in separate root documents and retained attribution. Validated the author/inspect quick start and isolated package installation and MCP handshake.
+
+### Review bundle disclosure flags
+
+Added Word-comment and hidden-slide flags and a bounded PowerPoint speaker-note placeholder inventory, returning slide numbers and presence instead of note contents. Tested real files with comments, hidden slides, populated and empty notes, along with review-bundle partial failures. Other notes shapes, masters and presentation comments remain outside the inventory.

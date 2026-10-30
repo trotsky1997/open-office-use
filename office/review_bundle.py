@@ -6,6 +6,7 @@ import snapshot as snapshots
 from pathlib import Path
 
 import layout
+import notes
 import chart_cache
 import officecli_backend
 import spreadsheet
@@ -46,6 +47,7 @@ def create(source, destination, render, revision=None):
         if source.suffix.lower() == '.docx':
             comments = check('word_comments', lambda: word.list_comments(snapshot))
             if comments is not None:
+                if comments['total_comments']: flags.append('word_comments_present')
                 if comments['truncated']: flags.append('comments_truncated')
                 if not comments['anchor_scan_complete']: flags.append('comment_anchor_scan_incomplete')
             changes = check('word_tracked_changes', lambda: word.tracked_changes(snapshot))
@@ -70,8 +72,15 @@ def create(source, destination, render, revision=None):
         else:
             geometry = check('slide_layout', lambda: layout.inspect(snapshot))
             if geometry is not None:
+                if geometry['hidden_slides']: flags.append('hidden_slides_present')
+                if not geometry['visibility_known']: flags.append('slide_visibility_unknown')
                 if not geometry['complete']: flags.append('slide_layout_incomplete')
                 if geometry['off_slide_count'] or geometry['overlap_count']: flags.append('slide_layout_candidates')
+            note_inventory = check('speaker_notes', lambda: notes.inventory(snapshot))
+            if note_inventory is not None:
+                if note_inventory['notes_slides']: flags.append('speaker_notes_parts_present')
+                if any(item['body_text_present'] for item in note_inventory['notes_slides']): flags.append('speaker_notes_text_present')
+                if not note_inventory['complete']: flags.append('speaker_notes_scan_incomplete')
         pdf = check('render_pdf', lambda: render(snapshot, root / 'render'))
         if source.suffix.lower() == '.pptx':
             if pdf is not None:

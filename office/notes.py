@@ -27,6 +27,28 @@ def _slide(source, number):
     return presentation, presentation.slides[number - 1]
 
 
+def inventory(source):
+    """Summarize notes placeholders without returning their text."""
+    source = Path(source)
+    if source.suffix.lower() != '.pptx' or source.stat().st_size > 128 * 1024 * 1024:
+        raise ValueError('Speaker notes inventory requires a PPTX of at most 128 MiB')
+    with zipfile.ZipFile(source) as archive:
+        entries = archive.infolist()
+        if len(entries) > 5000 or len({item.filename for item in entries}) != len(entries) or sum(item.file_size for item in entries) > 128 * 1024 * 1024:
+            raise ValueError('Presentation exceeds package limits or contains duplicate parts')
+    presentation = Presentation(source)
+    total = len(presentation.slides); records = []
+    # shortcut: scan at most 500 slides; paginate when larger decks need complete inventory.
+    for index in range(min(total, 500)):
+        slide = presentation.slides[index]
+        if not slide.has_notes_slide: continue
+        frame = slide.notes_slide.notes_text_frame
+        records.append({'slide': index + 1, 'body_text_present': bool(frame.text.strip()) if frame is not None else None})
+    return {'slides_total': total, 'slides_scanned': min(total, 500), 'notes_slides': records,
+            'complete': total <= 500 and all(item['body_text_present'] is not None for item in records),
+            'scope': 'Speaker notes body placeholders; other notes shapes, masters and comments are excluded.'}
+
+
 def read(source, number):
     _, slide = _slide(source, number)
     if not slide.has_notes_slide:

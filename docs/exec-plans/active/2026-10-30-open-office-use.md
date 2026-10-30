@@ -122,3 +122,7 @@ The viewer offers fixed literal list suggestions for unambiguous supported valid
 ## Office-first project entry point
 
 Replaced the inherited browser-first root README with English and Chinese Office setup, a runnable authoring example, MCP and skill configuration, and clear links to preserved upstream browser documentation. The project remains early and its full capability and fidelity limits are documented in the Office guide.
+
+## Review visibility for comments and presentation notes
+
+Review bundles flag Word comments, hidden slides and speaker-note parts or body text. The notes inventory returns slide numbers and text presence without copying note contents, with a 500-slide scan limit and explicit placeholder-only scope. Other notes content and comments require independent inspection.
