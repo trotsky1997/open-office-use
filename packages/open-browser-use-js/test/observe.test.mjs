@@ -95,7 +95,7 @@ test("observation renders accessible parents before descendants", async () => {
 });
 
 test('double click stops after the first click if the target moves',async()=>{
-  const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let move=false;
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let move=false,failRelease=false;
   client.request=async(method,params)=>{
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -103,12 +103,13 @@ test('double click stops after the first click if the target moves',async()=>{
     if(params.method==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:7,role:{value:'button'},name:{value:'Double'}}]};
     if(params.method==='DOM.resolveNode')return {object:{objectId:'node'}};
     if(params.method==='Runtime.callFunctionOn')return {result:{value:{x:move && events.length ? 40 : 10,y:20,width:10,height:10}}};
-    if(params.method==='Input.dispatchMouseEvent')events.push(params.commandParams);
+    if(params.method==='Input.dispatchMouseEvent'){events.push(params.commandParams);if(failRelease && params.commandParams.type==='mouseReleased'){failRelease=false;throw Error('release result unknown');}}
     return {};
   };
   const locator=new OpenBrowserUseBrowser({client}).tab(1).playwright.getByRole('button',{name:'Double'});
   await locator.dblclick();assert.deepEqual(events.map(e=>[e.type,e.clickCount]),[['mousePressed',1],['mouseReleased',1],['mousePressed',2],['mouseReleased',2]]);
   events.length=0;move=true;await assert.rejects(locator.dblclick({timeoutMs:0}),/moved after the first click/);assert.equal(events.length,2);
+  events.length=0;move=false;failRelease=true;await assert.rejects(locator.dblclick({button:'right',modifiers:['Shift']}),/release result unknown/);assert.deepEqual(events.map(e=>[e.type,e.button,e.modifiers,e.clickCount]),[['mousePressed','right',8,1],['mouseReleased','right',8,1],['mouseReleased','right',8,1]]);
 });
 
 test('locator innerText requires a unique current target and enforces its size limit',async()=>{
@@ -907,7 +908,7 @@ test("locator retries a covered target before input, and stops at an unknown inp
   setTimeout(()=>{covered=false;},20);
   await locator.click({timeoutMs:500});assert.equal(mouse,2);
   failMouse=true;
-  await assert.rejects(locator.click({timeoutMs:500}),/unknown input result/);assert.equal(mouse,3);
+  await assert.rejects(locator.click({timeoutMs:500}),/unknown input result/);assert.equal(mouse,4);
 });
 
 test("locator does not repeat a click when a frame changes after input", async () => {

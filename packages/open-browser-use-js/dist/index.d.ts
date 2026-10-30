@@ -286,6 +286,7 @@ export declare class OpenBrowserUseTab {
     hover(index: number, snapshotId: string): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;
     hoverAt(x: number, y: number, modifiers?: number): Promise<void>;
+    private dispatchClick;
     clickAt(x: number, y: number, options?: {
         button?: number;
         modifiers?: number;

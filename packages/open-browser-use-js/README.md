@@ -212,6 +212,8 @@ the `exact` option applies to string matching.
 `modifiers` (Alt, Control, ControlOrMeta, Meta, Shift). Forced clicks are
 rejected. `dblclick()` rechecks the target and its position between clicks. If the first
 click changes the page or a later input fails, inspect the result before retrying.
+If a mouse press or release fails, the SDK attempts a release and reports the
+original error; the page may already have received the click.
 
 This locator covers the interactive roles exposed by `observe`, including
 accessible frames, plus headings, accessible text, images, dialogs and

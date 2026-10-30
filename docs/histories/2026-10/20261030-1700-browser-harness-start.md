@@ -281,3 +281,5 @@ locator(selector, options) 现在实际应用 hasText/hasNotText/has/hasNot，�
 语义 locator filter 增加 visible 条件，在隔离 world 检查候选元素或文本范围和 frame 宿主的可见性及非零尺寸，并在操作前重算。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证可见容器、跨进程 frame 零宽、非法选项和准备点击期间尺寸变化时停止输入；Electron 44/Xvfb socket 验证跨进程 frame。语义定位候选受可访问性树覆盖范围约束；macOS/Windows 本轮未测。
 
 语义和 CSS locator 的 click/dblclick 增加左、中、右键及 Alt/Control/ControlOrMeta/Meta/Shift 修饰键，拒绝未知参数与 force:true，保留目标重查和输入后不重试。SDK 66 项通过；Linux ARM64 Chromium 原生消息验证可信左右键、组合修饰、中键双击及跨进程 frame；Electron 44/Xvfb socket 验证跨进程右键与 Shift。语义查询仍依赖可访问性树，macOS/Windows 本轮未测。
+
+语义与 CSS locator 的单击和双击共用鼠标按下/释放路径；按下或释放结果未知时尝试释放同一按钮和修饰键，保留原错误且不重发点击或双击后半段。SDK 66 项通过，故障注入覆盖释放失败与右键 Shift 参数；Linux ARM64 Chromium 原生消息及 Electron 44/Xvfb socket 实页回归通过。释放重试可能发生在页面已响应之后；macOS/Windows 本轮未测。
