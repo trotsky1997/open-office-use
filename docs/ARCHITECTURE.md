@@ -294,3 +294,7 @@ route 的既有能力和访问边界不变。Electron 包仍待单独配置发�
 - 包分层与依赖边界。
 - 数据流与存储模型。
 - 可观测性方案和本地开发模式。
+
+## Open Office Use foundation
+
+`office/` contains an independent Python file-oriented CLI and skill. It reads and writes DOCX, XLSX and PPTX through format libraries and renders PDFs through a local LibreOffice process. It requires a new output path for edits. Its supported operations, fidelity limits and setup are documented in `office/README.md`. The inherited browser routes remain separate.

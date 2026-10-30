@@ -148,3 +148,7 @@ for private/socket authorization, tools and managed stdio setup.
 ## License
 
 [MIT](./LICENSE)
+
+## Open Office Use fork
+
+This checkout also contains the early [Open Office Use file harness](office/README.md), with local DOCX, XLSX and PPTX authoring, inspection and PDF rendering. Browser tools remain available as inherited upstream functionality.
