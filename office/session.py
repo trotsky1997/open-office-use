@@ -685,17 +685,15 @@ def resize_grid(directory, base_revision, sheet, cell_range, target_range, colum
     c1, r1, c2, r2 = grid_bounds(cell_range); sc1, sr1, sc2, sr2 = grid_bounds(target_range)
     if not (c1 <= sc1 <= sc2 <= c2 and r1 <= sr1 <= sr2 <= r2): raise ValueError('Sizing range must be within the loaded range')
     state = info(directory); source = revision_file(state, base_revision)
-    with zipfile.ZipFile(source) as archive:
-        if any(name.startswith('_xmlsignatures/') for name in archive.namelist()): raise ValueError('Digitally signed workbooks are not supported for sizing')
     constraints = spreadsheet.worksheet_constraints(source, sheet, (sc1, sr1, sc2, sr2), column_width is not None, row_height is not None)
     if constraints['dimension_issues']: raise ValueError('Ambiguous worksheet dimensions: ' + ', '.join(constraints['dimension_issues']))
-    operations = []
-    if column_width is not None:
-        operations.extend({'command': 'set', 'path': f'/{sheet}/col[{get_column_letter(col)}]', 'props': {'width': str(column_width)}} for col in range(sc1, sc2 + 1))
-    if row_height is not None:
-        operations.extend({'command': 'set', 'path': f'/{sheet}/row[{row}]', 'props': {'@height': str(row_height)}} for row in range(sr1, sr2 + 1))
-    result = apply(directory, base_revision, operations)
-    return {**result, 'sheet': sheet, 'target_range': target_range, 'column_width': column_width, 'row_height': row_height}
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
+    try: spreadsheet.resize_dimensions(source, output, sheet, (sc1, sr1, sc2, sr2), column_width, row_height)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'sheet': sheet, 'target_range': target_range,
+            'column_width': column_width, 'row_height': row_height, 'formula_cache_effect': 'preserved'}
+
 
 def sheet_names(directory, base_revision):
     state = info(directory)

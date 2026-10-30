@@ -41,4 +41,4 @@ For worksheet presentation, `session_format_grid` applies font, color, alignment
 
 To size worksheet rows or columns, inspect the grid dimension metadata and use `session_resize_grid`; changes affect complete rows or columns, including cells outside the selected range.
 
-Use `session_compare_cells` to review formulas, cached values, direct formatting and stored row/column dimensions between revisions. OfficeCLI XLSX batches may update formula caches even for layout or formatting edits.
+Use `session_compare_cells` to review formulas, cached values, direct formatting and stored row/column dimensions between revisions. OfficeCLI XLSX batches may update formula caches even for formatting edits; `session_resize_grid` preserves cached values.

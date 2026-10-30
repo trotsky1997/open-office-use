@@ -603,6 +603,71 @@ def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=Fals
     return {'formula_ranges': ranges, 'merged_ranges': merges, 'sheet_protected': sheet_protected, 'dimension_issues': dimensions['issues'], 'dimensions': dimensions}
 
 
+
+def resize_dimensions(source, output, sheet, bounds, column_width, row_height):
+    """Modify worksheet dimensions without rewriting formula cells or other package parts."""
+    import copy
+    from lxml import etree
+    import ooxml
+    ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+    c1, r1, c2, r2 = bounds
+
+    def select_part(file):
+        workbook = load_workbook(file, read_only=True, data_only=False)
+        try:
+            if sheet not in workbook.sheetnames: raise ValueError('Worksheet not found')
+            path = getattr(workbook[sheet], '_worksheet_path', None)
+            if not isinstance(path, str) or sum(getattr(item, '_worksheet_path', None) == path for item in workbook.worksheets) != 1:
+                raise ValueError('Worksheet part is unavailable or shared')
+            return path
+        finally: workbook.close()
+
+    def edit(tree, archive):
+        root = tree.getroot()
+        if root.tag != ns + 'worksheet': raise ValueError('Worksheet has an invalid root')
+        sheets = root.findall(ns + 'sheetData'); containers = root.findall(ns + 'cols')
+        if len(sheets) != 1 or len(containers) > 1 or len(list(root.iter(ns + 'sheetData'))) != 1 or len(list(root.iter(ns + 'cols'))) != len(containers):
+            raise ValueError('Worksheet has ambiguous dimension containers')
+        data = sheets[0]
+        if containers and root.index(containers[0]) > root.index(data): raise ValueError('Worksheet columns appear after sheet data')
+        if column_width is not None:
+            cols = containers[0] if containers else etree.Element(ns + 'cols')
+            segments = []; covered = set(); previous = 0
+            for node in cols:
+                if node.tag != ns + 'col' or len(node) or (node.text and node.text.strip()): raise ValueError('Unsupported column structure')
+                try:
+                    first, last = int(node.get('min')), int(node.get('max'))
+                    if not 1 <= first <= last <= 16384 or first <= previous: raise ValueError
+                except (TypeError, ValueError): raise ValueError('Ambiguous or unordered column ranges') from None
+                previous = last
+                cuts = sorted({first, last + 1, max(first, min(last + 1, c1)), max(first, min(last + 1, c2 + 1))})
+                for start, stop in zip(cuts, cuts[1:]):
+                    part = copy.deepcopy(node); part.set('min', str(start)); part.set('max', str(stop - 1))
+                    if c1 <= start <= c2:
+                        part.set('width', str(column_width)); part.set('customWidth', '1'); covered.update(range(start, stop))
+                    segments.append(part)
+            for column in range(c1, c2 + 1):
+                if column not in covered:
+                    segments.append(etree.Element(ns + 'col', min=str(column), max=str(column), width=str(column_width), customWidth='1'))
+            segments.sort(key=lambda item: int(item.get('min')))
+            cols[:] = segments
+            if not containers: root.insert(root.index(data), cols)
+        if row_height is not None:
+            rows = []; existing = set(); previous = 0
+            for node in data:
+                if node.tag != ns + 'row': raise ValueError('Unsupported sheet data structure')
+                raw = node.get('r', '')
+                if not re.fullmatch(r'[0-9]{1,7}', raw): raise ValueError('Invalid row index')
+                number = int(raw)
+                if not 1 <= number <= 1048576 or number <= previous: raise ValueError('Duplicate or unordered rows')
+                previous = number; existing.add(number)
+                if r1 <= number <= r2: node.set('ht', str(row_height)); node.set('customHeight', '1')
+                rows.append((number, node))
+            for number in range(r1, r2 + 1):
+                if number not in existing: rows.append((number, etree.Element(ns + 'row', r=str(number), ht=str(row_height), customHeight='1')))
+            rows.sort(key=lambda item: item[0]); data[:] = [node for _, node in rows]
+    return ooxml.edit_xml(source, output, select_part, edit)
+
 def cell_constraint(constraints, col, row, locked, complex_formula=False):
     ranges = [bounds for bounds in constraints['merged_ranges'] if bounds[0] <= col <= bounds[2] and bounds[1] <= row <= bounds[3]]
     from openpyxl.utils.cell import get_column_letter

@@ -474,7 +474,7 @@ document.getElementById('grid-resize').addEventListener('click', async () => {
  try {
   const response=await fetch('grid-resize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,target_range:document.getElementById('grid-size-range').value,column_width:width ? Number(width) : null,row_height:height ? Number(height) : null})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Sizing failed');
-  invalidateGrid(`Sizing saved as revision ${result.revision}. Review formula caches.`); await refresh();
+  invalidateGrid(`Sizing saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded===loaded && current===loaded.revision && pinned===null) {inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false;}

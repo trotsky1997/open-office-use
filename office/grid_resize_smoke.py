@@ -3,27 +3,43 @@ import json
 import subprocess
 import sys
 import tempfile
+import concurrent.futures
 import zipfile
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from lxml import etree
 import session
 import review
+import officecli_backend
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'source.xlsx'; book = Workbook(); sheet = book.active
     sheet['A1'] = 'Height'; sheet['D2'] = '=2+2'; sheet['H2'] = 'Other column'
     sheet.column_dimensions.group('C', 'F', hidden=True); sheet.column_dimensions['C'].width = 20
-    sheet.row_dimensions[2].height = 40; book.save(source); original = source.read_bytes()
+    sheet.row_dimensions[2].height = 40; book.save(source)
+    patched = root / 'cached.xlsx'
+    with zipfile.ZipFile(source) as before, zipfile.ZipFile(patched, 'w') as after:
+        for entry in before.infolist():
+            data = before.read(entry)
+            if entry.filename == 'xl/worksheets/sheet1.xml':
+                tree = etree.fromstring(data); ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+                value = tree.xpath('./s:sheetData/s:row/s:c[@r="D2"]/s:v', namespaces=ns)[0]; value.text = '123.45'; data = etree.tostring(tree)
+            after.writestr(entry, data)
+    patched.replace(source); original = source.read_bytes()
     draft = root / 'draft'; session.start(draft, source=source)
     initial = session.read_grid(draft, 0, 'Sheet', 'C1:F3')['dimensions']
     assert initial['columns']['D']['width'] == '20' and initial['columns']['D']['min'] == '3' and initial['columns']['D']['max'] == '6' and initial['columns']['D']['hidden'] == '1' and initial['rows']['2']['ht'] == '40', initial
     result = session.resize_grid(draft, 0, 'Sheet', 'C1:F3', 'D2', 12.5, 27)
+    audit = officecli_backend.audit(result['file']); assert audit['validation']['exit_code'] == 0 and audit['validation']['result']['success'], audit
     workbook = load_workbook(result['file']); sheet = workbook.active
     assert sheet['D2'].value == '=2+2' and sheet['H2'].value == 'Other column' and sheet.row_dimensions[2].height == 27
     comparison = session.compare_cells(draft, 0, 1, 'Sheet', 'C1:F3')
     dimension_diff = comparison['dimensions']
-    assert result['formula_cache_effect'] == 'may_change' and comparison['changed_count'] == 1 and comparison['changes'][0]['changed_fields'] == ['value'], comparison
+    assert result['formula_cache_effect'] == 'preserved' and comparison['changed_count'] == 0, comparison
+    assert load_workbook(result['file'], data_only=True).active['D2'].value == 123.45
+    with zipfile.ZipFile(source) as before, zipfile.ZipFile(result['file']) as after:
+        assert set(before.namelist()) == set(after.namelist())
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name != 'xl/worksheets/sheet1.xml')
     assert dimension_diff['complete'] and dimension_diff['changed_count'] == 2, comparison
     assert {(item['kind'], item['target']) for item in dimension_diff['changes']} == {('column', 'D'), ('row', '2')}
     assert 'width' in next(item for item in dimension_diff['changes'] if item['kind'] == 'column')['changed_fields']
@@ -40,7 +56,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert json.loads(command.stdout)['revision'] == 2
     cli_diff = subprocess.run([sys.executable, str(cli), 'session', 'compare-cells', str(draft), '--before', '0', '--after', '2', '--sheet', 'Sheet', '--range', 'C1:F3'], capture_output=True, text=True, check=True)
     assert json.loads(cli_diff.stdout)['dimensions']['changed_count'] == 3
-    assert session.read_grid(draft, 2, 'Sheet', 'E3')['dimensions']['columns']['E']['width'] == '18'
+    assert float(session.read_grid(draft, 2, 'Sheet', 'E3')['dimensions']['columns']['E']['width']) == 18
     try: session.resize_grid(draft, 0, 'Sheet', 'C1:F3', 'D2', 15, None)
     except ValueError: pass
     else: raise AssertionError('Stale sizing accepted')
@@ -53,6 +69,23 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError: pass
     else: raise AssertionError('Signed workbook sizing accepted')
     assert session.info(signed_draft)['latest_revision'] == 0
+    sparse_source = root / 'sparse.xlsx'; sparse_book = Workbook(); sparse_book.active['A1'] = 'first'; sparse_book.active['A3'] = 'third'; sparse_book.save(sparse_source)
+    sparse_draft = root / 'sparse'; session.start(sparse_draft, source=sparse_source)
+    sparse_result = session.resize_grid(sparse_draft, 0, 'Sheet', 'B1:C3', 'B2:C2', 19, 31)
+    sparse_audit = officecli_backend.audit(sparse_result['file']); assert sparse_audit['validation']['exit_code'] == 0 and sparse_audit['validation']['result']['success'], sparse_audit
+    sparse_sheet = load_workbook(sparse_result['file']).active
+    assert sparse_sheet.column_dimensions['B'].width == 19 and sparse_sheet.column_dimensions['C'].width == 19
+    assert sparse_sheet.row_dimensions[2].height == 31 and sparse_sheet['A1'].value == 'first' and sparse_sheet['A3'].value == 'third'
+    with zipfile.ZipFile(sparse_result['file']) as archive:
+        tree = etree.fromstring(archive.read('xl/worksheets/sheet1.xml')); ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+        assert tree.index(tree.find(ns + 'cols')) < tree.index(tree.find(ns + 'sheetData'))
+        assert [row.get('r') for row in tree.find(ns + 'sheetData')] == ['1', '2', '3']
+    race = root / 'race'; session.start(race, source=sparse_source)
+    def compete(width):
+        try: return session.resize_grid(race, 0, 'Sheet', 'A1', 'A1', width, None)['revision']
+        except ValueError: return None
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool: outcomes = list(pool.map(compete, [12, 13]))
+    assert sorted(outcomes, key=lambda x: x is None) == [1, None] and session.info(race)['latest_revision'] == 1
     protected = root / 'protected.xlsx'; protected_book = Workbook(); protected_book.active.protection.sheet = True; protected_book.save(protected)
     protected_draft = root / 'protected-draft'; session.start(protected_draft, source=protected)
     try: session.resize_grid(protected_draft, 0, 'Sheet', 'A1', 'A1', 15, None)

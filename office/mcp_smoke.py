@@ -363,9 +363,9 @@ async def main():
                 sizing_draft = root / 'grid-sizing-draft'
                 assert not (await session.call_tool('start_session', {'directory': str(sizing_draft), 'source': str(grid_draft / 'revision-000002.xlsx')})).isError
                 resized = await session.call_tool('session_resize_grid', {'directory': str(sizing_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'target_range': 'A1', 'column_width': 21, 'row_height': 28})
-                assert not resized.isError and resized.structuredContent['revision'] == 1, resized
+                assert not resized.isError and resized.structuredContent['revision'] == 1 and resized.structuredContent['formula_cache_effect'] == 'preserved', resized
                 dimensions = await session.call_tool('session_read_grid', {'directory': str(sizing_draft), 'base_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1'})
-                assert dimensions.structuredContent['dimensions']['columns']['A']['width'] == '21' and dimensions.structuredContent['dimensions']['rows']['1']['ht'] == '28', dimensions
+                assert float(dimensions.structuredContent['dimensions']['columns']['A']['width']) == 21 and float(dimensions.structuredContent['dimensions']['rows']['1']['ht']) == 28, dimensions
                 sizing_diff = await session.call_tool('session_compare_cells', {'directory': str(sizing_draft), 'before_revision': 0, 'after_revision': 1, 'sheet': 'Sheet', 'cell_range': 'A1:A2'})
                 assert not sizing_diff.isError and sizing_diff.structuredContent['dimensions']['changed_count'] == 2, sizing_diff
                 revision_scan = await session.call_tool('session_scan_formulas', {'directory': str(grid_draft), 'base_revision': 2})
