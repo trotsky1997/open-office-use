@@ -12,3 +12,7 @@ Next work: faithful structured inspection, rich authoring, formula calculation a
 ## Direction
 
 Prioritize evaluating OfficeCLI as an optional existing authoring engine before expanding our Python format operations. A prospective integration needs explicit executable discovery, version reporting, session save/close behavior, a new-output transaction boundary, error propagation and format-preservation tests. Evaluate GenOffice's visible editor and review workflow separately, including distribution and licensing boundaries. Keep authoring, rendering and agent-facing session orchestration distinct so that each can be replaced. Compare both renderers and LibreOffice against representative Office files; do not infer visual fidelity from a schema validation pass.
+
+## Implemented next step
+
+Added optional OfficeCLI-backed outline, get, query and atomic copy-based batches, plus LibreOffice/Poppler page PNG previews. Real OfficeCLI 1.0.147 checks cover create, copy edit, structured reads, failed multi-operation batches and existing output protection in each format. Follow-up remains: rich real-world fidelity fixtures, formula calculation, interactive sessions, visual comparison, and stronger artifact validation.

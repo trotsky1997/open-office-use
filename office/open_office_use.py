@@ -1,6 +1,7 @@
 """Small local file-oriented office harness."""
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 from docx import Document
 from openpyxl import Workbook, load_workbook
 from pptx import Presentation
+
+import officecli_backend
 
 
 def kind(path):
@@ -91,7 +94,7 @@ def render(source, output_dir):
         raise RuntimeError('LibreOffice (soffice) is required for rendering')
     with tempfile.TemporaryDirectory() as tmp:
         profile = (Path(tmp) / 'profile').as_uri()
-        result = subprocess.run([executable, '-env:UserInstallation=' + profile, '--headless', '--convert-to', 'pdf', '--outdir', tmp, str(source)], capture_output=True, text=True, timeout=120)
+        result = subprocess.run([executable, '-env:UserInstallation=' + profile, '--headless', '--convert-to', 'pdf', '--outdir', tmp, str(source)], capture_output=True, text=True, timeout=120, check=False)
         pdf = Path(tmp) / target.name
         if result.returncode or not pdf.is_file():
             raise RuntimeError(f'LibreOffice conversion failed: {result.stderr or result.stdout}')
@@ -100,12 +103,43 @@ def render(source, output_dir):
     return str(target.resolve())
 
 
+def preview(source, output_dir):
+    executable = shutil.which('pdftoppm')
+    if not executable:
+        raise RuntimeError('Poppler pdftoppm is required for page previews')
+    destination = Path(output_dir).absolute()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.office-preview-') as tmp:
+        pdf = render(source, tmp)
+        result = subprocess.run([executable, '-png', '-r', '120', pdf, str(Path(tmp) / 'page')],
+                                capture_output=True, text=True, timeout=120, check=False)
+        pages = sorted(Path(tmp).glob('page-*.png'))
+        if result.returncode or not pages:
+            raise RuntimeError(f'Page rendering failed: {result.stderr}')
+        destination.mkdir()
+        published = []
+        try:
+            for page in pages:
+                target = destination / page.name
+                os.link(page, target)
+                published.append(target)
+        except OSError:
+            for target in published:
+                target.unlink()
+            destination.rmdir()
+            raise
+    return [str(page) for page in published]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     read = commands.add_parser('inspect'); read.add_argument('file')
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
-    preview = commands.add_parser('render'); preview.add_argument('file'); preview.add_argument('--out-dir', required=True)
+    render_command = commands.add_parser('render'); render_command.add_argument('file'); render_command.add_argument('--out-dir', required=True)
+    images = commands.add_parser('preview'); images.add_argument('file'); images.add_argument('--out-dir', required=True)
+    structured = commands.add_parser('structured'); structured.add_argument('file'); structured.add_argument('mode', choices=['outline', 'get', 'query']); structured.add_argument('target', nargs='?')
+    batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
     args = parser.parse_args()
     try:
         if args.command == 'inspect':
@@ -114,10 +148,20 @@ def main():
             with open(args.spec, encoding='utf-8') as f:
                 spec = json.load(f)
             result = {'output': author(spec, args.out, args.source)}
-        else:
+        elif args.command == 'render':
             result = {'pdf': render(args.file, args.out_dir)}
+        elif args.command == 'preview':
+            result = {'pages': preview(args.file, args.out_dir)}
+        elif args.command == 'structured':
+            if (args.mode == 'outline') != (args.target is None):
+                raise ValueError('get and query require a target; outline takes no target')
+            result = officecli_backend.read(args.file, args.mode, args.target)
+        else:
+            with open(args.spec, encoding='utf-8') as f:
+                operations = json.load(f)
+            result = officecli_backend.batch(operations, args.out, args.source)
         print(json.dumps(result, ensure_ascii=False, default=str))
-    except (OSError, ValueError, KeyError, IndexError, TypeError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, IndexError, TypeError, RuntimeError, subprocess.SubprocessError) as exc:
         print(f'office-use: {exc}', file=sys.stderr)
         return 1
     return 0

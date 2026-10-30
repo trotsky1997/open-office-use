@@ -33,4 +33,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert expected in json.dumps(run('inspect', file))
         pdf = Path(run('render', file, '--out-dir', root / suffix[1:])['pdf'])
         assert pdf.read_bytes().startswith(b'%PDF')
+        pages = run('preview', file, '--out-dir', root / ('preview' + suffix))['pages']
+        assert pages and Path(pages[0]).read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+        run('preview', file, '--out-dir', root / ('preview' + suffix), ok=False)
 print('Office smoke passed: create, inspect, edit copy, render, and overwrite protection for three formats')
