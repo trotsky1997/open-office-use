@@ -45,7 +45,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.oxml.xmlchemy import OxmlElement as PptxElement
 from pptx.util import Inches, Pt
@@ -412,11 +412,24 @@ def append_slides(presentation, slides):
             if not isinstance(element, dict): raise ValueError('Slide elements must be objects')
             kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
             allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
-                       'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description', 'fit'},
+                       'rectangle': geometry | {'fill'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
                        'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
             x = Inches(number(element.get('x'), 'x', -100, 100)); y = Inches(number(element.get('y'), 'y', -100, 100))
+            if kind == 'line':
+                end_x = Inches(number(element.get('end_x'), 'end_x', -100, 100)); end_y = Inches(number(element.get('end_y'), 'end_y', -100, 100))
+                if (x, y) == (end_x, end_y): raise ValueError('Line endpoints must differ')
+                arrow = element.get('arrow', 'none')
+                if arrow not in ('none', 'start', 'end', 'both'): raise ValueError('Line arrow must be none, start, end or both')
+                ink = color(element.get('color', '000000'))
+                line_width = number(element.get('line_width', 2), 'line_width', 0.1, 20)
+                shape = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x, y, end_x, end_y)
+                shape.line.color.rgb = ink; shape.line.width = Pt(line_width)
+                line = shape._element.spPr.get_or_add_ln()
+                if arrow in ('start', 'both'): head = PptxElement('a:headEnd'); head.set('type', 'triangle'); line.append(head)
+                if arrow in ('end', 'both'): tail = PptxElement('a:tailEnd'); tail.set('type', 'triangle'); line.append(tail)
+                continue
             width = Inches(number(element.get('width'), 'width', 0.01, 100)); height = Inches(number(element.get('height'), 'height', 0.01, 100))
             if kind == 'textbox':
                 if ('text' in element) == ('paragraphs' in element): raise ValueError('Textbox requires text or paragraphs')

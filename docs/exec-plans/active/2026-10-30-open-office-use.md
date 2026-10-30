@@ -278,3 +278,5 @@ Tracked-change resolution can enforce the inventory snapshot hash; the viewer va
 Picture replacement accepts a source snapshot hash; viewer selections bind the hash, and local image inputs use checked snapshots.
 
 Chart-cache inspection and sync support snapshot-bound repair in XLSX and PPTX; formula-cache freshness remains unknown.
+
+PowerPoint authoring supports editable straight lines and arrows with free-position endpoints; attached connectors and advanced routing remain open.

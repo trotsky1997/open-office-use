@@ -6,7 +6,7 @@ Use `search_slide_text` / `session_search_slide_text` with `scope: "slides"` for
 
 For an embedded picture, use `session_replace_picture` with a local PNG or JPEG; the existing crop remains. `inspect_slide_layout` / `session_inspect_slide_layout` report overlap, off-slide and small-font candidates from run or paragraph-default sizes, plus unresolved font coverage; the viewer lists and highlights these objects; `inspect_slide_text` / `session_inspect_slide_text` report text rendering candidates. Check coverage and inspect rendered pages: intentional overlaps, master content, hidden slides, text overflow, and page-to-slide mapping need review. Contact sheets are overviews; inspect important slides at full size.
 
-For basic new decks, `author_file` can set slide dimensions and create blank slides with positioned textboxes, rectangles, editable tables, native column/line charts with embedded data, and local PNG/JPEG images; choose `fit` as `contain` or `cover` to preserve aspect ratio, or `stretch` to fill the frame. See the project guide for units, formatting options, image limits and template requirements. Inspect rendered slides and use OfficeCLI for richer elements.
+For basic new decks, `author_file` can set slide dimensions and create blank slides with positioned textboxes, rectangles, editable lines and arrows, editable tables, native column/line charts with embedded data, and local PNG/JPEG images; choose `fit` as `contain` or `cover` to preserve aspect ratio, or `stretch` to fill the frame. See the project guide for units, formatting options, image limits and template requirements. Inspect rendered slides and use OfficeCLI for richer elements.
 
 Use `inspect_slide_charts` / `session_inspect_slide_charts` to inventory saved chart caches, series, categories, source formulas and embedded workbook metadata. Check each reconciliation status and completeness, including when a mismatch is reported: saved embedded workbook values are compared to caches within documented limits, while formula result freshness remains unknown.
 
@@ -43,3 +43,5 @@ Speaker-note reads return `snapshot_sha256`. Pass it as `expected_sha256` when r
 For picture replacement, pass the selected presentation `snapshot_sha256` as `expected_sha256` to bind the operation to the inspected source. The viewer submits the selection snapshot automatically; local replacement images are read from checked snapshots.
 
 Slide chart inventories return `snapshot_sha256`; pass it as `expected_sha256` to slide chart cache synchronization to bind repair to the inspected presentation.
+
+Use `{"type":"line","x":2,"y":2,"end_x":5,"end_y":2,"color":"236B8E","line_width":3,"arrow":"end"}` for a straight editable connector. Coordinates are inches, width is points, and `arrow` can be `none`, `start`, `end`, or `both`. Endpoints are free positions, so review connections after moving shapes.

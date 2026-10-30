@@ -211,6 +211,8 @@ PowerPoint authoring also supports positioned elements and a custom slide size f
 ```
 
 
+Positioned `line` elements create editable straight connectors using start (`x`, `y`) and end (`end_x`, `end_y`) coordinates in inches. Optional `color` is six-digit RGB, `line_width` is in points (0.1–20; default 2), and `arrow` is `none`, `start`, `end` or `both` (default `none`). Endpoints are free positions and do not attach to other shapes. For example: `{"type":"line","x":2,"y":2,"end_x":5,"end_y":2,"color":"236B8E","line_width":3,"arrow":"end"}`. Review rendering and arrow direction in the target application.
+
 Each new slide can include a `notes` string for its editable speaker-notes body. Newlines create separate paragraphs; tabs are preserved. Notes may contain up to 100,000 characters, with control characters other than newline and tab rejected. Omitting `notes` leaves the new slide without a notes slide; an empty string creates an empty notes body. Notes are available through the existing notes read, search and session edit operations. Source-based authoring appends slides and uses a PowerPoint library round trip, so inspect existing presentation features after saving.
 
 For rich slide text, use `paragraphs` instead of `text` on a textbox:

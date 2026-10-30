@@ -29,6 +29,20 @@ with tempfile.TemporaryDirectory() as tmp:
     assert slide.shapes[1].text_frame.paragraphs[0].runs[0].font.size.pt == 32
     assert slide.shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Teal illustration'
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    line_file=root/'lines.pptx'
+    lines=[{'type':'line','x':1,'y':1,'end_x':5,'end_y':1,'color':'236B8E','line_width':3,'arrow':'end'}, {'type':'line','x':5,'y':2,'end_x':1,'end_y':2,'color':'BA5A32','arrow':'end'}, {'type':'line','x':6,'y':1,'end_x':6,'end_y':3,'arrow':'both'}]
+    open_office_use.author({'slides':[{'layout':'blank','elements':lines}]},line_file)
+    first_line, reverse_line, vertical_line = Presentation(line_file).slides[0].shapes
+    a='{http://schemas.openxmlformats.org/drawingml/2006/main}'
+    assert first_line.line.width.pt == 3 and str(first_line.line.color.rgb) == '236B8E' and first_line._element.spPr.ln.find(a+'tailEnd').get('type') == 'triangle'
+    assert reverse_line._element.spPr.xfrm.get('flipH') == '1' and reverse_line._element.spPr.ln.find(a+'tailEnd') is not None
+    assert vertical_line._element.spPr.ln.find(a+'headEnd') is not None and vertical_line._element.spPr.ln.find(a+'tailEnd') is not None
+    code, validation, _=officecli_backend.invoke('validate',line_file); assert code==0 and validation['success'],validation
+    for bad in [dict(lines[0], end_x=1),dict(lines[0], arrow='side'),dict(lines[0], line_width=0),dict(lines[0], color='bad')]:
+        invalid=root/'invalid-line.pptx'
+        try: open_office_use.author({'slides':[{'layout':'blank','elements':[bad]}]},invalid)
+        except ValueError: assert not invalid.exists()
+        else: raise AssertionError('Invalid line accepted')
     notes_file=root/'notes-authored.pptx'
     notes_spec={'slides':[{'title':'First','notes':'Opening detail\nSecond paragraph'}, {'layout':'blank','notes':'Blank slide speaker notes'}, {'title':'No notes'}, {'title':'Empty notes','notes':''}]}
     notes_spec_file=root/'notes-spec.json';notes_spec_file.write_text(json.dumps(notes_spec))

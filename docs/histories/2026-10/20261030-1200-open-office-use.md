@@ -381,3 +381,5 @@ Bound tracked-change acceptance/rejection to the inspected snapshot hash through
 Bound PowerPoint picture replacement to inspected presentation hashes, and read CLI/MCP image inputs through checked snapshots.
 
 Chart-cache scanning uses checked snapshots; XLSX and PPTX syncs accept inspected source hashes, and the workbook viewer binds cache repairs to its preview.
+
+Added native PowerPoint straight line and arrow authoring with endpoint geometry, RGB color and line width; verified reverse and vertical directions in LibreOffice.
