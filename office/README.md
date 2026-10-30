@@ -94,6 +94,14 @@ For new Word documents, optional `page_setup` configures page size, margins and 
 
 Sizes are `a4` and `letter`; orientation is `portrait` or `landscape`. Omitted size and margins retain document defaults. Margins are in inches (0–5), and must leave at least half an inch of content area in each dimension. Header and footer take single-line text of at most 1,000 characters and `left`, `center` or `right` alignment. `page_number` adds a Word PAGE field after footer text; the field holds a placeholder until a compatible application updates it. The setting applies to new single-section documents; source-based authoring rejects `page_setup`. Rendering and printer margins can affect placement.
 
+Use typed values for native spreadsheet dates and date-times:
+
+```json
+{"ranges":{"Schedule":[{"start":"A1","values":[["Event","Date","Time"],["Launch",{"type":"date","value":"2026-10-31"},{"type":"datetime","value":"2026-10-31T09:30:45.125"}]]}]}}
+```
+
+Dates use `YYYY-MM-DD`; date-times use `YYYY-MM-DDTHH:MM:SS` with optional one-to-three fractional digits. Values have no time zone and are stored using the workbook's date system. Dates earlier than 1900-01-01 or on/before the workbook epoch are rejected; this excludes 1904-01-01 in a 1904-date-system workbook. A date-appropriate number format is applied when the cell has no date format; use `sheet_options.formats` to control display, including fractional seconds. Check formulas and application-specific date formatting after editing.
+
 For ordered Word content, `author` and MCP `author_file` accept `blocks`:
 
 ```json

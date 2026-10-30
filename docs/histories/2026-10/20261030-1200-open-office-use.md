@@ -331,3 +331,5 @@ Added explicit literal-text cell authoring for new and copied workbooks, includi
 Workbook authoring validates all cell text, formulas and numeric inputs before saving, preventing silent text truncation and non-finite values becoming blank. Limits and numeric precision are documented.
 
 Added bounded rectangular range input to workbook authoring, sharing cell validation and table protections. Verified source copies, formulas, literal text, native table creation, overlap rejection and CLI/MCP.
+
+Added typed date and date-time cells to workbook authoring for individual cells and rectangular ranges, respecting workbook date epochs. Verified 1900 and 1904 systems, invalid dates, CLI and OfficeCLI validation; native Excel remains unverified.

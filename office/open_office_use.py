@@ -979,16 +979,25 @@ def author(spec, output, source=None):
                         a, b, c, d = range_boundaries(table.ref)
                         if a <= c1 <= c and ((r1 == b and table.headerRowCount != 0) or (r1 == d and (table.totalsRowCount or table.totalsRowShown))):
                             raise ValueError('Table header and totals cells require a table-aware edit')
-                literal = isinstance(value, dict)
-                if literal:
-                    if set(value) != {'type', 'value'} or value['type'] != 'text' or not isinstance(value['value'], str) or not value['value']: raise ValueError('Typed cell values require nonempty literal text')
-                    value = value['value']
+                literal = False; temporal = False
+                if isinstance(value, dict):
+                    if set(value) != {'type', 'value'} or value['type'] not in ('text', 'date', 'datetime') or not isinstance(value['value'], str) or not value['value']: raise ValueError('Invalid typed cell value')
+                    kind, value = value['type'], value['value']
+                    if kind == 'text': literal = True
+                    else:
+                        pattern = r'[0-9]{4}-[0-9]{2}-[0-9]{2}' if kind == 'date' else r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?'
+                        if not re.fullmatch(pattern, value): raise ValueError('Invalid ISO date or datetime')
+                        try: value = date.fromisoformat(value) if kind == 'date' else datetime.fromisoformat(value)
+                        except ValueError: raise ValueError('Invalid ISO date or datetime') from None
+                        day = value.date() if isinstance(value, datetime) else value
+                        if day < date(1900, 1, 1) or day <= obj.epoch.date(): raise ValueError('Date must be after the workbook epoch and no earlier than 1900-01-01')
+                        temporal = True
                 formula = isinstance(value, str) and value.startswith('=') and not literal
                 if isinstance(value, str):
                     if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value): raise ValueError('Cell text contains unsupported XML characters')
                     if len(value.encode('utf-16-le')) // 2 > (8192 if formula else 32767): raise ValueError('Cell text or formula exceeds Excel length limits')
                     if formula and value == '=': raise ValueError('Formula expression is empty')
-                elif value is not None and not isinstance(value, (int, float, bool)): raise ValueError('Cell value must be text, number, boolean or null')
+                elif not temporal and value is not None and not isinstance(value, (int, float, bool)): raise ValueError('Cell value must be text, number, boolean, typed date or null')
                 elif isinstance(value, (int, float)) and not isinstance(value, bool) and (value > 1.7976931348623157e308 or value < -1.7976931348623157e308 or isinstance(value, float) and not math.isfinite(value)): raise ValueError('Cell number must be finite and within Excel numeric range')
                 if not formula: spreadsheet.validate_cell_value(value)
                 ws[address] = value

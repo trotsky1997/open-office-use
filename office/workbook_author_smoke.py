@@ -6,6 +6,8 @@ import zipfile
 from lxml import etree
 import subprocess
 from pathlib import Path
+from datetime import datetime
+from openpyxl.utils.datetime import CALENDAR_MAC_1904
 from openpyxl import load_workbook
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
@@ -187,6 +189,28 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as exc: assert 'table' in str(exc).lower()
     else: raise AssertionError('Table header overwrite accepted')
     assert not (root/'bad-table-range.xlsx').exists()
+    dates_file=root/'dates-author.xlsx'
+    dates_spec={'ranges':{'Dates':[{'start':'A1','values':[['Event','Date','Time'],['Launch',{'type':'date','value':'2026-10-31'},{'type':'datetime','value':'2026-10-31T09:30:45.125'}]]}]}}
+    dates_json=root/'dates-author.json';dates_json.write_text(json.dumps(dates_spec))
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(dates_json),'--out',str(dates_file)],capture_output=True,text=True,check=True)
+    dates_sheet=load_workbook(dates_file)['Dates']
+    assert dates_sheet['B2'].value==datetime(2026,10,31) and dates_sheet['B2'].is_date and dates_sheet['C2'].value==datetime(2026,10,31,9,30,45,125000) and dates_sheet['C2'].is_date
+    code,validation,_=officecli_backend.invoke('validate',dates_file);assert code==0 and validation['success'],validation
+    mac_source=root/'mac-epoch.xlsx';mac_book=load_workbook(dates_file);mac_book.epoch=CALENDAR_MAC_1904;mac_book.save(mac_source)
+    mac_output=root/'mac-epoch-authored.xlsx';open_office_use.author({'sheets':{'Dates':{'A4':{'type':'date','value':'1904-01-02'}}}},mac_output,mac_source)
+    assert load_workbook(mac_output)['Dates']['A4'].value==datetime(1904,1,2)
+    invalid_dates=[{'type':'date','value':'2026-02-30'},{'type':'date','value':'1899-12-31'},{'type':'datetime','value':'2026-10-31T09:30:00Z'},{'type':'datetime','value':'2026-10-31T09:30:00.0001'},{'type':'date','value':'2026-1-01'}]
+    for index,value in enumerate(invalid_dates):
+        bad=root/f'bad-date-{index}.xlsx'
+        try: open_office_use.author({'sheets':{'Dates':{'A1':value}}},bad)
+        except ValueError: pass
+        else: raise AssertionError('Invalid typed date accepted')
+        assert not bad.exists()
+    bad_mac=root/'bad-mac-date.xlsx'
+    try: open_office_use.author({'sheets':{'Dates':{'A4':{'type':'date','value':'1904-01-01'}}}},bad_mac,mac_source)
+    except ValueError: pass
+    else: raise AssertionError('Ambiguous epoch date accepted')
+    assert not bad_mac.exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))

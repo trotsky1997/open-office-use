@@ -228,3 +228,5 @@ Workbook authoring supports explicit literal-text cells, preserving strings such
 Workbook authoring rejects unsupported cell characters, oversized text and formulas, and non-finite or out-of-range numbers before publishing.
 
 Workbook authoring supports bounded rectangular arrays per sheet, with overlap checks and the same typed-cell validation and source table protections as individual cell writes.
+
+Workbook authoring supports native typed date and millisecond date-time values, respecting the source workbook date epoch.
