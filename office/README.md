@@ -90,6 +90,15 @@ For basic Excel authoring, `sheet_options` can format a workbook in the same req
 
 Options apply to existing worksheets after values are written. Freeze panes accepts a single cell or `null`; auto-filter accepts a range of at most 10,000,000 cells or `null` and rejects replacement when existing filter criteria or sort state are present. Column widths use Excel character units (greater than 0 and at most 255); row heights use points (greater than 0 and at most 409.5). Format entries accept `bold`, `italic`, `font_size`, six-digit RGB `font_color` and `fill`, `number_format`, `horizontal` (`general`, `left`, `center`, `right`) and boolean `wrap`. Omitted properties retain their existing direct settings. Each format covers up to 10,000 cells; all formats together cover up to 20,000 cells, with at most 100 format entries per sheet and 200 dimension entries of each kind. Merged-cell placeholders are rejected. Formulas are stored without calculation; formula caches may be missing and LibreOffice previews may recalculate them. When modifying an existing workbook, library round-tripping can change unsupported features and formula caches; use the targeted session grid when preserving those matters.
 
+The same `sheet_options` can create editable column or line charts:
+
+```json
+{"sheets":{"Sales":{"A1":"Quarter","B1":"Revenue","A2":"Q1","B2":100,"A3":"Q2","B3":120}},
+ "sheet_options":{"Sales":{"fit_to_page":true,"charts":[{"type":"column","data":"B1:B3","categories":"A2:A3","anchor":"D2","title":"Revenue","width":14,"height":8}]}}}
+```
+
+`data` is a rectangular range on the same sheet, with one series per column. `titles_from_data` defaults to `true` and uses the first row as series titles; set it to `false` when the range contains only data. Optional `categories` must be one column matching the data rows. Literal text and numeric categories are detected automatically; use `category_type: "text"` or `"number"` for mixed or formula categories. Chart `width` and `height` are in centimeters; `anchor` is a cell. Optional titles are `title`, `x_axis_title` and `y_axis_title`. Up to 20 charts per worksheet, 30 series per chart and 10,000 cells per source range are supported. Chart values reference cells and may include formulas; inspect the data types and result. `fit_to_page: true` sets one page wide with unlimited height; it can reduce legibility, so review the PDF. The basic writer does not populate chart or formula caches. Use `scan-chart-caches`, recalculate with a compatible application when needed, and review the result in the target application. Existing-workbook saves can alter unsupported features and caches.
+
 PowerPoint authoring also supports positioned elements and a custom slide size for new files:
 
 ```json

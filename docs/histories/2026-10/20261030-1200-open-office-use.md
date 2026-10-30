@@ -215,3 +215,7 @@ Added positioned native table elements to basic CLI/MCP slide authoring, with bo
 ### Formatted spreadsheet authoring
 
 Added `sheet_options` to basic CLI/MCP workbook authoring for direct formats, number formats, sizing, freeze panes and auto-filter ranges. Tested real workbook structure, formula cache state, source-copy behavior, protected filter criteria, invalid input, MCP and LibreOffice preview. Native Excel rendering and complex source round-tripping remain unverified.
+
+### Basic spreadsheet chart authoring
+
+Added worksheet-referenced column/line charts and optional one-page-wide print scaling to basic CLI/MCP authoring. Tested source references, text and formula categories, invalid ranges, MCP creation and LibreOffice rendering; the chart cache scanner reports the expected missing caches. Excel rendering and cache generation remain unverified.

@@ -158,3 +158,7 @@ Basic slide authoring also supports positioned, editable tables with text, an op
 ## Basic formatted spreadsheet authoring
 
 CLI/MCP JSON specs can now create cell values and formulas together with bounded direct formatting, row and column dimensions, frozen panes and an auto-filter range. Existing filter criteria are protected from replacement. Formula calculation and rich-workbook preservation remain separate workflows.
+
+## Basic spreadsheet charts
+
+CLI/MCP spreadsheet specs support same-sheet column and line charts, inferred or explicit category types and page-width fitting. LibreOffice preview was checked with three textual categories; Excel chart and formula caches remain unpopulated by the basic writer and require separate review.

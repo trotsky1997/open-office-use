@@ -1,6 +1,7 @@
 """Small local file-oriented office harness."""
 import argparse
 from copy import copy
+from datetime import date, datetime
 import importlib
 import importlib.metadata
 import io
@@ -19,9 +20,12 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook
+from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart.data_source import AxDataSource, StrRef
 from openpyxl.styles import PatternFill
 from openpyxl.cell.cell import MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.utils.cell import column_index_from_string, range_boundaries
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -310,7 +314,7 @@ def format_workbook(workbook, options):
         return 'FF' + value.upper()
     for name, setting in options.items():
         if name not in workbook.sheetnames: raise ValueError(f'Worksheet not found: {name}')
-        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats'}: raise ValueError('Invalid worksheet options')
+        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page'}: raise ValueError('Invalid worksheet options')
         sheet = workbook[name]
         if not isinstance(sheet, Worksheet): raise ValueError('Sheet options require a worksheet')
         if 'freeze_panes' in setting:
@@ -319,6 +323,12 @@ def format_workbook(workbook, options):
                 if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', value): raise ValueError('Freeze panes requires a single cell')
                 bounds(value, 1)
             sheet.freeze_panes = value
+        if 'fit_to_page' in setting:
+            fit = setting['fit_to_page']
+            if not isinstance(fit, bool): raise ValueError('Fit to page must be a boolean')
+            if sheet.sheet_properties.pageSetUpPr is None: sheet.sheet_properties.pageSetUpPr = PageSetupProperties()
+            sheet.sheet_properties.pageSetUpPr.fitToPage = fit
+            if fit: sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0
         if 'auto_filter' in setting:
             value = setting['auto_filter']
             if value is not None: bounds(value, 10000000)
@@ -363,6 +373,52 @@ def format_workbook(workbook, options):
                         if 'wrap' in style: alignment.wrap_text = style['wrap']
                         cell.alignment = alignment
                     if 'number_format' in style: cell.number_format = style['number_format']
+        charts = setting.get('charts', [])
+        if not isinstance(charts, list) or len(charts) > 20: raise ValueError('Charts must be a list of at most 20 entries')
+        for chart_spec in charts:
+            allowed = {'type', 'data', 'categories', 'anchor', 'title', 'x_axis_title', 'y_axis_title', 'titles_from_data', 'category_type', 'width', 'height'}
+            if not isinstance(chart_spec, dict) or set(chart_spec) - allowed or chart_spec.get('type') not in ('column', 'line'): raise ValueError('Invalid chart specification')
+            a, b, c, d = bounds(chart_spec.get('data'), 10000)
+            headings = chart_spec.get('titles_from_data', True)
+            if not isinstance(headings, bool) or d - b + 1 <= int(headings) or c - a + 1 > 30: raise ValueError('Chart data requires at least one data row and at most 30 series')
+            anchor = chart_spec.get('anchor', 'E2')
+            if not isinstance(anchor, str) or not re.fullmatch(r'[A-Za-z]{1,3}[1-9][0-9]{0,6}', anchor): raise ValueError('Chart anchor must be a single cell')
+            bounds(anchor, 1)
+            category_type = chart_spec.get('category_type', 'auto')
+            if category_type not in ('auto', 'text', 'number') or category_type != 'auto' and 'categories' not in chart_spec: raise ValueError('Category type requires categories and must be auto, text or number')
+            labels = None; text_categories = False
+            if 'categories' in chart_spec:
+                ca, cb, cc, cd = bounds(chart_spec['categories'], 10000)
+                if ca != cc or cd - cb + 1 != d - b + 1 - int(headings): raise ValueError('Chart categories must be one column matching the data rows')
+                labels = Reference(sheet, min_col=ca, min_row=cb, max_col=cc, max_row=cd)
+                category_cells = [sheet.cell(row=row, column=ca) for row in range(cb, cd + 1)]
+                if category_type == 'auto':
+                    kinds = set()
+                    for cell in category_cells:
+                        if cell.value is None: continue
+                        if cell.data_type in ('f', 'e'): kinds.add('unknown')
+                        elif isinstance(cell.value, str): kinds.add('text')
+                        elif not isinstance(cell.value, bool) and isinstance(cell.value, (int, float, date, datetime)): kinds.add('number')
+                        else: kinds.add('unknown')
+                    if 'unknown' in kinds or len(kinds) > 1: raise ValueError('Choose text or number category_type for mixed or formula categories')
+                    text_categories = 'text' in kinds
+                else:
+                    text_categories = category_type == 'text'
+            for key in ('title', 'x_axis_title', 'y_axis_title'):
+                if key in chart_spec and (not isinstance(chart_spec[key], str) or len(chart_spec[key]) > 255): raise ValueError('Chart titles must be text of at most 255 characters')
+            chart = BarChart() if chart_spec['type'] == 'column' else LineChart()
+            if chart_spec['type'] == 'column': chart.type = 'col'
+            chart.add_data(Reference(sheet, min_col=a, min_row=b, max_col=c, max_row=d), titles_from_data=headings)
+            if labels is not None:
+                if text_categories:
+                    for series in chart.series: series.cat = AxDataSource(strRef=StrRef(f=str(labels)))
+                else: chart.set_categories(labels)
+            if 'title' in chart_spec: chart.title = chart_spec['title']
+            if 'x_axis_title' in chart_spec: chart.x_axis.title = chart_spec['x_axis_title']
+            if 'y_axis_title' in chart_spec: chart.y_axis.title = chart_spec['y_axis_title']
+            if 'width' in chart_spec: chart.width = amount(chart_spec['width'], 'chart width', 100)
+            if 'height' in chart_spec: chart.height = amount(chart_spec['height'], 'chart height', 100)
+            sheet.add_chart(chart, anchor.upper())
 
 
 def author(spec, output, source=None):
