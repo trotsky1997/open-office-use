@@ -43,7 +43,7 @@
 - [x] Chrome 跨进程 iframe：附着子 session、跨进程和同进程嵌套坐标换算、观察、可信点击和文本输入；隔离原生消息链路验证导航与遮挡拒绝。
 - [x] Electron 受授权范围约束的跨进程 iframe：macOS Electron 强制站点隔离页面验证可信点击、文本、导航失效及遮挡拒绝；会话仅限所属标签和 iframe。
 - [x] Linux ARM64 隔离 Chromium 150：原生消息链路验证跨进程与嵌套 frame 的可信输入、导航、遮挡和重连。
-- [ ] 跨进程 iframe 的其他平台与动态 frame 场景验收。
+- [ ] 跨进程 iframe 的其他平台与动态 frame 场景验收。 Linux ARM64 Chromium 150 原生链路已验证跨站 frame 同一元素导航后旧观察拒绝输入，新定位器可可信点击；其他平台及更多动态场景待验证。
 - [x] 同一文档支持有序文本差异；导航和截断后回到完整基线。
 - [x] domSnapshot 使用有界的可访问性状态与 frame 内容，标出截断或不可读取的 frame；输出不直接暴露可操作索引。
 - [x] 可访问性观察和 domSnapshot 按父子关系排列并缩进；Linux 隔离 Chromium 与 Electron 44 验证容器和后代关系。
