@@ -317,3 +317,5 @@ Electron WebMCP 增加独立可复跑 smoke；pnpm pack 确认分发包含 prelo
 Electron 鼠标准备与滚轮现在同时检查宿主窗口状态和 WebFrameMain.visibilityState；macOS 窗口可见但主 frame 隐藏时临时解除后台节流并恢复。Electron 52 项通过；Linux ARM64 Electron 44/Xvfb 完整 smoke 通过；macOS ARM64 Electron 44 完整 smoke 越过原先首次 CUA move 超时，并完成后续多项交互，最终在跨进程 frame 内 DOM 滚动未发生位移处失败。后台快照可返回 visibility_incomplete，测试按标记处理；macOS 跨 frame 滚动仍待排查，Windows 未测。
 
 DOM CUA 跨进程 frame 的节点滚动沿 frame 会话派发可信滚轮，沿用点击的坐标换算和主视口校验；滚轮后等待子 frame 绘制，后台绘制受限时最多等待一秒。SDK 70 项通过；macOS Electron 44 和 Linux ARM64 Electron 44 的完整 socket 场景通过，覆盖跨进程 frame 的实际滚动；Linux ARM64 Chromium 原生扩展回归通过。Windows 未测，绘制等待超时后仍需由调用方观察实际滚动结果。
+
+跨进程 DOM 滚动的绘制等待使用目标 frame 的隔离 world，页面覆盖 requestAnimationFrame 时仍能完成；等待命令限制为三秒，异常时提示滚轮已发送并要求先观察。SDK 70 项通过；macOS 和 Linux ARM64 Electron 44 socket 实页，以及 Linux ARM64 Chromium 原生扩展实页均验证滚动和页面覆盖。隔离 Linux Chromium 150 后台标签探针中，焦点模拟后截图可返回且 wheel 事件可信，但滚动位移仍为零，合成手势三秒超时；仍需解决后台呈现。

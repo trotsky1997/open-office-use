@@ -2096,8 +2096,16 @@ export class OpenBrowserUseTab {
         }
         else
             await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true }, options);
-        if (frame)
-            await this.browser.cdp.call(this.id, "Runtime.evaluate", { expression: "Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))),new Promise(r=>setTimeout(r,1000))])", awaitPromise: true }, { sessionId: frame.sessionId, ...(expectedGeneration === undefined ? {} : { expectedGeneration }) });
+        if (frame) {
+            try {
+                const result = await this.browser.cdp.call(this.id, "Runtime.evaluate", { contextId: frame.contextId, expression: "Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))),new Promise(r=>setTimeout(r,1000))])", awaitPromise: true }, { sessionId: frame.sessionId, timeoutMs: 3000, ...(expectedGeneration === undefined ? {} : { expectedGeneration }) });
+                if (isObject(result) && result.exceptionDetails)
+                    throw new Error("Frame rendering wait failed");
+            }
+            catch (error) {
+                throw new Error("Wheel was sent but its completion could not be observed; inspect the page before retrying", { cause: error });
+            }
+        }
     }
     parseKey(key) {
         if (typeof key !== "string")
@@ -2912,7 +2920,7 @@ export class OpenBrowserUseTabDomCUA {
                     const mapped = await this.tab.domFramePoint(snapshot, { x: value.x, y: value.y });
                     point = mapped.point;
                     if (snapshot.frame.sessionId)
-                        frame = { sessionId: snapshot.frame.sessionId, inputPoint: mapped.inputPoint };
+                        frame = { sessionId: snapshot.frame.sessionId, contextId: world.executionContextId, inputPoint: mapped.inputPoint };
                     await this.tab.readCss(snapshot, id, 'visible');
                 }
                 finally {

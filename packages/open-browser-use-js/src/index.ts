@@ -1784,7 +1784,7 @@ export class OpenBrowserUseTab {
     }
   }
 
-  async scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers = 0, expectedGeneration?:number, frame?:{sessionId:string;inputPoint:{x:number;y:number}}): Promise<void> {
+  async scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers = 0, expectedGeneration?:number, frame?:{sessionId:string;contextId:number;inputPoint:{x:number;y:number}}): Promise<void> {
     this.#observation = undefined;
     if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) throw new Error("Scroll deltas must be finite numbers");
     if (!Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15) throw new Error("Invalid mouse modifiers");
@@ -1797,7 +1797,10 @@ export class OpenBrowserUseTab {
       catch (error) { if (error instanceof Error && /Timed out after \d+ms waiting for CDP command/.test(error.message)) throw new Error("Wheel outcome unknown after timeout; inspect the page before retrying",{cause:error}); throw error; }
     }
     else await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true },options);
-    if (frame) await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression:"Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))),new Promise(r=>setTimeout(r,1000))])",awaitPromise:true},{sessionId:frame.sessionId,...(expectedGeneration === undefined ? {} : {expectedGeneration})});
+    if (frame) {
+      try { const result=await this.browser.cdp.call(this.id,"Runtime.evaluate",{contextId:frame.contextId,expression:"Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))),new Promise(r=>setTimeout(r,1000))])",awaitPromise:true},{sessionId:frame.sessionId,timeoutMs:3000,...(expectedGeneration === undefined ? {} : {expectedGeneration})}); if(isObject(result) && result.exceptionDetails) throw new Error("Frame rendering wait failed"); }
+      catch (error) { throw new Error("Wheel was sent but its completion could not be observed; inspect the page before retrying",{cause:error}); }
+    }
   }
 
   private parseKey(key: string) {
@@ -2414,7 +2417,7 @@ export class OpenBrowserUseTabDomCUA {
   async scroll(options:{node_id?:string;x:number;y:number}):Promise<void> {
     const target=options.node_id!==undefined ? this.target(options.node_id) : undefined, finish=this.beginAction();
     try {
-    let point:{x:number;y:number}, frame:{sessionId:string;inputPoint:{x:number;y:number}}|undefined;
+    let point:{x:number;y:number}, frame:{sessionId:string;contextId:number;inputPoint:{x:number;y:number}}|undefined;
     if(options.node_id!==undefined) {
       const {snapshot,id,identity}=target!;if(!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame,snapshot.frames))throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');if(await this.tab.readCss(snapshot,id,'visible')!==true)throw new RetryablePreflightError('DOM target is hidden; observe again');
       const world=await this.tab.browser.cdp.call(this.tab.id,'Page.createIsolatedWorld',{frameId:snapshot.frame!.id,worldName:'open-browser-use-selector'},{sessionId:snapshot.frame?.sessionId});
@@ -2426,7 +2429,7 @@ export class OpenBrowserUseTabDomCUA {
         const result=await this.tab.browser.cdp.call(this.tab.id,'Runtime.callFunctionOn',{objectId,returnByValue:true,arguments:[{value:identity}],functionDeclaration:`function(expected){if(!this.isConnected)return null;const actual=(${domIdentityFunction}).call(this);if(!actual || Object.keys(expected).some(key=>actual[key]!==expected[key]))return null;const r=this.getBoundingClientRect(),x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;let target=this,root=target.getRootNode();while(true){const hit=root.elementFromPoint(x,y);if(!hit || (hit!==target && !target.contains(hit)))return null;if(!(root instanceof ShadowRoot))return {x,y};target=root.host;root=target.getRootNode()}}`},{sessionId:snapshot.frame?.sessionId});
         const value=isObject(result) && isObject(result.result) ? result.result.value : null;
         if(!isObject(value) || typeof value.x!=='number' || typeof value.y!=='number')throw new RetryablePreflightError('DOM target changed; observe again');
-        const mapped=await this.tab.domFramePoint(snapshot,{x:value.x,y:value.y});point=mapped.point;if(snapshot.frame.sessionId)frame={sessionId:snapshot.frame.sessionId,inputPoint:mapped.inputPoint};await this.tab.readCss(snapshot,id,'visible');
+        const mapped=await this.tab.domFramePoint(snapshot,{x:value.x,y:value.y});point=mapped.point;if(snapshot.frame.sessionId)frame={sessionId:snapshot.frame.sessionId,contextId:world.executionContextId,inputPoint:mapped.inputPoint};await this.tab.readCss(snapshot,id,'visible');
       } finally {await this.tab.browser.cdp.call(this.tab.id,'Runtime.releaseObject',{objectId},{sessionId:snapshot.frame?.sessionId}).catch(()=>{});}
     } else {
       const metrics=await this.tab.browser.cdp.call(this.tab.id,'Page.getLayoutMetrics');const viewport=isObject(metrics) && isObject(metrics.cssVisualViewport) ? metrics.cssVisualViewport : null;

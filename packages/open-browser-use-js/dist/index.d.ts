@@ -386,6 +386,7 @@ export declare class OpenBrowserUseTab {
     drag(from: [number, number], to: [number, number]): Promise<void>;
     scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers?: number, expectedGeneration?: number, frame?: {
         sessionId: string;
+        contextId: number;
         inputPoint: {
             x: number;
             y: number;
