@@ -153,3 +153,4 @@
 - [x] URL 等待和导航预期支持包含星号的全 URL glob，涵盖单星、双星、分组、转义与字面问号；导航动作前验证模式。Linux ARM64 Chromium 原生消息实测 history 路由。
 - [x] URL 等待及导航预期接受同步 URL 条件函数，支持路径、查询参数等匹配；Linux ARM64 Chromium 原生消息实测 history 路由。
 - [x] URL glob 改用有限状态匹配并限制模式与匹配规模，防止复杂星号组合阻塞等待；Linux ARM64 Chromium 原生消息实测路由匹配。
+- [x] Chrome 后台滚轮超时错误明确提示重新呈现后可能迟到执行，要求呈现后再检查。Linux ARM64 Chromium 153 原生消息实测隐藏时滚轮超时，呈现后触发可信事件及滚动；背景截图成功，screencast 未解决滚轮。

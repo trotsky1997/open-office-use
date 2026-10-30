@@ -2800,7 +2800,7 @@ export class OpenBrowserUseTab {
         }
         catch (error) {
             if (error instanceof Error && /Timed out after \d+ms waiting for CDP command|IAB_BACKGROUND_SCROLL_TIMEOUT|IAB_INPUT_OUTCOME_UNKNOWN/.test(error.message))
-                throw new Error("Wheel outcome unknown after timeout; inspect the page before retrying", { cause: error });
+                throw new Error("Wheel outcome unknown after timeout; it may execute when the tab is presented; inspect the page after presenting before retrying", { cause: error });
             throw error;
         }
         if (frame) {

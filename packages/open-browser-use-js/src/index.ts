@@ -2256,7 +2256,7 @@ export class OpenBrowserUseTab {
       if (modifiers || frame) await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseWheel",x,y,deltaX,deltaY,modifiers},options);
       else await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true },options);
     } catch (error) {
-      if (error instanceof Error && /Timed out after \d+ms waiting for CDP command|IAB_BACKGROUND_SCROLL_TIMEOUT|IAB_INPUT_OUTCOME_UNKNOWN/.test(error.message)) throw new Error("Wheel outcome unknown after timeout; inspect the page before retrying",{cause:error});
+      if (error instanceof Error && /Timed out after \d+ms waiting for CDP command|IAB_BACKGROUND_SCROLL_TIMEOUT|IAB_INPUT_OUTCOME_UNKNOWN/.test(error.message)) throw new Error("Wheel outcome unknown after timeout; it may execute when the tab is presented; inspect the page after presenting before retrying",{cause:error});
       throw error;
     }
     if (frame) {

@@ -844,7 +844,7 @@ test("CUA routes pointer paths, modifiers and screenshot images", async () => {
   await tab.cua.drag({path:[{x:10,y:10},{x:20,y:15},{x:30,y:25}],keys:['Alt']});
   assert.deepEqual(events.filter(event=>event.type==='mouseMoved' && event.buttons===1).map(event=>[event.x,event.y,event.modifiers]),[[20,15,1],[30,25,1]]);
   await tab.cua.scroll({x:10,y:10,scrollX:2,scrollY:5,keypress:['Shift']});assert.deepEqual([events.at(-1).type,events.at(-1).deltaY,events.at(-1).modifiers],['mouseWheel',5,8]);
-  wheelTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5}),/Wheel outcome unknown/);wheelTimeout=false;iabTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);iabTimeout=false;
+  wheelTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/may execute when the tab is presented/);await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5}),/Wheel outcome unknown/);wheelTimeout=false;iabTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);iabTimeout=false;
   const image=await tab.cua.get_visible_screenshot();assert.ok(image instanceof Uint8Array);assert.equal(image.toBase64(),pngFixture.toString('base64'));
   fail=true;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:2,y:2}]}),/move failed/);assert.equal(events.at(-1).type,'mouseReleased');
   const count=events.length;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:100,y:2}]}),/outside/);assert.equal(events.length,count);
