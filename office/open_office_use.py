@@ -223,6 +223,7 @@ def main():
     candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
+    grid_format = sub.add_parser('format-grid'); grid_format.add_argument('directory'); grid_format.add_argument('--base', type=int, required=True); grid_format.add_argument('--sheet', required=True); grid_format.add_argument('--range', required=True, dest='cell_range'); grid_format.add_argument('--style-range', required=True); grid_format.add_argument('--properties', required=True, help='JSON formatting object')
     track_replace = sub.add_parser('track-replace-text'); track_replace.add_argument('directory'); track_replace.add_argument('--base', type=int, required=True); track_replace.add_argument('--path', required=True); track_replace.add_argument('--find', required=True); track_replace.add_argument('--replace', required=True, dest='replacement'); track_replace.add_argument('--author', required=True)
     track_insert = sub.add_parser('track-insert-text'); track_insert.add_argument('directory'); track_insert.add_argument('--base', type=int, required=True); track_insert.add_argument('--path', required=True); track_insert.add_argument('--anchor', required=True); track_insert.add_argument('--text', required=True); track_insert.add_argument('--position', choices=('before', 'after'), required=True); track_insert.add_argument('--author', required=True)
     track_resolve = sub.add_parser('resolve-tracked-runs'); track_resolve.add_argument('directory'); track_resolve.add_argument('--base', type=int, required=True); track_resolve.add_argument('--part', required=True); track_resolve.add_argument('--id', action='append', required=True, dest='ids'); track_resolve.add_argument('--decision', choices=['accept', 'reject'], required=True)
@@ -283,6 +284,8 @@ def main():
                 result = selection_candidates.candidates(args.directory, render)
             elif args.action == 'replace-text':
                 result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
+            elif args.action == 'format-grid':
+                result = session.format_grid(args.directory, args.base, args.sheet, args.cell_range, args.style_range, json.loads(args.properties))
             elif args.action == 'track-insert-text':
                 result = session.track_insert_text(args.directory, args.base, args.path, args.anchor, args.text, args.position, args.author)
             elif args.action == 'track-replace-text':

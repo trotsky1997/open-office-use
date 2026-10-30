@@ -1,5 +1,6 @@
 """Persistent local draft sessions with immutable, optimistic revisions."""
 import json
+import math
 import os
 import re
 import shutil
@@ -620,17 +621,30 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
 
 
 def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):
-    if not isinstance(properties, dict) or not properties or not set(properties) <= {'bold', 'fill', 'numberformat'}:
-        raise ValueError('Provide bold, fill and/or numberformat')
+    allowed = {'bold', 'italic', 'underline', 'font_name', 'font_size', 'font_color', 'fill', 'horizontal', 'vertical', 'wrap', 'numberformat'}
+    if not isinstance(properties, dict) or not properties or not set(properties) <= allowed:
+        raise ValueError('Provide supported cell formatting properties')
     props = {}
-    if 'bold' in properties:
-        if not isinstance(properties['bold'], bool):
-            raise ValueError('Bold must be true or false')
-        props['font.bold'] = str(properties['bold']).lower()
-    if 'fill' in properties:
-        if not isinstance(properties['fill'], str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', properties['fill']):
-            raise ValueError('Fill must be a six-digit RGB color')
-        props['fill'] = properties['fill']
+    for name, target in (('bold', 'font.bold'), ('italic', 'font.italic'), ('wrap', 'alignment.wrapText')):
+        if name in properties:
+            if not isinstance(properties[name], bool): raise ValueError(f'{name} must be true or false')
+            props[target] = str(properties[name]).lower()
+    for name, target in (('font_color', 'font.color'), ('fill', 'fill')):
+        if name in properties:
+            if not isinstance(properties[name], str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', properties[name]): raise ValueError(f'{name} must be a six-digit RGB color')
+            props[target] = properties[name]
+    for name, target, choices in (('horizontal', 'alignment.horizontal', ('left', 'center', 'right', 'justify', 'fill', 'distributed')), ('vertical', 'alignment.vertical', ('top', 'center', 'bottom')), ('underline', 'underline', ('none', 'single', 'double', 'singleAccounting', 'doubleAccounting'))):
+        if name in properties:
+            if properties[name] not in choices: raise ValueError(f'Invalid {name}')
+            props[target] = properties[name]
+    if 'font_name' in properties:
+        value = properties['font_name']
+        if not isinstance(value, str) or not value.strip() or len(value) > 100 or any(ord(c) < 32 for c in value): raise ValueError('Font name must contain 1 to 100 characters without control characters')
+        props['font.name'] = value
+    if 'font_size' in properties:
+        value = properties['font_size']
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 409 or not math.isfinite(value): raise ValueError('Font size must be between 1 and 409 points')
+        props['font.size'] = f'{value}pt'
     if 'numberformat' in properties:
         value = properties['numberformat']
         if not isinstance(value, str) or not value or len(value) > 120:

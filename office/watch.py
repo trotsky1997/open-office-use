@@ -112,6 +112,14 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <fieldset><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
+<label>Italic <select id="grid-italic"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
+<label>Underline <select id="grid-underline"><option value="">Keep</option><option value="none">None</option><option value="single">Single</option><option value="double">Double</option><option value="singleAccounting">Single accounting</option><option value="doubleAccounting">Double accounting</option></select></label>
+<label>Font <input id="grid-font-name" maxlength="100" placeholder="Keep"></label>
+<label>Size (pt) <input id="grid-font-size" type="number" min="1" max="409" step="any" placeholder="Keep"></label>
+<label><input id="grid-font-color-enabled" type="checkbox"> Set font color</label> <input id="grid-font-color" type="color" value="#000000" aria-label="Font color">
+<label>Horizontal <select id="grid-horizontal"><option value="">Keep</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option><option value="justify">Justify</option><option value="fill">Fill</option><option value="distributed">Distributed</option></select></label>
+<label>Vertical <select id="grid-vertical"><option value="">Keep</option><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option></select></label>
+<label>Wrap <select id="grid-wrap"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
 <label><input id="grid-fill-enabled" type="checkbox"> Set fill</label> <input id="grid-fill" type="color" value="#ffcc00" aria-label="Fill color">
 <label>Number format <input id="grid-numberformat" maxlength="120" placeholder="Keep"></label>
 <button type="button" id="grid-format" disabled>Apply formatting</button></fieldset>
@@ -338,11 +346,15 @@ async function loadGrid(target=null) {
     input.value=value; input.dataset.baseline=value; input.dataset.cell=cell.cell; input.dataset.editable=String(cell.editable);
     input.readOnly=!cell.editable; input.setAttribute('aria-label', `${sheet} ${cell.cell}${cell.read_only_reason ? ' · '+cell.read_only_reason.replaceAll('_',' ') : ''}`);
     if (cell.style.bold) input.style.fontWeight='bold';
+    if (cell.style.italic) input.style.fontStyle='italic';
+    if (cell.style.underline) input.style.textDecoration='underline';
     if (/^[0-9A-Fa-f]{6}$/.test(cell.style.fill_rgb || '')) {
      input.style.backgroundColor='#'+cell.style.fill_rgb;
      const rgb=cell.style.fill_rgb.match(/../g).map(part=>parseInt(part,16));
      input.style.color=(rgb[0]*299+rgb[1]*587+rgb[2]*114)/1000 < 140 ? 'white' : 'black';
     }
+    if (/^[0-9A-Fa-f]{6}$/.test(cell.style.font_color_rgb || '')) input.style.color='#'+cell.style.font_color_rgb;
+    if (['left','center','right'].includes(cell.style.horizontal)) input.style.textAlign=cell.style.horizontal;
     input.title=`Number format: ${cell.style.number_format}`;
     if (typeof formula==='string') input.title+=`; cached result: ${cell.value == null ? 'unknown' : cell.value}`;
     if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : cell.read_only_reason==='value_too_long' ? 'Cell content exceeds the 4,000 UTF-16-unit editing limit' : cell.read_only_reason==='unverified_text' ? 'Text could not be verified; inspect the source before editing' : 'Protected formula range';
@@ -425,6 +437,12 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  if (inputs.some(input=>input.value!==input.dataset.baseline)) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before formatting.'; return; }
  const properties={}, bold=document.getElementById('grid-bold').value, numberformat=document.getElementById('grid-numberformat').value;
  if (bold) properties.bold=bold==='true';
+ for (const name of ['italic','wrap']) {const value=document.getElementById(`grid-${name}`).value; if (value) properties[name]=value==='true';}
+ for (const name of ['underline','horizontal','vertical']) {const value=document.getElementById(`grid-${name}`).value; if (value) properties[name]=value;}
+ const fontName=document.getElementById('grid-font-name').value, fontSize=document.getElementById('grid-font-size').value;
+ if (fontName) properties.font_name=fontName;
+ if (fontSize) properties.font_size=Number(fontSize);
+ if (document.getElementById('grid-font-color-enabled').checked) properties.font_color=document.getElementById('grid-font-color').value.slice(1);
  if (document.getElementById('grid-fill-enabled').checked) properties.fill=document.getElementById('grid-fill').value.slice(1);
  if (numberformat) properties.numberformat=numberformat;
  if (!Object.keys(properties).length) { document.getElementById('grid-status').textContent='Choose a formatting change.'; return; }

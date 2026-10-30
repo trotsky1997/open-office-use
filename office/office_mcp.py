@@ -169,7 +169,7 @@ def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range
 
 @server.tool()
 def session_format_grid(directory: str, base_revision: int, sheet: str, cell_range: str, style_range: str, properties: dict[str, Any]) -> dict[str, Any]:
-    """Apply bold, RGB fill or number format; protected sheets and merged placeholders are rejected."""
+    """Apply supported font, alignment, RGB fill and number formatting; protected sheets and merged placeholders are rejected."""
     return session.format_grid(directory, base_revision, sheet, cell_range, style_range, properties)
 
 

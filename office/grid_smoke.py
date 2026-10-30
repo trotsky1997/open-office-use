@@ -88,7 +88,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert {entry['cell'] for entry in diff['changes']} == {'B1', 'B2'}
     assert {'format.font', 'format.fill', 'format.number_format'} <= set(diff['changes'][0]['changed_fields'])
     style = session.read_grid(format_draft, 1, 'Sales Data', 'B1')['rows'][0][0]['style']
-    assert style == {'bold': True, 'fill_rgb': 'FFCC00', 'number_format': '0.00'}
+    assert style['bold'] and style['fill_rgb'] == 'FFCC00' and style['number_format'] == '0.00'
     for base, target, properties in [(0, 'B1', {'bold': True}), (1, 'D1', {'bold': True}), (1, 'B1', {'fill': 'evil'}), (1, 'B1', {'value': 'bad'})]:
         try:
             session.format_grid(format_draft, base, 'Sales Data', 'A1:C2', target, properties)
