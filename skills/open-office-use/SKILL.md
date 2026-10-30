@@ -13,7 +13,7 @@ For PowerPoint speaker notes, use `read_slide_notes` or `session_read_slide_note
 
 Use `compare_slide_notes` or `session_compare_slide_notes` to compare corresponding speaker notes when reviewing a deck or session; select slide numbers on both sides and check truncation.
 
-For documents with possible tracked revisions, use `list_word_tracked_changes` or `session_list_word_tracked_changes`; inspect coverage, XML context and formatting before deciding how to proceed. XML records are not direct edit paths.
+To propose a tracked Word replacement in a supported body paragraph, use `session_track_replace_text` with a unique match and author; review the new revision and its limitations. For documents with possible tracked revisions, use `list_word_tracked_changes` or `session_list_word_tracked_changes`; inspect coverage, XML context and formatting before deciding how to proceed. XML records are not direct edit paths.
 
 For Word body and nested table text, use `search_word_body` or `session_search_word_body` to find candidate edit paths; check coverage and continue with the same query, `next_offset` and `snapshot_sha256` as needed. Inspect the target before editing.
 

@@ -191,6 +191,12 @@ def session_replace_text(directory: str, base_revision: int, path: str, find: st
 
 
 @server.tool()
+def session_track_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str, author: str) -> dict[str, Any]:
+    """Create Word deletion and insertion revisions for one unique body text range; preserve run formatting."""
+    return session.track_replace_text(directory, base_revision, path, find, replacement, author)
+
+
+@server.tool()
 def read_slide_notes(file: str, slide: int) -> dict[str, Any]:
     """Read speaker notes for a one-based slide number without creating a notes slide."""
     return notes.read(file, slide)

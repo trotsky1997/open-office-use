@@ -59,6 +59,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <label>Replace with <input id="word-replacement" maxlength="4000"></label>
 <label id="replace-paragraph-label" hidden>Paragraph number <input id="replace-paragraph" inputmode="numeric" maxlength="6" placeholder="Auto"></label>
 <button type="button" id="word-replace">Replace once</button>
+<div id="word-track-row" hidden><label>Revision author <input id="word-track-author" maxlength="100"></label> <button type="button" id="word-track-replace">Track replacement</button><p>Creates deletion and insertion records for review in Word.</p></div>
 <p>Requires one exact match in supported Word, PowerPoint or Excel text. Replacement takes the first matched run's formatting. Word matches must stay within link or annotation boundaries; fields and complex content require another workflow.</p></fieldset>
 <fieldset id="comment-panel" hidden><legend>Add a comment to this paragraph</legend>
 <label>Author <input id="comment-author" maxlength="100"></label>
@@ -460,6 +461,7 @@ async function loadElement(path) {
   editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=tableCell;
   document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
+  document.getElementById('word-track-row').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only && target.path.startsWith('/body/'));
   document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only); document.getElementById('comment-text').value=''; document.getElementById('comment-anchor').value='';
   document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
   if (target.replace_only) {
@@ -518,6 +520,22 @@ document.getElementById('word-replace').addEventListener('click', async () => {
   document.getElementById('edit-status').textContent=`Replacement error: ${error.message}`;
   if (loaded===target && current===target.revision && pinned===null) { const tableCell=target.format==='pptx' && target.type==='tc'; value.readOnly=tableCell; mode.disabled=tableCell; document.getElementById('edit-save').disabled=tableCell; }
  } finally { editBusy=false; button.disabled=false; find.disabled=false; replacement.disabled=false; path.disabled=pinned!==null; document.getElementById('edit-load').disabled=pinned!==null; }
+});
+document.getElementById('word-track-replace').addEventListener('click', async () => {
+ if (editBusy) return;
+ if (!loaded || loaded.format!=='docx' || !loaded.replace_text_path_supported || !loaded.path.startsWith('/body/') || pinned!==null || loaded.revision!==current) { invalidateEdit('Version changed; load the paragraph again.'); return; }
+ if (elementDirty()) { document.getElementById('edit-status').textContent='Save or copy pending element edits before replacing text.'; return; }
+ const target=loaded, find=document.getElementById('word-find'), replacement=document.getElementById('word-replacement'), author=document.getElementById('word-track-author'), button=document.getElementById('word-track-replace'), path=document.getElementById('edit-path'), mode=document.getElementById('edit-mode'), value=document.getElementById('edit-value');
+ if (!author.value.trim()) { document.getElementById('edit-status').textContent='Enter a revision author.'; return; }
+ editBusy=true; button.disabled=true; find.disabled=true; replacement.disabled=true; author.disabled=true; path.disabled=true; mode.disabled=true; value.readOnly=true; document.getElementById('edit-save').disabled=true; document.getElementById('edit-load').disabled=true;
+ try {
+  const response=await fetch('track-replace-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,find:find.value,replacement:replacement.value,author:author.value})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Tracked replacement failed');
+  invalidateEdit(`Tracked replacement saved as revision ${result.revision}. Review the changes in Word.`); await refresh();
+ } catch(error) {
+  document.getElementById('edit-status').textContent=`Tracked replacement error: ${error.message}`;
+  if (loaded===target && current===target.revision && pinned===null) {mode.disabled=false; value.readOnly=false; document.getElementById('edit-save').disabled=false;}
+ } finally {editBusy=false; button.disabled=false; find.disabled=false; replacement.disabled=false; author.disabled=false; path.disabled=pinned!==null; document.getElementById('edit-load').disabled=pinned!==null;}
 });
 document.getElementById('restore-form').addEventListener('submit', async event => {
  event.preventDefault(); const button = event.currentTarget.querySelector('button'); button.disabled = true;
@@ -1090,7 +1108,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1239,6 +1257,10 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'text', 'author'}, {'base_revision', 'path', 'text', 'author', 'anchor'}):
                                 raise ValueError('Comment requires revision, path, text and author')
                             saved = session.add_comment(directory, payload['base_revision'], payload['path'], payload['text'], payload['author'], payload.get('anchor'))
+                        elif route.endswith('/track-replace-text'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement', 'author'}:
+                                raise ValueError('Tracked replacement requires revision, path, find, replacement and author')
+                            saved = session.track_replace_text(directory, payload['base_revision'], payload['path'], payload['find'], payload['replacement'], payload['author'])
                         elif route.endswith('/replace-text'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement'}:
                                 raise ValueError('Text replacement requires revision, path, find and replacement')

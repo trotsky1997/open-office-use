@@ -452,6 +452,65 @@ def replace_text(source, output, path, find, replacement):
     return ooxml.edit_xml(source, output, part, edit)
 
 
+def track_replace_text(source, output, path, find, replacement, author):
+    """Replace a unique body text range with Word insertion and deletion records."""
+    import copy
+    import secrets
+    from datetime import datetime, timezone
+
+    if not paragraph_path(path) or Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
+        raise ValueError('Target must be a DOCX body or table paragraph path')
+    if not isinstance(author, str) or not author.strip() or len(author) > 100 or any(ord(c) < 32 for c in author):
+        raise ValueError('Author must contain 1 to 100 characters without control characters')
+    ooxml.match_index(find, find, replacement)
+
+    def edit(tree, archive):
+        paragraph = find_paragraph(tree, path)
+        first, last = anchor_runs(paragraph, find)
+        selected = []; node = first
+        while node is not None:
+            if node.tag != W + 'r': raise ValueError('Tracked replacement crosses an unsupported boundary')
+            for text in node.findall(W + 't'):
+                if any(key != '{http://www.w3.org/XML/1998/namespace}space' for key in text.attrib):
+                    raise ValueError('Text has unsupported attributes for tracked replacement')
+            selected.append(node)
+            if node is last: break
+            node = node.getnext()
+        if not selected or selected[-1] is not last: raise ValueError('Tracked replacement range is inconsistent')
+        used = set()
+        for name in archive.namelist():
+            if not name.startswith('word/') or not name.endswith('.xml'): continue
+            part_tree = tree if name == 'word/document.xml' else ooxml.parse_xml(archive.read(name))
+            for item in part_tree.iter():
+                value = item.get(W + 'id')
+                if value:
+                    value = value.strip()
+                    if re.fullmatch(r'[+-]?[0-9]+', value):
+                        digits = value.lstrip('+-').lstrip('0') or '0'
+                        if len(digits) <= 10: used.add(-int(digits) if value.startswith('-') else int(digits))
+        ids = []
+        while len(ids) < (2 if replacement else 1):
+            value = secrets.randbelow(2147483647)
+            if value not in used: ids.append(value); used.add(value)
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        def change(kind, identifier):
+            element = etree.Element(W + kind)
+            element.set(W + 'id', str(identifier)); element.set(W + 'author', author); element.set(W + 'date', timestamp)
+            return element
+        deleted = change('del', ids[0]); first.addprevious(deleted)
+        inserted = change('ins', ids[1]) if replacement else None
+        if inserted is not None:
+            run = etree.SubElement(inserted, W + 'r'); properties = first.find(W + 'rPr')
+            if properties is not None: run.append(copy.deepcopy(properties))
+            text = etree.SubElement(run, W + 't'); text.text = replacement
+            if replacement.startswith(' ') or replacement.endswith(' '): text.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+            deleted.addnext(inserted)
+        for run in selected:
+            for text in run.findall(W + 't'): text.tag = W + 'delText'
+            deleted.append(run)
+    return ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
+
+
 def add_comment(source, output, path, text, author, anchor=None):
     """Attach a plain-text comment to a paragraph or a unique literal range."""
     import posixpath
