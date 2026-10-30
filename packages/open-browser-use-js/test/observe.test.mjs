@@ -1677,3 +1677,29 @@ test('session tabs can be selected by exact URL without ambiguous matches',async
   tabs.push({id:3,url:'https://example.test/a'});await assert.rejects(browser.tabs.getByUrl('https://example.test/a'),/Multiple session tabs/);
   await assert.rejects(browser.tabs.getByUrl(''),/Invalid tab URL/);
 });
+
+test('cancelled CDP request stops after a delayed connection',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),controller=new AbortController();let resume;
+  client.connect=()=>new Promise(resolve=>{resume=resolve});
+  const pending=client.request('executeCdp',{},undefined,1000,controller.signal);controller.abort();resume(client);
+  await assert.rejects(pending,/cancelled before dispatch/);
+});
+
+test('focus deadline prevents late dispatch and reports issued outcomes',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}),tab=browser.tab(1);
+  const frame={id:'root',loaderId:'v1',url:'https://example.test'},snapshot={frame,frames:[frame],ids:[7],documentId:1,scopeIds:[]};
+  tab.queryCss=async()=>snapshot;let releaseWorld,focusCalls=0,focusSignal,releaseFocus;
+  browser.cdp.call=async(_id,method,_params,options)=>{
+    if(method==='Page.createIsolatedWorld')return await new Promise(resolve=>{releaseWorld=resolve});
+    if(method==='DOM.resolveNode')return {object:{objectId:'target'}};
+    if(method==='DOM.focus'){focusCalls++;focusSignal=options.signal;return await new Promise(resolve=>{releaseFocus=resolve});}
+    return {};
+  };
+  const locator=tab.playwright.locator('input');await assert.rejects(locator.focus({timeoutMs:20}),/preparation timed out/);
+  releaseWorld({executionContextId:1});await new Promise(resolve=>setImmediate(resolve));assert.equal(focusCalls,0);
+  browser.cdp.call=async(_id,method,_params,options)=>{if(method==='Page.createIsolatedWorld')return {executionContextId:1};if(method==='DOM.resolveNode')return {object:{objectId:'target'}};if(method==='DOM.focus'){focusCalls++;focusSignal=options.signal;return await new Promise(resolve=>{releaseFocus=resolve})}return {};};
+  await assert.rejects(locator.focus({timeoutMs:20}),/outcome is unknown/);assert.equal(focusCalls,1);assert.equal(focusSignal.aborted,true);releaseFocus({});
+  let resolveRole,roleFocus=0;const role=tab.playwright.getByRole('textbox');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};
+  tab.focus=async(_index,_snapshot,mark)=>{await new Promise(resolve=>{resolveRole=resolve});mark();roleFocus++;};
+  await assert.rejects(role.focus({timeoutMs:20}),/preparation timed out/);resolveRole();await new Promise(resolve=>setImmediate(resolve));assert.equal(roleFocus,0);
+});

@@ -83,6 +83,17 @@ async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number,
     return result;
   } finally { if (timer) clearTimeout(timer); }
 }
+async function focusBeforeDeadline(action:(mark:()=>AbortSignal | undefined)=>Promise<void>, timeoutMs:number, deadline:number):Promise<void> {
+  if(timeoutMs===0)return action(()=>undefined);
+  const controller=new AbortController();
+  let expired=false,issued=false,timer:ReturnType<typeof setTimeout> | undefined;
+  const timeout=()=>new Error(issued ? "Focus timed out; outcome is unknown" : "Focus preparation timed out before dispatch");
+  const mark=()=>{if(expired || performance.now()>=deadline)throw timeout();issued=true;return controller.signal;};
+  try {
+    await Promise.race([action(mark),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{expired=true;controller.abort();reject(timeout());},Math.max(0,deadline-performance.now()));})]);
+    if(performance.now()>=deadline)throw timeout();
+  } finally {if(timer)clearTimeout(timer);}
+}
 function testIdSelector(testId: string): string {
   if (typeof testId !== "string" || testId.length > 500 || /[\u0000\ud800-\udfff]/u.test(testId)) throw new Error("Invalid test id");
   return `[data-testid="${Array.from(testId,char=>`\\${char.codePointAt(0)!.toString(16)} `).join("")}"]`;
@@ -270,8 +281,9 @@ export class OpenBrowserUseClient {
     };
   }
 
-  async request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number, requestTimeoutMs = this.timeoutMs): Promise<JsonValue> {
+  async request(method: string, params: BrowserUseRequestParams = {}, expectedGeneration?: number, requestTimeoutMs = this.timeoutMs, signal?:AbortSignal): Promise<JsonValue> {
     await this.connect();
+    if (signal?.aborted) throw new Error("Command cancelled before dispatch");
     if (expectedGeneration !== undefined && expectedGeneration !== this.#generation) throw new Error("Connection changed; observe again");
     const socket = this.#socket;
     if (!socket) {
@@ -1306,7 +1318,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, domIdentity?:DomIdentity, domConnectionGeneration?:number, focusOnly = false): Promise<void | string[]> {
+  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, domIdentity?:DomIdentity, domConnectionGeneration?:number, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined): Promise<void | string[]> {
     if (key !== undefined) this.parseKey(key);
     const frame = snapshot.frame;
     if (!frame || !snapshot.ids.includes(id)) throw new RetryablePreflightError("Selector target changed; observe again");
@@ -1321,8 +1333,8 @@ export class OpenBrowserUseTab {
     try {
       if (focusOnly) {
         const verify=async()=>{const fresh=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);if(fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids))throw new RetryablePreflightError("Selector target changed; observe again");};
-        await verify();this.#observation=undefined;inputIssued=true;
-        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId});
+        await verify();const signal=markFocus();this.#observation=undefined;inputIssued=true;
+        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId,signal});
         const focused=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function(){if(!this.isConnected)return false;let element=this;while(true){const root=element.getRootNode();if(root.activeElement!==element)return false;if(!(root instanceof ShadowRoot))return true;element=root.host}}`},{sessionId});
         if(!isObject(focused) || !isObject(focused.result) || focused.result.value!==true || !await this.targetFrameFocused(frame.id,id,snapshot.frames))throw new Error("Target lost focus; observe again");
         await verify();return;
@@ -1887,7 +1899,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async focus(index:number,snapshotId:string):Promise<void> { await this.act(index,snapshotId,undefined,false,undefined,undefined,false,undefined,false,undefined,true); }
+  async focus(index:number,snapshotId:string,markFocus:()=>AbortSignal | undefined = ()=>undefined):Promise<void> { await this.act(index,snapshotId,undefined,false,undefined,undefined,false,undefined,false,undefined,true,markFocus); }
 
   async press(index: number, snapshotId: string, key: string): Promise<void> {
     this.parseKey(key);
@@ -2139,7 +2151,7 @@ export class OpenBrowserUseTab {
     return result as string[];
   }
 
-  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false): Promise<void | string[]> {
+  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined): Promise<void | string[]> {
     const observation = this.#observation;
     this.#observation = undefined;
     const node = observation?.nodes.find((item) => item.index === index);
@@ -2195,8 +2207,8 @@ export class OpenBrowserUseTab {
     let inputIssued = false;
     try {
       if (focusOnly) {
-        inputIssued=true;
-        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId:targetSession});
+        const signal=markFocus();inputIssued=true;
+        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId:targetSession,signal});
         const focused=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function(){if(!this.isConnected)return false;let element=this;while(true){const root=element.getRootNode();if(root.activeElement!==element)return false;if(!(root instanceof ShadowRoot))return true;element=root.host}}`},{sessionId:targetSession});
         if(!isObject(focused) || !isObject(focused.result) || focused.result.value!==true || await this.documentId()!==observation.documentId || (node.frameId && observation.frames && !await this.targetFrameFocused(node.frameId,node.backendNodeId,observation.frames)))throw new Error("Target lost focus; observe again");
         if(node.frameChain)await this.validateFrames(node.frameChain);
@@ -2994,7 +3006,7 @@ export class OpenBrowserUseCssLocator {
       }
     }
   }
-  private async perform<T>(action: (snapshot: CssSnapshot, id: number) => Promise<T>, timeoutMs = 5000, readOnly = false): Promise<T> {
+  private async perform<T>(action: (snapshot: CssSnapshot, id: number, deadline:number) => Promise<T>, timeoutMs = 5000, readOnly = false): Promise<T> {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now()+timeoutMs;
     while (true) {
@@ -3002,7 +3014,7 @@ export class OpenBrowserUseCssLocator {
         const snapshot = await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,`Locator target unavailable before timeout (${timeoutMs} ms)`);
         const ids = snapshot.ids;
         if (ids.length > 1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
-        if (ids.length) { const result=action(snapshot,ids[0]);return readOnly ? await locatorReadBeforeDeadline(result,timeoutMs,deadline,"Timed out reading locator") : await result; }
+        if (ids.length) { const result=action(snapshot,ids[0],deadline);return readOnly ? await locatorReadBeforeDeadline(result,timeoutMs,deadline,"Timed out reading locator") : await result; }
       } catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
       const remaining = deadline-performance.now();
       if (remaining <= 0) throw new Error(`Locator target unavailable before timeout (${timeoutMs} ms)`);
@@ -3058,7 +3070,7 @@ export class OpenBrowserUseCssLocator {
     if (typeof checked !== "boolean") throw new Error("Checked state must be a boolean");
     return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,checked,undefined,false,{button:"left",buttons:1,modifiers:0,...(options.force ? {force:true} : {})});},options.timeoutMs);
   }
-  focus(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,undefined,undefined,undefined,true);},options.timeoutMs); }
+  focus(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform((snapshot,id,deadline)=>focusBeforeDeadline(async mark=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,undefined,undefined,undefined,true,mark);},options.timeoutMs ?? 5000,deadline),options.timeoutMs); }
   press(key: string, options: {timeoutMs?: number} = {}): Promise<void> {
     if (typeof key !== "string") throw new Error("Invalid key");
     return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,key);},options.timeoutMs);
@@ -3350,7 +3362,7 @@ export class OpenBrowserUseRoleLocator {
     return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"attribute",name)) as string | null, options.timeoutMs,true);
   }
 
-  private async perform<T>(action: (node: InteractiveNode, snapshotId: string) => Promise<T>, timeoutMs = 5_000, readOnly = false): Promise<T> {
+  private async perform<T>(action: (node: InteractiveNode, snapshotId: string, deadline:number) => Promise<T>, timeoutMs = 5_000, readOnly = false): Promise<T> {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now() + timeoutMs;
     let lastError: Error = new Error(`Locator matched 0 elements before timeout (${timeoutMs} ms)`);
@@ -3360,7 +3372,7 @@ export class OpenBrowserUseRoleLocator {
         if (matches.length > 1) throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
         if (matches.length === 1) {
           this.tab.bindLocatorScope(state.snapshotId,matches[0].node.index,matches[0].path,matches[0].filters,this.framePath ? [...this.framePath] : undefined,matches[0].css,this.guard(state.snapshotId,matches));
-          const result=action(matches[0].node,state.snapshotId);
+          const result=action(matches[0].node,state.snapshotId,deadline);
           return readOnly ? await locatorReadBeforeDeadline(result,timeoutMs,deadline,"Timed out reading locator") : await result;
         }
         lastError = new Error(`Locator matched 0 elements before timeout (${timeoutMs} ms)`);
@@ -3386,7 +3398,7 @@ export class OpenBrowserUseRoleLocator {
   async click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id)=>this.tab.click(node.index,id,mouse), options.timeoutMs); }
   async dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id)=>this.tab.dblclick(node.index,id,mouse), options.timeoutMs); }
   async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.hover(node.index,id), options.timeoutMs); }
-  async focus(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.focus(node.index,id),options.timeoutMs); }
+  async focus(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>focusBeforeDeadline(mark=>this.tab.focus(node.index,id,mark),options.timeoutMs ?? 5000,deadline),options.timeoutMs); }
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }
   clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
   async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }
@@ -3593,7 +3605,7 @@ export class OpenBrowserUseCdp {
       commandParams,
       ...(options.visualPoint ? {visualPoint: options.visualPoint} : {}),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
-    },options.expectedGeneration,requestTimeoutMs);
+    },options.expectedGeneration,requestTimeoutMs,options.signal);
     if (method === "Page.disable" && !options.sessionId) this.#dialogEnabled.delete(tabId);
     if (method === "Runtime.disable" || method === "Log.disable") {
       const capture = this.#logs.get(tabId);

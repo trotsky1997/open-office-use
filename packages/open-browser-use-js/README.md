@@ -247,7 +247,9 @@ stale targets are retried within the optional `timeoutMs`. A positive deadline
 also bounds each browser read; timed-out reads may finish later.
 `focus()` focuses the matched element without dispatching mouse or keyboard
 input. It rechecks the match and focus chain; focus handlers can change the page,
-and a changed target causes an error without repeating the focus. Target and frame
+and a changed target causes an error without repeating the focus. A positive
+`timeoutMs` covers focus preparation and dispatch: preparation timeout prevents
+late dispatch, while a timeout once dispatch begins reports an unknown outcome. Target and frame
 focus checks use an isolated world so page scripts cannot replace those DOM methods. Semantic input target
 checks also run in an isolated world; unavailable contexts fail before input.
 `clear()` fills the matched editable control with an empty string, using the
@@ -265,7 +267,7 @@ The locator and frame geometry are rechecked, but can change after the call.
 mixed or unsupported states.
 Single-target text, attribute, state, value and bounding-box reads use the same
 positive deadline for target lookup and reading. A timed-out read may finish later.
-Locator action timeouts bound the initial target query; a timed-out query cannot
+Other locator action timeouts bound the initial target query; a timed-out query cannot
 issue a late action. Later action preparation and issued input may take longer.
 `waitFor()` bounds browser reads when `timeoutMs` is positive. Timed-out reads may finish later; `timeoutMs: 0` performs one read.
 `isEditable()` checks enabled and readonly states for native inputs, textarea,

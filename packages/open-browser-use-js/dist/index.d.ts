@@ -176,7 +176,7 @@ export declare class OpenBrowserUseClient {
     onDisconnect(handler: (error: Error) => void): () => void;
     protected emitDisconnect(error: Error): void;
     onNotification(handler: NotificationHandler): () => void;
-    request(method: string, params?: BrowserUseRequestParams, expectedGeneration?: number, requestTimeoutMs?: number): Promise<JsonValue>;
+    request(method: string, params?: BrowserUseRequestParams, expectedGeneration?: number, requestTimeoutMs?: number, signal?: AbortSignal): Promise<JsonValue>;
     getInfo(): Promise<JsonValue>;
     createTab(): Promise<JsonValue>;
     getTabs(): Promise<JsonValue>;
