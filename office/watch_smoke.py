@@ -199,6 +199,11 @@ with tempfile.TemporaryDirectory() as tmp:
         target = json.loads(urllib.request.urlopen(element).read())
         assert target['value'] == 'First' and target['revision'] == 2
         edit_data = {'base_revision': 2, 'path': target['path'], 'mode': 'text', 'value': 'User edit', 'snapshot_sha256':target['snapshot_sha256']}
+        for route, args in [('track-replace-text', {'find':'First','replacement':'Changed','author':'Reviewer'}), ('track-insert-text', {'anchor':'First','text':'New ','position':'before','author':'Reviewer'}), ('add-comment', {'text':'Review','author':'Reviewer','anchor':'First'})]:
+            body = {'base_revision':2,'path':target['path'],'snapshot_sha256':'0'*64,**args}
+            request = urllib.request.Request(url+route,data=json.dumps(body).encode(),headers={'Origin':origin,'Content-Type':'application/json'})
+            try: urllib.request.urlopen(request); raise AssertionError('Wrong review target snapshot accepted')
+            except urllib.error.HTTPError as error: assert error.code == 400 and 'snapshot changed' in error.read().decode()
         wrong_hash = urllib.request.Request(url + 'edit', data=json.dumps({**edit_data,'snapshot_sha256':'0'*64}).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
         try: urllib.request.urlopen(wrong_hash); raise AssertionError('Wrong element snapshot accepted')
         except urllib.error.HTTPError as error: assert error.code == 400

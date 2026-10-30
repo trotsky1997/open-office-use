@@ -75,6 +75,20 @@ with tempfile.TemporaryDirectory() as tmp:
     except ValueError as exc: assert 'snapshot changed' in str(exc)
     else: raise AssertionError('Changed replacement source accepted')
     assert session.info(race_draft)['latest_revision'] == 0
+    for operation in ('track_replace', 'track_insert', 'comment'):
+        draft = root/('review-' + operation); session.start(draft, source=race_source)
+        target = session.edit_target(draft, 0, '/body/p[1]')
+        def execute(expected):
+            if operation == 'track_replace': return session.track_replace_text(draft, 0, target['path'], 'Original', 'Revised', 'Reviewer', expected_sha256=expected)
+            if operation == 'track_insert': return session.track_insert_text(draft, 0, target['path'], 'Original', 'New ', 'before', 'Reviewer', expected_sha256=expected)
+            return session.add_comment(draft, 0, target['path'], 'Review', 'Reviewer', 'Original', expected_sha256=expected)
+        try: execute('0'*64)
+        except ValueError as exc: assert 'snapshot changed' in str(exc)
+        else: raise AssertionError(f'Wrong snapshot accepted for {operation}')
+        assert session.info(draft)['latest_revision'] == 0
+        result = execute(target['snapshot_sha256']); assert result['revision'] == 1
+        if operation == 'comment': assert session.list_comments(draft, 1)['total_comments'] == 1
+        else: assert session.tracked_changes(draft, 1)['records']
     literal_source = root / 'literal.xlsx'; book = Workbook(); book.active['A1'] = '00123'; book.save(literal_source)
     literal_draft = root / 'literal'; session.start(literal_draft, source=literal_source)
     assert session.edit_target(literal_draft, 0, '/Sheet/A1')['mode'] == 'literal'

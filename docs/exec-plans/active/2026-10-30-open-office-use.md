@@ -266,3 +266,5 @@ Grid read, value edit and formatting now use snapshot-bound checks and allow an 
 Grid merge, freeze and resize now bind validation and writes to checked snapshots; the viewer and MCP can validate against a previously read grid hash.
 
 Element target inspection and direct/replacement edits support expected source hashes; viewer binds those actions to the displayed snapshot. Other element actions need separate consistency review.
+
+Tracked insertion/replacement and new paragraph comments can bind to the inspected target snapshot. Comment replies, resolution, notes and image workflows remain for consistency review.

@@ -369,3 +369,5 @@ Bound spreadsheet grid reads, value edits and style edits to matching snapshots,
 Bound merge, frozen-pane and grid sizing edits to checked workbook snapshots and exposed expected hashes to MCP and the viewer.
 
 Bound element inspection and direct text edits to checked source snapshots; viewer direct edits and replacements supply the loaded snapshot hash.
+
+Bound Word tracked insertion/replacement and new paragraph comments to checked source snapshots; the viewer and MCP accept the inspected target hash.

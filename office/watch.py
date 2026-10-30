@@ -666,7 +666,7 @@ document.getElementById('comment-add').addEventListener('click', async () => {
  if (!author.trim() || !text.trim()) { document.getElementById('edit-status').textContent='Enter an author and comment.'; return; }
  editBusy=true; button.disabled=true;
  try {
-  const response=await fetch('add-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,text,author,anchor})});
+  const response=await fetch('add-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,path:target.path,text,author,anchor,snapshot_sha256:target.snapshot_sha256})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not add comment');
   invalidateEdit(`Comment saved as revision ${result.revision}.`); await refresh();
  } catch(error) { document.getElementById('edit-status').textContent=`Comment error: ${error.message}`; }
@@ -699,7 +699,7 @@ async function trackedTextEdit(position) {
  if (!author.value.trim()) { document.getElementById('edit-status').textContent='Enter a revision author.'; return; }
  editBusy=true; buttons.forEach(button => button.disabled=true); find.disabled=true; replacement.disabled=true; author.disabled=true; path.disabled=true; mode.disabled=true; value.readOnly=true; document.getElementById('edit-save').disabled=true; document.getElementById('edit-load').disabled=true;
  try {
-  const payload=position ? {base_revision:target.revision,path:target.path,anchor:find.value,text:replacement.value,position,author:author.value} : {base_revision:target.revision,path:target.path,find:find.value,replacement:replacement.value,author:author.value};
+  const payload=position ? {base_revision:target.revision,path:target.path,anchor:find.value,text:replacement.value,position,author:author.value,snapshot_sha256:target.snapshot_sha256} : {base_revision:target.revision,path:target.path,find:find.value,replacement:replacement.value,author:author.value,snapshot_sha256:target.snapshot_sha256};
   const response=await fetch(position ? 'track-insert-text' : 'track-replace-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Tracked edit failed');
   invalidateEdit(`Tracked edit saved as revision ${result.revision}. Review the changes in Word.`); await refresh();
@@ -1581,21 +1581,21 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Comment state requires revision, comment ID and resolved')
                             saved = session.resolve_comment(directory, payload['base_revision'], payload['comment_id'], payload['resolved'])
                         elif route.endswith('/add-comment'):
-                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'text', 'author'}, {'base_revision', 'path', 'text', 'author', 'anchor'}):
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'text', 'author'}, {'base_revision', 'path', 'text', 'author', 'anchor'}, {'base_revision', 'path', 'text', 'author', 'anchor', 'snapshot_sha256'}):
                                 raise ValueError('Comment requires revision, path, text and author')
-                            saved = session.add_comment(directory, payload['base_revision'], payload['path'], payload['text'], payload['author'], payload.get('anchor'))
+                            saved = session.add_comment(directory, payload['base_revision'], payload['path'], payload['text'], payload['author'], payload.get('anchor'), expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/tracked-resolve'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'part', 'ids', 'accept'}:
                                 raise ValueError('Resolution requires revision, part, IDs and decision')
                             saved = session.resolve_tracked_runs(directory, payload['base_revision'], payload['part'], payload['ids'], payload['accept'])
                         elif route.endswith('/track-insert-text'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'anchor', 'text', 'position', 'author'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'anchor', 'text', 'position', 'author'}, {'base_revision', 'path', 'anchor', 'text', 'position', 'author', 'snapshot_sha256'}):
                                 raise ValueError('Tracked insertion requires revision, path, anchor, text, position and author')
-                            saved = session.track_insert_text(directory, payload['base_revision'], payload['path'], payload['anchor'], payload['text'], payload['position'], payload['author'])
+                            saved = session.track_insert_text(directory, payload['base_revision'], payload['path'], payload['anchor'], payload['text'], payload['position'], payload['author'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/track-replace-text'):
-                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement', 'author'}:
+                            if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'find', 'replacement', 'author'}, {'base_revision', 'path', 'find', 'replacement', 'author', 'snapshot_sha256'}):
                                 raise ValueError('Tracked replacement requires revision, path, find, replacement and author')
-                            saved = session.track_replace_text(directory, payload['base_revision'], payload['path'], payload['find'], payload['replacement'], payload['author'])
+                            saved = session.track_replace_text(directory, payload['base_revision'], payload['path'], payload['find'], payload['replacement'], payload['author'], expected_sha256=payload.get('snapshot_sha256'))
                         elif route.endswith('/replace-text'):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'find', 'replacement'}, {'base_revision', 'path', 'find', 'replacement', 'snapshot_sha256'}):
                                 raise ValueError('Text replacement requires revision, path, find and replacement')

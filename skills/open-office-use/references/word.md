@@ -13,3 +13,5 @@ For basic new Word files, `author_file` supports ordered `blocks`: headings, par
 For a new document, `author_file` accepts `page_setup` with A4 or Letter size, orientation, margins, header text and footer text with an optional PAGE field. Page numbers are fields updated by a compatible application; inspect the rendered pages.
 
 Word table cells may contain multiple paragraphs with formatted runs and hyperlinks using `rows` cells shaped as `{"paragraphs":[{"runs":[...]}]}`. Render and review cell wrapping and layout.
+
+`session_edit_target` returns a snapshot hash; pass `expected_sha256` to tracked insertion, tracked replacement or paragraph comment creation to bind the action to the inspected document. The viewer supplies this hash for these actions.

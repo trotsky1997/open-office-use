@@ -274,15 +274,15 @@ def session_replace_text_batch(directory: str, base_revision: int, changes: list
 
 
 @server.tool()
-def session_track_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str, author: str) -> dict[str, Any]:
+def session_track_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str, author: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Create Word deletion and insertion revisions for one unique body, header or footer text range; preserve run formatting."""
-    return session.track_replace_text(directory, base_revision, path, find, replacement, author)
+    return session.track_replace_text(directory, base_revision, path, find, replacement, author, expected_sha256)
 
 
 @server.tool()
-def session_track_insert_text(directory: str, base_revision: int, path: str, anchor: str, text: str, position: Literal['before', 'after'], author: str) -> dict[str, Any]:
+def session_track_insert_text(directory: str, base_revision: int, path: str, anchor: str, text: str, position: Literal['before', 'after'], author: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Insert a Word tracked run before or after one unique body, header or footer text anchor, retaining adjacent formatting."""
-    return session.track_insert_text(directory, base_revision, path, anchor, text, position, author)
+    return session.track_insert_text(directory, base_revision, path, anchor, text, position, author, expected_sha256)
 
 
 @server.tool()
@@ -430,9 +430,9 @@ def session_resolve_comment(directory: str, base_revision: int, comment_id: str,
 
 
 @server.tool()
-def session_add_comment(directory: str, base_revision: int, path: str, text: str, author: str, anchor: str | None = None) -> dict[str, Any]:
+def session_add_comment(directory: str, base_revision: int, path: str, text: str, author: str, anchor: str | None = None, expected_sha256: str | None = None) -> dict[str, Any]:
     """Add a Word comment to a paragraph or unique literal anchor and create a new revision."""
-    return session.add_comment(directory, base_revision, path, text, author, anchor)
+    return session.add_comment(directory, base_revision, path, text, author, anchor, expected_sha256)
 
 
 @server.tool()
