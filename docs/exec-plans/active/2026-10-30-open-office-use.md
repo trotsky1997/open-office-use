@@ -350,3 +350,5 @@ Existing numeric literal slide chart points can be updated by one-based series a
 Direct literal series names and categories can be edited via snapshot-bound CLI/MCP; category edits require matching literal category arrays across all series. A reference deck rendered the updated category and legend in LibreOffice. Native PowerPoint remains unverified.
 
 Slide charts support explicit text color during authoring and snapshot-bound session edits. The OfficeCLI budget-review reference showed readable white chart labels on a dark background in LibreOffice; only its chart part changed and pre-existing validation warnings were unchanged. Native PowerPoint remains unverified.
+
+Workbook chart scans distinguish valid literal data from unverified references and flag fixed chart sources in review bundles. The OfficeCLI sales-dashboard reference contains ten literal sources; a cell edit leaves them unchanged.

@@ -123,7 +123,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="formula-scan">Scan formulas</button> <label><input type="checkbox" id="formula-allow-dynamic"> Allow conversion with dynamic-array metadata or incomplete inspection; spill results may be lost</label> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
 <p id="formula-status" role="status"></p><pre id="formula-scan-output"></pre></details>
 <details id="chart-cache-panel" hidden><summary>Chart cache checks</summary>
-<p>Compare supported chart caches with stored worksheet values. Sync affects every placement sharing a chart part. Formula caches may be stale; inspect chart rendering and unverified sources separately.</p>
+<p>Compare supported chart caches with stored worksheet values. Literal chart data has no worksheet reference and does not update with cell edits. Sync affects every placement sharing a chart part. Formula caches may be stale; inspect chart rendering and unverified sources separately.</p>
 <button type="button" id="chart-cache-scan">Check displayed revision</button><p id="chart-cache-status" role="status"></p><ul id="chart-cache-actions"></ul><pre id="chart-cache-output"></pre></details>
 <details id="workbook-panel" hidden><summary>Workbook overview</summary>
 <p>Inspect a bounded sample of stored cells in each worksheet. Numbers and dates can be raw stored values; use a cell range for detailed reads.</p>
@@ -1016,7 +1016,7 @@ document.getElementById('chart-cache-scan').addEventListener('click', async () =
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Chart cache check failed');
   if (epoch!==chartCacheEpoch || displayed!==revision) return;
   if (result.snapshot_sha256!==displayedHash) throw new Error('Preview source changed; rescan chart caches');
-  status.textContent=`Revision ${revision}: ${result.chart_parts_total} chart part(s), ${result.mismatch_references} mismatch candidate(s), ${result.missing_caches} missing cache(s), ${result.unverified_references} unverified reference(s). ${result.complete ? 'Supported checks completed.' : 'Coverage incomplete.'}`;
+  status.textContent=`Revision ${revision}: ${result.chart_parts_total} chart part(s), ${result.mismatch_references} mismatch candidate(s), ${result.missing_caches} missing cache(s), ${result.unverified_references} unverified reference(s), ${result.literal_sources} literal data source(s) without worksheet links. ${result.complete ? 'Supported checks completed.' : 'Coverage incomplete.'}`;
   document.getElementById('chart-cache-output').textContent=JSON.stringify(result, null, 2);
   const list=document.getElementById('chart-cache-actions');
   for (const chart of result.charts) for (const ref of chart.references) {

@@ -112,6 +112,23 @@ def scan(file):
                             formula_node = node.find(C+'f'); formula = formula_node.text if formula_node is not None else None
                             item = {'index': len(references) + 1, 'role': role, 'kind': node.tag.rsplit('}',1)[-1], 'formula': (formula or '')[:500], 'status': 'unverified', 'mismatches': []}
                             references.append(item)
+                            if node.tag in (C+'numLit', C+'strLit'):
+                                counts = node.findall(C+'ptCount'); count_text = counts[0].get('val') if len(counts) == 1 else None
+                                if count_text is None or not count_text.isdecimal() or len(count_text) > 8 or int(count_text) > 2000:
+                                    item['reason'] = 'invalid_or_oversized_literal'; complete = False; continue
+                                count = int(count_text); seen = set(); invalid = False
+                                for point in node.findall(C+'pt'):
+                                    index = point.get('idx'); values = point.findall(C+'v')
+                                    if index is None or not index.isdecimal() or len(index) > 8 or int(index) >= count or int(index) in seen or len(values) != 1 or len(values[0]) or values[0].text is None or len(values[0].text) > 10000:
+                                        invalid = True; break
+                                    seen.add(int(index))
+                                    if node.tag == C+'numLit':
+                                        try:
+                                            if not math.isfinite(float(values[0].text)): raise ValueError()
+                                        except (ValueError, OverflowError): invalid = True; break
+                                if invalid: item['reason'] = 'invalid_literal_points'; complete = False; continue
+                                item.update({'status': 'literal', 'reason': 'no_worksheet_reference', 'points': count, 'stored_points': len(seen)})
+                                continue
                             if node.tag not in (C+'numRef', C+'strRef'):
                                 item['reason'] = 'unsupported_source'; complete = False; continue
                             cache_nodes = node.findall(C+('numCache' if node.tag == C+'numRef' else 'strCache'))
@@ -199,8 +216,9 @@ def scan(file):
                     return {'snapshot_sha256': digest, 'charts': results, 'chart_parts_total': len(chart_parts), 'complete': complete,
                             'mismatch_references': sum(ref['status']=='mismatch' for ref in refs),
                             'missing_caches': sum(ref['status']=='missing_cache' for ref in refs),
+                            'literal_sources': sum(ref['status']=='literal' for ref in refs),
                             'unverified_references': sum(ref['status']=='unverified' or ref.get('unverified_points', 0)>0 for ref in refs), 'source_cells_read': points_read,
-                            'notes': ['Comparison uses stored worksheet values; formula caches can be stale.', 'Chart parts may be unreferenced; unsupported chart types and data sources are not fully covered.', 'Blank values, hidden data, formatting and rendering may affect chart behavior.']}
+                            'notes': ['Comparison uses stored worksheet values; formula caches can be stale.', 'Chart parts may be unreferenced; unsupported chart types and data sources are not fully covered.', 'Literal chart data has no worksheet source reference and will not update with worksheet edits.', 'Blank values, hidden data, formatting and rendering may affect chart behavior.']}
                 finally: workbook.close()
         except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
             raise ValueError(f'Invalid workbook package: {exc}') from exc

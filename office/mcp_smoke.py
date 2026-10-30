@@ -101,6 +101,16 @@ async def main():
                 date_chart_author=await session.call_tool('author_file',{'spec':date_chart_spec,'output':str(date_chart_file)});assert not date_chart_author.isError,date_chart_author
                 assert load_workbook(date_chart_file)['Data']._charts[0].x_axis.numFmt.formatCode=='mmm d'
                 date_chart_report=await session.call_tool('scan_chart_caches',{'file':str(date_chart_file)});assert not date_chart_report.isError and date_chart_report.structuredContent['complete'],date_chart_report
+                static_chart_file=root/'mcp-static-chart.xlsx'; chart_ns='{http://schemas.openxmlformats.org/drawingml/2006/chart}'
+                with zipfile.ZipFile(date_chart_file) as original,zipfile.ZipFile(static_chart_file,'w') as changed:
+                    for entry in original.infolist():
+                        data=original.read(entry.filename)
+                        if entry.filename.startswith('xl/charts/chart') and entry.filename.endswith('.xml'):
+                            tree=etree.fromstring(data); parent=tree.find('.//'+chart_ns+'val'); reference=parent.find(chart_ns+'numRef'); cache=reference.find(chart_ns+'numCache')
+                            reference.remove(cache); cache.tag=chart_ns+'numLit'; parent.replace(reference,cache); data=etree.tostring(tree)
+                        changed.writestr(entry,data)
+                static_chart_report=await session.call_tool('scan_chart_caches',{'file':str(static_chart_file)})
+                assert not static_chart_report.isError and static_chart_report.structuredContent['literal_sources']==1,static_chart_report
                 date_chart_draft=root/'mcp-date-chart-draft';assert not (await session.call_tool('start_session',{'directory':str(date_chart_draft),'source':str(date_chart_file)})).isError
                 date_edit=await session.call_tool('session_edit_grid',{'directory':str(date_chart_draft),'base_revision':0,'sheet':'Data','cell_range':'A2','changes':[{'cell':'A2','value':'2026-11-02'}]});assert not date_edit.isError,date_edit
                 date_report=await session.call_tool('session_scan_chart_caches',{'directory':str(date_chart_draft),'revision':1});date_cat=next(item for item in date_report.structuredContent['charts'][0]['references'] if item['role']=='cat')

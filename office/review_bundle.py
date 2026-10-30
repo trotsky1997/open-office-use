@@ -75,6 +75,7 @@ def create(source, destination, render, revision=None):
                 if not chart_results['complete']: flags.append('chart_cache_scan_incomplete')
                 if chart_results['mismatch_references']: flags.append('chart_cache_mismatch')
                 if chart_results['missing_caches']: flags.append('chart_cache_missing')
+                if chart_results['literal_sources']: flags.append('chart_literal_data_present')
         else:
             geometry = check('slide_layout', lambda: layout.inspect(snapshot))
             if geometry is not None:

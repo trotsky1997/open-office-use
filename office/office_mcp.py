@@ -100,13 +100,13 @@ def session_search_cells(directory: str, revision: int, query: str, sheet: str |
 
 @server.tool()
 def scan_chart_caches(file: str) -> dict[str, Any]:
-    """Compare supported chart caches with stored worksheet values; check completeness and formula freshness."""
+    """Compare chart caches with stored worksheet values and identify literal data with no worksheet reference; check completeness and formula freshness."""
     return chart_cache.scan(file)
 
 
 @server.tool()
 def session_scan_chart_caches(directory: str, revision: int) -> dict[str, Any]:
-    """Check supported chart caches in an exact XLSX session revision."""
+    """Check chart caches and identify literal data with no worksheet reference in an exact XLSX session revision."""
     return session.scan_chart_caches(directory, revision)
 
 

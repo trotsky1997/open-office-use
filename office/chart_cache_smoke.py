@@ -82,6 +82,26 @@ with tempfile.TemporaryDirectory() as tmp:
                     tree=etree.fromstring(data); mutate(tree); data=etree.tostring(tree,encoding='utf-8',xml_declaration=True)
                 after.writestr(entry,data)
         return target
+    def literal_values(tree):
+        parent=tree.find('.//'+C+'val'); reference=parent.find(C+'numRef'); cache=reference.find(C+'numCache')
+        reference.remove(cache); cache.tag=C+'numLit'; parent.replace(reference,cache)
+    static_source=rewrite('static-values.xlsx',literal_values); static_scan=chart_cache.scan(static_source)
+    static_ref=next(item for item in static_scan['charts'][0]['references'] if item['kind']=='numLit')
+    assert static_scan['complete'] and static_scan['literal_sources']==1 and static_ref['status']=='literal' and static_ref['reason']=='no_worksheet_reference', static_scan
+    static_draft=root/'static-draft'; session.start(static_draft,source=static_source)
+    session.edit_grid(static_draft,0,'Sales Data','B2',[{'cell':'B2','value':'99'}])
+    after_static=session.scan_chart_caches(static_draft,1)
+    assert after_static['literal_sources']==1 and after_static['mismatch_references']==0
+    try: session.sync_chart_cache(static_draft,1,static_scan['charts'][0]['part'],static_ref['index'])
+    except ValueError: pass
+    else: raise AssertionError('Literal chart data accepted for cache sync')
+    def invalid_literal(tree):
+        literal_values(tree); points=tree.find('.//'+C+'val/'+C+'numLit').findall(C+'pt'); points[1].set('idx',points[0].get('idx'))
+    bad_literal=chart_cache.scan(rewrite('invalid-literal.xlsx',invalid_literal))
+    assert not bad_literal['complete'] and any(item.get('reason')=='invalid_literal_points' for item in bad_literal['charts'][0]['references'])
+    def no_render(_source,_out): raise RuntimeError('Rendering intentionally unavailable')
+    static_review=review_bundle.create(static_source,root/'static-review',no_render)
+    assert 'chart_literal_data_present' in static_review['flags']
     def missing(tree):
         ref=tree.find('.//'+C+'cat/'+C+'strRef'); ref.remove(ref.find(C+'strCache'))
     missing_result=chart_cache.scan(rewrite('missing.xlsx',missing)); assert missing_result['missing_caches']==1 and not missing_result['complete']
