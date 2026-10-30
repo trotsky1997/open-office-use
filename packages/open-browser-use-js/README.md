@@ -237,6 +237,23 @@ checked again before input; a focus handler can also change the scope, so
 `press()` checks it after focusing. This API follows the accessible tree and
 requires all observed frames to be readable.
 
+Use `frameLocator` to restrict semantic queries to a particular iframe:
+
+```js
+const payment = tab.playwright.frameLocator('iframe[name="payment"]');
+await payment.getByLabel("Card number", {exact: true}).fill("...");
+const nested = payment.frameLocator('iframe[name="verification"]');
+await nested.getByRole("button", {name: "Continue", exact: true}).click();
+```
+
+Each selector is native CSS matched against direct child frame elements of its
+parent document with `Element.matches`; a selector must match the iframe itself.
+Nested calls select one frame level at a time. Missing frames yield no matches;
+multiple matching frames produce an error. Frame identity and selector matching
+are rechecked before reads and input, and inaccessible observed frames cause
+an incomplete-results error. Semantic targets still come from the accessibility
+tree; general CSS element locators are not provided by this API.
+
 `filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
 locator by its accessible static-text descendants. Matching is a case-insensitive
 substring after whitespace normalization; text fragments are joined with spaces.

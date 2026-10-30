@@ -41,6 +41,9 @@ use `.waitFor({state:"visible"})` or `.waitFor({state:"hidden"})` for semantic v
 binary controls without toggling an already-correct state. `getByRole` accepts boolean `checked`, `disabled`, `pressed`, `selected` and `expanded` filters when the accessibility tree exposes those states. Disabled controls remain observable and can be hovered; actions that modify them require an enabled target. Actions require a
 unique match. Text matchers and text filters also accept regular expressions. Use `.last()` for the final match; `await locator.all()` returns positional locators that resolve again when used, and `await locator.allTextContents()` reads raw text from current matches. Chain locators, such as `dialog.getByRole("button", {name:"Save"})`, to select descendants within a container, including nested frames. Accessible lists, list items, groups, tables and rows also support scoped queries. Use `.filter({hasText:"Apples"})` or `.filter({hasNotText:"Sold out"})` to select by accessible descendant text. For a native select use `.selectOption(value)` or
 `.selectOption({label})`; its DOM-dispatched events have `isTrusted === false`.
+Use `tab.playwright.frameLocator('iframe#payment').getByLabel(...)` to restrict
+semantic queries to a direct child frame; chain `.frameLocator(...)` for nested
+frames. Each selector must match the frame element, and ambiguous frames fail.
 `fill` handles native number and date/time inputs; date/time events are
 DOM-dispatched with `isTrusted === false`.
 `tab.pressKey("Enter")` targets the current focus, including a focused frame;

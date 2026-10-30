@@ -369,6 +369,7 @@ export declare class OpenBrowserUseTabPlaywright {
         timeoutMs?: number;
     }): Promise<void>;
     domSnapshot(): Promise<string>;
+    frameLocator(selector: string): OpenBrowserUseFrameLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -383,6 +384,25 @@ export declare class OpenBrowserUseTabPlaywright {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
 }
+export declare class OpenBrowserUseFrameLocator {
+    private tab;
+    private path;
+    constructor(tab: OpenBrowserUseTab, path: readonly string[]);
+    frameLocator(selector: string): OpenBrowserUseFrameLocator;
+    getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
+    getByLabel(name: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByText(text: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByAltText(text: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+    getByPlaceholder(text: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseRoleLocator;
+}
 export declare class OpenBrowserUseRoleLocator {
     private tab;
     private roles;
@@ -393,7 +413,8 @@ export declare class OpenBrowserUseRoleLocator {
     private scope?;
     private filtersBefore;
     private filtersAfter;
-    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[]);
+    private framePath?;
+    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[], framePath?: readonly string[] | undefined);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
     last(): OpenBrowserUseRoleLocator;

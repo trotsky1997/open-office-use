@@ -77,14 +77,15 @@ app.whenReady().then(async()=>{
     assert.ok((await sdk.dev.logs({levels:['warning'],filter:'socket-cross-log'})).length);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Child heading';document.body.append(h);document.querySelector('button').ondblclick=e=>window.childDouble={trusted:e.isTrusted,detail:e.detail}})()`},{sessionId:session});
     assert.equal(await sdk.playwright.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
+    const crossFrame=sdk.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
     window.hide();
     assert.deepEqual((({backend,selected,visible})=>({backend,selected,visible}))(await sdk.getPresentation()),{backend:'electron',selected:true,visible:false});
-    const crossButton=sdk.playwright.getByRole('button',{name:/^cross-frame action$/i});
+    const crossButton=crossFrame.getByRole('button',{name:/^cross-frame action$/i});
     assert.equal(await crossButton.isVisible(),true);assert.equal(await crossButton.innerText(),'Cross-frame action');
     assert.deepEqual((await sdk.playwright.getByRole('button',{name:/^(Batch one|Cross-frame action)$/i}).allTextContents()).sort(),['Batch one hidden','Cross-frame action']);
     await crossButton.dblclick();assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.childDouble',returnByValue:true},{sessionId:session})).result.value,{trusted:true,detail:2});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{window.keyInput=[];document.querySelector('[aria-label="Cross-frame text"]').addEventListener('input',e=>keyInput.push(e.isTrusted))})()`},{sessionId:session});
-    await sdk.playwright.getByLabel('Cross-frame text',{exact:true}).press('a');await sdk.cua.keypress({keys:['b']});await sdk.cua.type({text:'中🙂'});
+    await crossFrame.getByLabel('Cross-frame text',{exact:true}).press('a');await sdk.cua.keypress({keys:['b']});await sdk.cua.type({text:'中🙂'});
     assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`({value:document.querySelector('[aria-label="Cross-frame text"]').value,events:window.keyInput})`,returnByValue:true},{sessionId:session})).result.value,{value:'ab中🙂',events:[true,true,true]});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const e=document.createElement('input');e.type='file';e.id='child-upload';e.setAttribute('aria-label','Child upload');document.body.prepend(e)})()`},{sessionId:session});
     const childReady=await sdk.prepareFileChooser({timeoutMs:20000});const childWait=childReady.wait();void childWait.catch(()=>{});

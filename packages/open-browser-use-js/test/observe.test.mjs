@@ -710,7 +710,7 @@ test("text input requires an editable focused observed textbox", async () => {
 
 test("cross-process frame input uses its session and rejects detached targets", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
-  let notify, detached = false, focused = true;
+  let notify, detached = false, focused = true, selectorChecks=0, changeAfter=Infinity, extraFrame=false, rootReads=0, changeTreeAfter=Infinity;
   const input = [], keys = [];
   client.onNotification = handler => { notify = handler; return () => {}; };
   client.request = async (method, params) => {
@@ -721,10 +721,11 @@ test("cross-process frame input uses its session and rejects detached targets", 
       return {};
     }
     if (command === "DOM.getDocument") return {root:{backendNodeId:1}};
-    if (command === "Page.getFrameTree") return session ? {frameTree:{frame:{id:"cross",loaderId:"cross-v1",url:"https://cross.test"},childFrames:[{frame:{id:"nested",loaderId:"nested-v1",url:"https://cross.test/nested"}}]}} : {frameTree:{frame:{id:"root",loaderId:"root-v1",url:"https://root.test"}}};
+    if (command === "Page.getFrameTree") return session ? {frameTree:{frame:{id:"cross",loaderId:"cross-v1",url:"https://cross.test"},childFrames:[{frame:{id:"nested",loaderId:"nested-v1",url:"https://cross.test/nested"}}]}} : {frameTree:{frame:{id:"root",loaderId:++rootReads>=changeTreeAfter?"root-v2":"root-v1",url:"https://root.test"},...(extraFrame?{childFrames:[{frame:{id:"other",loaderId:"other-v1",url:"https://other.test"}}]}:{})}};
     if (command === "Accessibility.getFullAXTree") return {nodes:args.frameId === "nested" ? [{backendDOMNodeId:7,role:{value:"button"},name:{value:"Nested"}}] : []};
     if (command === "DOM.getFrameOwner") return {backendNodeId:args.frameId === "nested" ? 8 : 9};
     if (command === "DOM.resolveNode") return {object:{objectId:String(args.backendNodeId)}};
+    if (command === "Runtime.callFunctionOn" && args.functionDeclaration.includes("this.matches(selector)")) return {result:{value:++selectorChecks < changeAfter}};
     if (command === "Runtime.callFunctionOn" && args.functionDeclaration.includes("activeElement")) return {result:{value:focused}};
     if (command === "Runtime.callFunctionOn") return {result:{value:args.objectId === "7" ? {x:10,y:20,width:10,height:10} : args.objectId === "8" ? {x:110,y:120} : {x:210,y:220}}};
     if (command === "Input.dispatchKeyEvent" || command === "DOM.focus") keys.push({session,command,...args});
@@ -741,6 +742,11 @@ test("cross-process frame input uses its session and rejects detached targets", 
   await tab.playwright.getByRole("button",{name:"Nested",exact:true}).press("Enter");
   assert.deepEqual(keys.map(({session,command})=>({session,command})),[{session:"child-session",command:"DOM.focus"},{session:"child-session",command:"Input.dispatchKeyEvent"},{session:"child-session",command:"Input.dispatchKeyEvent"}]);
   assert.equal(input.length,2);
+  const scoped=tab.playwright.frameLocator('#outer').frameLocator('#inner').getByRole('button',{name:'Nested',exact:true});
+  assert.equal(await scoped.count(),1);
+  selectorChecks=0;changeAfter=3;await assert.rejects(scoped.click({timeoutMs:0}),/Frame selector changed/);assert.equal(input.length,2);
+  changeAfter=Infinity;extraFrame=true;await assert.rejects(tab.playwright.frameLocator('iframe').getByRole('button').count(),/matched 2 frames/);extraFrame=false;
+  rootReads=0;changeTreeAfter=3;await assert.rejects(scoped.count(),/Frame tree changed/);changeTreeAfter=Infinity;
   await assert.rejects(tab.playwright.getByRole("button",{name:"Nested",exact:true}).press("F42"),/Unsupported/);
   assert.equal(keys.length,3);
   focused = false;

@@ -219,3 +219,5 @@ pressKey 根据当前焦点逐层检查 iframe 宿主并选择对应调试会话
 定位 Chromium 滚轮问题与后台标签呈现状态有关：新增显式 tab.bringToFront，调用方自行决定是否激活标签。Linux ARM64 隔离 Chromium 150 的 headless 原生消息完整 smoke 和 Xvfb 前台短测均验证标签从 hidden 变 visible、固定嵌套容器实际滚动、带 Shift 的可信 wheel 及后续 PNG 截图；SDK 63 项通过。后台标签仍可能失败，Electron 的窗口呈现由宿主控制，macOS/Windows 和普通桌面尚未覆盖。
 
 新增所属标签 getPresentation：Chrome 读取浏览器真实标签选中及窗口状态，Electron 读取所属 surface 和宿主窗口状态，未知可见性显式返回 null。Chrome 在宿主查询前后校验 session，Electron 要求 page.control；SDK 63 项、Electron 47 项和扩展相关测试 13 项通过。Linux ARM64 隔离 Chromium 原生消息与 Xvfb 实测后台、前台和焦点模拟伪装，Electron 44/Xvfb socket 实测呈现与隐藏窗口。焦点模拟、禁用后台节流、screencast 和设备视口模拟均未恢复该 Chromium 环境的后台嵌套滚动；后台限制继续保留。
+
+新增 frameLocator，按原生 CSS 匹配直接子 frame 元素并逐层选择，可与已有语义定位器、过滤和位置选择组合；观察后及读取、输入前重新验证 frame 树和选择器，多个匹配立即报错。SDK 63 项通过，覆盖选择器变化、frame 导航及歧义；Linux ARM64 Chromium 原生消息实测跨进程和嵌套 frame、缺失与非法选择器，Electron 44/Xvfb socket 实测跨进程 frame 查询、可信双击和按键。通用 CSS 元素定位仍待实现，macOS/Windows 尚未实测。
