@@ -162,3 +162,5 @@ CLI/MCP JSON specs can now create cell values and formulas together with bounded
 ## Basic spreadsheet charts
 
 CLI/MCP spreadsheet specs support same-sheet column and line charts, inferred or explicit category types and page-width fitting. LibreOffice preview was checked with three textual categories; Excel chart and formula caches remain unpopulated by the basic writer and require separate review.
+
+Basic chart authoring now writes bounded caches from verified literal source values; formula, blank, ambiguous or oversized ranges remain uncached and are reported by chart cache inspection. Subsequent grid edits may make caches stale.

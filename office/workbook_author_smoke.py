@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 from openpyxl import load_workbook
 import open_office_use
+import chart_cache
+import session
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); output = root/'forecast.xlsx'
@@ -22,6 +24,15 @@ with tempfile.TemporaryDirectory() as tmp:
     assert load_workbook(output,data_only=True)['Forecast']['B3'].value is None
     assert len(sheet._charts) == 2 and sheet._charts[0].__class__.__name__ == 'BarChart' and sheet._charts[1].__class__.__name__ == 'LineChart'
     assert sheet._charts[0].series[0].val.numRef.f == "'Forecast'!$B$2:$B$3" and sheet._charts[0].series[0].cat.strRef.f == "'Forecast'!$A$2:$A$3"
+    report = chart_cache.scan(output)
+    refs = report['charts'][0]['references']; assert [ref['status'] for ref in refs] == ['match','match','missing_cache']
+    literal_spec = {'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':100,'A3':'Q2','B3':120}},'sheet_options':{'Sales':{'formats':[{'range':'B2:B3','number_format':'0.00'}],'charts':[{'type':'column','data':'B1:B3','categories':'A2:A3'}]}}}
+    literal = root/'literal.xlsx'; open_office_use.author(literal_spec, literal)
+    assert load_workbook(literal)['Sales']._charts[0].series[0].val.numRef.numCache.formatCode == '0.00'
+    checked = chart_cache.scan(literal); assert checked['complete'] and checked['missing_caches'] == 0 and checked['mismatch_references'] == 0
+    draft = root/'draft'; session.start(draft, source=literal)
+    edited = session.edit_grid(draft, 0, 'Sales', 'B2', [{'cell':'B2','value':'200'}])
+    stale = chart_cache.scan(edited['file']); assert stale['mismatch_references'] == 1
     formula_spec = {'sheets':{'Data':{'A1':'=1','A2':'=2','B1':10,'B2':20}},'sheet_options':{'Data':{'charts':[{'type':'line','data':'B1:B2','categories':'A1:A2','category_type':'number','titles_from_data':False}]}}}
     formula_chart = root/'formula-categories.xlsx'; open_office_use.author(formula_spec, formula_chart)
     assert load_workbook(formula_chart)['Data']._charts[0].series[0].cat.numRef is not None

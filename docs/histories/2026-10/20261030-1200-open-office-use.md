@@ -219,3 +219,7 @@ Added `sheet_options` to basic CLI/MCP workbook authoring for direct formats, nu
 ### Basic spreadsheet chart authoring
 
 Added worksheet-referenced column/line charts and optional one-page-wide print scaling to basic CLI/MCP authoring. Tested source references, text and formula categories, invalid ranges, MCP creation and LibreOffice rendering; the chart cache scanner reports the expected missing caches. Excel rendering and cache generation remain unverified.
+
+### Literal chart caches
+
+Added bounded literal title, category and numeric value caches to basic workbook chart authoring. Verified the existing cache scanner reports matches for literal sources, missing cache for formulas and a mismatch after a subsequent grid edit. Excel rendering and formula evaluation remain unverified.

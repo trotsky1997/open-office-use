@@ -21,7 +21,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
-from openpyxl.chart.data_source import AxDataSource, StrRef
+from openpyxl.chart.data_source import AxDataSource, StrRef, StrData, StrVal, NumData, NumVal
 from openpyxl.styles import PatternFill
 from openpyxl.cell.cell import MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
@@ -298,7 +298,32 @@ def append_slides(presentation, slides):
 def format_workbook(workbook, options):
     """Apply bounded presentation settings to an authored workbook."""
     if not isinstance(options, dict) or len(options) > 100: raise ValueError('Sheet options must be an object with at most 100 sheets')
-    total_cells = 0
+    total_cells = 0; chart_cache_bytes = 0; chart_cache_points = 0
+    # shortcut: cache bounded, nonempty literal text or finite numbers; calculated and ambiguous values require recalculation.
+    def chart_cache(cells, text):
+        nonlocal chart_cache_bytes, chart_cache_points
+        if len(cells) > 2000 or chart_cache_points + len(cells) > 50000: return None
+        values = []
+        for cell in cells:
+            value = cell.value
+            if cell.data_type in ('f', 'e') or value is None or isinstance(value, bool): return None
+            if text:
+                if not isinstance(value, str) or isinstance(value, spreadsheet.UnverifiedSharedString) or not value or len(value) > 1000 or re.search(r'_x[0-9a-fA-F]{4}_', value): return None
+                values.append(value)
+            else:
+                if not isinstance(value, (int, float)): return None
+                try: numeric = float(value)
+                except (OverflowError, ValueError): return None
+                if not math.isfinite(numeric): return None
+                values.append(numeric)
+        size = sum(len(str(value).encode('utf-8')) for value in values)
+        if chart_cache_bytes + size > 8 * 1024 * 1024: return None
+        chart_cache_bytes += size; chart_cache_points += len(values)
+        if text: return StrData(ptCount=len(values), pt=[StrVal(idx=index, v=value) for index, value in enumerate(values)])
+        formats = {cell.number_format for cell in cells}
+        format_code = next(iter(formats)) if len(formats) == 1 else 'General'
+        if not isinstance(format_code, str) or not 1 <= len(format_code) <= 255: format_code = 'General'
+        return NumData(formatCode=format_code, ptCount=len(values), pt=[NumVal(idx=index, v=value) for index, value in enumerate(values)])
     def bounds(reference, limit):
         if not isinstance(reference, str) or len(reference) > 32: raise ValueError('Invalid cell range')
         try: a, b, c, d = range_boundaries(reference)
@@ -413,6 +438,14 @@ def format_workbook(workbook, options):
                 if text_categories:
                     for series in chart.series: series.cat = AxDataSource(strRef=StrRef(f=str(labels)))
                 else: chart.set_categories(labels)
+            for index, series in enumerate(chart.series):
+                if headings and series.tx and series.tx.strRef:
+                    series.tx.strRef.strCache = chart_cache([sheet.cell(row=b, column=a + index)], True)
+                values = [sheet.cell(row=row, column=a + index) for row in range(b + int(headings), d + 1)]
+                series.val.numRef.numCache = chart_cache(values, False)
+                if labels is not None:
+                    if text_categories: series.cat.strRef.strCache = chart_cache(category_cells, True)
+                    else: series.cat.numRef.numCache = chart_cache(category_cells, False)
             if 'title' in chart_spec: chart.title = chart_spec['title']
             if 'x_axis_title' in chart_spec: chart.x_axis.title = chart_spec['x_axis_title']
             if 'y_axis_title' in chart_spec: chart.y_axis.title = chart_spec['y_axis_title']
