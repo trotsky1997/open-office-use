@@ -1703,3 +1703,17 @@ test('focus deadline prevents late dispatch and reports issued outcomes',async()
   tab.focus=async(_index,_snapshot,mark)=>{await new Promise(resolve=>{resolveRole=resolve});mark();roleFocus++;};
   await assert.rejects(role.focus({timeoutMs:20}),/preparation timed out/);resolveRole();await new Promise(resolve=>setImmediate(resolve));assert.equal(roleFocus,0);
 });
+
+test('click deadline prevents late input and reports issued outcomes',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}),tab=browser.tab(1);
+  const frame={id:'root',loaderId:'v1',url:'https://example.test'},snapshot={frame,frames:[frame],ids:[7],documentId:1,scopeIds:[]};
+  tab.queryCss=async()=>snapshot;let releaseWorld,presses=0;
+  browser.cdp.call=async(_id,method)=>{if(method==='Page.createIsolatedWorld')return await new Promise(resolve=>{releaseWorld=resolve});if(method==='DOM.resolveNode')return {object:{objectId:'target'}};if(method==='Input.dispatchMouseEvent')presses++;return {};};
+  await assert.rejects(tab.playwright.locator('button').click({timeoutMs:20}),/Click preparation timed out/);
+  releaseWorld({executionContextId:1});await new Promise(resolve=>setImmediate(resolve));assert.equal(presses,0);
+  let resolveRole,rolePresses=0;const role=tab.playwright.getByRole('button');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};
+  tab.click=async(_index,_snapshot,_mouse,mark)=>{await new Promise(resolve=>{resolveRole=resolve});mark();rolePresses++;};
+  await assert.rejects(role.click({timeoutMs:20}),/Click preparation timed out/);resolveRole();await new Promise(resolve=>setImmediate(resolve));assert.equal(rolePresses,0);
+  let signal;tab.click=async(_index,_snapshot,_mouse,mark)=>{signal=mark();await new Promise(resolve=>{resolveRole=resolve});};
+  await assert.rejects(role.click({timeoutMs:20}),/Click timed out; outcome is unknown/);assert.equal(signal.aborted,true);resolveRole();
+});

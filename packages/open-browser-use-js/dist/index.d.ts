@@ -391,7 +391,7 @@ export declare class OpenBrowserUseTab {
     waitForDialog(options?: {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseDialog>;
-    click(index: number, snapshotId: string, mouse?: MouseClick): Promise<void>;
+    click(index: number, snapshotId: string, mouse?: MouseClick, markClick?: () => AbortSignal | undefined): Promise<void>;
     dblclick(index: number, snapshotId: string, mouse?: MouseClick): Promise<void>;
     hover(index: number, snapshotId: string): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;

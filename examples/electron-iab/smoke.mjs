@@ -156,6 +156,19 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   } finally {unblockFocus?.();sdkTab.browser.cdp.call=originalCdpCall;}
   check('SDK focus deadline: no late dispatch and unknown issued outcome');
 
+  await evaluate(a.id,`(()=>{window.deadlineClicks=0;const el=document.createElement('button');el.id='deadline-click';el.textContent='Deadline click';el.onclick=()=>window.deadlineClicks++;document.body.append(el)})()`);
+  let unblockClickPrepare,clickPresses=0;
+  sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.resolveNode' && !unblockClickPrepare)await new Promise(resolve=>{unblockClickPrepare=resolve});if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mousePressed')clickPresses++;return originalCdpCall(...args);};
+  try {
+    await assert.rejects(sdkTab.playwright.locator('#deadline-click').click({timeoutMs:500}),/preparation timed out/i);unblockClickPrepare();await new Promise(resolve=>setTimeout(resolve,250));assert.equal(clickPresses,0);assert.equal(await evaluate(a.id,'window.deadlineClicks'),0);
+  } finally {unblockClickPrepare?.();sdkTab.browser.cdp.call=originalCdpCall;}
+  let unblockPress,presses=0,releases=0;
+  sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mousePressed'){presses++;const result=await originalCdpCall(...args);await new Promise(resolve=>{unblockPress=resolve});return result;}if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mouseReleased')releases++;return originalCdpCall(...args);};
+  try {
+    await assert.rejects(sdkTab.playwright.locator('#deadline-click').click({timeoutMs:1000}),/outcome is unknown/i);assert.ok(unblockPress);unblockPress();await new Promise(resolve=>setTimeout(resolve,200));assert.equal(presses,1);assert.equal(releases,1);assert.equal(await evaluate(a.id,'window.deadlineClicks'),1);
+  } finally {unblockPress?.();sdkTab.browser.cdp.call=originalCdpCall;await evaluate(a.id,"document.querySelector('#deadline-click').remove()");}
+  check('SDK click deadline: no late press and release after an issued press');
+
   await evaluate(a.id,`(()=>{window.focusChanges=0;const el=document.createElement('input');el.id='focus-changing';el.addEventListener('focus',()=>{window.focusChanges++;el.id='focus-changed'});document.body.append(el)})()`);
   await assert.rejects(sdkTab.playwright.locator('#focus-changing').focus({timeoutMs:1000}),/changed|focus/i);
   assert.equal(await evaluate(a.id,'window.focusChanges'),1);await evaluate(a.id,"document.querySelector('#focus-changed').remove()");

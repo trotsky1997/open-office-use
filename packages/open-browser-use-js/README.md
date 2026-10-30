@@ -322,9 +322,11 @@ frame position; this catches movement visible between those samples. Before
 input and scoped reads, a separate accessibility observation re-evaluates the
 locator and its position; changed matches trigger a fresh attempt before input.
 The recheck leaves the active operation's observation intact.
-The limit controls when another observation starts; a slow browser request can
-finish after it. Multiple matches fail immediately. An issued input action is
-not retried after an error. This initial locator API does not include every
+For `click` and `focus`, a positive timeout also bounds preparation and reports
+when the input outcome is unknown. A timed-out click may still release an already
+pressed mouse button; preparation may have scrolled the page. Other actions can
+finish a slow browser request after the deadline. Multiple matches fail immediately.
+An issued input action is not retried after an error. This initial locator API does not include every
 Playwright locator method.
 
 Locators can be chained to search descendants of matching accessible containers.

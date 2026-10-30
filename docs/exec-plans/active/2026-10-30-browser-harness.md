@@ -96,3 +96,5 @@
 - [ ] Windows 原生消息注册和端到端传输验收；macOS 实际安装路径验证。
 
 - [ ] 完成通用 CSS locator 的完整 API；已实现有界链式作用域、查询、读取、可信点击、悬停、按键及文本填写，覆盖开放 shadow root 和 frame。
+
+- [x] CSS 和语义 locator 的 click 正数超时覆盖输入前准备；输入开始后报告结果未知，保留鼠标释放。macOS Electron 实页验证。
