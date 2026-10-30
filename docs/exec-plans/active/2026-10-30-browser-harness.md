@@ -45,6 +45,7 @@
 - [x] Linux ARM64 隔离 Chromium 150：原生消息链路验证跨进程与嵌套 frame 的可信输入、导航、遮挡和重连。
 - [ ] 跨进程 iframe 的其他平台与动态 frame 场景验收。
 - [x] 同一文档支持有序文本差异；导航和截断后回到完整基线。
+- [x] 语义定位器支持批量读取匹配节点的原始文本，保留作用域与 frame 校验；Linux 隔离 Chromium 原生消息和 Electron 44 socket 验证，Electron 覆盖跨进程 frame。
 - [x] 按 CSS viewport 坐标点击和滚动；本机隔离 Chrome 验证真实鼠标和滚轮行为。
 - [x] 语义定位器与 CSS viewport 坐标悬停；macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证可信 mouseenter，Electron 验证坐标悬停。
 - [x] CSS viewport 拖拽；隔离 Chromium 和 macOS Electron 页面验证可信滑块输入。

@@ -32,8 +32,11 @@ app.whenReady().then(async()=>{
     await sdk.evaluate(`(()=>{const img=document.createElement('img');img.src='/missing-log';document.body.append(img)})()`);await new Promise(resolve=>setTimeout(resolve,150));
     assert.ok((await sdk.dev.logs({levels:['error'],filter:'404'})).some(entry=>entry.url?.endsWith('/missing-log')));
     assert.equal(await sdk.playwright.getByRole('heading',{name:/welcome/i,level:1}).count(),1);
+    await sdk.evaluate(`(()=>{const g=document.createElement('div');g.setAttribute('role','group');g.setAttribute('aria-label','Batch fixture');g.innerHTML='<button>Batch one<span hidden> hidden</span></button><button>Batch two</button>';document.body.append(g)})()`);
+    assert.deepEqual(await sdk.playwright.getByRole('group',{name:'Batch fixture',exact:true}).getByRole('button').allTextContents(),['Batch one hidden','Batch two']);
     await sdk.evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.id='double-fixture';b.textContent='Socket double';b.setAttribute('data-fixture','yes');b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'double',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
     const double=sdk.playwright.getByRole('button',{name:/^socket double$/i});
+    assert.deepEqual(await double.allTextContents(),['Socket double']);
     await double.waitFor({state:'visible',timeoutMs:5000});assert.equal(await double.isVisible(),true);assert.equal(await double.isEnabled(),true);
     assert.equal(await double.innerText(),'Socket double');assert.equal(await double.textContent(),'Socket double');assert.equal(await double.getAttribute('data-fixture'),'yes');
     await double.dblclick();assert.deepEqual(await sdk.evaluate('window.doubleEvents'),[{kind:'click',detail:1,trusted:true},{kind:'click',detail:2,trusted:true},{kind:'double',detail:2,trusted:true}]);
@@ -68,6 +71,7 @@ app.whenReady().then(async()=>{
     window.hide();
     const crossButton=sdk.playwright.getByRole('button',{name:/^cross-frame action$/i});
     assert.equal(await crossButton.isVisible(),true);assert.equal(await crossButton.innerText(),'Cross-frame action');
+    assert.deepEqual((await sdk.playwright.getByRole('button',{name:/^(Batch one|Cross-frame action)$/i}).allTextContents()).sort(),['Batch one hidden','Cross-frame action']);
     await crossButton.dblclick();assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.childDouble',returnByValue:true},{sessionId:session})).result.value,{trusted:true,detail:2});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const e=document.createElement('input');e.type='file';e.id='child-upload';e.setAttribute('aria-label','Child upload');document.body.prepend(e)})()`},{sessionId:session});
     const childReady=await sdk.prepareFileChooser({timeoutMs:20000});const childWait=childReady.wait();void childWait.catch(()=>{});

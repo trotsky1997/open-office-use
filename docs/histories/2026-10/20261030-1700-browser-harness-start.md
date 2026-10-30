@@ -201,3 +201,5 @@ Linux ARM64 更新验证：隔离 Chromium 150 使用真实原生消息清单、
 JavaScript SDK 新增 tab.clipboard 的 readText/writeText/read/write，映射原有 Chrome 协议的 MIME 文本和 base64 格式，写入前验证结构；Electron 仍明确不支持。Chrome clipboard 执行错误现在返回限长异常首行，实际权限拒绝可显示 NotAllowedError。SDK 59 项、扩展 29 项通过；Linux ARM64 隔离 Chromium 150 headless 临时 profile 中显式授予本地 fixture 站点权限，原生消息链路验证文本、HTML 和 PNG；无权限场景验证错误。剪贴板 smoke 需显式启用并使用隔离剪贴板；macOS/Windows 和 Electron 尚未验证或实现。
 
 Electron 44 新增系统剪贴板访问，客户端需持有 page.control 及独立的 clipboard.read 或 clipboard.write 授权；限制数据量并在异步操作前后检查租约。Linux ARM64 Electron 44.7 在隔离 Xvfb 中经原生 socket 验证文本、HTML、PNG；47 项 Electron 测试通过。写入一经发出可能在撤权后完成，macOS/Windows 实际剪贴板及旧版 Electron 暂未覆盖。
+
+语义定位器新增 allTextContents()，按一次观察中的匹配顺序逐项读取原始文本，沿用作用域、frame 和变化校验；空匹配返回空数组，并限制单项及总长度。SDK 59 项通过；Linux ARM64 隔离 Chromium 原生消息和 Electron 44/Xvfb socket 验证容器中多个元素及隐藏后代文本，Electron 还验证同一结果中的跨进程 frame。读取期间页面可能变化，结果没有原子快照保证。

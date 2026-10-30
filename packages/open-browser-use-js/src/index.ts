@@ -1678,6 +1678,31 @@ export class OpenBrowserUseRoleLocator {
   async count(): Promise<number> { return (await this.find()).matches.length; }
   async all(): Promise<OpenBrowserUseRoleLocator[]> { return Array.from({length:await this.count()},(_,index)=>this.nth(index)); }
 
+  async allTextContents(options: {timeoutMs?: number} = {}): Promise<string[]> {
+    const timeoutMs = options.timeoutMs ?? 5_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
+    const deadline = performance.now() + timeoutMs;
+    while (true) {
+      try {
+        const {state,matches} = await this.find();
+        const values: string[] = [];
+        let total = 0;
+        for (const match of matches) {
+          if (match.path.length || match.filters.length) this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters);
+          const value = await this.tab.locatorRead(state.snapshotId,match.node.index,"textContent");
+          if (typeof value !== "string") throw new RetryablePreflightError("Target text is unavailable; observe again");
+          total += value.length;
+          if (total > 1_000_000) throw new Error("Locator values exceed the 1000000 character limit");
+          values.push(value);
+        }
+        return values;
+      } catch (error) {
+        if (!(error instanceof RetryablePreflightError) || performance.now() >= deadline) throw error;
+        await new Promise(resolve => setTimeout(resolve,Math.min(100,deadline-performance.now())));
+      }
+    }
+  }
+
   async innerText(options: {timeoutMs?: number} = {}): Promise<string> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"innerText")) as string, options.timeoutMs); }
   async textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"textContent")) as string | null, options.timeoutMs); }
   async isEnabled(): Promise<boolean> { return this.perform(async (node,id)=>(await this.tab.locatorRead(id,node.index,"enabled")) as boolean); }

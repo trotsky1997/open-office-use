@@ -176,6 +176,10 @@ Heading locators can filter by positive integer `level`; observations expose
 the browser-reported level when available.
 `textContent()` reads the raw DOM text, including hidden descendants, with the
 same match and length checks.
+`allTextContents()` reads raw text from all current semantic matches in one
+observation, returning an empty array when there are none. Each value is limited
+to 30000 characters and the total to 1000000. The page can change between reads;
+stale targets are retried within the optional `timeoutMs`.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and
 its frame owners; an absent accessible match returns `false`. Offscreen or
 covered elements can still be visible. Locator matching uses the accessibility

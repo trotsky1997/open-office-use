@@ -706,10 +706,13 @@ test("role locators reobserve, reject ambiguous matches and honor explicit posit
   const regexLocator=tab.playwright.getByRole('button',{name:pattern});assert.equal(await regexLocator.count(),2);assert.equal(await regexLocator.count(),2);assert.equal(pattern.lastIndex,3);
   assert.equal(await tab.playwright.getByRole('button',{name:/last$/g}).count(),1);
   const all=await locator.all();assert.equal(all.length,2);
+  const reads=[];tab.locatorRead=async(id,index,mode)=>{reads.push({id,index,mode});return `value ${index}`;};
+  assert.deepEqual(await locator.allTextContents(),['value 10','value 11']);
+  assert.equal(reads[0].id,reads[1].id);assert.equal(reads[0].mode,'textContent');
   await locator.last().click();assert.equal(calls.at(-1).index,11);
   nodes.reverse();await all[0].click();assert.equal(calls.at(-1).index,11);
   assert.equal(await locator.nth(0).last().count(),1);
-  nodes=[];assert.equal(await locator.last().count(),0);assert.deepEqual(await locator.all(),[]);
+  nodes=[];assert.equal(await locator.last().count(),0);assert.deepEqual(await locator.all(),[]);assert.deepEqual(await locator.allTextContents(),[]);
   unavailableFrames=['unknown'];await assert.rejects(locator.count(),/incomplete/);
   assert.throws(()=>locator.nth(-1),/non-negative/);
 });
