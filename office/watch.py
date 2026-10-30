@@ -69,6 +69,13 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul>
 <fieldset id="reply-panel" hidden><legend>Reply to comment</legend><p id="reply-target"></p><label>Author <input id="reply-author" maxlength="100"></label>
 <label>Reply <textarea id="reply-text" maxlength="4000"></textarea></label><button type="button" id="reply-send">Save reply as new revision</button></fieldset></details>
+<details id="notes-panel" hidden><summary>Slide speaker notes</summary><form id="notes-form">
+<p>Choose a slide by presentation order, including hidden slides. Saving replaces all notes text and resets its formatting.</p>
+<label>Slide number <input id="notes-slide" type="number" min="1" step="1" value="1" required></label>
+<button type="button" id="notes-load">Load displayed revision</button>
+<label>Speaker notes <textarea id="notes-text" maxlength="100000" rows="8" disabled></textarea></label>
+<button type="submit" id="notes-save" disabled>Save notes as new revision</button><p id="notes-status" role="status"></p>
+</form></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
 <button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details></details>
@@ -115,6 +122,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
+let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -176,8 +184,9 @@ function gridDirty() {
 function elementDirty() {
  return editBaseline !== null && (document.getElementById('edit-value').value !== editBaseline.value || document.getElementById('edit-mode').value !== editBaseline.mode);
 }
+function notesDirty() { return notesBaseline!==null && document.getElementById('notes-text').value!==notesBaseline; }
 window.addEventListener('beforeunload', event => {
- if (gridDirty() || elementDirty()) { event.preventDefault(); event.returnValue=''; }
+ if (gridDirty() || elementDirty() || notesDirty()) { event.preventDefault(); event.returnValue=''; }
 });
 document.getElementById('formula-scan').addEventListener('click', async () => {
  if (scanBusy || calcBusy || pinned!==null || current<0) return;
@@ -607,7 +616,55 @@ document.getElementById('reply-send').addEventListener('click', async () => {
  } catch(error) {status.textContent=`Reply error: ${error.message}`;}
  finally {commentsBusy=false; button.disabled=false; load.disabled=false; if (current===target.revision && pinned===null) document.querySelectorAll('#comments-list button').forEach(item=>item.disabled=false);}
 });
+function invalidateNotes(message) {
+ notesEpoch++; notesLoaded=null; document.getElementById('notes-text').readOnly=true; document.getElementById('notes-save').disabled=true;
+ if (message) document.getElementById('notes-status').textContent=message;
+}
+function clearNotesFor(revision, live) {
+ if (notesLoaded && (notesLoaded.revision!==revision || !live || notesLoaded.slide!==Number(document.getElementById('notes-slide').value))) {
+  if (notesLoaded.revision!==revision || notesLoaded.slide!==Number(document.getElementById('notes-slide').value)) invalidateNotes('View changed; copy pending notes and load the displayed revision.');
+  else { document.getElementById('notes-text').readOnly=true; document.getElementById('notes-save').disabled=true; }
+ }
+}
+document.getElementById('notes-slide').addEventListener('input', () => invalidateNotes('Slide changed; load notes before saving.'));
+document.getElementById('notes-load').addEventListener('click', async () => {
+ if (notesBusy || displayed<0) return;
+ if (notesDirty() && !window.confirm('Discard unsaved speaker notes and load another revision or slide?')) return;
+ const revision=displayed, slide=Number(document.getElementById('notes-slide').value), epoch=++notesEpoch;
+ const button=document.getElementById('notes-load'), text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
+ if (!Number.isSafeInteger(slide) || slide<1) { status.textContent='Choose a positive slide number.'; return; }
+ notesBusy=true; button.disabled=true; text.readOnly=true; document.getElementById('notes-save').disabled=true; status.textContent=`Loading slide ${slide} in revision ${revision}…`;
+ try {
+  const response=await fetch('notes-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,slide})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not read notes');
+  if (epoch!==notesEpoch || displayed!==revision || Number(document.getElementById('notes-slide').value)!==slide) return;
+  text.value=result.text; text.disabled=false; notesBaseline=result.text; notesLoaded={revision,slide,truncated:result.truncated};
+  const editable=revision===current && pinned===null && !result.truncated;
+  text.readOnly=!editable; document.getElementById('notes-save').disabled=!editable;
+  status.textContent=`Revision ${revision}, slide ${slide}. ${result.truncated ? 'Notes were truncated; editing is unavailable.' : editable ? 'Ready to edit.' : 'Read-only preview.'}`;
+ } catch(error) {
+  if (epoch===notesEpoch) {
+   status.textContent=`Notes error: ${error.message}`;
+   if (notesLoaded && notesLoaded.revision===current && notesLoaded.revision===displayed && notesLoaded.slide===Number(document.getElementById('notes-slide').value) && pinned===null && !notesLoaded.truncated) { text.readOnly=false; document.getElementById('notes-save').disabled=false; }
+  }
+ }
+ finally { notesBusy=false; button.disabled=false; }
+});
+document.getElementById('notes-form').addEventListener('submit', async event => {
+ event.preventDefault(); const target=notesLoaded, text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
+ if (notesBusy || !target || target.truncated || pinned!==null || target.revision!==current || target.revision!==displayed || target.slide!==Number(document.getElementById('notes-slide').value)) { invalidateNotes('Version or slide changed; load notes again.'); return; }
+ const value=text.value, button=document.getElementById('notes-save'); notesBusy=true; button.disabled=true; text.readOnly=true;
+ try {
+  const response=await fetch('notes-replace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,slide:target.slide,text:value})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not save notes');
+  notesBaseline=value; invalidateNotes(`Notes saved as revision ${result.revision}.`); await refresh();
+ } catch(error) {
+  status.textContent=`Notes error: ${error.message}`;
+  if (notesLoaded===target && current===target.revision && pinned===null && displayed===target.revision) { text.readOnly=false; button.disabled=false; }
+ } finally { notesBusy=false; }
+});
 function display(state, live) {
+ clearNotesFor(state.revision, live);
  clearCommentsFor(state.revision);
  if (!document.getElementById('comparison-details').hidden) clearVisualDiff();
  clearLayoutFor(state.revision);
@@ -629,6 +686,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ clearNotesFor(state.revision, false);
  clearCommentsFor(state.revision);
  clearLayoutFor(state.revision);
  const key=`compare:${state.revision}:${state.latest_revision}`;
@@ -726,6 +784,7 @@ async function refresh() {
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
   document.getElementById('comments-panel').hidden=state.format !== 'docx';
+  document.getElementById('notes-panel').hidden=state.format !== 'pptx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
   document.getElementById('formula-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
@@ -794,14 +853,19 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/notes-read', '/' + token + '/notes-replace'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
-                limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 20000
+                limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 20000
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 8 or not 0 < int(length) <= limit:
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/notes-read'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision', 'slide'}:
+                            raise ValueError('Notes reading requires revision and slide')
+                        saved = session.read_notes(directory, payload['revision'], payload['slide'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/comments-read'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}:
                             raise ValueError('Comments require a revision')
@@ -864,7 +928,11 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Selection changed; select the current page again')
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
                     with lock:
-                        if route.endswith('/selection'):
+                        if route.endswith('/notes-replace'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'slide', 'text'}:
+                                raise ValueError('Notes replacement requires revision, slide and text')
+                            saved = session.replace_notes(directory, payload['base_revision'], payload['slide'], payload['text'])
+                        elif route.endswith('/selection'):
                             selection = session.validate_selection(payload)
                             pages = cache.get(selection['revision'])
                             if pages is None or selection['page'] > len(pages):

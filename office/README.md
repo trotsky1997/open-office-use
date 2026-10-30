@@ -121,6 +121,8 @@ office-use session replace-notes ./slides-draft --base 0 --slide 1 --text-file .
 
 Slide numbers are one-based and follow presentation order. Reading a slide without a notes part does not create one. Replacement writes a new session revision and creates a notes part when needed. It replaces the complete speaker-notes text and resets its paragraph and run formatting; slide text and other package parts are preserved. The edit is rejected if the library would change unrelated package parts, if the notes placeholder is missing, or if the document is digitally signed. Notes text is limited to 100,000 characters; read results indicate truncation. The original session revision remains available. MCP provides `read_slide_notes`, `session_read_slide_notes` and `session_replace_slide_notes`. Inspect notes and the deck in the destination application before delivery.
 
+The session viewer's “Slide speaker notes” panel reads the displayed revision and saves changes on the latest revision. Slide numbers include hidden slides and can differ from rendered page numbers. Historical notes and truncated results are read-only. If the session advances while text is being edited, the unsaved text stays selectable and read-only; copy it or reload before editing the new revision. Loading other notes prompts before discarding unsaved text.
+
 ## Review a single snapshot
 
 ```sh
@@ -234,6 +236,7 @@ python3 office/comment_range_smoke.py # exact comment anchors
 python3 office/thread_comment_smoke.py # Word comment thread metadata
 python3 office/picture_smoke.py      # PPTX picture replacement
 python3 office/notes_smoke.py        # PPTX speaker notes and revision safety
+python3 office/notes_watch_smoke.py  # viewer notes routes and revision safety
 python3 office/layout_smoke.py       # slide geometry checks
 python3 office/selection_geometry_smoke.py # slide selection with real PDF rendering
 python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
