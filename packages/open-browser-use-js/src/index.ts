@@ -922,7 +922,7 @@ export class OpenBrowserUseTab {
           const childTree = await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: frame.id }, { sessionId: frame.sessionId });
           if (options.includeText) unindexedText.push(...unindexedTextAncestors(childTree).map(item=>({...item,frameId:frame.id,frameChain:frameAncestry(frame,frames)})));
           const childNodes = interactiveNodes(childTree, nodes.length, options.includeText).map(node => ({ ...node, frameId: frame.id, frameChain: frameAncestry(frame, frames) }));
-          if (options.includeValues) await this.readAXValues(childTree, childNodes, valueBudget, frame.sessionId);
+          if (options.includeValues) await this.readAXValues(childTree, childNodes, valueBudget, frame.sessionId,frame.id);
           nodes.push(...childNodes);
           let owner: number | undefined;
           try {
@@ -959,9 +959,17 @@ export class OpenBrowserUseTab {
     return { snapshotId: id, nodes: nodes.map(({ index, role, name, frameId, level, checked, disabled, pressed, selected, expanded, placeholder, placeholderTruncated, altText, altTextTruncated, value, valueRedacted, valueUnavailable, valueTruncated }) => ({ index, role, name, ...(frameId ? {frameId} : {}), ...(level !== undefined ? {level} : {}), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated} : {}), ...(value !== undefined ? {value} : {}), ...(valueRedacted ? {valueRedacted} : {}), ...(valueUnavailable ? {valueUnavailable} : {}), ...(valueTruncated ? {valueTruncated} : {}) })), ...output, textMode: useDiff ? "diff" : "full", ...(options.includeFrames ? {frameCoverage: crossProcess ? "cross-process" as const : "same-process" as const, unavailableFrames} : {}), ...(options.includeValues ? {valuesTruncated:valueBudget.truncated} : {}) };
   }
 
-  private async readAXValues(tree: JsonValue, nodes: ObservedNode[], budget: {remaining: number; truncated: boolean}, sessionId?: string): Promise<void> {
+  private async readAXValues(tree: JsonValue, nodes: ObservedNode[], budget: {remaining: number; truncated: boolean}, sessionId?: string, frameId?:string): Promise<void> {
     if (!isObject(tree) || !Array.isArray(tree.nodes)) throw new Error("Invalid accessibility tree");
     const byId = new Map(tree.nodes.filter(isObject).map(node => [node.backendDOMNodeId, node]));
+    let context:Promise<number> | undefined;
+    const getContext=()=>context ??= (async()=>{
+      if(!frameId){const root=await this.browser.cdp.call(this.id,"Page.getFrameTree",{},{sessionId});frameId=isObject(root) && isObject(root.frameTree) && isObject(root.frameTree.frame) && typeof root.frameTree.frame.id==="string" ? root.frameTree.frame.id : undefined;}
+      if(!frameId)throw new Error("Field frame is unavailable");
+      const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId,worldName:"open-browser-use-selector"},{sessionId});
+      if(!isObject(world) || typeof world.executionContextId!=="number" || !Number.isSafeInteger(world.executionContextId))throw new Error("Field context is unavailable");
+      return world.executionContextId;
+    })();
     for (const node of nodes) {
       if (!["textbox", "searchbox", "combobox", "slider", "spinbutton", "Date", "DateTime", "InputTime"].includes(node.role)) continue;
       const ax = byId.get(node.backendNodeId);
@@ -970,7 +978,8 @@ export class OpenBrowserUseTab {
       {
         let objectId: string | undefined;
         try {
-          const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", {backendNodeId:node.backendNodeId}, {sessionId});
+          const executionContextId=await getContext();
+          const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", {backendNodeId:node.backendNodeId,executionContextId}, {sessionId});
           const id = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
           if (typeof id !== "string") throw new Error("Unresolved field");
           objectId = id;

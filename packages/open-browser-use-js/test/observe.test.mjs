@@ -1283,8 +1283,10 @@ test('select locator waits for options and never repeats an uncertain mutation',
 });
 
 test('optional field values are bounded, redact passwords and reset diffs across modes', async () => {
-  const client=new OpenBrowserUseClient({socketPath:'unused'});let email='hello@example.test';
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let email='hello@example.test',failContext=false;
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return failContext ? {} : {executionContextId:123};
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -1308,11 +1310,14 @@ test('optional field values are bounded, redact passwords and reset diffs across
   const without=await tab.observe({diff:true});assert.equal(without.textMode,'full');assert.doesNotMatch(JSON.stringify(without),/new@example/);
   email='x'.repeat(700);const large=await tab.observe({includeValues:true});assert.equal(large.valuesTruncated,true);assert.equal(large.nodes[0].value.length,512);assert.equal(large.nodes[0].valueTruncated,true);
   assert.equal((await tab.observe({includeValues:true,diff:true})).textMode,'full');
+  failContext=true;const unavailable=await tab.observe({includeValues:true});assert.ok(unavailable.nodes.every(node=>node.valueUnavailable===true));assert.doesNotMatch(JSON.stringify(unavailable),/raw-secret|unknown-private/);
 });
 
 test('optional field values share one output budget', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   client.request=async(method,params)=>{
+    if(method==='executeCdp' && params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(params.method==='Accessibility.getFullAXTree')return {nodes:Array.from({length:20},(_,i)=>({backendDOMNodeId:i+2,role:{value:'textbox'},name:{value:`Field ${i}`},value:{value:'x'.repeat(512)}}))};

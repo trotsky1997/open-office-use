@@ -118,6 +118,11 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
     assert.equal(await scoped.filter({hasText:'Inside word'}).count(),1);
   } finally {await evaluate(a.id,`(()=>{Object.defineProperty(Node.prototype,'parentNode',window.savedParent);document.querySelector('#scope-isolation-root').remove();document.querySelector('#scope-isolation-outside').remove();return true})()`);}
   check('SDK semantic scope: isolated from forged parent relationships');
+  await evaluate(a.id,`(()=>{const p=document.createElement('input');p.id='isolated-password';p.type='password';p.setAttribute('aria-label','Isolated password');p.value='private-fixture-value';document.body.append(p);window.savedInputType=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'type');Object.defineProperty(HTMLInputElement.prototype,'type',{configurable:true,get:()=> 'text'});return true})()`);
+  try {const values=await sdkTab.observe({includeValues:true,includeFrames:true});const password=values.nodes.find(node=>node.name==='Isolated password');assert.ok(password);assert.equal(password.valueRedacted,true);assert.doesNotMatch(JSON.stringify(values),/private-fixture-value/);}
+  finally {await evaluate(a.id,`(()=>{Object.defineProperty(HTMLInputElement.prototype,'type',window.savedInputType);document.querySelector('#isolated-password').remove();return true})()`);}
+  check('SDK observation: password redaction resists page prototype changes');
+
 
 
   await evaluate(a.id,'document.querySelector("#message").value = ""');
@@ -206,6 +211,9 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   const localPoint=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{const r=document.querySelector('button').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`,returnByValue:true},{sessionId:crossSession});
   const feedbackPoint=await evaluate(a.id,`(()=>{const f=document.querySelector('#cross-frame'),r=f.getBoundingClientRect(),p=document.querySelector('#obu-iab-visual-feedback');return {x:Number(p.dataset.x),y:Number(p.dataset.y),left:r.left+f.clientLeft,top:r.top+f.clientTop}})()`);
   assert.ok(Math.abs(feedbackPoint.x-feedbackPoint.left-localPoint.result.value.x)<1 && Math.abs(feedbackPoint.y-feedbackPoint.top-localPoint.result.value.y)<1);
+  await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{const p=document.createElement('input');p.id='frame-password';p.type='password';p.setAttribute('aria-label','Frame password');p.value='frame-private-value';document.body.append(p);window.savedType=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'type');Object.defineProperty(HTMLInputElement.prototype,'type',{configurable:true,get:()=> 'text'});return true})()`,returnByValue:true},{sessionId:crossSession});
+  try {const values=await sdkTab.observe({includeFrames:true,includeValues:true});const password=values.nodes.find(node=>node.name==='Frame password');assert.ok(password);assert.equal(password.valueRedacted,true);assert.doesNotMatch(JSON.stringify(values),/frame-private-value/);}
+  finally {await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{Object.defineProperty(HTMLInputElement.prototype,'type',window.savedType);document.querySelector('#frame-password').remove();return true})()`,returnByValue:true},{sessionId:crossSession});}
   const frameInput=sdkTab.playwright.frameLocator('#cross-frame').getByRole('textbox',{name:'Cross-frame text'}),frameCss=sdkTab.playwright.frameLocator('#cross-frame').locator('input[aria-label="Cross-frame text"]');
   assert.equal(await frameInput.isEditable(),true);assert.equal(await frameCss.isEditable(),true);
   await evaluate(a.id,`(()=>{window.savedFrameRect=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'getBoundingClientRect');HTMLIFrameElement.prototype.getBoundingClientRect=()=>({width:0,height:0});return true})()`);
