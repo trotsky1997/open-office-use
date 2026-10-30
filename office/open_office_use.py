@@ -411,7 +411,8 @@ def append_slides(presentation, slides):
                     elif key == 'color': font.color.rgb = color(value)
                     else: setattr(font, key, value)
                 if 'url' in run_spec: run.hyperlink.address = run_spec['url']
-    image_bytes = 0; chart_count = 0; chart_points = 0
+    image_bytes = 0; chart_count = 0; chart_points = 0; pending_navigation = []
+    final_slide_count = len(presentation.slides) + len(slides)
     for item in slides:
         if not isinstance(item, dict) or set(item) - {'layout', 'title', 'body', 'background', 'elements', 'notes'}: raise ValueError('Invalid slide properties')
         if 'notes' in item: notes.validate_text(item['notes'])
@@ -444,9 +445,11 @@ def append_slides(presentation, slides):
                        'rectangle': geometry | {'fill'}, 'shape': geometry | {'id', 'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'connector': {'type', 'start', 'end', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
                        'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values', 'show_percent', 'point_colors'}}
-            if not isinstance(kind, str) or kind not in allowed or set(element) - (allowed[kind] | {'description'}): raise ValueError('Unsupported slide element or property')
+            if not isinstance(kind, str) or kind not in allowed or set(element) - (allowed[kind] | {'description', 'target_slide'}): raise ValueError('Unsupported slide element or property')
             if 'description' in element and (not isinstance(element['description'], str) or len(element['description']) > 1000): raise ValueError('Slide description must be text of at most 1,000 characters')
+            if 'target_slide' in element and (isinstance(element['target_slide'], bool) or not isinstance(element['target_slide'], int) or not 1 <= element['target_slide'] <= final_slide_count): raise ValueError('Target slide must be a valid one-based slide number in the final deck')
             def describe(shape):
+                if 'target_slide' in element: pending_navigation.append((shape, element['target_slide']))
                 if 'description' in element:
                     properties = shape._element.xpath('./p:nvSpPr/p:cNvPr | ./p:nvCxnSpPr/p:cNvPr | ./p:nvGraphicFramePr/p:cNvPr | ./p:nvPicPr/p:cNvPr')
                     if len(properties) != 1: raise ValueError('Slide element has ambiguous nonvisual properties')
@@ -726,6 +729,8 @@ def append_slides(presentation, slides):
                         else: shape.crop_top = shape.crop_bottom = crop
                 shape._element.nvPicPr.cNvPr.set('descr', description)
             describe(shape)
+    for shape, number in pending_navigation:
+        shape.click_action.target_slide = presentation.slides[number - 1]
 
 
 def format_workbook(workbook, options):
@@ -1365,6 +1370,7 @@ def main():
     note_read = commands.add_parser('notes'); note_read.add_argument('file'); note_read.add_argument('--slide', type=int, required=True)
     slides_read = commands.add_parser('inspect-slides'); slides_read.add_argument('file')
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
+    slide_nav_read = commands.add_parser('inspect-slide-navigation'); slide_nav_read.add_argument('file')
     slide_charts_read = commands.add_parser('inspect-slide-charts'); slide_charts_read.add_argument('file')
     external_read = commands.add_parser('external-links'); external_read.add_argument('file')
     slide_text_read = commands.add_parser('inspect-slide-text'); slide_text_read.add_argument('file')
@@ -1429,6 +1435,7 @@ def main():
     session_changes = sub.add_parser('tracked-changes'); session_changes.add_argument('directory'); session_changes.add_argument('--revision', type=int, required=True)
     session_stories = sub.add_parser('stories'); session_stories.add_argument('directory'); session_stories.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
+    session_nav = sub.add_parser('inspect-slide-navigation'); session_nav.add_argument('directory'); session_nav.add_argument('--revision', type=int, required=True)
     session_charts = sub.add_parser('inspect-slide-charts'); session_charts.add_argument('directory'); session_charts.add_argument('--revision', type=int, required=True)
     slide_chart_sync = sub.add_parser('sync-slide-chart-cache'); slide_chart_sync.add_argument('directory'); slide_chart_sync.add_argument('--base', type=int, required=True); slide_chart_sync.add_argument('--part', required=True); slide_chart_sync.add_argument('--reference', type=int, required=True); slide_chart_sync.add_argument('--allow-formula-caches', action='store_true'); slide_chart_sync.add_argument('--expected-sha256')
     session_external = sub.add_parser('external-links'); session_external.add_argument('directory'); session_external.add_argument('--revision', type=int, required=True)
@@ -1546,6 +1553,8 @@ def main():
                 result = session.inspect_slide_text(args.directory, args.revision, render)
             elif args.action == 'inspect-layout':
                 result = session.inspect_layout(args.directory, args.revision)
+            elif args.action == 'inspect-slide-navigation':
+                result = session.inspect_slide_navigation(args.directory, args.revision)
             elif args.action == 'inspect-slide-charts':
                 result = session.inspect_slide_charts(args.directory, args.revision)
             elif args.action == 'sync-slide-chart-cache':
@@ -1598,6 +1607,8 @@ def main():
             result = slides.inventory(args.file)
         elif args.command == 'inspect-layout':
             result = layout.inspect(args.file)
+        elif args.command == 'inspect-slide-navigation':
+            result = slides.inspect_navigation(args.file)
         elif args.command == 'inspect-slide-charts':
             result = slide_charts.inspect(args.file)
         elif args.command == 'external-links':

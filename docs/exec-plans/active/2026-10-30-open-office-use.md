@@ -316,3 +316,5 @@ Session grids support snapshot-bound single-cell external hyperlink creation, re
 The workbook viewer can set and remove a link on an editable loaded cell, requiring complete hyperlink inspection, a displayed snapshot and no pending grid edits. Browser tests covered updating and removing a link.
 
 Workbook authors, sessions and the viewer support internal single-cell links to an existing worksheet, including quoted sheet names. LibreOffice PDF export produced a link to the destination page; native Excel remains unverified.
+
+Positioned PowerPoint elements support click navigation to a one-based final slide position; shape-level click actions can be inspected through CLI/MCP. Reordering retained target slide identities, and LibreOffice PDF export preserved an internal jump. Run links and master actions remain outside this inventory.

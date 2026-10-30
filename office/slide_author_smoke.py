@@ -53,6 +53,31 @@ with tempfile.TemporaryDirectory() as tmp:
     else: raise AssertionError('Oversize description accepted')
     assert session.info(desc_draft)['latest_revision'] == 2
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    nav_file = root/'navigation.pptx'
+    nav_spec = {'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':4,'height':1,'text':'Go to detail','target_slide':2}]},{'layout':'blank','elements':[{'type':'shape','shape_kind':'rectangle','x':1,'y':1,'width':3,'height':1,'fill':'236B8E','text':'Back','target_slide':1}]}]}
+    open_office_use.author(nav_spec,nav_file); nav_deck = Presentation(nav_file)
+    assert nav_deck.slides[0].shapes[0].click_action.target_slide.slide_id == nav_deck.slides[1].slide_id
+    nav = slides.inspect_navigation(nav_file); assert nav['complete'] and [(item['slide'],item['target_slide']) for item in nav['actions']] == [(1,2),(2,1)], nav
+    code, validation, _ = officecli_backend.invoke('validate',nav_file); assert code == 0 and validation['success'],validation
+    appended_nav = root/'appended-navigation.pptx'
+    open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'shape','shape_kind':'rectangle','x':1,'y':1,'width':2,'height':1,'fill':'236B8E','target_slide':4}]},{'title':'Appended target'}]},appended_nav,nav_file)
+    appended = Presentation(appended_nav); assert appended.slides[2].shapes[0].click_action.target_slide.slide_id == appended.slides[3].slide_id
+    external_file = root/'external-navigation.pptx'; with_external = Presentation(nav_file)
+    external_shape = with_external.slides[1].shapes.add_textbox(Inches(5),Inches(1),Inches(3),Inches(1)); external_shape.text = 'External'; external_shape.click_action.hyperlink.address = 'https://example.com/report'; with_external.save(external_file)
+    ext_nav = slides.inspect_navigation(external_file); assert ext_nav['complete'] and ext_nav['actions'][-1]['status'] == 'external' and ext_nav['actions'][-1]['target_url'] == 'https://example.com/report', ext_nav
+    nav_draft = root/'navigation-draft'; session.start(nav_draft,source=nav_file)
+    reordered = session.reorder_slides(nav_draft,0,[2,1],expected_sha256=nav['snapshot_sha256'])
+    after_nav = session.inspect_slide_navigation(nav_draft,1)
+    assert [(item['slide'],item['target_slide']) for item in after_nav['actions']] == [(1,2),(2,1)] and after_nav['actions'][1]['path'].startswith('/slide[2]/'), after_nav
+    result_deck = Presentation(reordered['file']); assert result_deck.slides[1].shapes[0].text == 'Go to detail' and result_deck.slides[1].shapes[0].click_action.target_slide.slide_id == result_deck.slides[0].slide_id
+    cli = Path(__file__).with_name('open_office_use.py'); inspected = subprocess.run([sys.executable,str(cli),'inspect-slide-navigation',str(nav_file)],capture_output=True,text=True,check=True)
+    assert json.loads(inspected.stdout)['actions'][0]['target_slide'] == 2
+    for index, invalid_target in enumerate((0,3,True,'2')):
+        invalid = root/f'invalid-navigation-{index}.pptx'; bad_spec = {'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':2,'height':1,'text':'Bad','target_slide':invalid_target}]},{'title':'Next'}]}
+        try: open_office_use.author(bad_spec,invalid)
+        except ValueError: pass
+        else: raise AssertionError('Invalid target slide accepted')
+        assert not invalid.exists()
     line_file=root/'lines.pptx'
     lines=[{'type':'line','x':1,'y':1,'end_x':5,'end_y':1,'color':'236B8E','line_width':3,'arrow':'end'}, {'type':'line','x':5,'y':2,'end_x':1,'end_y':2,'color':'BA5A32','arrow':'end'}, {'type':'line','x':6,'y':1,'end_x':6,'end_y':3,'arrow':'both'}]
     lines[0]['description'] = 'Direction arrow'

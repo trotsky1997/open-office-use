@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from lxml import etree
 from pptx.opc.constants import RELATIONSHIP_TYPE
 
@@ -253,6 +254,65 @@ def reorder(source, output, order, expected_sha256=None):
         for item in entries: listing.remove(item)
         for number in order: listing.append(entries[number - 1])
     return ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+
+def inspect_navigation(file):
+    """Inspect shape-level click actions without following their targets."""
+    source = Path(file).resolve(strict=True)
+    if source.suffix.lower() != '.pptx' or source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Navigation inspection requires a PPTX up to 128 MiB')
+    with tempfile.TemporaryDirectory(prefix='office-slide-navigation-') as tmp:
+        frozen, digest = snapshots.copy(source, tmp)
+        with zipfile.ZipFile(frozen) as archive:
+            entries = archive.infolist()
+            if len(entries) > 5000 or len({item.filename for item in entries}) != len(entries) or sum(item.file_size for item in entries) > 128 * 1024 * 1024: raise ValueError('Presentation exceeds package limits or contains duplicate parts')
+        presentation = Presentation(frozen); all_slides = presentation.slides; positions = {}; issues = set(); actions = []; scanned = 0
+        for number, slide in enumerate(all_slides, 1):
+            part = str(slide.part.partname)
+            if part in positions: issues.add('shared_slide_part')
+            positions[part] = number
+        if len(all_slides) > 1000: issues.add('slide_limit')
+        def walk(shapes, slide_number, prefix, depth):
+            nonlocal scanned
+            seen_ids = set()
+            for shape in shapes:
+                if scanned >= 10000: issues.add('shape_limit'); return
+                scanned += 1
+                local = shape._element.tag.rsplit('}', 1)[-1]
+                kind = {'sp':'shape','pic':'picture','cxnSp':'connector','grpSp':'group'}.get(local)
+                if local == 'graphicFrame': kind = 'table' if shape.has_table else 'chart' if shape.has_chart else None
+                if kind is None: issues.add('unsupported_shape'); continue
+                try: shape_id = shape.shape_id
+                except (ValueError, TypeError, AttributeError): issues.add('invalid_shape_id'); continue
+                if not isinstance(shape_id, int) or shape_id < 1 or shape_id in seen_ids: issues.add('ambiguous_shape_id'); continue
+                seen_ids.add(shape_id)
+                path = f'{prefix}/{kind}[@id={shape_id}]'
+                metadata = next(shape._element.iter(P + 'cNvPr'), None)
+                links = metadata.findall(A + 'hlinkClick') if metadata is not None else []
+                if len(links) > 1: issues.add('ambiguous_click_actions')
+                for link in links[:1]:
+                    if len(actions) >= 200: issues.add('action_limit'); break
+                    action = link.get('action', ''); identity = link.get(R + 'id'); entry = {'slide':slide_number, 'shape_id':shape_id, 'path':path, 'action':action[:500], 'status':'unresolved', 'target_slide':None, 'target_url':None}
+                    if len(action) > 500: issues.add('action_truncated')
+                    if identity:
+                        try: relation = shape.part.rels[identity]
+                        except KeyError: issues.add('missing_action_relationship')
+                        else:
+                            if relation.is_external:
+                                target = relation.target_ref; entry['target_url'] = target[:2048]; entry['status'] = 'external'
+                                if len(target) > 2048: issues.add('target_truncated')
+                            elif relation.reltype == RELATIONSHIP_TYPE.SLIDE and action == 'ppaction://hlinksldjump':
+                                entry['target_slide'] = positions.get(str(relation.target_part.partname)); entry['status'] = 'slide' if entry['target_slide'] is not None else 'unresolved'
+                                if entry['target_slide'] is None: issues.add('target_slide_unavailable')
+                            else: issues.add('unsupported_action_relationship')
+                    else: issues.add('unsupported_action')
+                    actions.append(entry)
+                if kind == 'group':
+                    if depth >= 8: issues.add('group_depth')
+                    else: walk(shape.shapes, slide_number, path, depth + 1)
+        for number, slide in enumerate(all_slides, 1):
+            if number > 1000 or scanned >= 10000: break
+            walk(slide.shapes, number, f'/slide[{number}]', 0)
+        return {'snapshot_sha256':digest, 'slides_total':len(all_slides), 'shapes_scanned':scanned, 'actions':actions, 'complete':not issues, 'issues':sorted(issues), 'scope':'Shape-level click actions; text-run links, slide masters and mouse-over actions are excluded.'}
+
 
 def find_paragraph(tree, path):
     match = PATH.fullmatch(path) if paragraph_path(path) else None

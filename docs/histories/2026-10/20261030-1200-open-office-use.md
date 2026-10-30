@@ -419,3 +419,5 @@ Added targeted, atomic workbook hyperlink updates and removal with revision, sna
 Connected the workbook viewer to snapshot-bound single-cell hyperlink edits and verified pending-edit protection, setting and removal in a browser.
 
 Added workbook-internal hyperlink authoring and session/viewer editing with target-sheet validation and safe relationship conversion.
+
+Added native shape-to-slide navigation and bounded shape-click action inspection, including forward references and source-deck slide positions.

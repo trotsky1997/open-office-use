@@ -180,6 +180,11 @@ def external_relationships(directory, revision):
     return {'revision': revision, **review.external_relationships(source)}
 
 
+def inspect_slide_navigation(directory, revision):
+    state = info(directory); source = revision_file(state, revision)
+    return {'revision': revision, **slides.inspect_navigation(source)}
+
+
 def inspect_slide_charts(directory, revision):
     state = info(directory); source = revision_file(state, revision)
     if state['format'] != 'pptx': raise ValueError('Slide chart inspection requires a PPTX session')
