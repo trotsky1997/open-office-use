@@ -79,10 +79,10 @@ async def main():
                 assert verified.structuredContent['charts'][0]['reconciliation']['status'] == 'match', verified
                 chart_grid = await session.call_tool('session_read_slide_chart_grid', {'directory':str(chart_draft),'revision':0,'part':chart_inventory.structuredContent['charts'][0]['chart_part'],'sheet':'Sheet1','cell_range':'B2'})
                 assert not chart_grid.isError and chart_grid.structuredContent['rows'][0][0]['value'] == 100, chart_grid
-                chart_edit = await session.call_tool('session_edit_slide_chart_grid', {'directory':str(chart_draft),'base_revision':0,'part':chart_inventory.structuredContent['charts'][0]['chart_part'],'sheet':'Sheet1','cell_range':'B2','changes':[{'cell':'B2','value':'125'}]})
+                chart_edit = await session.call_tool('session_edit_slide_chart_grid', {'directory':str(chart_draft),'base_revision':0,'part':chart_inventory.structuredContent['charts'][0]['chart_part'],'sheet':'Sheet1','cell_range':'B2','changes':[{'cell':'B2','value':'125'}], 'sync_caches':True})
                 assert not chart_edit.isError and chart_edit.structuredContent['revision'] == 1, chart_edit
                 chart_changed = await session.call_tool('session_inspect_slide_charts', {'directory':str(chart_draft),'revision':1})
-                assert chart_changed.structuredContent['charts'][0]['reconciliation']['status'] == 'mismatch', chart_changed
+                assert chart_changed.structuredContent['charts'][0]['reconciliation']['status'] == 'match' and chart_edit.structuredContent['synchronized_references'], chart_changed
                 diagnostics = await session.call_tool('office_doctor', {})
                 assert not diagnostics.isError and diagnostics.structuredContent['capabilities']['mcp_server'] is True, diagnostics
                 word_source = root / 'search.docx'; search_doc = Document(); search_doc.add_paragraph('find needle'); search_doc.save(word_source)

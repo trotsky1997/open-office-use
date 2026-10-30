@@ -207,9 +207,9 @@ def session_read_slide_chart_grid(directory: str, revision: int, part: str, shee
 
 
 @server.tool()
-def session_edit_slide_chart_grid(directory: str, base_revision: int, part: str, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
-    """Edit an embedded chart workbook grid in a new revision; chart and formula caches may be stale."""
-    return session.edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, changes)
+def session_edit_slide_chart_grid(directory: str, base_revision: int, part: str, sheet: str, cell_range: str, changes: list[dict[str, str]], sync_caches: bool = False) -> dict[str, Any]:
+    """Edit an embedded chart workbook grid; optionally synchronize fully comparable chart caches atomically."""
+    return session.edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, changes, sync_caches)
 
 
 @server.tool()

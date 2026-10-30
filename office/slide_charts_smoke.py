@@ -47,12 +47,48 @@ with tempfile.TemporaryDirectory() as tmp:
     assert session.info(grid_draft)['latest_revision']==2
     grid_cli=root/'grid-cli'; session.start(grid_cli,source=source)
     cli=Path(__file__).with_name('open_office_use.py')
-    cmd=[sys.executable,str(cli),'session','edit-slide-chart-grid',str(grid_cli),'--base','0','--part',chart['chart_part'],'--sheet','Sheet1','--range','B2','--changes',json.dumps([{'cell':'B2','value':'130'}])]
-    assert json.loads(subprocess.run(cmd,capture_output=True,text=True,check=True).stdout)['revision']==1
+    cmd=[sys.executable,str(cli),'session','edit-slide-chart-grid',str(grid_cli),'--base','0','--part',chart['chart_part'],'--sheet','Sheet1','--range','B2','--changes',json.dumps([{'cell':'B2','value':'130'}]),'--sync-caches']
+    assert json.loads(subprocess.run(cmd,capture_output=True,text=True,check=True).stdout)['chart_cache_effect']=='matched_saved_values'
     with zipfile.ZipFile(source) as before, zipfile.ZipFile(edited['file']) as after:
         changed_parts={name for name in before.namelist() if before.read(name)!=after.read(name)}
         assert changed_parts <= {chart['chart_part'].lstrip('/'), chart['workbook']['part'].lstrip('/')}
         assert chart['workbook']['part'].lstrip('/') in changed_parts
+    atomic_draft=root/'atomic-draft'; session.start(atomic_draft,source=source)
+    atomic=session.edit_slide_chart_grid(atomic_draft,0,chart['chart_part'],'Sheet1','B2',[{'cell':'B2','value':'125'}],True)
+    assert atomic['revision']==1 and atomic['chart_cache_effect']=='matched_saved_values' and len(atomic['synchronized_references'])==1
+    assert session.inspect_slide_charts(atomic_draft,1)['charts'][0]['reconciliation']['status']=='match'
+    try: session.edit_slide_chart_grid(atomic_draft,1,chart['chart_part'],'Sheet1','B2',[{'cell':'B2','value':'=1+1'}],True)
+    except ValueError: pass
+    else: raise AssertionError('Unverifiable formula cache accepted')
+    assert session.info(atomic_draft)['latest_revision']==1
+    shared_source=root/'shared-original.pptx'; shared=root/'shared.pptx'
+    shared_spec={'slides':[{'layout':'blank','elements':[dict(spec['slides'][0]['elements'][0]),dict(spec['slides'][0]['elements'][0])]}]}
+    open_office_use.author(shared_spec,shared_source)
+    with zipfile.ZipFile(shared_source) as src, zipfile.ZipFile(shared,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename=='ppt/charts/_rels/chart2.xml.rels':
+                tree=etree.fromstring(data); tree[0].set('Target','../embeddings/Microsoft_Excel_Sheet1.xlsx'); data=etree.tostring(tree)
+            dst.writestr(entry,data)
+    shared_draft=root/'shared-draft';session.start(shared_draft,source=shared)
+    shared_before=session.inspect_slide_charts(shared_draft,0)['charts']
+    assert len(shared_before)==2 and shared_before[0]['workbook']['part']==shared_before[1]['workbook']['part']
+    shared_edit=session.edit_slide_chart_grid(shared_draft,0,shared_before[0]['chart_part'],'Sheet1','B2',[{'cell':'B2','value':'135'}],True)
+    assert len(shared_edit['synchronized_references'])==2
+    assert all(c['reconciliation']['status']=='match' and c['series'][0]['values'][0]==135 for c in session.inspect_slide_charts(shared_draft,1)['charts'])
+    root_link=root/'root-link.pptx'
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(root_link,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename=='_rels/.rels':
+                tree=etree.fromstring(data); rel=etree.SubElement(tree,'{http://schemas.openxmlformats.org/package/2006/relationships}Relationship')
+                rel.set('Id','rIdChartWorkbook'); rel.set('Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/package'); rel.set('Target',chart['workbook']['part']); data=etree.tostring(tree)
+            dst.writestr(entry,data)
+    root_draft=root/'root-draft'; session.start(root_draft,source=root_link)
+    try: session.edit_slide_chart_grid(root_draft,0,chart['chart_part'],'Sheet1','B2',[{'cell':'B2','value':'130'}],True)
+    except ValueError as exc: assert 'outside the inspected charts' in str(exc)
+    else: raise AssertionError('Uninspected workbook relationship accepted')
+    assert session.info(root_draft)['latest_revision']==0
     mismatch=root/'mismatch.pptx'
     with zipfile.ZipFile(source) as src, zipfile.ZipFile(mismatch,'w') as dst:
         for entry in src.infolist():
@@ -61,6 +97,11 @@ with tempfile.TemporaryDirectory() as tmp:
                 workbook=load_workbook(io.BytesIO(data)); workbook.active['B2']=999
                 buffer=io.BytesIO(); workbook.save(buffer); data=buffer.getvalue()
             dst.writestr(entry,data)
+    mismatch_atomic=root/'mismatch-atomic';session.start(mismatch_atomic,source=mismatch)
+    try: session.edit_slide_chart_grid(mismatch_atomic,0,chart['chart_part'],'Sheet1','B2',[{'cell':'B2','value':'200'}],True)
+    except ValueError: pass
+    else: raise AssertionError('Pre-existing chart mismatch accepted')
+    assert session.info(mismatch_atomic)['latest_revision']==0
     mismatch_report=slide_charts.inspect(mismatch)['charts'][0]['reconciliation']
     assert mismatch_report['status']=='mismatch' and mismatch_report['mismatch_count']>=1
     changed_reference=next(item['index'] for item in mismatch_report['references'] if item['status']=='mismatch')

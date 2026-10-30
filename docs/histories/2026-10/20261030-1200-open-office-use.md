@@ -247,3 +247,7 @@ Added revision-bound synchronization of existing mismatched chart cache points f
 ### Embedded PowerPoint chart grid editing
 
 Added revision-bound embedded workbook grid reads and edits using the existing protected spreadsheet editor. Verified changed data, chart mismatch detection and sync, revision isolation, invalid changes and CLI; caches and formula values can be stale and shared workbooks affect multiple charts.
+
+### Atomic chart data and cache updates
+
+Added optional atomic cache synchronization to embedded chart grid edits. Covered shared workbooks, one-revision publication, formula and pre-existing mismatch rollback, and CLI/MCP calls. Formula results may be stale; unsupported chart coverage fails closed.

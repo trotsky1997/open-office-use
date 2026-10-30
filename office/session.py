@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 from openpyxl import load_workbook
+from pptx import Presentation
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
 
 import cell_text
@@ -217,7 +218,28 @@ def read_slide_chart_grid(directory, revision, part, sheet, cell_range):
     return result
 
 
-def edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, changes):
+def slide_chart_sync_targets(source, inventory, workbook_part, require_match=False):
+    if not inventory['complete']: raise ValueError('Atomic chart synchronization requires a complete slide chart inventory')
+    charts = {}
+    for chart in inventory['charts']:
+        if chart.get('workbook', {}).get('part') != workbook_part: continue
+        reconciliation = chart.get('reconciliation', {})
+        if not reconciliation.get('complete') or reconciliation.get('status') not in (('match',) if require_match else ('match', 'mismatch')):
+            raise ValueError('Atomic chart synchronization requires fully comparable chart caches')
+        charts[chart['chart_part']] = chart
+    if not charts: raise ValueError('Embedded workbook has no inspected charts')
+    package = Presentation(source).part.package
+    if any(not rel.is_external and str(rel.target_part.partname) == workbook_part for rel in package._rels.values()):
+        raise ValueError('Embedded workbook has a relationship outside the inspected charts')
+    for owner in package.iter_parts():
+        for relation in owner.rels.values():
+            if not relation.is_external and str(relation.target_part.partname) == workbook_part and str(owner.partname) not in charts:
+                raise ValueError('Embedded workbook has a relationship outside the inspected charts')
+    return charts
+
+
+def edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, changes, sync_caches=False):
+    if not isinstance(sync_caches, bool): raise ValueError('sync_caches must be a boolean')
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Slide chart grid requires a PPTX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
@@ -226,6 +248,9 @@ def edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, cha
     with tempfile.TemporaryDirectory(dir=state['directory'], prefix='.office-slide-chart-grid-') as tmp:
         snapshot, digest = snapshots.copy(source, tmp)
         path, workbook = slide_chart_workbook(snapshot, part, tmp)
+        if sync_caches:
+            baseline = slide_charts.inspect(snapshot)
+            related = slide_chart_sync_targets(snapshot, baseline, workbook['part'], require_match=True)
         nested = Path(tmp) / 'draft'; start(nested, source=path)
         result = edit_grid(nested, 0, sheet, cell_range, changes)
         updated = Path(result['file']).read_bytes()
@@ -235,11 +260,28 @@ def edit_slide_chart_grid(directory, base_revision, part, sheet, cell_range, cha
             if sum(item.file_size for item in archive.infolist()) - archive.getinfo(workbook_part).file_size + len(updated) > 128 * 1024 * 1024:
                 raise ValueError('Edited presentation exceeds package size limit')
             return {workbook_part: updated}
+        candidate = Path(tmp) / 'edited.pptx' if sync_caches else output
         try:
-            ooxml.edit_xml(snapshot, output, lambda _: part.lstrip('/'), replace_workbook)
+            ooxml.edit_xml(snapshot, candidate, lambda _: part.lstrip('/'), replace_workbook)
+            synchronized = []
+            if sync_caches:
+                after = slide_charts.inspect(candidate)
+                current = slide_chart_sync_targets(candidate, after, workbook['part'])
+                if set(current) != set(related): raise ValueError('Chart workbook relationships changed during edit')
+                pending = [(chart_part, ref['index']) for chart_part, chart in current.items() for ref in chart['reconciliation']['references'] if ref['status'] == 'mismatch']
+                if len(pending) > 30: raise ValueError('Too many chart references to synchronize atomically')
+                for index, (chart_part, ref) in enumerate(pending):
+                    destination = Path(tmp) / f'synced-{index}.pptx'
+                    synced = slide_charts.sync(candidate, destination, chart_part, ref)
+                    synchronized.append({'chart_part': chart_part, 'reference': ref, 'updated_points': synced['updated_points']})
+                    candidate = destination
+                final = slide_chart_sync_targets(candidate, slide_charts.inspect(candidate), workbook['part'], require_match=True)
+                if set(final) != set(related): raise ValueError('Chart workbook relationships changed during synchronization')
+                os.link(candidate, output)
         except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'chart_part': part, 'workbook_part': workbook['part'],
-            'source_sha256': digest, 'chart_cache_effect': 'may_be_stale', 'formula_cache_effect': result['formula_cache_effect'],
+            'source_sha256': digest, 'chart_cache_effect': 'matched_saved_values' if sync_caches else 'may_be_stale',
+            'synchronized_references': synchronized, 'formula_cache_effect': result['formula_cache_effect'],
             'data_validation': result['data_validation']}
 
 

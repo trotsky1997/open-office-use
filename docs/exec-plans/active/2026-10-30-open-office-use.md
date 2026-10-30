@@ -180,3 +180,5 @@ PowerPoint chart inspection now compares supported chart caches with saved value
 Supported PowerPoint chart cache mismatches can be synchronized from saved embedded workbook values, one reference per revision, via CLI and MCP; formula caches require explicit opt-in. Embedded workbook grid edits are available in session revisions; cache synchronization remains a separate explicit step.
 
 PowerPoint sessions expose embedded workbook grid reads and edits through CLI/MCP, reusing workbook protections and immutable revisions. Editing can stale chart and formula caches; targeted cache sync and rendered review follow separately.
+
+Optional atomic chart-grid edits synchronize comparable affected chart caches, including inspected charts sharing the workbook, before publishing one revision. Incomplete coverage and unsupported formula caches fail the transaction; formula freshness remains unknown.

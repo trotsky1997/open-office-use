@@ -13,3 +13,5 @@ Use `inspect_slide_charts` / `session_inspect_slide_charts` to inventory saved c
 Use `session_sync_slide_chart_cache` to repair one fully comparable mismatched reference from saved embedded workbook values, creating a new revision. Choose `chart_part` and the reference index from inspection. Formula source caches require explicit opt-in and may be stale; inspect rendered slides after changes.
 
 Use `session_read_slide_chart_grid` and `session_edit_slide_chart_grid` to inspect and edit an embedded workbook using the chart part and source sheet from chart inspection. The edit creates a revision and can leave chart caches and formula results stale; re-inspect, synchronize supported references and review the slides. Shared workbooks can affect multiple charts.
+
+Set `sync_caches: true` on `session_edit_slide_chart_grid` to synchronize fully comparable affected chart references in the same atomic revision. All charts sharing the workbook must be inspected and initially match; unsupported or stale caches cause the edit to fail. Formula freshness remains unknown.
