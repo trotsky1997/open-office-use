@@ -357,3 +357,5 @@ DOM CUA 单击和双击在目标仍位于可见匹配集时允许无关节点变
 Chrome 与 Electron 的会话标签列表提供作用域内 openerTabId；新增 tab.playwright.expectPopup，动作前记录已有标签，轮询匹配打开者，动作完成后复核结果，同一 browser 实例同一打开者只允许一个等待。SDK 73 项与 Electron 52 项通过，覆盖歧义、并发、超时和关闭；Chrome 扩展专项验证不暴露其他会话的 opener，Linux ARM64 Chromium 原生扩展及 macOS/Linux Electron 44 实页验证新标签导航与关闭。快速关闭或缺少 opener 元数据的标签可能超时；Chrome 来源未知的新标签在最终清理时释放而非关闭，Windows 未测。
 
 隔离 Linux ARM64 Chromium 原生扩展在 MDN HTML 文档点击“View this page on GitHub”，expectPopup 识别新标签，随后确认目标 GitHub URL 并关闭标签。新标签返回时 URL 曾为空，导航完成后才可读取；SDK 文档已说明这一时序。
+
+同一真实 MDN 到 GitHub 新标签路径进一步验证 expectPopup 后立即调用 waitForURL，等待导航完成成功；SDK 文档补充串联示例。

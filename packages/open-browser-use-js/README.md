@@ -79,6 +79,15 @@ try {
 created session tab whose reported opener is `tab`; the action is sent once.
 The tab can be returned before navigation finishes, so its URL may initially
 be empty; wait for the destination before relying on it.
+
+```js
+const popup = await tab.playwright.expectPopup(
+  () => tab.playwright.getByRole("link", {name: "Open details"}).click(),
+  {timeoutMs: 15000},
+);
+await popup.playwright.waitForURL(/\/details(?:[?#]|$)/, {timeoutMs: 15000});
+```
+
 `browser.tabs.list()` exposes an `openerTabId` when both tabs are in the
 same session and the backend knows the opener.
 It polls owned tabs, so a popup closed before observation or without an opener
