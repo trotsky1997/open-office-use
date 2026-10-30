@@ -341,3 +341,5 @@ Playwright evaluate 参数在请求发送前拒绝非有限数、负零、嵌套
 browser.newTab({url}) 在导航失败时关闭刚创建的标签；清理失败时以 AggregateError 同时保留导航和清理错误，便于重新检查会话。SDK 72 项通过；macOS 和 Linux ARM64 Electron 44 与 Linux ARM64 Chromium 原生扩展实页验证无效地址失败后会话标签数量恢复。清理结果未知时仍可能留有标签；Windows 未测。
 
 更新仓库随附 skill：优先使用 fork 的持久 JS REPL、浏览器发现及标签生命周期，补充 DOM CUA、页面求值和 WebMCP 的使用边界；安装参考区分源码与上游发布包，SDK 参考明确发布包能力可能不同。skill 格式验证、打包检查及当前 CLI install-manifest 参数核对通过；未更改用户现有浏览器注册或 MCP 配置。
+
+调整随附 skill 的授权提示：已明确请求的浏览器交互遵循用户授权与宿主权限，需要用户亲自完成或范围不明确时再请求协助。skill 格式和打包检查通过；浏览器权限与运行时代码未更改。

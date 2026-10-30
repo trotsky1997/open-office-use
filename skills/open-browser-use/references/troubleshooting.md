@@ -78,7 +78,7 @@ If Chrome blocks local file access for the extension, ask the user to open `chro
 
 - History, debugger, downloads, tab groups, and broad host access are high-privilege browser capabilities.
 - Clipboard reads/writes should happen only for the user-requested task.
-- If the user is on a login, payment, approval, CAPTCHA, or destructive workflow, pause and ask before continuing.
+- Follow the user’s authorization and host permissions for login, payment, approval, and destructive workflows. Request help for a step that requires the user’s direct interaction.
 
 ## When To Escalate To The User
 
@@ -88,4 +88,3 @@ Ask the user for help when:
 - Chrome is closed and opening it would interrupt their session.
 - Chrome requires extension confirmation or enablement.
 - The page requires login, CAPTCHA, hardware key, payment confirmation, or another human-only step.
-- The requested browser action affects external systems.

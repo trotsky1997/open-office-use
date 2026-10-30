@@ -121,7 +121,7 @@ from `obu profiles --connected --json`; `connectBrowser()` without a socket
 only proceeds when exactly one browser is connected.
 
 - Treat the browser as the user's real Chrome profile. Do not inspect cookies, passwords, session stores, or unrelated browser data.
-- Ask the user before installing the extension, opening Chrome for them, enabling extension permissions, uploading local files, reading/writing clipboard data, submitting forms, purchasing, deleting, sending, or making other externally visible changes.
+- Follow the user’s requested scope and the host’s permission controls for browser actions. An explicit request can authorize the corresponding interaction; ask when its scope is unclear or a required human confirmation is unavailable.
 - Use `agent.browsers` and `nodeRepl` only within this fork’s persistent `js` tool. Other runtimes can use the CLI or SDKs.
 - Do not guess tab ids. List tabs first, then use ids returned by `tabs`, `user-tabs`, `open-tab`, or SDK calls.
 - Prefer `claim-tab` / `claimUserTab` for existing user tabs. Claiming should be based on the current `user-tabs` result and visible evidence such as URL, title, recency, or group.
