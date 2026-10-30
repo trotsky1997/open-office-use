@@ -223,3 +223,5 @@ pressKey 根据当前焦点逐层检查 iframe 宿主并选择对应调试会话
 新增 frameLocator，按原生 CSS 匹配直接子 frame 元素并逐层选择，可与已有语义定位器、过滤和位置选择组合；观察后及读取、输入前重新验证 frame 树和选择器，多个匹配立即报错。SDK 63 项通过，覆盖选择器变化、frame 导航及歧义；Linux ARM64 Chromium 原生消息实测跨进程和嵌套 frame、缺失与非法选择器，Electron 44/Xvfb socket 实测跨进程 frame 查询、可信双击和按键。通用 CSS 元素定位仍待实现，macOS/Windows 尚未实测。
 
 frameLocator 的选择器验证与匹配改在命名隔离 world 中执行，降低页面修改 DOM 原型对目标选择的影响。Electron 只允许指定 world 名称，校验 frame 属于当前 debugger session，拒绝通用跨域访问与额外配置；准备超时或撤销授权会阻止迟发，超时释放队列。SDK 63 项、Electron 49 项通过；Linux ARM64 Chromium 原生消息与 Electron 44/Xvfb socket 验证页面篡改 matches 后仍能正确选择，Electron 还验证跨进程内的嵌套 frame。Chromium 实测同一文档重复请求复用上下文；其他平台和通用 CSS 元素定位仍待覆盖。
+
+新增只读 CSS locator：在隔离 world 查询当前文档和开放 shadow root，支持 frame 作用域、数量、位置及文本/属性读取，读取后重新校验文档、frame 与匹配集合。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证隐藏元素、开放 shadow root、跨进程与嵌套 frame、选择器错误和页面篡改原型，Electron 44/Xvfb socket 验证跨进程及嵌套 frame 读取。CSS locator 的交互和链式作用域仍待实现；macOS/Windows 本轮未测。

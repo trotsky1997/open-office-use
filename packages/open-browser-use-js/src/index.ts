@@ -62,6 +62,7 @@ export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {name?: TextMatcher; exact?: boolean; level?: number; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
+type CssSnapshot = { selector:string; framePath?:readonly string[]; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
 const supplementalRoles = ["heading", "StaticText", "image", "dialog", "alertdialog", "group", "list", "listitem", "table", "row", "cell", "columnheader", "rowheader", "grid", "gridcell", "tree", "treeitem", "navigation", "main", "region", "form", "article"];
 type TextFilter = { hasText?: TextMatcher; hasNotText?: TextMatcher };
@@ -768,6 +769,77 @@ export class OpenBrowserUseTab {
     if (JSON.stringify(await this.frameTree()) !== JSON.stringify(frames)) throw new RetryablePreflightError("Frame tree changed; observe again");
     checkSnapshot();
     return parent.id;
+  }
+
+  /** @internal */
+  async queryCss(selector: string, framePath?: readonly string[]): Promise<CssSnapshot> {
+    if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
+    const documentId = await this.documentId();
+    const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
+    const frames = await this.frameTree();
+    if (framePath && !crossProcess) throw new Error("Frame routing is unavailable");
+    const frameId = framePath ? await this.resolveFramePath(framePath) : frames[0].id;
+    if (!frameId) {
+      if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames)) throw new RetryablePreflightError("Frame tree changed; observe again");
+      return {selector,framePath,frame:null,frames,documentId,ids:[]};
+    }
+    const frame = frames.find(item=>item.id === frameId);
+    if (!frame) throw new RetryablePreflightError("Frame tree changed; observe again");
+    const sessionId = frame.sessionId;
+    const world = await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId:frame.id,worldName:"open-browser-use-selector"},{sessionId});
+    const contextId = isObject(world) ? world.executionContextId : undefined;
+    if (typeof contextId !== "number" || !Number.isSafeInteger(contextId)) throw new RetryablePreflightError("Selector context is unavailable; observe again");
+    const expression = `(() => { const selector=${JSON.stringify(selector)}, result=[]; const walk=root=>{const matched=new Set(root.querySelectorAll(selector)); for(const element of root.querySelectorAll('*')) {if(matched.has(element)){result.push(element);if(result.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);} }; walk(document);return result; })()`;
+    const evaluated = await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression,contextId,returnByValue:false},{sessionId});
+    if (isObject(evaluated) && evaluated.exceptionDetails) {
+      const details = isObject(evaluated.exceptionDetails) && isObject(evaluated.exceptionDetails.exception) ? evaluated.exceptionDetails.exception.description : undefined;
+      if (typeof details === "string" && details.includes("Selector matched more than 1000 elements")) throw new Error("Selector matched more than 1000 elements");
+      throw new Error("Invalid CSS selector");
+    }
+    const arrayId = isObject(evaluated) && isObject(evaluated.result) ? evaluated.result.objectId : undefined;
+    if (typeof arrayId !== "string") throw new RetryablePreflightError("Selector result is unavailable; observe again");
+    const objectIds: string[] = [];
+    try {
+      const properties = await this.browser.cdp.call(this.id,"Runtime.getProperties",{objectId:arrayId,ownProperties:true},{sessionId});
+      if (!isObject(properties) || !Array.isArray(properties.result)) throw new RetryablePreflightError("Selector result is unavailable; observe again");
+      const entries = properties.result.filter(isObject).filter(item=>typeof item.name === "string" && /^(0|[1-9][0-9]*)$/.test(item.name) && isObject(item.value) && typeof item.value.objectId === "string").sort((a,b)=>Number(a.name)-Number(b.name));
+      if (entries.length > 1000) throw new Error("Selector matched more than 1000 elements");
+      for (const item of entries) objectIds.push((item.value as {[key:string]:JsonValue}).objectId as string);
+      const ids: number[] = [];
+      for (const objectId of objectIds) {
+        const result = await this.browser.cdp.call(this.id,"DOM.describeNode",{objectId},{sessionId});
+        const node = isObject(result) && isObject(result.node) ? result.node : undefined;
+        if (!node || typeof node.backendNodeId !== "number") throw new RetryablePreflightError("Selector target changed; observe again");
+        ids.push(node.backendNodeId);
+      }
+      if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames)) throw new RetryablePreflightError("Frame tree changed; observe again");
+      return {selector,framePath,frame,frames,documentId,ids};
+    } finally {
+      for (const objectId of objectIds) await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});
+      await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId:arrayId},{sessionId}).catch(()=>{});
+    }
+  }
+
+  /** @internal */
+  async readCss(snapshot: CssSnapshot, id: number, mode: "innerText" | "textContent" | "attribute", attribute = ""): Promise<string | null> {
+    const frame = snapshot.frame;
+    if (!frame || !snapshot.ids.includes(id)) throw new RetryablePreflightError("Selector target changed; observe again");
+    const sessionId = frame.sessionId;
+    const world = await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId:frame.id,worldName:"open-browser-use-selector"},{sessionId});
+    const contextId = isObject(world) ? world.executionContextId : undefined;
+    if (typeof contextId !== "number") throw new RetryablePreflightError("Selector context is unavailable; observe again");
+    const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:id,executionContextId:contextId},{sessionId});
+    const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+    if (typeof objectId !== "string") throw new RetryablePreflightError("Selector target is unavailable; observe again");
+    try {
+      const result = await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:mode},{value:attribute}],functionDeclaration:`function(mode,name) { if (!this.isConnected) return null; const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }`},{sessionId});
+      const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+      if (!isObject(payload) || (typeof payload.value !== "string" && payload.value !== null)) throw new RetryablePreflightError("Selector target is unavailable; observe again");
+      if (typeof payload.value === "string" && payload.value.length > 30_000) throw new Error("Locator value exceeds the 30000 character limit");
+      const fresh = await this.queryCss(snapshot.selector,snapshot.framePath);
+      if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
+      return payload.value;
+    } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{}); }
   }
 
   /** @internal */
@@ -1751,6 +1823,8 @@ export class OpenBrowserUseTabPlaywright {
     return new OpenBrowserUseFrameLocator(this.tab,[]).frameLocator(selector);
   }
 
+  locator(selector: string): OpenBrowserUseCssLocator { return new OpenBrowserUseCssLocator(this.tab,selector); }
+
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator {
     if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
         Object.keys(options).some(key => !["name","exact","level","checked","disabled","pressed","selected","expanded"].includes(key)) ||
@@ -1787,11 +1861,52 @@ export class OpenBrowserUseFrameLocator {
     if (typeof selector !== "string" || !selector.trim() || selector.length > 4096 || this.path.length >= 32) throw new Error("Invalid frame selector");
     return new OpenBrowserUseFrameLocator(this.tab,[...this.path,selector]);
   }
+  locator(selector: string): OpenBrowserUseCssLocator { return new OpenBrowserUseCssLocator(this.tab,selector,this.path); }
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByRole(role,options).withinFrame(this.path); }
   getByLabel(name: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByLabel(name,options).withinFrame(this.path); }
   getByText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByText(text,options).withinFrame(this.path); }
   getByAltText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByAltText(text,options).withinFrame(this.path); }
   getByPlaceholder(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByPlaceholder(text,options).withinFrame(this.path); }
+}
+
+export class OpenBrowserUseCssLocator {
+  constructor(private tab: OpenBrowserUseTab, private selector: string, private framePath?: readonly string[], private position?: number) {
+    if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
+  }
+  nth(index: number): OpenBrowserUseCssLocator {
+    if (!Number.isSafeInteger(index) || index < 0) throw new Error("Locator index must be a non-negative integer");
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER);
+  }
+  first(): OpenBrowserUseCssLocator { return this.nth(0); }
+  last(): OpenBrowserUseCssLocator { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,-1) : this; }
+  private select(ids: number[]): number[] { return this.position === undefined ? ids : this.position === -1 ? ids.slice(-1) : ids.slice(this.position,this.position+1); }
+  async count(): Promise<number> { return this.select((await this.tab.queryCss(this.selector,this.framePath)).ids).length; }
+  async all(): Promise<OpenBrowserUseCssLocator[]> { return Array.from({length:await this.count()},(_,i)=>this.nth(i)); }
+  private async read(mode: "innerText" | "textContent" | "attribute", name = "", timeoutMs = 5000): Promise<string | null> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
+    const deadline = performance.now()+timeoutMs;
+    while (true) {
+      try {
+        const snapshot = await this.tab.queryCss(this.selector,this.framePath);
+        const ids = this.select(snapshot.ids);
+        if (ids.length > 1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
+        if (ids.length) return await this.tab.readCss(snapshot,ids[0],mode,name);
+      } catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
+      const remaining = deadline-performance.now();
+      if (remaining <= 0) throw new Error(`Locator target unavailable before timeout (${timeoutMs} ms)`);
+      await new Promise(resolve=>setTimeout(resolve,Math.min(100,remaining)));
+    }
+  }
+  async innerText(options: {timeoutMs?: number} = {}): Promise<string> {
+    const value = await this.read("innerText","",options.timeoutMs);
+    if (value === null) throw new Error("Target text is unavailable");
+    return value;
+  }
+  textContent(options: {timeoutMs?: number} = {}): Promise<string | null> { return this.read("textContent","",options.timeoutMs); }
+  getAttribute(name: string, options: {timeoutMs?: number} = {}): Promise<string | null> {
+    if (typeof name !== "string" || !name || name.length > 256) throw new Error("Invalid attribute name");
+    return this.read("attribute",name,options.timeoutMs);
+  }
 }
 
 export class OpenBrowserUseRoleLocator {

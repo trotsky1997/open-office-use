@@ -81,6 +81,7 @@ app.whenReady().then(async()=>{
     const crossFrame=sdk.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(async()=>{const f=document.createElement('iframe');f.id='nested';f.srcdoc='<button>Nested target</button>';document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`,awaitPromise:true},{sessionId:session});
     assert.equal(await crossFrame.frameLocator('iframe#nested').getByRole('button',{name:'Nested target',exact:true}).count(),1);
+    assert.equal(await crossFrame.locator('h3').textContent(),'Child heading');assert.equal(await crossFrame.frameLocator('iframe#nested').locator('button').innerText(),'Nested target');
     await sdk.evaluate(`(()=>{Element.prototype.matches=window.savedMatches})()`);
     window.hide();
     assert.deepEqual((({backend,selected,visible})=>({backend,selected,visible}))(await sdk.getPresentation()),{backend:'electron',selected:true,visible:false});

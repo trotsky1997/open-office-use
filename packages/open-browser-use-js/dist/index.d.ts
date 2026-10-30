@@ -370,6 +370,7 @@ export declare class OpenBrowserUseTabPlaywright {
     }): Promise<void>;
     domSnapshot(): Promise<string>;
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
+    locator(selector: string): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -389,6 +390,7 @@ export declare class OpenBrowserUseFrameLocator {
     private path;
     constructor(tab: OpenBrowserUseTab, path: readonly string[]);
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
+    locator(selector: string): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -402,6 +404,29 @@ export declare class OpenBrowserUseFrameLocator {
     getByPlaceholder(text: TextMatcher, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
+}
+export declare class OpenBrowserUseCssLocator {
+    private tab;
+    private selector;
+    private framePath?;
+    private position?;
+    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined);
+    nth(index: number): OpenBrowserUseCssLocator;
+    first(): OpenBrowserUseCssLocator;
+    last(): OpenBrowserUseCssLocator;
+    private select;
+    count(): Promise<number>;
+    all(): Promise<OpenBrowserUseCssLocator[]>;
+    private read;
+    innerText(options?: {
+        timeoutMs?: number;
+    }): Promise<string>;
+    textContent(options?: {
+        timeoutMs?: number;
+    }): Promise<string | null>;
+    getAttribute(name: string, options?: {
+        timeoutMs?: number;
+    }): Promise<string | null>;
 }
 export declare class OpenBrowserUseRoleLocator {
     private tab;

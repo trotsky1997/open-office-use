@@ -789,6 +789,98 @@ export class OpenBrowserUseTab {
         return parent.id;
     }
     /** @internal */
+    async queryCss(selector, framePath) {
+        if (typeof selector !== "string" || !selector.trim() || selector.length > 4096)
+            throw new Error("Invalid CSS selector");
+        const documentId = await this.documentId();
+        const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
+        const frames = await this.frameTree();
+        if (framePath && !crossProcess)
+            throw new Error("Frame routing is unavailable");
+        const frameId = framePath ? await this.resolveFramePath(framePath) : frames[0].id;
+        if (!frameId) {
+            if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames))
+                throw new RetryablePreflightError("Frame tree changed; observe again");
+            return { selector, framePath, frame: null, frames, documentId, ids: [] };
+        }
+        const frame = frames.find(item => item.id === frameId);
+        if (!frame)
+            throw new RetryablePreflightError("Frame tree changed; observe again");
+        const sessionId = frame.sessionId;
+        const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "open-browser-use-selector" }, { sessionId });
+        const contextId = isObject(world) ? world.executionContextId : undefined;
+        if (typeof contextId !== "number" || !Number.isSafeInteger(contextId))
+            throw new RetryablePreflightError("Selector context is unavailable; observe again");
+        const expression = `(() => { const selector=${JSON.stringify(selector)}, result=[]; const walk=root=>{const matched=new Set(root.querySelectorAll(selector)); for(const element of root.querySelectorAll('*')) {if(matched.has(element)){result.push(element);if(result.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);} }; walk(document);return result; })()`;
+        const evaluated = await this.browser.cdp.call(this.id, "Runtime.evaluate", { expression, contextId, returnByValue: false }, { sessionId });
+        if (isObject(evaluated) && evaluated.exceptionDetails) {
+            const details = isObject(evaluated.exceptionDetails) && isObject(evaluated.exceptionDetails.exception) ? evaluated.exceptionDetails.exception.description : undefined;
+            if (typeof details === "string" && details.includes("Selector matched more than 1000 elements"))
+                throw new Error("Selector matched more than 1000 elements");
+            throw new Error("Invalid CSS selector");
+        }
+        const arrayId = isObject(evaluated) && isObject(evaluated.result) ? evaluated.result.objectId : undefined;
+        if (typeof arrayId !== "string")
+            throw new RetryablePreflightError("Selector result is unavailable; observe again");
+        const objectIds = [];
+        try {
+            const properties = await this.browser.cdp.call(this.id, "Runtime.getProperties", { objectId: arrayId, ownProperties: true }, { sessionId });
+            if (!isObject(properties) || !Array.isArray(properties.result))
+                throw new RetryablePreflightError("Selector result is unavailable; observe again");
+            const entries = properties.result.filter(isObject).filter(item => typeof item.name === "string" && /^(0|[1-9][0-9]*)$/.test(item.name) && isObject(item.value) && typeof item.value.objectId === "string").sort((a, b) => Number(a.name) - Number(b.name));
+            if (entries.length > 1000)
+                throw new Error("Selector matched more than 1000 elements");
+            for (const item of entries)
+                objectIds.push(item.value.objectId);
+            const ids = [];
+            for (const objectId of objectIds) {
+                const result = await this.browser.cdp.call(this.id, "DOM.describeNode", { objectId }, { sessionId });
+                const node = isObject(result) && isObject(result.node) ? result.node : undefined;
+                if (!node || typeof node.backendNodeId !== "number")
+                    throw new RetryablePreflightError("Selector target changed; observe again");
+                ids.push(node.backendNodeId);
+            }
+            if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames))
+                throw new RetryablePreflightError("Frame tree changed; observe again");
+            return { selector, framePath, frame, frames, documentId, ids };
+        }
+        finally {
+            for (const objectId of objectIds)
+                await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId: arrayId }, { sessionId }).catch(() => { });
+        }
+    }
+    /** @internal */
+    async readCss(snapshot, id, mode, attribute = "") {
+        const frame = snapshot.frame;
+        if (!frame || !snapshot.ids.includes(id))
+            throw new RetryablePreflightError("Selector target changed; observe again");
+        const sessionId = frame.sessionId;
+        const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "open-browser-use-selector" }, { sessionId });
+        const contextId = isObject(world) ? world.executionContextId : undefined;
+        if (typeof contextId !== "number")
+            throw new RetryablePreflightError("Selector context is unavailable; observe again");
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: id, executionContextId: contextId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string")
+            throw new RetryablePreflightError("Selector target is unavailable; observe again");
+        try {
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
+            const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (!isObject(payload) || (typeof payload.value !== "string" && payload.value !== null))
+                throw new RetryablePreflightError("Selector target is unavailable; observe again");
+            if (typeof payload.value === "string" && payload.value.length > 30_000)
+                throw new Error("Locator value exceeds the 30000 character limit");
+            const fresh = await this.queryCss(snapshot.selector, snapshot.framePath);
+            if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids))
+                throw new RetryablePreflightError("Selector target changed; observe again");
+            return payload.value;
+        }
+        finally {
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+        }
+    }
+    /** @internal */
     async locatorText(snapshotId, index) {
         const observation = this.#observation;
         if (!observation || observation.id !== snapshotId)
@@ -1975,6 +2067,7 @@ export class OpenBrowserUseTabPlaywright {
     frameLocator(selector) {
         return new OpenBrowserUseFrameLocator(this.tab, []).frameLocator(selector);
     }
+    locator(selector) { return new OpenBrowserUseCssLocator(this.tab, selector); }
     getByRole(role, options = {}) {
         if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
             Object.keys(options).some(key => !["name", "exact", "level", "checked", "disabled", "pressed", "selected", "expanded"].includes(key)) ||
@@ -2017,11 +2110,71 @@ export class OpenBrowserUseFrameLocator {
             throw new Error("Invalid frame selector");
         return new OpenBrowserUseFrameLocator(this.tab, [...this.path, selector]);
     }
+    locator(selector) { return new OpenBrowserUseCssLocator(this.tab, selector, this.path); }
     getByRole(role, options = {}) { return this.tab.playwright.getByRole(role, options).withinFrame(this.path); }
     getByLabel(name, options = {}) { return this.tab.playwright.getByLabel(name, options).withinFrame(this.path); }
     getByText(text, options = {}) { return this.tab.playwright.getByText(text, options).withinFrame(this.path); }
     getByAltText(text, options = {}) { return this.tab.playwright.getByAltText(text, options).withinFrame(this.path); }
     getByPlaceholder(text, options = {}) { return this.tab.playwright.getByPlaceholder(text, options).withinFrame(this.path); }
+}
+export class OpenBrowserUseCssLocator {
+    tab;
+    selector;
+    framePath;
+    position;
+    constructor(tab, selector, framePath, position) {
+        this.tab = tab;
+        this.selector = selector;
+        this.framePath = framePath;
+        this.position = position;
+        if (typeof selector !== "string" || !selector.trim() || selector.length > 4096)
+            throw new Error("Invalid CSS selector");
+    }
+    nth(index) {
+        if (!Number.isSafeInteger(index) || index < 0)
+            throw new Error("Locator index must be a non-negative integer");
+        return new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER);
+    }
+    first() { return this.nth(0); }
+    last() { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab, this.selector, this.framePath, -1) : this; }
+    select(ids) { return this.position === undefined ? ids : this.position === -1 ? ids.slice(-1) : ids.slice(this.position, this.position + 1); }
+    async count() { return this.select((await this.tab.queryCss(this.selector, this.framePath)).ids).length; }
+    async all() { return Array.from({ length: await this.count() }, (_, i) => this.nth(i)); }
+    async read(mode, name = "", timeoutMs = 5000) {
+        if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+            throw new Error("Invalid locator timeout");
+        const deadline = performance.now() + timeoutMs;
+        while (true) {
+            try {
+                const snapshot = await this.tab.queryCss(this.selector, this.framePath);
+                const ids = this.select(snapshot.ids);
+                if (ids.length > 1)
+                    throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
+                if (ids.length)
+                    return await this.tab.readCss(snapshot, ids[0], mode, name);
+            }
+            catch (error) {
+                if (!(error instanceof RetryablePreflightError))
+                    throw error;
+            }
+            const remaining = deadline - performance.now();
+            if (remaining <= 0)
+                throw new Error(`Locator target unavailable before timeout (${timeoutMs} ms)`);
+            await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
+        }
+    }
+    async innerText(options = {}) {
+        const value = await this.read("innerText", "", options.timeoutMs);
+        if (value === null)
+            throw new Error("Target text is unavailable");
+        return value;
+    }
+    textContent(options = {}) { return this.read("textContent", "", options.timeoutMs); }
+    getAttribute(name, options = {}) {
+        if (typeof name !== "string" || !name || name.length > 256)
+            throw new Error("Invalid attribute name");
+        return this.read("attribute", name, options.timeoutMs);
+    }
 }
 export class OpenBrowserUseRoleLocator {
     tab;

@@ -208,6 +208,10 @@ try {
  assert.deepEqual(await tab.evaluate(`({value:document.querySelector('[aria-label="Editable"]').textContent,trusted:window.editableTrusted})`),{value:'replacement',trusted:true});
  await tab.evaluate(`document.querySelector('[aria-label="Editable"]').remove()`);
  await tab.evaluate(`(()=>{const host=document.createElement('div');host.setAttribute('role','dialog');host.setAttribute('aria-label','Shadow container');document.body.append(host);const outer=host.attachShadow({mode:'open'});outer.innerHTML='<div></div>';const inner=outer.querySelector('div').attachShadow({mode:'closed'});inner.innerHTML='<button>Shadow Action</button>';inner.querySelector('button').onclick=e=>window.shadowTrusted=e.isTrusted})()`);
+ await tab.evaluate(`(()=>{const host=document.createElement('div');host.id='css-host';const shadow=host.attachShadow({mode:'open'});shadow.innerHTML='<span data-test="first">First</span><span data-test="second" hidden>Second</span>';document.body.append(host);window.savedQuery=Document.prototype.querySelectorAll;Document.prototype.querySelectorAll=()=>[]})()`);
+ const css=tab.playwright.locator('[data-test]');assert.equal(await css.count(),2);assert.equal(await css.first().innerText(),'First');assert.equal(await css.last().textContent(),'Second');assert.equal(await css.nth(1).getAttribute('data-test'),'second');assert.equal(await css.nth(9).count(),0);
+ await assert.rejects(css.textContent({timeoutMs:0}),/matched 2 elements/);await assert.rejects(tab.playwright.locator('[').count(),/Invalid CSS selector/);
+ await tab.evaluate(`(()=>{Document.prototype.querySelectorAll=window.savedQuery;document.querySelector('#css-host').remove()})()`);
  const shadow=await tab.observe();const shadowButton=shadow.nodes.find(node=>node.role==='button'&&node.name==='Shadow Action');assert.ok(shadowButton);
  await tab.playwright.getByRole('dialog',{name:'Shadow container',exact:true}).filter({hasText:'Shadow Action'}).getByRole('button',{name:'Shadow Action',exact:true}).click();assert.equal(await tab.evaluate('window.shadowTrusted'),true);
  const framed=await tab.observe({includeFrames:true});const frameButton=framed.nodes.find(node=>node.role==='button'&&node.name==='Frame action');assert.ok(frameButton?.frameId);
@@ -219,7 +223,7 @@ try {
  await new Promise(r=>setTimeout(r,500));
  const crossState=await tab.observe({includeFrames:true});const cross=crossState.nodes.find(node=>node.name==='Cross-process action');assert.ok(cross?.frameId,JSON.stringify(crossState));assert.equal(crossState.frameCoverage,'cross-process');
  await tab.evaluate(`(()=>{window.savedMatches=Element.prototype.matches;Element.prototype.matches=()=>true})()`);
- const crossFrame=tab.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
+ const crossFrame=tab.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.locator('button').first().textContent(),'Cross-process action');assert.equal(await crossFrame.frameLocator('iframe').locator('button').count(),1);assert.equal(await crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
  assert.equal(await crossFrame.frameLocator('iframe').getByRole('button',{name:'Nested action',exact:true}).count(),1);
  assert.equal(await tab.playwright.frameLocator('iframe.missing').getByRole('button').count(),0);
  await assert.rejects(tab.playwright.frameLocator('[').getByRole('button').count(),/Invalid frame selector/);

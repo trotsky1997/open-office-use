@@ -254,7 +254,23 @@ Nested calls select one frame level at a time. Missing frames yield no matches;
 multiple matching frames produce an error. Frame identity and selector matching
 are rechecked before reads and input, and inaccessible observed frames cause
 an incomplete-results error. Semantic targets still come from the accessibility
-tree; general CSS element locators are not provided by this API.
+tree.
+
+Native CSS element queries are available for reading DOM content:
+
+```js
+const items = tab.playwright.locator("[data-item]");
+console.log(await items.count(), await items.first().textContent());
+console.log(await payment.locator("input[name=card]").getAttribute("name"));
+```
+
+CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
+`textContent` and `getAttribute`. They search the selected document and its open
+shadow roots, including hidden elements; they do not cross frames unless a
+`frameLocator` is selected. Matches are limited to 1,000 elements and single
+reads require a unique match. Selector evaluation uses an isolated world, and
+reads recheck document, frame and match identity. CSS locator input actions and
+chaining are not yet implemented; use semantic locators for input.
 
 `filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
 locator by its accessible static-text descendants. Matching is a case-insensitive
