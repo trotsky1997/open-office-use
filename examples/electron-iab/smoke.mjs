@@ -110,6 +110,15 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
     assert.equal(await evaluate(a.id,'window.semanticIsolationClicks'),1);assert.equal(await evaluate(a.id,"document.querySelector('#semantic-isolation-input').value"),'safe');
   } finally {await evaluate(a.id,`(()=>{Object.defineProperty(Node.prototype,'isConnected',window.savedSemanticConnected);document.querySelector('#semantic-isolation-button').remove();document.querySelector('#semantic-isolation-input').remove();return true})()`);}
   check('SDK semantic input: isolated from page DOM prototype changes');
+  await evaluate(a.id,`(()=>{const scope=document.createElement('div');scope.id='scope-isolation-root';scope.setAttribute('role','group');scope.setAttribute('aria-label','Isolation group');scope.innerHTML='<span>Inside word</span>';const outside=document.createElement('button');outside.id='scope-isolation-outside';outside.textContent='Outside word';document.body.append(scope,outside);window.savedParent=Object.getOwnPropertyDescriptor(Node.prototype,'parentNode');Object.defineProperty(Node.prototype,'parentNode',{configurable:true,get(){if(this.id==='scope-isolation-outside' || (this.nodeType===3 && this.nodeValue==='Outside word'))return scope;return window.savedParent.get.call(this)}});return true})()`);
+  try {
+    const scoped=sdkTab.playwright.getByRole('group',{name:'Isolation group',exact:true});
+    assert.equal(await scoped.getByRole('button',{name:'Outside word',exact:true}).count(),0);
+    assert.equal(await scoped.filter({hasText:'Outside word'}).count(),0);
+    assert.equal(await scoped.filter({hasText:'Inside word'}).count(),1);
+  } finally {await evaluate(a.id,`(()=>{Object.defineProperty(Node.prototype,'parentNode',window.savedParent);document.querySelector('#scope-isolation-root').remove();document.querySelector('#scope-isolation-outside').remove();return true})()`);}
+  check('SDK semantic scope: isolated from forged parent relationships');
+
 
   await evaluate(a.id,'document.querySelector("#message").value = ""');
   const textState = await sdkTab.observe();

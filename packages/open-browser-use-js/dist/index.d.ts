@@ -377,6 +377,7 @@ export declare class OpenBrowserUseTab {
     private readAXValues;
     private frameGeometry;
     private cssFrameVisible;
+    private scopeContext;
     private verifyLocatorScope;
     private prepareBrowserEvent;
     prepareDownload(options?: {

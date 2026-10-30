@@ -1612,6 +1612,14 @@ export class OpenBrowserUseTab {
     } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{}); }
   }
 
+  private async scopeContext(observation:Observation, scope:ObservedNode, sessionId?:string):Promise<number> {
+    const frameId=scope.frameId ?? observation.frames?.[0]?.id;
+    if(!frameId)throw new RetryablePreflightError("Scope frame is unavailable; observe again");
+    const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId,worldName:"open-browser-use-selector"},{sessionId});
+    if(!isObject(world) || typeof world.executionContextId!=="number" || !Number.isSafeInteger(world.executionContextId) || await this.documentId()!==observation.documentId)throw new RetryablePreflightError("Scope context is unavailable; observe again");
+    return world.executionContextId;
+  }
+
   /** @internal */
   async scopeText(observation: Observation, index: number): Promise<string> {
     const scope = observation.nodes.find(node => node.index === index);
@@ -1641,9 +1649,10 @@ export class OpenBrowserUseTab {
       if (await this.documentId() !== observation.documentId) throw new RetryablePreflightError("Page changed; observe again");
       if (scope.frameChain) await this.validateFrames(scope.frameChain);
       const sessionId = scope.frameChain?.[0]?.sessionId;
+      const executionContextId=await this.scopeContext(observation,scope,sessionId);
       const objects: string[] = [];
       const resolve = async (node: ObservedNode): Promise<string> => {
-        const result = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:node.backendNodeId},{sessionId});
+        const result = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:node.backendNodeId,executionContextId},{sessionId});
         const objectId = isObject(result) && isObject(result.object) ? result.object.objectId : undefined;
         if (typeof objectId !== "string") throw new RetryablePreflightError("Scope target is unavailable; observe again");
         return objectId;
@@ -1723,10 +1732,11 @@ export class OpenBrowserUseTab {
       if (!isObject(owner) || typeof owner.backendNodeId !== "number") throw new RetryablePreflightError("Frame owner changed; observe again");
       backendNodeId = owner.backendNodeId;
     }
+    const executionContextId=await this.scopeContext(observation,scope,sessionId);
     const objects: string[] = [];
     try {
       for (const id of [scope.backendNodeId,backendNodeId]) {
-        const result = await this.browser.cdp.call(this.id, "DOM.resolveNode", {backendNodeId:id}, {sessionId});
+        const result = await this.browser.cdp.call(this.id, "DOM.resolveNode", {backendNodeId:id,executionContextId}, {sessionId});
         const objectId = isObject(result) && isObject(result.object) ? result.object.objectId : undefined;
         if (typeof objectId !== "string") throw new RetryablePreflightError("Scope target is unavailable; observe again");
         objects.push(objectId);

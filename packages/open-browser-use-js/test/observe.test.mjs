@@ -1472,9 +1472,10 @@ test('text filters batch checks and release all resolved nodes after failure', a
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(command==='Page.createIsolatedWorld')return {executionContextId:123};
     if(command==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
     if(command==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:10,role:{value:'listitem'},name:{value:''}},...Array.from({length:35},(_,i)=>({backendDOMNodeId:100+i,role:{value:'StaticText'},name:{value:`word${i}`}}))]};
-    if(command==='DOM.resolveNode'){if(fail && args.backendNodeId===110)throw new Error('resolve failed');return {object:{objectId:String(args.backendNodeId)}};}
+    if(command==='DOM.resolveNode'){assert.equal(args.executionContextId,123);if(fail && args.backendNodeId===110)throw new Error('resolve failed');return {object:{objectId:String(args.backendNodeId)}};}
     if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('targets.map')) {batches.push(args.arguments.length);return {result:{value:args.arguments.map(()=>true)}};}
     if(command==='Runtime.releaseObject')released.push(args.objectId);
     return {};
