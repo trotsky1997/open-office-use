@@ -27,7 +27,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -161,6 +161,14 @@ async def main():
                 assert not exported.isError and (root / 'session.docx').exists(), exported
                 invalid = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
                 assert invalid.isError and 'already exists' in str(invalid), invalid
+                bundle = await session.call_tool('review_document_bundle', {'file': str(output), 'output_dir': str(root / 'mcp-bundle')})
+                assert not bundle.isError and not bundle.structuredContent['check_errors'], bundle
+                bundle_image = await session.call_tool('view_page', {'file': bundle.structuredContent['artifacts']['overview.png']})
+                assert not bundle_image.isError and bundle_image.content[0].type == 'image', bundle_image
+                historic_bundle = await session.call_tool('session_review_bundle', {'directory': str(directory), 'revision': 0, 'output_dir': str(root / 'mcp-history-bundle')})
+                assert not historic_bundle.isError and historic_bundle.structuredContent['revision'] == 0, historic_bundle
+                rejected_bundle = await session.call_tool('session_review_bundle', {'directory': str(directory), 'revision': 0, 'output_dir': str(directory / 'bad-bundle')})
+                assert rejected_bundle.isError and not (directory / 'bad-bundle').exists(), rejected_bundle
                 images = await session.call_tool('preview_pages', {'file': str(output), 'output_dir': str(root / 'pages')})
                 assert not images.isError, images
                 paths = images.structuredContent['pages']

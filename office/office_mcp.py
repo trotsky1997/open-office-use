@@ -11,6 +11,7 @@ import layout
 import visual
 import word
 import review
+import review_bundle
 import session
 import selection_text
 import selection_candidates
@@ -199,6 +200,21 @@ def session_restore(directory: str, base_revision: int, revision: int) -> dict[s
 def session_export(directory: str, revision: int, output: str) -> dict[str, Any]:
     """Export a revision to a new file outside the session directory."""
     return session.export(directory, revision, output)
+
+
+@server.tool()
+def review_document_bundle(file: str, output_dir: str) -> dict[str, Any]:
+    """Create a local audit, format-specific checks, PDF and overview from one snapshot."""
+    return review_bundle.create(file, output_dir, render)
+
+
+@server.tool()
+def session_review_bundle(directory: str, revision: int, output_dir: str) -> dict[str, Any]:
+    """Create a review bundle from an exact saved session revision."""
+    state = session.info(directory); source = session.revision_file(state, revision)
+    if Path(output_dir).resolve().is_relative_to(Path(state['directory'])):
+        raise ValueError('Review output must be outside the session directory')
+    return review_bundle.create(source, output_dir, render, revision)
 
 
 @server.tool()

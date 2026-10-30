@@ -18,6 +18,7 @@ import word
 import officecli_backend
 import spreadsheet
 import review
+import review_bundle
 import session
 import selection_text
 import selection_candidates
@@ -156,6 +157,7 @@ def main():
     cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
     formula_scan = commands.add_parser('scan-formulas'); formula_scan.add_argument('file')
     calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
+    bundle = commands.add_parser('review-bundle'); bundle.add_argument('file'); bundle.add_argument('--out-dir', required=True)
     audit = commands.add_parser('audit'); audit.add_argument('file')
     comparison = commands.add_parser('compare'); comparison.add_argument('before'); comparison.add_argument('after')
     cell_diff = commands.add_parser('compare-cells'); cell_diff.add_argument('before'); cell_diff.add_argument('after'); cell_diff.add_argument('--sheet', required=True); cell_diff.add_argument('--range', required=True, dest='cell_range')
@@ -171,6 +173,7 @@ def main():
     resolve = sub.add_parser('resolve-comment'); resolve.add_argument('directory'); resolve.add_argument('--base', type=int, required=True); resolve.add_argument('--id', required=True); resolve.add_argument('--resolved', choices=['true', 'false'], required=True)
     comment = sub.add_parser('add-comment'); comment.add_argument('directory'); comment.add_argument('--base', type=int, required=True); comment.add_argument('--path', required=True); comment.add_argument('--text', required=True); comment.add_argument('--author', required=True); comment.add_argument('--anchor')
     picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True)
+    session_review = sub.add_parser('review'); session_review.add_argument('directory'); session_review.add_argument('--revision', type=int, required=True); session_review.add_argument('--out-dir', required=True)
     session_comments = sub.add_parser('comments'); session_comments.add_argument('directory'); session_comments.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
@@ -218,6 +221,10 @@ def main():
                 if image.stat().st_size > 10 * 1024 * 1024:
                     raise ValueError('Image must be at most 10 MiB')
                 result = session.replace_picture(args.directory, args.base, args.path, image.read_bytes())
+            elif args.action == 'review':
+                state = session.info(args.directory); source = session.revision_file(state, args.revision)
+                if Path(args.out_dir).resolve().is_relative_to(Path(state['directory'])): raise ValueError('Review output must be outside the session directory')
+                result = review_bundle.create(source, args.out_dir, render, args.revision)
             elif args.action == 'comments':
                 result = session.list_comments(args.directory, args.revision)
             elif args.action == 'inspect-layout':
@@ -254,6 +261,8 @@ def main():
             result = visual.save_png(args.out, lambda: visual.compare_pages(args.before, args.after, args.before_page, args.after_page, render))
         elif args.command == 'contact-sheet':
             result = visual.save_contact_sheet(args.file, args.out, args.start, args.count, render)
+        elif args.command == 'review-bundle':
+            result = review_bundle.create(args.file, args.out_dir, render)
         elif args.command == 'audit':
             result = officecli_backend.audit(args.file)
         elif args.command == 'compare-cells':
