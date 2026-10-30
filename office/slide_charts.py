@@ -20,6 +20,33 @@ C = '{http://schemas.openxmlformats.org/drawingml/2006/chart}'
 R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
 
 
+SYNTHETIC_PART = 'xl/charts/office-use-inspection.xml'
+
+
+def prepare_workbook(blob, chart_blob, candidate):
+    if len(blob) > 16 * 1024 * 1024: raise ValueError('Embedded workbook exceeds size limit')
+    with zipfile.ZipFile(io.BytesIO(blob)) as source:
+        entries = source.infolist(); names = [entry.filename for entry in entries]
+        if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 64 * 1024 * 1024:
+            raise ValueError('Embedded workbook exceeds package limits or contains duplicates')
+        manifest = ooxml.parse_xml(source.read('[Content_Types].xml')).getroot()
+        if manifest.tag != chart_cache.CT + 'Types': raise ValueError('Invalid content types')
+        if SYNTHETIC_PART in names or any(item.get('PartName') == '/' + SYNTHETIC_PART for item in manifest):
+            raise ValueError('Synthetic chart part already exists')
+        entry = etree.Element(chart_cache.CT + 'Override', PartName='/' + SYNTHETIC_PART, ContentType=chart_cache.CHART_TYPE)
+        overrides = [index for index, item in enumerate(manifest) if item.tag == chart_cache.CT + 'Override']
+        manifest.insert(overrides[0] if overrides else len(manifest), entry)
+        chart_root = ooxml.parse_xml(chart_blob).getroot()
+        for node in chart_root.findall(C + 'externalData'): chart_root.remove(node)
+        chart_xml = etree.tostring(chart_root, encoding='utf-8', xml_declaration=True)
+        if len(chart_xml) > 4 * 1024 * 1024: raise ValueError('Chart exceeds size limit')
+        with zipfile.ZipFile(candidate, 'w') as destination:
+            for item in entries:
+                data = etree.tostring(manifest, encoding='utf-8', xml_declaration=True) if item.filename == '[Content_Types].xml' else source.read(item)
+                destination.writestr(item, data)
+            destination.writestr(SYNTHETIC_PART, chart_xml)
+
+
 def reconcile(chart, budget):
     """Compare chart caches against a bounded embedded workbook copy."""
     if budget['charts'] >= 20: return {'status': 'incomplete', 'reason': 'chart_limit', 'complete': False}
@@ -31,30 +58,11 @@ def reconcile(chart, budget):
         if len(blob) > 16 * 1024 * 1024 or budget['bytes'] + len(blob) > 64 * 1024 * 1024:
             return {'status': 'incomplete', 'reason': 'workbook_size_limit', 'complete': False}
         budget['bytes'] += len(blob)
-        with zipfile.ZipFile(io.BytesIO(blob)) as source:
-            entries = source.infolist(); names = [entry.filename for entry in entries]
-            if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 64 * 1024 * 1024:
-                return {'status': 'incomplete', 'reason': 'embedded_package_limit', 'complete': False}
-            manifest = ooxml.parse_xml(source.read('[Content_Types].xml')).getroot()
-            if manifest.tag != chart_cache.CT + 'Types': raise ValueError('Invalid content types')
-            synthetic_part = 'xl/charts/office-use-inspection.xml'
-            if synthetic_part in names or any(item.get('PartName') == '/' + synthetic_part for item in manifest):
-                return {'status': 'incomplete', 'reason': 'synthetic_name_conflict', 'complete': False}
-            entry = etree.Element(chart_cache.CT + 'Override', PartName='/' + synthetic_part, ContentType=chart_cache.CHART_TYPE)
-            overrides = [index for index, item in enumerate(manifest) if item.tag == chart_cache.CT + 'Override']
-            manifest.insert(overrides[0] if overrides else len(manifest), entry)
-            chart_root = ooxml.parse_xml(chart.part.blob).getroot()
-            for node in chart_root.findall(C + 'externalData'): chart_root.remove(node)
-            chart_xml = etree.tostring(chart_root, encoding='utf-8', xml_declaration=True)
-            if len(chart_xml) > 4 * 1024 * 1024: return {'status': 'incomplete', 'reason': 'chart_size_limit', 'complete': False}
-            with tempfile.TemporaryDirectory(prefix='office-slide-chart-reconcile-') as tmp:
-                candidate = Path(tmp) / 'embedded.xlsx'
-                with zipfile.ZipFile(candidate, 'w') as destination:
-                    for item in entries:
-                        data = etree.tostring(manifest, encoding='utf-8', xml_declaration=True) if item.filename == '[Content_Types].xml' else source.read(item)
-                        destination.writestr(item, data)
-                    destination.writestr(synthetic_part, chart_xml)
-                report = chart_cache.scan(candidate)
+        with tempfile.TemporaryDirectory(prefix='office-slide-chart-reconcile-') as tmp:
+            candidate = Path(tmp) / 'embedded.xlsx'
+            prepare_workbook(blob, chart.part.blob, candidate)
+            report = chart_cache.scan(candidate)
+        synthetic_part = SYNTHETIC_PART
         found = [item for item in report['charts'] if item['part'] == synthetic_part]
         if len(found) != 1 or found[0]['status'] != 'scanned': return {'status': 'incomplete', 'reason': 'unsupported_chart', 'complete': False}
         chart_report = found[0]; refs = chart_report['references']
@@ -207,3 +215,38 @@ def inspect(file):
         if len(slides) > 200: issue(None, None, 'slide_limit')
         result['issues_truncated'] = result['issue_count'] > len(result['issues'])
         return result
+
+
+def sync(source, output, part, reference, allow_formula_caches=False):
+    """Synchronize one verified chart reference from its saved embedded workbook."""
+    if not isinstance(part, str) or not part.startswith('/'): raise ValueError('Provide a chart part from slide chart inspection')
+    if isinstance(reference, bool) or not isinstance(reference, int) or reference < 1: raise ValueError('Provide a positive reference index')
+    if not isinstance(allow_formula_caches, bool): raise ValueError('allow_formula_caches must be a boolean')
+    source = Path(source).resolve(strict=True); output = Path(output).absolute()
+    if output.exists() or output.is_symlink(): raise FileExistsError(f'Output already exists: {output}')
+    with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-slide-chart-sync-') as tmp:
+        snapshot, digest = snapshots.copy(source, tmp)
+        inventory = inspect(snapshot)
+        charts = [chart for chart in inventory['charts'] if chart.get('chart_part') == part]
+        if not charts or any(chart['workbook']['status'] != 'embedded' for chart in charts): raise ValueError('Chart with embedded workbook was not available in the bounded inventory')
+        if any(chart['workbook']['part'] != charts[0]['workbook']['part'] for chart in charts): raise ValueError('Ambiguous embedded workbook')
+        workbook_part = charts[0]['workbook']['part'].lstrip('/')
+        chart_part = part.lstrip('/')
+        with zipfile.ZipFile(snapshot) as archive:
+            workbook_blob = archive.read(workbook_part); chart_blob = archive.read(chart_part)
+        candidate = Path(tmp) / 'embedded.xlsx'; updated = Path(tmp) / 'updated.xlsx'
+        prepare_workbook(workbook_blob, chart_blob, candidate)
+        synced = chart_cache.sync(candidate, updated, SYNTHETIC_PART, reference, allow_formula_caches)
+        with zipfile.ZipFile(updated) as archive: new_root = ooxml.parse_xml(archive.read(SYNTHETIC_PART)).getroot()
+        def edit(tree, _archive):
+            refs = [node for node in tree.getroot().iter() if node.tag in chart_cache.REF_TYPES]
+            new_refs = [node for node in new_root.iter() if node.tag in chart_cache.REF_TYPES]
+            if reference > len(refs) or reference > len(new_refs): raise ValueError('Chart reference changed')
+            old_ref, new_ref = refs[reference - 1], new_refs[reference - 1]
+            old_values = old_ref.findall('.//' + C + 'pt/' + C + 'v')
+            new_values = new_ref.findall('.//' + C + 'pt/' + C + 'v')
+            if old_ref.tag != new_ref.tag or len(old_values) != len(new_values): raise ValueError('Chart cache changed')
+            for old, new in zip(old_values, new_values): old.text = new.text
+        ooxml.edit_xml(snapshot, output, lambda _: chart_part, edit)
+    return {'output': str(output), 'chart_part': part, 'reference': reference, 'updated_points': synced['updated_points'],
+            'source_formula_cells': synced['source_formula_cells'], 'formula_cache_freshness': 'unknown', 'snapshot_sha256': digest}

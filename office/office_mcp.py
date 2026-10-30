@@ -116,6 +116,12 @@ def session_sync_chart_cache(directory: str, base_revision: int, part: str, refe
 
 
 @server.tool()
+def session_sync_slide_chart_cache(directory: str, base_revision: int, part: str, reference: int, allow_formula_caches: bool = False) -> dict[str, Any]:
+    """Sync a verified slide chart cache reference from its saved embedded workbook into a new revision."""
+    return session.sync_slide_chart_cache(directory, base_revision, part, reference, allow_formula_caches)
+
+
+@server.tool()
 def structured_read(file: str, mode: Literal['outline', 'get', 'query'], target: str | None = None) -> dict[str, Any]:
     """Read an outline, element path, or selector through OfficeCLI. get/query require target."""
     if (mode == 'outline') != (target is None):

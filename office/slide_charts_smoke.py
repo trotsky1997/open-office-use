@@ -37,6 +37,19 @@ with tempfile.TemporaryDirectory() as tmp:
             dst.writestr(entry,data)
     mismatch_report=slide_charts.inspect(mismatch)['charts'][0]['reconciliation']
     assert mismatch_report['status']=='mismatch' and mismatch_report['mismatch_count']>=1
+    changed_reference=next(item['index'] for item in mismatch_report['references'] if item['status']=='mismatch')
+    sync_draft=root/'sync-draft';session.start(sync_draft,source=mismatch)
+    synced=session.sync_slide_chart_cache(sync_draft,0,chart['chart_part'],changed_reference)
+    assert synced['updated_points']==1 and synced['revision']==1
+    assert session.inspect_slide_charts(sync_draft,1)['charts'][0]['reconciliation']['status']=='match'
+    with zipfile.ZipFile(mismatch) as before, zipfile.ZipFile(synced['output']) as after:
+        assert {name for name in before.namelist() if before.read(name)!=after.read(name)} == {chart['chart_part'].lstrip('/')}
+    cli_draft=root/'sync-cli'; session.start(cli_draft,source=mismatch)
+    cli=Path(__file__).with_name('open_office_use.py'); call=subprocess.run([sys.executable,str(cli),'session','sync-slide-chart-cache',str(cli_draft),'--base','0','--part',chart['chart_part'],'--reference',str(changed_reference)],capture_output=True,text=True,check=True)
+    assert json.loads(call.stdout)['updated_points']==1
+    try: session.sync_slide_chart_cache(sync_draft,0,chart['chart_part'],changed_reference)
+    except ValueError as exc: assert 'Revision conflict' in str(exc)
+    else: raise AssertionError('Stale revision accepted')
     def failed_render(_snapshot, _out): raise RuntimeError('render unavailable')
     review=review_bundle.create(mismatch,root/'chart-review',failed_render)
     assert 'slide_chart_cache_mismatch' in review['flags']
@@ -61,6 +74,11 @@ with tempfile.TemporaryDirectory() as tmp:
             dst.writestr(entry,data)
     absent=slide_charts.inspect(missing);assert not absent['complete'] and any(item['reason']=='unsupported_or_missing_cache' for item in absent['issues'])
     assert not absent['charts'][0]['reconciliation']['complete']
+    missing_draft=root/'missing-draft'; session.start(missing_draft,source=missing)
+    try: session.sync_slide_chart_cache(missing_draft,0,chart['chart_part'],changed_reference)
+    except ValueError: pass
+    else: raise AssertionError('Missing cache accepted')
+    assert session.info(missing_draft)['latest_revision']==0
     huge=root/'huge.pptx'
     with zipfile.ZipFile(source) as src, zipfile.ZipFile(huge,'w') as dst:
         for entry in src.infolist():

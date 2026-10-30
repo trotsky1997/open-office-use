@@ -4,9 +4,11 @@ import hashlib
 import json
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
+from lxml import etree
 from openpyxl.styles import Font, Protection
 from docx import Document
 from docx.oxml import OxmlElement
@@ -30,7 +32,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'office_doctor', 'office_schema', 'inspect_file', 'author_file', 'inspect_external_relationships', 'session_inspect_external_relationships', 'session_inspect_workbook', 'search_cells', 'session_search_cells', 'scan_chart_caches', 'session_scan_chart_caches', 'session_sync_chart_cache', 'inspect_slide_layout', 'session_inspect_slide_layout', 'inspect_slide_charts', 'session_inspect_slide_charts', 'inspect_slide_text', 'session_inspect_slide_text', 'search_slide_text', 'session_search_slide_text', 'structured_read', 'dump_office_subtree', 'session_dump_office_subtree', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_replace_text_batch', 'session_track_replace_text', 'session_track_insert_text', 'session_resolve_tracked_runs', 'read_slide_notes', 'session_read_slide_notes', 'compare_slide_notes', 'session_compare_slide_notes', 'session_replace_slide_notes', 'session_replace_slide_notes_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'list_word_tracked_changes', 'session_list_word_tracked_changes', 'list_word_stories', 'search_word_body', 'session_search_word_body', 'search_word_stories', 'session_search_word_stories', 'search_word_notes', 'session_search_word_notes', 'session_list_word_stories', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'session_resize_grid', 'session_freeze_panes', 'session_merge_cells', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'office_doctor', 'office_schema', 'inspect_file', 'author_file', 'inspect_external_relationships', 'session_inspect_external_relationships', 'session_inspect_workbook', 'search_cells', 'session_search_cells', 'scan_chart_caches', 'session_scan_chart_caches', 'session_sync_chart_cache', 'session_sync_slide_chart_cache', 'inspect_slide_layout', 'session_inspect_slide_layout', 'inspect_slide_charts', 'session_inspect_slide_charts', 'inspect_slide_text', 'session_inspect_slide_text', 'search_slide_text', 'session_search_slide_text', 'structured_read', 'dump_office_subtree', 'session_dump_office_subtree', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'review_document_bundle', 'session_review_bundle', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_replace_text_batch', 'session_track_replace_text', 'session_track_insert_text', 'session_resolve_tracked_runs', 'read_slide_notes', 'session_read_slide_notes', 'compare_slide_notes', 'session_compare_slide_notes', 'session_replace_slide_notes', 'session_replace_slide_notes_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'list_word_tracked_changes', 'session_list_word_tracked_changes', 'list_word_stories', 'search_word_body', 'session_search_word_body', 'search_word_stories', 'session_search_word_stories', 'search_word_notes', 'session_search_word_notes', 'session_list_word_stories', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'session_resize_grid', 'session_freeze_panes', 'session_merge_cells', 'scan_formulas'}
                 for suffix, spec, expected in (('docx', {'paragraphs':['MCP authored']}, 'MCP authored'), ('xlsx', {'sheets':{'Data':{'A1':'MCP authored'}}}, 'MCP authored'), ('pptx', {'slides':[{'title':'MCP authored'}]}, 'MCP authored')):
                     path = root / ('authored.' + suffix)
                     authored = await session.call_tool('author_file', {'spec':spec, 'output':str(path)})
@@ -57,6 +59,24 @@ async def main():
                 chart_draft = root/'chart-inventory-draft'; assert not (await session.call_tool('start_session', {'directory':str(chart_draft),'source':str(positioned)})).isError
                 session_inventory = await session.call_tool('session_inspect_slide_charts', {'directory':str(chart_draft),'revision':0})
                 assert not session_inventory.isError and session_inventory.structuredContent['snapshot_sha256'] == chart_inventory.structuredContent['snapshot_sha256'], session_inventory
+                mismatched = root/'mismatched.pptx'
+                with zipfile.ZipFile(positioned) as src, zipfile.ZipFile(mismatched, 'w') as dst:
+                    for entry in src.infolist():
+                        data = src.read(entry.filename)
+                        if entry.filename == 'ppt/charts/chart1.xml':
+                            tree = etree.fromstring(data); ns = {'c':'http://schemas.openxmlformats.org/drawingml/2006/chart'}
+                            tree.xpath('.//c:val/c:numRef/c:numCache/c:pt/c:v', namespaces=ns)[0].text = '999'
+                            data = etree.tostring(tree)
+                        dst.writestr(entry, data)
+                mismatch_draft = root/'mismatch-draft'
+                assert not (await session.call_tool('start_session', {'directory':str(mismatch_draft),'source':str(mismatched)})).isError
+                mismatch_inspect = await session.call_tool('session_inspect_slide_charts', {'directory':str(mismatch_draft),'revision':0})
+                mismatch_chart = mismatch_inspect.structuredContent['charts'][0]
+                ref = next(item['index'] for item in mismatch_chart['reconciliation']['references'] if item['status'] == 'mismatch')
+                repaired = await session.call_tool('session_sync_slide_chart_cache', {'directory':str(mismatch_draft),'base_revision':0,'part':mismatch_chart['chart_part'],'reference':ref})
+                assert not repaired.isError and repaired.structuredContent['updated_points'] == 1, repaired
+                verified = await session.call_tool('session_inspect_slide_charts', {'directory':str(mismatch_draft),'revision':1})
+                assert verified.structuredContent['charts'][0]['reconciliation']['status'] == 'match', verified
                 diagnostics = await session.call_tool('office_doctor', {})
                 assert not diagnostics.isError and diagnostics.structuredContent['capabilities']['mcp_server'] is True, diagnostics
                 word_source = root / 'search.docx'; search_doc = Document(); search_doc.add_paragraph('find needle'); search_doc.save(word_source)

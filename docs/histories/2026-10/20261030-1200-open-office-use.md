@@ -239,3 +239,7 @@ Added snapshot-bound, bounded chart cache inventory through CLI, MCP, revision s
 ### PowerPoint chart workbook reconciliation
 
 Added bounded comparison of chart caches against saved embedded workbook values, with per-chart coverage and review flags. Verified matching and modified workbook values, missing caches and MCP exposure. Formula freshness and chart-data editing remain open.
+
+### PowerPoint chart cache synchronization
+
+Added revision-bound synchronization of existing mismatched chart cache points from embedded workbook values. Verified a modified workbook, cache repair, unchanged package parts, stale revisions and CLI. Formula freshness and embedded workbook editing remain open.
