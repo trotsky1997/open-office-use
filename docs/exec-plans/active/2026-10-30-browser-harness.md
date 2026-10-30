@@ -137,3 +137,4 @@
 - [x] Chrome 下载路径句柄绑定发起等待的会话；Linux ARM64 原生消息双会话实测跨会话查询被拒绝。
 - [x] 下载结果显式报告来源归属范围：tab、browser 或 unknown；macOS/Linux Electron 与 Linux Chromium 实际下载验证。
 - [ ] 研究 Chrome Page.downloadWillBegin GUID 与 downloads 记录 ID 的可靠关联；实测前者提供来源标签和 frame，扩展记录使用独立 ID。
+- [x] Chrome 对外下载句柄使用随机 UUID，扩展内部映射原生数字 ID 和所属会话；Linux ARM64 原生消息实测。

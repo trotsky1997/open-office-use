@@ -538,3 +538,5 @@ Chrome 停止向所有连接广播无来源标签归属的下载变化与路径�
 Chrome 下载等待返回的句柄绑定发起会话；其他会话和未知 ID 无法查询路径，会话结束并移除时清理句柄。扩展 39 项检查通过；Linux ARM64 Chromium 原生消息双会话实测下载完成前后拒绝另一会话查询，发起会话获取并验证文件内容。句柄保存在扩展内存，Chrome 等待仍可能匹配其他标签的下一个下载；Windows 未测。
 
 下载结果新增 attribution：Electron 返回 tab，Chrome 返回 browser，未声明的后端返回 unknown。SDK 106 项、Electron 58 项、Chrome 扩展 39 项检查通过；macOS 和 Linux ARM64 Electron 实际下载返回 tab，Linux ARM64 Chromium 原生消息下载返回 browser。Chromium 150 实测 Page.downloadWillBegin 提供来源标签、frame 和 GUID；扩展下载记录使用独立 ID，仍需可靠关联。Windows 未测。
+
+Chrome 对外下载句柄改为随机 UUID，扩展内保存句柄与原生数字 ID、发起会话的映射；路径查询复核句柄及所属会话。扩展 39 项检查通过；Linux ARM64 Chromium 原生消息双会话实测句柄格式、跨会话拒绝及实际文件内容。Chromium 扩展下载 API 的公开类型没有 GUID，Page 调试事件的 GUID 与原生数字 ID 仍待可靠关联；Windows 未测。

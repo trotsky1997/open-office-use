@@ -34,9 +34,9 @@ test('download wait observes the next start while paths retain completed results
   backend.emitDownloadChange({id:'old',status:'in_progress',filename:'/tmp/old'});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
   backend.emitDownloadChange({id:'new',status:'started',filename:'/tmp/new',url:'https://example.test/file'});
-  const download=await pending;assert.equal(download.downloadId,'new');assert.equal(download.url,'https://example.test/file');assert.equal(download.attribution,'browser');
+  const download=await pending;assert.notEqual(download.downloadId,'new');assert.match(download.downloadId,/^[0-9a-f-]{36}$/);assert.equal(download.url,'https://example.test/file');assert.equal(download.attribution,'browser');
   backend.emitDownloadChange({id:'new',status:'complete',filename:'/tmp/new'});
-  assert.equal((await backend.downloadPath({session_id:'owner',downloadId:'new'})).path,'/tmp/new');
+  assert.equal((await backend.downloadPath({session_id:'owner',downloadId:download.downloadId})).path,'/tmp/new');
   await assert.rejects(backend.waitForDownload({tabId:1,timeoutMs:10}),/Timed out/);
   assert.equal(backend.downloadWaiters.size,0);
 });
@@ -46,7 +46,7 @@ test('download readiness is emitted only after the waiter is installed',async()=
   let observed=false;backend.downloadReadyListeners.add((id,session)=>{observed=true;assert.equal(session,'owner');assert.equal(id,'00000000-0000-0000-0000-000000000000');assert.equal(backend.downloadWaiters.size,1);});
   const pending=backend.waitForDownload({session_id:'owner',tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(observed,true);
-  backend.emitDownloadChange({id:'ready',status:'started'});assert.equal((await pending).downloadId,'ready');
+  backend.emitDownloadChange({id:'ready',status:'started'});assert.equal(backend.downloadHandles.get((await pending).downloadId).nativeId,'ready');
 });
 
 test('clipboard evaluation exposes a bounded permission error',async()=>{
@@ -61,11 +61,11 @@ test('only one Chrome download start wait may be active',async()=>{
   const first=backend.waitForDownload({tabId:1,timeoutMs:1000});
   await new Promise(resolve=>setImmediate(resolve));
   await assert.rejects(backend.waitForDownload({tabId:2,timeoutMs:1000}),/Already waiting/);
-  backend.emitDownloadChange({id:'first',status:'started'});assert.equal((await first).downloadId,'first');
+  backend.emitDownloadChange({id:'first',status:'started'});assert.equal(backend.downloadHandles.get((await first).downloadId).nativeId,'first');
   await assert.rejects(backend.waitForDownload({tabId:2,timeoutMs:10}),/Timed out/);
   const next=backend.waitForDownload({tabId:2,timeoutMs:1000});
   await new Promise(resolve=>setImmediate(resolve));
-  backend.emitDownloadChange({id:'next',status:'started'});assert.equal((await next).downloadId,'next');
+  backend.emitDownloadChange({id:'next',status:'started'});assert.equal(backend.downloadHandles.get((await next).downloadId).nativeId,'next');
 });
 
 test('ending the owning session cancels its pending download wait',async()=>{
@@ -80,7 +80,7 @@ test('ending the owning session cancels its pending download wait',async()=>{
   assert.equal(backend.downloadWaiters.size,0);assert.equal(backend.downloadStartWait,null);
   const next=backend.waitForDownload({session_id:'other',tabId:2,timeoutMs:1000});
   await new Promise(resolve=>setImmediate(resolve));backend.emitDownloadChange({id:'next',status:'started'});
-  assert.equal((await next).downloadId,'next');
+  assert.equal(backend.downloadHandles.get((await next).downloadId).nativeId,'next');
 });
 
 test('session cleanup also cancels a download wait during tab validation',async()=>{
@@ -189,7 +189,7 @@ test('cancelled waits release download slots and file chooser interception',asyn
 
 test('cancelled download path releases its completion listener',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSession=async()=>({});
-  backend.downloadOwnersById.set('pending','owner');const controller=new AbortController();const pending=backend.downloadPath({session_id:'owner',downloadId:'pending',timeoutMs:5000},controller.signal);
+  backend.downloadHandles.set('pending',{sessionId:'owner',nativeId:'native-pending'});const controller=new AbortController();const pending=backend.downloadPath({session_id:'owner',downloadId:'pending',timeoutMs:5000},controller.signal);
   await new Promise(resolve=>setImmediate(resolve));assert.equal(backend.downloadWaiters.size,1);controller.abort();
   await assert.rejects(pending,/canceled/);assert.equal(backend.downloadWaiters.size,0);
 });
@@ -205,9 +205,9 @@ test('debugger attachment records the owning session and clears it on detach',as
 test('download paths are restricted to the waiting session',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.requireSession=async params=>({sessionId:params.session_id});
   const pending=backend.waitForDownload({session_id:'owner',tabId:1,timeoutMs:1000});await new Promise(resolve=>setImmediate(resolve));
-  backend.emitDownloadChange({id:'owned',status:'started',url:'https://example.test/file'});await pending;
-  await assert.rejects(backend.downloadPath({session_id:'other',downloadId:'owned'}),/unavailable/);
+  backend.emitDownloadChange({id:'owned',status:'started',url:'https://example.test/file'});const handle=(await pending).downloadId;assert.notEqual(handle,'owned');
+  await assert.rejects(backend.downloadPath({session_id:'other',downloadId:handle}),/unavailable/);
   await assert.rejects(backend.downloadPath({session_id:'other',downloadId:'unknown'}),/unavailable/);
   backend.emitDownloadChange({id:'owned',status:'complete',filename:'/private/file'});
-  assert.equal((await backend.downloadPath({session_id:'owner',downloadId:'owned'})).path,'/private/file');
+  assert.equal((await backend.downloadPath({session_id:'owner',downloadId:handle})).path,'/private/file');
 });

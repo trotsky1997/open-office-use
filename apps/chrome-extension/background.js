@@ -323,7 +323,7 @@ class BrowserBackend {
     this.downloadFilenamesById = new Map();
     this.downloadUrlsById = new Map();
     this.downloadsById = new Map();
-    this.downloadOwnersById = new Map();
+    this.downloadHandles = new Map();
     this.downloadWaiters = new Set();
     this.downloadStartWait = null;
     this.downloadReadyListeners = new Set();
@@ -574,7 +574,7 @@ class BrowserBackend {
       await this.store.save();
     } else {
       this.activeTabsBySession.delete(session.sessionId);
-      for (const [id, owner] of this.downloadOwnersById) if (owner === session.sessionId) this.downloadOwnersById.delete(id);
+      for (const [id, handle] of this.downloadHandles) if (handle.sessionId === session.sessionId) this.downloadHandles.delete(id);
       await this.store.removeSession(session.sessionId);
     }
   }
@@ -831,8 +831,9 @@ class BrowserBackend {
       if (params.waitId) for (const listener of this.downloadReadyListeners) listener(params.waitId, params.session_id);
       const download = await waiting;
       if (wait.controller.signal.aborted) throw new Error("Download wait canceled");
-      this.downloadOwnersById.set(download.id, params.session_id);
-      return { downloadId: download.id, url: download.url || null, attribution: "browser" };
+      const downloadId = crypto.randomUUID();
+      this.downloadHandles.set(downloadId, {sessionId:params.session_id, nativeId:download.id});
+      return { downloadId, url: download.url || null, attribution: "browser" };
     } finally {
       signal?.removeEventListener("abort", abort);
       if (this.downloadStartWait === wait) this.downloadStartWait = null;
@@ -845,11 +846,12 @@ class BrowserBackend {
     if (typeof params.downloadId !== "string" || params.downloadId === "") {
       throw new Error("downloadPath requires downloadId");
     }
+    const handle = this.downloadHandles.get(params.downloadId);
     const checkOwner = () => {
-      if (!this.downloadOwnersById.has(params.downloadId) || this.downloadOwnersById.get(params.downloadId) !== params.session_id) throw new Error("Download is unavailable in this session");
+      if (!handle || handle.sessionId !== params.session_id || this.downloadHandles.get(params.downloadId) !== handle) throw new Error("Download is unavailable in this session");
     };
     checkOwner();
-    const current = this.downloadsById.get(params.downloadId);
+    const current = this.downloadsById.get(handle.nativeId);
     if (current?.status === "complete") {
       return { path: current.filename ?? null };
     }
@@ -862,7 +864,7 @@ class BrowserBackend {
         : DEFAULT_CDP_TIMEOUT_MS;
     const download = await this.waitForDownloadChange(
       (change) =>
-        change.id === params.downloadId &&
+        change.id === handle.nativeId &&
         (change.status === "complete" || change.status === "failed" || change.status === "canceled"),
       timeoutMs,
       `Timed out waiting for download ${params.downloadId}.`,
