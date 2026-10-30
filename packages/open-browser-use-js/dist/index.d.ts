@@ -384,7 +384,13 @@ export declare class OpenBrowserUseTab {
         y: number;
     }>, modifiers?: number): Promise<void>;
     drag(from: [number, number], to: [number, number]): Promise<void>;
-    scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers?: number, expectedGeneration?: number): Promise<void>;
+    scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers?: number, expectedGeneration?: number, frame?: {
+        sessionId: string;
+        inputPoint: {
+            x: number;
+            y: number;
+        };
+    }): Promise<void>;
     private parseKey;
     pressKey(key: string): Promise<void>;
     typeAtFocus(text: string): Promise<void>;

@@ -315,3 +315,5 @@ Electron WebMCP opt-in scope 为标准 adapter 的标签和 popup 配置 sandbox
 Electron WebMCP 增加独立可复跑 smoke；pnpm pack 确认分发包含 preload，macOS ARM64 对解包产物本机重建原生 addon 后验证主页面与 popup 初始化、发现和调用，Linux ARM64 使用既有原生 addon 验证相同解包产物。Electron 51 项检查通过。macOS 完整 upload smoke 两次在首个 CUA move 返回 IAB_INPUT_OUTCOME_UNKNOWN，鼠标输入结果和原因仍待排查；Windows 未测。
 
 Electron 鼠标准备与滚轮现在同时检查宿主窗口状态和 WebFrameMain.visibilityState；macOS 窗口可见但主 frame 隐藏时临时解除后台节流并恢复。Electron 52 项通过；Linux ARM64 Electron 44/Xvfb 完整 smoke 通过；macOS ARM64 Electron 44 完整 smoke 越过原先首次 CUA move 超时，并完成后续多项交互，最终在跨进程 frame 内 DOM 滚动未发生位移处失败。后台快照可返回 visibility_incomplete，测试按标记处理；macOS 跨 frame 滚动仍待排查，Windows 未测。
+
+DOM CUA 跨进程 frame 的节点滚动沿 frame 会话派发可信滚轮，沿用点击的坐标换算和主视口校验；滚轮后等待子 frame 绘制，后台绘制受限时最多等待一秒。SDK 70 项通过；macOS Electron 44 和 Linux ARM64 Electron 44 的完整 socket 场景通过，覆盖跨进程 frame 的实际滚动；Linux ARM64 Chromium 原生扩展回归通过。Windows 未测，绘制等待超时后仍需由调用方观察实际滚动结果。

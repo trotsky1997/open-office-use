@@ -1107,11 +1107,16 @@ export class OpenBrowserUseTab {
     return clip;
   }
   /** @internal */
-  async domFramePoint(snapshot:CssSnapshot,point:{x:number;y:number}):Promise<{x:number;y:number}> {
+  async domFramePoint(snapshot:CssSnapshot,point:{x:number;y:number}):Promise<{point:{x:number;y:number};inputPoint:{x:number;y:number}}> {
     if (!snapshot.frame) throw new RetryablePreflightError("Frame is unavailable; observe again");
-    const chain=frameAncestry(snapshot.frame,snapshot.frames);
-    for(let i=0;i<chain.length;i++) point=await this.framePoint(chain[i].id,point.x,point.y,chain[i+1]?.sessionId);
-    await this.validateFrames(chain);return point;
+    const chain=frameAncestry(snapshot.frame,snapshot.frames), sessionId=snapshot.frame.sessionId;
+    let inputPoint=point;
+    for(let i=0;i<chain.length;i++) {
+      const ownerSession=chain[i+1]?.sessionId;
+      point=await this.framePoint(chain[i].id,point.x,point.y,ownerSession);
+      if(ownerSession===sessionId) inputPoint=point;
+    }
+    await this.validateFrames(chain);return {point,inputPoint};
   }
 
   private async cssFrameVisible(frame: FrameInfo, frames: FrameInfo[], viewport = false): Promise<boolean> {
@@ -1779,18 +1784,20 @@ export class OpenBrowserUseTab {
     }
   }
 
-  async scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers = 0, expectedGeneration?:number): Promise<void> {
+  async scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers = 0, expectedGeneration?:number, frame?:{sessionId:string;inputPoint:{x:number;y:number}}): Promise<void> {
     this.#observation = undefined;
     if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) throw new Error("Scroll deltas must be finite numbers");
     if (!Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15) throw new Error("Invalid mouse modifiers");
     await this.checkPoint(x, y);
-    const options=expectedGeneration === undefined ? {} : {expectedGeneration};
+    const options={...(expectedGeneration === undefined ? {} : {expectedGeneration}),...(frame ? {sessionId:frame.sessionId,visualPoint:{x,y}} : {})};
+    if(frame) ({x,y}=frame.inputPoint);
     await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers },options);
-    if (modifiers) {
+    if (modifiers || frame) {
       try { await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseWheel",x,y,deltaX,deltaY,modifiers},options); }
       catch (error) { if (error instanceof Error && /Timed out after \d+ms waiting for CDP command/.test(error.message)) throw new Error("Wheel outcome unknown after timeout; inspect the page before retrying",{cause:error}); throw error; }
     }
     else await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true },options);
+    if (frame) await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression:"Promise.race([new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))),new Promise(r=>setTimeout(r,1000))])",awaitPromise:true},{sessionId:frame.sessionId,...(expectedGeneration === undefined ? {} : {expectedGeneration})});
   }
 
   private parseKey(key: string) {
@@ -2407,7 +2414,7 @@ export class OpenBrowserUseTabDomCUA {
   async scroll(options:{node_id?:string;x:number;y:number}):Promise<void> {
     const target=options.node_id!==undefined ? this.target(options.node_id) : undefined, finish=this.beginAction();
     try {
-    let point:{x:number;y:number};
+    let point:{x:number;y:number}, frame:{sessionId:string;inputPoint:{x:number;y:number}}|undefined;
     if(options.node_id!==undefined) {
       const {snapshot,id,identity}=target!;if(!snapshot.frame || !await this.tab.domFrameInViewport(snapshot.frame,snapshot.frames))throw new RetryablePreflightError('DOM frame is outside the viewport; observe again');if(await this.tab.readCss(snapshot,id,'visible')!==true)throw new RetryablePreflightError('DOM target is hidden; observe again');
       const world=await this.tab.browser.cdp.call(this.tab.id,'Page.createIsolatedWorld',{frameId:snapshot.frame!.id,worldName:'open-browser-use-selector'},{sessionId:snapshot.frame?.sessionId});
@@ -2419,14 +2426,14 @@ export class OpenBrowserUseTabDomCUA {
         const result=await this.tab.browser.cdp.call(this.tab.id,'Runtime.callFunctionOn',{objectId,returnByValue:true,arguments:[{value:identity}],functionDeclaration:`function(expected){if(!this.isConnected)return null;const actual=(${domIdentityFunction}).call(this);if(!actual || Object.keys(expected).some(key=>actual[key]!==expected[key]))return null;const r=this.getBoundingClientRect(),x=(Math.max(0,r.left)+Math.min(innerWidth,r.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;let target=this,root=target.getRootNode();while(true){const hit=root.elementFromPoint(x,y);if(!hit || (hit!==target && !target.contains(hit)))return null;if(!(root instanceof ShadowRoot))return {x,y};target=root.host;root=target.getRootNode()}}`},{sessionId:snapshot.frame?.sessionId});
         const value=isObject(result) && isObject(result.result) ? result.result.value : null;
         if(!isObject(value) || typeof value.x!=='number' || typeof value.y!=='number')throw new RetryablePreflightError('DOM target changed; observe again');
-        point=await this.tab.domFramePoint(snapshot,{x:value.x,y:value.y});await this.tab.readCss(snapshot,id,'visible');
+        const mapped=await this.tab.domFramePoint(snapshot,{x:value.x,y:value.y});point=mapped.point;if(snapshot.frame.sessionId)frame={sessionId:snapshot.frame.sessionId,inputPoint:mapped.inputPoint};await this.tab.readCss(snapshot,id,'visible');
       } finally {await this.tab.browser.cdp.call(this.tab.id,'Runtime.releaseObject',{objectId},{sessionId:snapshot.frame?.sessionId}).catch(()=>{});}
     } else {
       const metrics=await this.tab.browser.cdp.call(this.tab.id,'Page.getLayoutMetrics');const viewport=isObject(metrics) && isObject(metrics.cssVisualViewport) ? metrics.cssVisualViewport : null;
       if(!viewport || typeof viewport.clientWidth!=='number' || typeof viewport.clientHeight!=='number')throw new Error('Browser viewport is unavailable');point={x:viewport.clientWidth/2,y:viewport.clientHeight/2};
     }
     if(target && this.tab.browser.client.connectionGeneration!==this.connectionGeneration)throw new RetryablePreflightError('Connection changed; observe again');
-    await this.tab.scrollAt(point.x,point.y,options.x,options.y,0,target ? this.connectionGeneration : undefined);
+    await this.tab.scrollAt(point.x,point.y,options.x,options.y,0,target ? this.connectionGeneration : undefined,frame);
     } finally {finish();}
   }
 }
