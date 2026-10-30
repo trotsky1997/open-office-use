@@ -95,6 +95,14 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="slide-navigation-remove" disabled>Remove slide jump</button>
 <p>Use a listed path or a candidate from the selected page. Existing external or complex click actions need separate review.</p>
 <p id="slide-navigation-status" role="status"></p></details>
+<details id="slide-chart-axis-panel" hidden><summary>Slide chart axes</summary>
+<p>Inspect saved numeric axes and set both bounds; leave a bound empty for automatic scaling. A shared chart part changes every placement that uses it. Review the rendered slide for clipping.</p>
+<button type="button" id="slide-chart-axis-load">Inspect displayed revision</button>
+<label>Chart and value axis <select id="slide-chart-axis-select" disabled><option value="">Select an axis</option></select></label>
+<label>Minimum <input id="slide-chart-axis-min" type="number" step="any" disabled placeholder="Automatic"></label>
+<label>Maximum <input id="slide-chart-axis-max" type="number" step="any" disabled placeholder="Automatic"></label>
+<button type="button" id="slide-chart-axis-save" disabled>Save bounds as new revision</button>
+<p id="slide-chart-axis-status" role="status"></p></details>
 <details id="notes-panel" hidden><summary>Slide speaker notes</summary><form id="notes-form">
 <p>Choose a slide by presentation order, including hidden slides. Saving replaces all notes text and resets its formatting.</p>
 <label>Slide number <input id="notes-slide" type="number" min="1" step="1" value="1" required></label>
@@ -205,6 +213,7 @@ let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparison
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
 let slideOrderLoaded=null, slideOrderBusy=false, slideNavigationLoaded=null, slideNavigationBusy=false, slideNavigationPathHash=null;
+let slideAxisLoaded=null, slideAxisSelection=null, slideAxisBusy=false;
 let trackedEpoch=0, trackedRevision=null, trackedHash=null, trackedBusy=false, slideTextRevision=null, slideTextEpoch=0;
 function clearTextSearch() {
  textSearchEpoch++; textSearchState=null; document.getElementById('text-search-next').disabled=true;
@@ -337,9 +346,10 @@ function lockGridInputs(inputs, locked) {
 function elementDirty() {
  return editBaseline !== null && (document.getElementById('edit-value').value !== editBaseline.value || document.getElementById('edit-mode').value !== editBaseline.mode);
 }
+function slideAxisDirty() { return !!slideAxisSelection && (document.getElementById('slide-chart-axis-min').value!==slideAxisSelection.min || document.getElementById('slide-chart-axis-max').value!==slideAxisSelection.max); }
 function notesDirty() { return notesBaseline!==null && document.getElementById('notes-text').value!==notesBaseline; }
 window.addEventListener('beforeunload', event => {
- if (gridDirty() || elementDirty() || notesDirty()) { event.preventDefault(); event.returnValue=''; }
+ if (gridDirty() || elementDirty() || notesDirty() || slideAxisDirty()) { event.preventDefault(); event.returnValue=''; }
 });
 document.getElementById('formula-scan').addEventListener('click', async () => {
  if (scanBusy || calcBusy || pinned!==null || current<0) return;
@@ -1157,6 +1167,52 @@ async function loadNotes(requestedSlide=null) {
  }
  finally { notesBusy=false; button.disabled=false; }
 }
+document.getElementById('slide-chart-axis-load').addEventListener('click', async () => {
+ const status=document.getElementById('slide-chart-axis-status');
+ if (slideAxisBusy || displayed<0) return;
+ if (slideAxisDirty() && !window.confirm('Discard unsaved axis bounds and inspect again?')) return;
+ const revision=displayed, hash=displayedHash; slideAxisBusy=true; document.getElementById('slide-chart-axis-save').disabled=true;
+ try {
+  const response=await fetch('slide-chart-axis-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not inspect charts');
+  if (displayed!==revision || displayedHash!==hash || result.snapshot_sha256!==hash) throw new Error('Preview changed; inspect again');
+  const entries=[]; for (const chart of result.charts) if (chart.axis_inventory?.complete) for (const axis of chart.axis_inventory.axes) if (axis.type==='valAx') entries.push({chart,axis});
+  const select=document.getElementById('slide-chart-axis-select'); select.replaceChildren(new Option('Select an axis',''),...entries.map((entry,index)=>new Option(`${entry.chart.path} · axis ${entry.axis.id} (${entry.axis.position})`,String(index))));
+  slideAxisLoaded={revision,hash,entries,complete:result.complete}; slideAxisSelection=null; select.disabled=false;
+  for (const id of ['slide-chart-axis-min','slide-chart-axis-max']) { const input=document.getElementById(id); input.value=''; input.disabled=true; }
+  status.textContent=`Revision ${revision}: ${entries.length} value axis(es).${result.complete ? '' : ' Chart inspection incomplete; shared placements may be missing.'}`;
+ } catch(error) { slideAxisLoaded=null; status.textContent=`Chart inspection error: ${error.message}`; }
+ finally { slideAxisBusy=false; }
+});
+document.getElementById('slide-chart-axis-select').addEventListener('change', event => {
+ const select=event.target, previous=slideAxisSelection;
+ if (slideAxisDirty() && !window.confirm('Discard unsaved axis bounds?')) { select.value=previous.index; return; }
+ const entry=slideAxisLoaded?.entries[Number(select.value)];
+ if (select.value==='' || !entry) { slideAxisSelection=null; document.getElementById('slide-chart-axis-save').disabled=true; for (const id of ['slide-chart-axis-min','slide-chart-axis-max']) { document.getElementById(id).value=''; document.getElementById(id).disabled=true; } return; }
+ const min=entry.axis.minimum===null ? '' : String(entry.axis.minimum), max=entry.axis.maximum===null ? '' : String(entry.axis.maximum);
+ slideAxisSelection={index:select.value,entry,min,max};
+ for (const [id,value] of [['slide-chart-axis-min',min],['slide-chart-axis-max',max]]) { const input=document.getElementById(id); input.value=value; input.disabled=false; }
+ const ready=slideAxisLoaded.revision===current && slideAxisLoaded.revision===displayed && slideAxisLoaded.hash===displayedHash && pinned===null && !comparing;
+ document.getElementById('slide-chart-axis-save').disabled=!ready;
+ const shared=slideAxisLoaded.entries.filter(item=>item.chart.chart_part===entry.chart.chart_part && item.axis.id===entry.axis.id).length;
+ document.getElementById('slide-chart-axis-status').textContent=`${shared} inspected placement(s) share this axis.${slideAxisLoaded.complete ? '' : ' Inspection incomplete; additional placements may exist.'}${ready ? '' : ' Read-only revision.'}`;
+});
+document.getElementById('slide-chart-axis-save').addEventListener('click', async () => {
+ const target=slideAxisLoaded, selection=slideAxisSelection, status=document.getElementById('slide-chart-axis-status');
+ if (slideAxisBusy || !target || !selection || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { status.textContent='Revision changed; inspect charts again.'; return; }
+ if (gridBusy || editBusy || notesBusy || slideOrderBusy || gridDirty() || elementDirty() || notesDirty() || (slideOrderLoaded && document.getElementById('slide-order-input').value!==slideOrderLoaded.initial)) { status.textContent='Save or copy pending edits before changing chart axes.'; return; }
+ const low=document.getElementById('slide-chart-axis-min'), high=document.getElementById('slide-chart-axis-max');
+ if (!low.validity.valid || !high.validity.valid) { status.textContent='Enter valid numeric bounds or leave them empty.'; return; }
+ const minimum=low.value==='' ? null : Number(low.value), maximum=high.value==='' ? null : Number(high.value);
+ if ((minimum!==null && !Number.isFinite(minimum)) || (maximum!==null && !Number.isFinite(maximum)) || (minimum!==null && maximum!==null && minimum>=maximum)) { status.textContent='Enter finite bounds with minimum below maximum.'; return; }
+ slideAxisBusy=true; document.getElementById('slide-chart-axis-save').disabled=true;
+ try {
+  const response=await fetch('slide-chart-axis-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,snapshot_sha256:target.hash,part:selection.entry.chart.chart_part,axis_id:selection.entry.axis.id,minimum,maximum})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not update axis');
+  slideAxisLoaded=null; slideAxisSelection=null; status.textContent=`Saved revision ${result.revision}; inspect it to continue.`; await refresh();
+ } catch(error) { status.textContent=`Axis edit error: ${error.message}`; if (target.revision===current && target.revision===displayed && target.hash===displayedHash && pinned===null && !comparing) document.getElementById('slide-chart-axis-save').disabled=false; }
+ finally { slideAxisBusy=false; }
+});
 document.getElementById('slide-navigation-load').addEventListener('click', async () => {
  if (slideNavigationBusy || displayed<0) return;
  const revision=displayed, hash=displayedHash, status=document.getElementById('slide-navigation-status');
@@ -1187,7 +1243,7 @@ async function changeSlideNavigation(remove) {
  const target=slideNavigationLoaded, status=document.getElementById('slide-navigation-status');
  if (slideNavigationBusy || !target || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { document.getElementById('slide-navigation-set').disabled=true; document.getElementById('slide-navigation-remove').disabled=true; status.textContent='Revision changed; inspect actions again.'; return; }
  if (slideNavigationPathHash!==target.hash) { status.textContent='Choose or enter a shape path for this inspected revision.'; return; }
- if (gridBusy || editBusy || notesBusy || slideOrderBusy || gridDirty() || elementDirty() || notesDirty() || (slideOrderLoaded && document.getElementById('slide-order-input').value!==slideOrderLoaded.initial)) { status.textContent='Save or copy pending edits before changing navigation.'; return; }
+ if (gridBusy || editBusy || notesBusy || slideOrderBusy || gridDirty() || elementDirty() || notesDirty() || slideAxisDirty() || (slideOrderLoaded && document.getElementById('slide-order-input').value!==slideOrderLoaded.initial)) { status.textContent='Save or copy pending edits before changing navigation.'; return; }
  const path=document.getElementById('slide-navigation-path').value.trim(), value=document.getElementById('slide-navigation-target').value;
  const number=Number(value); if (!path || (!remove && (!value || !Number.isSafeInteger(number) || number<1 || number>target.count))) { status.textContent='Enter a shape path and a valid target slide.'; return; }
  slideNavigationBusy=true; document.getElementById('slide-navigation-set').disabled=true; document.getElementById('slide-navigation-remove').disabled=true;
@@ -1221,6 +1277,7 @@ document.getElementById('slide-order-load').addEventListener('click', async () =
 document.getElementById('slide-order-form').addEventListener('submit', async event => {
  event.preventDefault(); const target=slideOrderLoaded, status=document.getElementById('slide-order-status');
  if (slideOrderBusy || !target || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { document.getElementById('slide-order-save').disabled=true; status.textContent='Revision changed; load the slide list again.'; return; }
+ if (slideAxisDirty()) { status.textContent='Save or copy pending chart axis edits first.'; return; }
  const raw=document.getElementById('slide-order-input').value.split(',').map(value=>value.trim());
  if (raw.length!==target.count || raw.some(value=>!/^[0-9]+$/.test(value))) { status.textContent='Enter every slide number once, separated by commas.'; return; }
  const order=raw.map(Number); if (new Set(order).size!==target.count || order.some(value=>!Number.isSafeInteger(value) || value<1 || value>target.count)) { status.textContent='Enter every slide number once, separated by commas.'; return; }
@@ -1268,6 +1325,7 @@ function showRenderAdvisory(items) {
 }
 function display(state, live) {
  displayedHash=state.snapshot_sha256;
+ if (slideAxisLoaded && (slideAxisLoaded.revision!==state.revision || slideAxisLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('slide-chart-axis-save').disabled=true;
  if (slideNavigationLoaded && (slideNavigationLoaded.revision!==state.revision || slideNavigationLoaded.hash!==state.snapshot_sha256 || !live)) { slideNavigationPathHash=null; document.getElementById('slide-navigation-set').disabled=true; document.getElementById('slide-navigation-remove').disabled=true; }
  if (slideOrderLoaded && (slideOrderLoaded.revision!==state.revision || slideOrderLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('slide-order-save').disabled=true;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory]]);
@@ -1305,7 +1363,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
- displayedHash=null;
+ displayedHash=null; document.getElementById('slide-chart-axis-save').disabled=true;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory],[`Revision ${state.latest_revision}`,state.latest_render_advisory]]);
  clearChartCacheFor(state.revision);
  document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
@@ -1446,6 +1504,7 @@ async function refresh() {
   document.getElementById('stories-panel').hidden=state.format !== 'docx';
   document.getElementById('slide-order-panel').hidden=state.format !== 'pptx';
   document.getElementById('slide-navigation-panel').hidden=state.format !== 'pptx';
+  document.getElementById('slide-chart-axis-panel').hidden=state.format !== 'pptx';
   document.getElementById('notes-panel').hidden=state.format !== 'pptx';
   document.getElementById('notes-comparison').hidden=state.format !== 'pptx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
@@ -1522,7 +1581,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/grid-link', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/slide-navigation-read', '/' + token + '/slide-navigation-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/grid-link', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/slide-chart-axis-read', '/' + token + '/slide-chart-axis-save', '/' + token + '/slide-navigation-read', '/' + token + '/slide-navigation-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1566,6 +1625,15 @@ def serve(directory, preview, port=0, render=None):
                             if payload['after'] != session.info(directory)['latest_revision']:
                                 raise ValueError('Latest revision changed; compare again')
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
+                    if route.endswith('/slide-chart-axis-read'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Slide chart inspection requires revision')
+                        saved = session.inspect_slide_charts(directory, payload['revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
+                    if route.endswith('/slide-chart-axis-save'):
+                        if not isinstance(payload, dict) or set(payload) != {'base_revision', 'snapshot_sha256', 'part', 'axis_id', 'minimum', 'maximum'} or not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Chart axis edit requires a valid revision, snapshot, chart, axis and bounds')
+                        with lock:
+                            saved = session.set_slide_chart_axis_bounds(directory, payload['base_revision'], payload['part'], payload['axis_id'], payload['minimum'], payload['maximum'], expected_sha256=payload['snapshot_sha256'])
+                        self.send(200, json.dumps(saved).encode(), 'application/json'); return
                     if route.endswith('/slide-navigation-read'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Slide navigation inspection requires revision')
                         saved = session.inspect_slide_navigation(directory, payload['revision'])

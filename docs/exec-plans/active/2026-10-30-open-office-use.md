@@ -336,3 +336,5 @@ PowerPoint column, bar and line charts support explicit minimum and maximum nume
 PowerPoint chart inventory reports saved axis positions, explicit bounds, orientation and logarithmic base with per-inventory coverage and malformed-structure issues. Automatic rendered bounds depend on the application.
 
 Existing PowerPoint value-axis bounds can be set or cleared through snapshot-bound CLI/MCP session revisions. Shared chart parts report affected inspected paths; incomplete inventory is flagged. Native PowerPoint remains unverified.
+
+The preview viewer now inspects and edits value-axis bounds for displayed slide charts with snapshot and revision checks, shared-placement warnings and automatic-bound controls. Browser interaction and route rejection checks passed.

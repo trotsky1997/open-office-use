@@ -13,7 +13,7 @@ import session
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root/'deck.pptx'; draft = root/'draft'
-    open_office_use.author({'slides':[{'title':'One'}, {'title':'Two'}]}, source)
+    open_office_use.author({'slides':[{'title':'One','elements':[{'type':'chart','chart_type':'column','x':1,'y':2,'width':5,'height':3,'categories':['Q1','Q2'],'series':[{'name':'Revenue','values':[100,120]}],'value_axis_min':0,'value_axis_max':150}]}, {'title':'Two'}]}, source)
     linked_deck = Presentation(source); linked_deck.slides[0].shapes.title.text_frame.paragraphs[0].runs[0].hyperlink.address = 'https://example.com/source'; linked_deck.save(source)
     session.start(draft, source=source)
     server = subprocess.Popen([sys.executable, str(Path(open_office_use.__file__)), 'watch', str(draft)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -54,6 +54,16 @@ with tempfile.TemporaryDirectory() as tmp:
         assert run_saved['revision'] == 4 and next(item for item in run_actions['actions'] if item['path'] == run_path)['target_slide'] == 2
         post('slide-navigation-save',{'base_revision':4,'snapshot_sha256':run_actions['snapshot_sha256'],'path':run_path,'target_slide':None})
         assert all(item['path'] != run_path for item in post('slide-navigation-read',{'revision':5})['actions'])
+        charts = post('slide-chart-axis-read',{'revision':5}); chart = charts['charts'][0]
+        axis = next(item for item in chart['axis_inventory']['axes'] if item['type'] == 'valAx')
+        edit = {'base_revision':5,'snapshot_sha256':charts['snapshot_sha256'],'part':chart['chart_part'],'axis_id':axis['id'],'minimum':None,'maximum':200}
+        for bad, request_origin, code in [(dict(edit,snapshot_sha256='0'*64),origin,400),(dict(edit,minimum=True),origin,400),(edit,'http://evil.test',403)]:
+            try: post('slide-chart-axis-save',bad,request_origin)
+            except urllib.error.HTTPError as exc: assert exc.code == code
+            else: raise AssertionError('Invalid chart axis edit accepted')
+        assert post('slide-chart-axis-save',edit)['revision'] == 6
+        updated_axis = next(item for item in post('slide-chart-axis-read',{'revision':6})['charts'][0]['axis_inventory']['axes'] if item['id'] == axis['id'])
+        assert updated_axis['minimum'] is None and updated_axis['maximum'] == 200
 
     finally:
         server.terminate(); server.wait(timeout=10)

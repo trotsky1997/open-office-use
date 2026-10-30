@@ -52,4 +52,4 @@ To attach an arrow to shape nodes, give each earlier `shape` a unique `id` and u
 
 Slide chart inspection returns `axis_inventory` with saved standard-axis bounds, positions, orientations and log bases. Null bounds are automatic; check `complete` and `issues` and inspect the rendered chart.
 
-Use `session_set_slide_chart_axis_bounds` with an inspected chart part, value-axis ID and snapshot hash to set both explicit bounds in an existing revision; pass null for an automatic bound. Check `affected_paths` and `affected_paths_complete` for shared chart parts, then re-inspect and render.
+Use `session_set_slide_chart_axis_bounds` with an inspected chart part, value-axis ID and snapshot hash to set both explicit bounds in an existing revision; pass null for an automatic bound. Check `affected_paths` and `affected_paths_complete` for shared chart parts, then re-inspect and render. The viewer’s Slide chart axes panel also edits a selected value axis against its displayed snapshot.
