@@ -107,6 +107,8 @@ type CssMatcher = string | {
 type CssTextFilter = {
     hasText?: CssMatcher;
     hasNotText?: CssMatcher;
+    has?: readonly CssStep[];
+    hasNot?: readonly CssStep[];
 };
 type CssStep = {
     selector: string;
@@ -455,6 +457,8 @@ export declare class OpenBrowserUseCssLocator {
     filter(options: {
         hasText?: TextMatcher;
         hasNotText?: TextMatcher;
+        has?: OpenBrowserUseCssLocator;
+        hasNot?: OpenBrowserUseCssLocator;
     }): OpenBrowserUseCssLocator;
     count(): Promise<number>;
     all(): Promise<OpenBrowserUseCssLocator[]>;

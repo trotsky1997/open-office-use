@@ -253,3 +253,5 @@ CSS locator 增加 selectOption，支持原生单选/多选及按值和标签选
 新增 tab.playwright.waitForEvent("filechooser")，等待注册时放行 frame 自动附着与日志初始化命令，其余页面操作等待监听就绪，防止初始化和屏障相互等待。SDK 65 项通过，包含子 frame 附着及输入等待的竞态；Linux ARM64 Chromium 原生消息验证立即点击后设置文件，Electron 44/Xvfb socket 验证主页面及跨进程 frame 文件选择。低层 client 与 SDK 外操作绕过屏障；macOS/Windows 本轮未测。
 
 CSS locator 增加 hasText/hasNotText 筛选，支持字符串及正则、链式作用域和位置选择前后顺序；按规范化 DOM 文本（含开放 shadow root 与隐藏文本）匹配，单个候选文本限制 30000 字符，读取和输入前重新求值。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证正则、排除条件、nth 顺序、shadow root、跨进程 frame 以及作用域文本改变时停止点击；Electron 44/Xvfb socket 验证跨进程筛选。has/hasNot 与语义/CSS 混合链仍待实现；macOS/Windows 本轮未测。
+
+CSS filter 增加 has/hasNot，接受同一 browser、tab 和 frame 的 CSS 定位器，并相对候选元素解析内层链；支持嵌套筛选，输入前重新求值，限制嵌套层数和元素遍历量。SDK 65 项通过；Linux ARM64 Chromium 原生消息验证同标签不同句柄、嵌套条件、位置顺序、跨 frame 拒绝和条件变化后停止点击；Electron 44/Xvfb socket 验证跨进程 frame。语义定位器作为内层条件仍待实现；macOS/Windows 本轮未测。

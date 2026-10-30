@@ -76,7 +76,7 @@ function testIdSelector(testId: string): string {
   return `[data-testid="${Array.from(testId,char=>`\\${char.codePointAt(0)!.toString(16)} `).join("")}"]`;
 }
 type CssMatcher = string | {source:string; flags:string};
-type CssTextFilter = {hasText?:CssMatcher; hasNotText?:CssMatcher};
+type CssTextFilter = {hasText?:CssMatcher; hasNotText?:CssMatcher; has?:readonly CssStep[]; hasNot?:readonly CssStep[]};
 type CssStep = {selector:string; position?:number; before?:readonly CssTextFilter[]; after?:readonly CssTextFilter[]};
 type CssSnapshot = { step:CssStep; scopes:readonly CssStep[]; scopeIds:number[][]; framePath?:readonly string[]; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
@@ -807,19 +807,27 @@ export class OpenBrowserUseTab {
     const contextId = isObject(world) ? world.executionContextId : undefined;
     if (typeof contextId !== "number" || !Number.isSafeInteger(contextId)) throw new RetryablePreflightError("Selector context is unavailable; observe again");
     const expression = `(() => {
-      const steps=${JSON.stringify([...scopes,step])}, output=[]; let roots=[document], total=0;
+      const steps=${JSON.stringify([...scopes,step])}, output=[]; let total=0, visited=0;
+      const guarded=steps.some(step=>[...(step.before || []),...(step.after || [])].some(filter=>filter.has || filter.hasNot));
       const normalize=text=>text.replace(/\\s+/g,' ').trim();
       const textOf=element=>{let text='',stack=[element];while(stack.length){const node=stack.pop();if(node.nodeType===Node.TEXT_NODE){text+=node.nodeValue || '';if(text.length>30000)throw new Error('Filter text exceeds the 30000 character limit');continue;}if(node.nodeType===Node.ELEMENT_NODE && ['SCRIPT','STYLE','NOSCRIPT'].includes(node.tagName))continue;if(node.shadowRoot)stack.push(node.shadowRoot);const children=node.childNodes;for(let j=children.length-1;j>=0;j--)stack.push(children[j]);}return normalize(text);};
-      const apply=(items,filters)=>!filters?.length ? items : items.filter(element=>{const text=textOf(element);const match=pattern=>typeof pattern==='string' ? text.toLowerCase().includes(normalize(pattern).toLowerCase()) : new RegExp(pattern.source,pattern.flags).test(text);return filters.every(filter=>(filter.hasText===undefined || match(filter.hasText)) && (filter.hasNotText===undefined || !match(filter.hasNotText)));});
-      for (let i=0;i<steps.length;i++) {
-        const {selector,position,before,after}=steps[i], found=[], seen=new Set();
-        document.createDocumentFragment().querySelector(selector);
-        const walk=root=>{const matched=new Set(root.querySelectorAll(selector));for(const element of root.querySelectorAll('*')) {if(matched.has(element) && !seen.has(element)){seen.add(element);found.push(element);if(found.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);}};
-        for(const root of roots) { walk(root); if(root instanceof Element && root.shadowRoot)walk(root.shadowRoot); }
-        const filtered=apply(found,before);const selected=apply(position===undefined ? filtered : position===-1 ? filtered.slice(-1) : filtered.slice(position,position+1),after);
-        total+=selected.length;if(total>1000)throw new Error('Selector matched more than 1000 elements');
-        output.push(i,...selected);roots=selected;
-      }
+      const apply=(items,filters)=>!filters?.length ? items : items.filter(element=>filters.every(filter=>{
+        if(filter.hasText!==undefined || filter.hasNotText!==undefined){const text=textOf(element),match=pattern=>typeof pattern==='string' ? text.toLowerCase().includes(normalize(pattern).toLowerCase()) : new RegExp(pattern.source,pattern.flags).test(text);if(filter.hasText!==undefined && !match(filter.hasText))return false;if(filter.hasNotText!==undefined && match(filter.hasNotText))return false;}
+        if(filter.has && !resolve([element],filter.has,false).length)return false;
+        if(filter.hasNot && resolve([element],filter.hasNot,false).length)return false;
+        return true;
+      }));
+      const validate=selectors=>{for(const step of selectors){document.createDocumentFragment().querySelector(step.selector);for(const filter of [...(step.before || []),...(step.after || [])]){if(filter.has)validate(filter.has);if(filter.hasNot)validate(filter.hasNot);}}};
+      validate(steps);
+      const resolve=(initial,selectors,record)=>{let roots=initial;for(let i=0;i<selectors.length;i++) {
+        const {selector,position,before,after}=selectors[i], found=[], seen=new Set();
+        const walk=root=>{const matched=new Set(root.querySelectorAll(selector));for(const element of root.querySelectorAll('*')) {if(guarded && ++visited>100000)throw new Error('Locator filter search exceeds the 100000 element limit');if(matched.has(element) && !seen.has(element)){seen.add(element);found.push(element);if(found.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);}};
+        for(const root of roots) {walk(root);if(root instanceof Element && root.shadowRoot)walk(root.shadowRoot);}
+        const filtered=apply(found,before),selected=apply(position===undefined ? filtered : position===-1 ? filtered.slice(-1) : filtered.slice(position,position+1),after);
+        if(record){total+=selected.length;if(total>1000)throw new Error('Selector matched more than 1000 elements');output.push(i,...selected);}
+        roots=selected;
+      }return roots;};
+      resolve([document],steps,true);
       return output;
     })()`;
     const evaluated = await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression,contextId,returnByValue:false},{sessionId});
@@ -827,6 +835,7 @@ export class OpenBrowserUseTab {
       const details = isObject(evaluated.exceptionDetails) && isObject(evaluated.exceptionDetails.exception) ? evaluated.exceptionDetails.exception.description : undefined;
       if (typeof details === "string" && details.includes("Selector matched more than 1000 elements")) throw new Error("Selector matched more than 1000 elements");
       if (typeof details === "string" && details.includes("Filter text exceeds the 30000 character limit")) throw new Error("Filter text exceeds the 30000 character limit");
+      if (typeof details === "string" && details.includes("Locator filter search exceeds the 100000 element limit")) throw new Error("Locator filter search exceeds the 100000 element limit");
       throw new Error("Invalid CSS selector");
     }
     const arrayId = isObject(evaluated) && isObject(evaluated.result) ? evaluated.result.objectId : undefined;
@@ -2129,11 +2138,21 @@ export class OpenBrowserUseCssLocator {
   }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
   private step(): CssStep { return {selector:this.selector,...(this.position !== undefined ? {position:this.position} : {}),before:this.before,after:this.after}; }
-  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher}): OpenBrowserUseCssLocator {
-    if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key=>!["hasText","hasNotText"].includes(key)) ||
-        (options.hasText === undefined && options.hasNotText === undefined) || [options.hasText,options.hasNotText].some(value=>value !== undefined && (typeof value === "string" ? value.length>30_000 : !types.isRegExp(value)))) throw new Error("Invalid text filter");
+  filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher; has?: OpenBrowserUseCssLocator; hasNot?: OpenBrowserUseCssLocator}): OpenBrowserUseCssLocator {
+    if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key=>!["hasText","hasNotText","has","hasNot"].includes(key)) ||
+        (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined) || [options.hasText,options.hasNotText].some(value=>value !== undefined && (typeof value === "string" ? value.length>30_000 : !types.isRegExp(value)))) throw new Error("Invalid locator filter");
     const encode=(value:TextMatcher):CssMatcher=>typeof value === "string" ? value : {source:value.source,flags:value.flags};
-    const filter:CssTextFilter={...(options.hasText !== undefined ? {hasText:encode(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:encode(options.hasNotText)} : {})};
+    const inner=(value:OpenBrowserUseCssLocator):CssStep[]=>{
+      if (!(value instanceof OpenBrowserUseCssLocator) || (value.tab.browser!==this.tab.browser || value.tab.id!==this.tab.id) || JSON.stringify(value.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Filter locator must belong to the same tab and frame");
+      const steps=[...value.scopes,value.step()];
+      const depth=(items:readonly CssStep[],level:number):void=>{
+        if(level>8)throw new Error("Locator filter nesting exceeds 8 levels");
+        for(const step of items)for(const filter of [...(step.before ?? []),...(step.after ?? [])]) {if(filter.has)depth(filter.has,level+1);if(filter.hasNot)depth(filter.hasNot,level+1);}
+      };
+      depth(steps,2);
+      return steps;
+    };
+    const filter:CssTextFilter={...(options.hasText !== undefined ? {hasText:encode(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:encode(options.hasNotText)} : {}),...(options.has !== undefined ? {has:inner(options.has)} : {}),...(options.hasNot !== undefined ? {hasNot:inner(options.hasNot)} : {})};
     return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter]);
   }
   async count(): Promise<number> { return (await this.tab.queryCss(this.step(),this.framePath,this.scopes)).ids.length; }

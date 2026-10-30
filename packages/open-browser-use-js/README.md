@@ -295,7 +295,11 @@ scope is rechecked along with the final matches before reads and input. CSS loca
 expressions, before or after `first`/`last`/`nth`. Filters use normalized DOM
 text including open shadow roots and hidden text, excluding script, style and
 noscript; they stay within the selected frame. A filtered element's collected
-text is limited to 30,000 characters. Filters are re-evaluated before input. `waitFor`
+text is limited to 30,000 characters. Filters are re-evaluated before input. CSS `filter({has: inner})`
+and `filter({hasNot: inner})` accept CSS locators from the same browser tab and
+frame, evaluated relative to each candidate, including open shadow roots.
+Nested locator filters are limited to eight levels and 100,000 element visits.
+Semantic locators are not yet supported as inner filters. `waitFor`
 supports attached, detached, visible and hidden states. Visibility checks CSS
 visibility and nonzero element and frame bounds; it does not test occlusion.
 
