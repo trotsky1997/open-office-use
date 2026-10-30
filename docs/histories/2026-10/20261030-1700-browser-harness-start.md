@@ -473,3 +473,5 @@ CSS 与语义定位器新增 focus：聚焦前后复核目标、frame 和焦点�
 语义定位器 focus 的目标解析和焦点链路的 iframe 宿主检查改用隔离 world；后者也供当前焦点按键及文本路由使用。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展实测通过，覆盖页面篡改 isConnected 和 iframe getRootNode；Windows 未测。
 
 语义及观察索引交互的目标 DOM 解析和检查统一使用隔离 world，包含勾选幂等检查；无 frame 快照时先读取主 frame，创建上下文后复核文档。SDK 95 项测试、macOS Electron 44.7 完整 smoke 和 Linux ARM64 Chromium 150 原生扩展通过；实页覆盖页面篡改 Node.isConnected 后的可信点击和填写。frame 宿主命中检查仍需独立审查，Windows 未测。
+
+跨 frame 坐标换算与宿主命中检查改用父 frame 的隔离 world；上下文不可用时在发送输入前失败。SDK 95 项测试、macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展实测通过：页面伪造 elementFromPoint 返回 iframe 时，被覆盖的真实目标仍拒绝点击。Windows 未测。

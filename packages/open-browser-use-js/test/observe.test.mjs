@@ -721,10 +721,10 @@ test("observation includes control states without exposing arbitrary values", as
 
 test("same-process frame targets translate coordinates and reject frame navigation", async () => {
   const client = new OpenBrowserUseClient({socketPath:"unused"});
-  let loader = "v1", covered = false;
+  let loader = "v1", covered = false, failParentContext = false;
   const events = [];
   client.request = async (method, params) => {
-    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return {executionContextId:123};
+    if(method==='executeCdp' && params.method==='Page.createIsolatedWorld')return failParentContext && params.commandParams.frameId==='root' ? {} : {executionContextId:123};
     if (method === "attach") return {};
     const command = params.method, args = params.commandParams;
     if (command === "DOM.getDocument") return {root:{backendNodeId:1}};
@@ -751,6 +751,8 @@ test("same-process frame targets translate coordinates and reject frame navigati
   covered = true;
   await assert.rejects(tab.click(1,hidden.snapshotId), /Frame is hidden/);
   assert.equal(events.length, 2);
+  covered=false;const missingContext=await tab.observe({includeFrames:true});failParentContext=true;
+  await assert.rejects(tab.click(1,missingContext.snapshotId),/Frame owner context/);assert.equal(events.length,2);
 });
 
 test("coordinate input is bounded to the CSS viewport and invalidates observations", async () => {

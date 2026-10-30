@@ -180,6 +180,10 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,`(()=>{window.savedFrameRoot=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'getRootNode');HTMLIFrameElement.prototype.getRootNode=()=>({activeElement:null});return true})()`);
   try {await sdkTab.playwright.locator('#cross-frame').focus();assert.equal(await evaluate(a.id,"document.activeElement.id"),'cross-frame');}
   finally {await evaluate(a.id,"if(window.savedFrameRoot)Object.defineProperty(HTMLIFrameElement.prototype,'getRootNode',window.savedFrameRoot);else delete HTMLIFrameElement.prototype.getRootNode;true");}
+  const coveredFrameState=await sdkTab.observe({includeFrames:true}),coveredFrameButton=coveredFrameState.nodes.find(node=>node.name==='Cross-frame action');assert.ok(coveredFrameButton);
+  await evaluate(a.id,`(()=>{const frame=document.querySelector('#cross-frame'),r=frame.getBoundingClientRect(),cover=document.createElement('div');cover.id='cross-cover';Object.assign(cover.style,{position:'fixed',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px',zIndex:'99999'});document.body.append(cover);window.savedPoint=Object.getOwnPropertyDescriptor(Document.prototype,'elementFromPoint');Document.prototype.elementFromPoint=()=>frame;return true})()`);
+  try {await assert.rejects(sdkTab.click(coveredFrameButton.index,coveredFrameState.snapshotId),/covered|hidden|frame/i);assert.equal(await evaluate(a.id,'window.crossMessages.length'),0);}
+  finally {await evaluate(a.id,`(()=>{Object.defineProperty(Document.prototype,'elementFromPoint',window.savedPoint);document.querySelector('#cross-cover').remove();return true})()`);}
   const crossState = await sdkTab.observe({includeFrames:true});
   assert.equal(crossState.frameCoverage,'cross-process');
   const crossButton = crossState.nodes.find(node=>node.name==='Cross-frame action');assert.ok(crossButton?.frameId);

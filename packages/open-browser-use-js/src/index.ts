@@ -1234,7 +1234,7 @@ export class OpenBrowserUseTab {
     let inputPoint=point;
     for(let i=0;i<chain.length;i++) {
       const ownerSession=chain[i+1]?.sessionId;
-      point=await this.framePoint(chain[i].id,point.x,point.y,ownerSession);
+      point=await this.framePoint(chain[i].id,chain[i].parentId,point.x,point.y,ownerSession);
       if(ownerSession===sessionId) inputPoint=point;
     }
     await this.validateFrames(chain);return {point,inputPoint};
@@ -1336,7 +1336,7 @@ export class OpenBrowserUseTab {
         let point = {x:geometry.x,y:geometry.y}, inputPoint = point;
         for (let i=0;i<chain.length;i++) {
           const ownerSession=chain[i+1]?.sessionId;
-          point=await this.framePoint(chain[i].id,point.x,point.y,ownerSession,!!mouse.force);
+          point=await this.framePoint(chain[i].id,chain[i].parentId,point.x,point.y,ownerSession,!!mouse.force);
           if (ownerSession===sessionId) inputPoint=point;
         }
         await this.validateFrames(chain);
@@ -2218,7 +2218,7 @@ export class OpenBrowserUseTab {
           for (let i = 0; i < node.frameChain.length; i++) {
             const frame = node.frameChain[i];
             const ownerSession = node.frameChain[i + 1]?.sessionId;
-            point = await this.framePoint(frame.id, point.x as number, point.y as number, ownerSession,!!mouse.force);
+            point = await this.framePoint(frame.id, frame.parentId, point.x as number, point.y as number, ownerSession,!!mouse.force);
             if (ownerSession === targetSession) inputPoint = point;
           }
           await this.validateFrames(node.frameChain);
@@ -2444,10 +2444,13 @@ export class OpenBrowserUseTab {
     if (chain.some(frame => !current.some(item => item.id === frame.id && item.loaderId === frame.loaderId && item.parentId === frame.parentId && item.sessionId === frame.sessionId))) throw new RetryablePreflightError("Frame changed; observe again");
   }
 
-  private async framePoint(frameId: string, x: number, y: number, sessionId?: string, force = false): Promise<{ x: number; y: number }> {
+  private async framePoint(frameId: string, parentFrameId: string | undefined, x: number, y: number, sessionId?: string, force = false): Promise<{ x: number; y: number }> {
+    if(!parentFrameId)throw new RetryablePreflightError("Frame parent is unavailable");
     const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId }, {sessionId});
     if (!isObject(owner) || typeof owner.backendNodeId !== "number") throw new RetryablePreflightError("Frame owner is unavailable");
-    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId }, {sessionId});
+    const world=await this.browser.cdp.call(this.id,"Page.createIsolatedWorld",{frameId:parentFrameId,worldName:"open-browser-use-selector"},{sessionId});
+    if(!isObject(world) || typeof world.executionContextId!=="number" || !Number.isSafeInteger(world.executionContextId))throw new RetryablePreflightError("Frame owner context is unavailable");
+    const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId,executionContextId:world.executionContextId }, {sessionId});
     const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
     if (typeof objectId !== "string") throw new RetryablePreflightError("Frame owner is unavailable");
     try {
