@@ -66,7 +66,7 @@ class JsonRpcPeer {
       return;
     }
     const id = message.id;
-    const controller = id !== undefined && ["attach", "executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath", "webmcp_list_tools", "webmcp_invoke_tool", "readClipboardText", "writeClipboardText", "readClipboard", "writeClipboard", "setFileChooserFiles"].includes(message.method) ? new AbortController() : undefined;
+    const controller = id !== undefined && ["attach", "executeCdp", "waitForFileChooser", "waitForDownload", "downloadPath", "webmcp_list_tools", "webmcp_invoke_tool", "readClipboardText", "writeClipboardText", "readClipboard", "writeClipboard", "setFileChooserFiles", "moveMouse"].includes(message.method) ? new AbortController() : undefined;
     const rawTabId = message.params?.tabId ?? message.params?.tab_id ?? message.params?.target?.tabId ?? this.handlers.fileChoosersById?.get(message.params?.fileChooserId)?.tabId;
     const request = controller ? {controller,tabId:typeof rawTabId === "string" && /^\d+$/.test(rawTabId) ? Number(rawTabId) : rawTabId,sessionId:message.params?.session_id} : undefined;
     if (request) this.inFlight.set(id, request);
@@ -746,14 +746,17 @@ class BrowserBackend {
     return result;
   }
 
-  async moveMouse(params) {
+  async moveMouse(params, signal) {
     const session = await this.requireSession(params);
     await this.requireSessionTab(params, "moveMouse");
     const tabId = requireTabId(params, "moveMouse");
     if (!Number.isFinite(params.x) || !Number.isFinite(params.y)) {
       throw new Error("moveMouse requires finite x and y");
     }
-    const cursorReady = await this.ensureCursorContentScript(session.sessionId, tabId);
+    const check = () => this.checkTabRequest(tabId, params.session_id, signal);
+    check();
+    const cursorReady = await this.ensureCursorContentScript(session.sessionId, tabId, check);
+    check();
     if (!cursorReady) {
       throw new Error(`Cannot inject cursor content script into tab ${tabId}`);
     }
@@ -770,7 +773,10 @@ class BrowserBackend {
       params.waitForArrival === false
         ? null
         : this.createCursorArrivalWaiter(params.session_id, params.turn_id, moveSequence);
+    const abort = () => arrivalWaiter?.cancel();
+    signal?.addEventListener("abort", abort, { once: true });
     try {
+      check();
       await chrome.tabs.sendMessage(tabId, {
         type: "OPEN_BROWSER_USE_CURSOR",
         sessionId: params.session_id,
@@ -781,9 +787,12 @@ class BrowserBackend {
         visible: cursor.visible
       });
       await arrivalWaiter?.promise;
+      check();
     } catch (error) {
       arrivalWaiter?.cancel();
       throw error;
+    } finally {
+      signal?.removeEventListener("abort", abort);
     }
   }
 
@@ -1449,20 +1458,25 @@ class BrowserBackend {
     }
   }
 
-  async ensureCursorContentScript(sessionId, tabId) {
+  async ensureCursorContentScript(sessionId, tabId, check = () => {}) {
+    check();
     try {
       const response = await chrome.tabs.sendMessage(tabId, { type: "OPEN_BROWSER_USE_PING" });
+      check();
       if (response?.ok) {
         return true;
       }
     } catch {}
+    check();
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
         files: ["content-cursor.js"]
       });
+      check();
       return true;
     } catch {
+      check();
       return false;
     }
   }

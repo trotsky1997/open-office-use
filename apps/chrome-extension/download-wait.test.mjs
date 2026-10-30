@@ -278,3 +278,21 @@ test('ownership loss cancels clipboard operations before dispatch and before ret
     assert.equal(dispatched,method==='writeClipboardText'?0:1);assert.equal(sent.length,1);assert.equal(peer.inFlight.size,0);
   }
 });
+
+test('ownership loss stops cursor preparation and releases an arrival waiter',async()=>{
+  const Peer=vm.runInNewContext(`${source.slice(0,end)}\nJsonRpcPeer;`,{chrome,crypto:webcrypto,Date,setTimeout,clearTimeout,AbortController});
+  for(const stage of ['preparing','arrival']) {
+    const backend=new Backend();await backend.store.ready;backend.store.state.sessions.a={chromeGroupId:1};backend.store.state.sessions.b={chromeGroupId:2};backend.sessionByTabId.set(7,'a');
+    backend.requireSession=async()=>({sessionId:'a'});backend.requireSessionTab=async()=>{};
+    let release,injections=0,moves=0;const oldTabs=chrome.tabs,oldScripting=chrome.scripting;
+    chrome.tabs={sendMessage:async(_tab,msg)=>{if(msg.type==='OPEN_BROWSER_USE_PING'&&stage==='preparing')return await new Promise(resolve=>{release=resolve;});if(msg.type==='OPEN_BROWSER_USE_PING')return {ok:true};moves++;return {ok:true};}};
+    chrome.scripting={executeScript:async()=>{injections++;}};
+    const sent=[],peer=new Peer({setMessageCallback(){},sendMessage(message){sent.push(message);}},backend);
+    try {
+      const pending=peer.handleMessage({jsonrpc:'2.0',id:'req',method:'moveMouse',params:{session_id:'a',turn_id:'turn',tabId:7,x:1,y:2}});
+      while(stage==='preparing'?!release:!backend.cursorArrivalWaitersByKey.size)await new Promise(resolve=>setImmediate(resolve));
+      backend.handleTabGroupChange(7,2);assert.equal(sent.length,1);assert.match(sent[0].error.message,/ownership changed/i);
+      release?.({ok:false});await pending;assert.equal(injections,0);assert.equal(moves,stage==='preparing'?0:1);assert.equal(backend.cursorArrivalWaitersByKey.size,0);assert.equal(sent.length,1);
+    } finally {chrome.tabs=oldTabs;chrome.scripting=oldScripting;}
+  }
+});
