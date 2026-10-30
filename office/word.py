@@ -56,17 +56,39 @@ def list_stories(source):
             if len(entries) > 5000 or len(set(names)) != len(names) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
                 raise ValueError('Document exceeds package limits or contains duplicate parts')
             stories = story_relationships(archive); doc = ooxml.parse_xml(archive.read('word/document.xml'))
+            if len(stories) > 200: raise ValueError('Document exceeds the 200 header/footer relationship inventory limit')
             if doc.getroot().tag != W + 'document': raise ValueError('Document XML has an invalid root')
             body = doc.getroot().find(W + 'body')
             if body is None: raise ValueError('Document has no body')
             sections = body.xpath('./w:p/w:pPr/w:sectPr | ./w:sectPr', namespaces={'w': W[1:-1]})
-            for story in stories.values(): story['references'] = []
-            for number, section in enumerate(sections, 1):
+            # shortcut: nonstandard section locations cannot be resolved; inspect them in Word.
+            reference_complete = len(list(body.iter(W + 'sectPr'))) == len(sections)
+            if not sections: sections = [None]
+            if len(sections) > 5000: reference_complete = False
+            part_ids = {}
+            for rid, story in stories.items(): part_ids.setdefault(story['part'], []).append(rid)
+            for rid, story in stories.items():
+                story['references'] = []; story['linked_sections'] = []
+                story['same_part_ids'] = [other for other in part_ids[story['part']] if other != rid]
+            linked = {(kind, variant): None for kind in ('header', 'footer') for variant in ('default', 'first', 'even')}
+            link_count = 0
+            for number, section in enumerate(sections[:5000], 1):
+                explicit = set()
                 for kind in ('header', 'footer'):
-                    for ref in section.findall(W + kind + 'Reference'):
+                    for ref in section.findall(W + kind + 'Reference') if section is not None else ():
                         rid = ref.get(R + 'id')
                         if rid not in stories or stories[rid]['type'] != kind: raise ValueError('Invalid section header or footer reference')
-                        stories[rid]['references'].append({'section': number, 'type': ref.get(W + 'type', 'default')})
+                        variant = ref.get(W + 'type')
+                        if variant not in ('default', 'first', 'even') or (kind, variant) in explicit:
+                            raise ValueError('Invalid or duplicate section header or footer type')
+                        explicit.add((kind, variant)); linked[(kind, variant)] = rid
+                        stories[rid]['references'].append({'section': number, 'type': variant})
+                for (kind, variant), rid in linked.items():
+                    if rid is not None:
+                        link_count += 1
+                        if link_count <= 2000:
+                            stories[rid]['linked_sections'].append({'section': number, 'type': variant, 'inherited': (kind, variant) not in explicit})
+                        else: reference_complete = False
             result = []; total = 0; complete = True
             for rid, story in stories.items():
                 root = ooxml.parse_xml(archive.read(story['part'])).getroot()
@@ -90,7 +112,7 @@ def list_stories(source):
                         elif tag not in ('pPr', 'tblPr', 'tblGrid', 'tcPr'): complete = False
                 walk(root, prefix, 0)
                 result.append({'id': rid, **story, 'paragraphs': paragraphs})
-            return {'stories': result, 'sections': len(sections), 'paragraphs_scanned': min(total, 200), 'complete': complete}
+            return {'stories': result, 'sections': len(sections), 'paragraphs_scanned': min(total, 200), 'complete': complete, 'reference_resolution_complete': reference_complete}
     except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
         raise ValueError(f'Invalid Word document: {exc}') from exc
 

@@ -230,11 +230,14 @@ def edit_target(directory, base_revision, path):
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if state['format'] == 'docx' and word.STORY_PATH.fullmatch(path):
         inventory = word.list_stories(source)
-        matches = [p for story in inventory['stories'] for p in story['paragraphs'] if p['path'] == path]
-        if len(matches) != 1 or matches[0]['truncated']:
+        matches = [(story, p) for story in inventory['stories'] for p in story['paragraphs'] if p['path'] == path]
+        if len(matches) != 1 or matches[0][1]['truncated']:
             raise ValueError('Header or footer paragraph is unavailable in the bounded inventory')
         if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
-        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': matches[0]['text'], 'replace_text_path_supported': True, 'replace_only': True}
+        story, paragraph = matches[0]
+        links = [{'relationship_id': item['id'], **link} for item in inventory['stories'] if item['part'] == story['part'] for link in item['linked_sections']]
+        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': paragraph['text'], 'replace_text_path_supported': True, 'replace_only': True,
+                'story_impact': {'part': story['part'], 'linked_sections': links, 'same_part_ids': story['same_part_ids'], 'complete': inventory['reference_resolution_complete']}}
     result = officecli_backend.read(source, 'get', path)
     if not isinstance(result, dict) or result.get('matches') != 1 or not isinstance(result.get('results'), list) or len(result['results']) != 1:
         raise ValueError('The path must identify exactly one editable element')

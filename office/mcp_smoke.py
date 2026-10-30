@@ -107,6 +107,8 @@ async def main():
                 header_path = header_listing.structuredContent['stories'][0]['paragraphs'][0]['path']; header_draft = root / 'header-draft'
                 header_start = await session.call_tool('start_session', {'directory': str(header_draft), 'source': str(header_source)})
                 assert not header_start.isError, header_start
+                header_target = await session.call_tool('session_edit_target', {'directory': str(header_draft), 'base_revision': 0, 'path': header_path})
+                assert not header_target.isError and header_target.structuredContent['story_impact']['complete'] and header_target.structuredContent['story_impact']['linked_sections'][0]['section'] == 1, header_target
                 header_edit = await session.call_tool('session_replace_text', {'directory': str(header_draft), 'base_revision': 0, 'path': header_path, 'find': 'Header', 'replacement': 'Updated'})
                 assert not header_edit.isError, header_edit
                 header_new = await session.call_tool('session_list_word_stories', {'directory': str(header_draft), 'revision': 1})

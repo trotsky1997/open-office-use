@@ -65,7 +65,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="stories-panel" hidden><summary>Word headers and footers</summary>
-<p>List paragraph targets and direct section references. A part may be inherited by other sections; edits affect every section that uses it. Review fields and shared parts before editing.</p>
+<p>List paragraph targets, direct references and section links. First/even links depend on document settings; actual page display needs visual review. Edits affect every section using a part.</p>
 <button type="button" id="stories-load">Load displayed revision</button><p id="stories-status" role="status"></p><ul id="stories-list"></ul></details>
 <details id="comments-panel" hidden><summary>Word comments</summary>
 <p>Read comments from the displayed revision. Anchor text and paths are bounded body hints. Word 2013 thread metadata is shown when available; review unknown or ambiguous states in Word. Root comments can be resolved or reopened in the latest revision.</p>
@@ -389,7 +389,10 @@ async function loadElement(path) {
   document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
   document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only); document.getElementById('comment-text').value=''; document.getElementById('comment-anchor').value='';
   document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
-  document.getElementById('edit-status').textContent=target.replace_only ? `Loaded ${target.type} at revision ${target.revision}. Use Replace once; the part may be shared by sections.` : `Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
+  if (target.replace_only) {
+   const impact=target.story_impact, linked=impact.linked_sections.map(r=>`${r.section} (${r.type}, ${r.inherited ? 'linked' : 'direct'}, ${r.relationship_id})`).join(', ') || 'none found';
+   document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Part ${impact.part}; sections: ${linked}. ${impact.same_part_ids.length ? 'Other relationship IDs share this part: '+impact.same_part_ids.join(', ')+'. ' : ''}${impact.complete ? '' : 'Section links are incomplete. '}Use Replace once; verify the rendered document.`;
+  } else document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
  finally { editBusy=false; button.disabled = pinned !== null; }
 }
@@ -588,7 +591,7 @@ document.getElementById('stories-load').addEventListener('click', async () => {
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not load headers and footers');
   if (epoch!==storiesEpoch || displayed!==revision) return;
   for (const story of result.stories) {
-   const row=document.createElement('li'); row.appendChild(document.createTextNode(`${story.type} ${story.id} · ${story.part} · direct references: ${story.references.map(r=>`section ${r.section} (${r.type})`).join(', ') || 'none'} `));
+   const row=document.createElement('li'); row.appendChild(document.createTextNode(`${story.type} ${story.id} · ${story.part} · sections: ${story.linked_sections.map(r=>`${r.section} (${r.type}, ${r.inherited ? 'linked' : 'direct'})`).join(', ') || 'none found'}${story.same_part_ids.length ? ' · same part IDs: '+story.same_part_ids.join(', ') : ''} `));
    const paragraphs=document.createElement('ul');
    for (const paragraph of story.paragraphs) {
     const item=document.createElement('li'); item.textContent=`${paragraph.path}: ${paragraph.text}${paragraph.truncated ? '…' : ''} `;
@@ -597,7 +600,7 @@ document.getElementById('stories-load').addEventListener('click', async () => {
    }
    row.appendChild(paragraphs); list.appendChild(row);
   }
-  status.textContent=`Revision ${revision}: ${result.stories.length} part(s), ${result.paragraphs_scanned} paragraph(s). ${result.complete ? '' : 'Inventory incomplete.'} Section references are direct; inherited use is not enumerated.`;
+  status.textContent=`Revision ${revision}: ${result.stories.length} relationship(s), ${result.paragraphs_scanned} paragraph(s). ${result.complete ? '' : 'Paragraph inventory incomplete. '}${result.reference_resolution_complete ? '' : 'Section links incomplete. '}First/even page display depends on document settings.`;
  } catch(error) { if (epoch===storiesEpoch) status.textContent=`Header/footer error: ${error.message}`; }
  finally {button.disabled=false;}
 });
