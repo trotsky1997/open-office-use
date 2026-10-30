@@ -49,9 +49,9 @@ export type OpenBrowserUseWaitForLoadStateOptions = {
 
 export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | { client: OpenBrowserUseClient };
 
-export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; checked?: boolean | "mixed"; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
+export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; checked?: boolean | "mixed"; disabled?: boolean; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
 export type SelectOption = string | {value?: string; label?: string};
-export type RoleLocatorOptions = {name?: string; exact?: boolean; checked?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
+export type RoleLocatorOptions = {name?: string; exact?: boolean; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
@@ -464,7 +464,7 @@ export class OpenBrowserUseTab {
     const useDiff = options.diff === true && previous?.documentId === documentId && previous.includeFrames === !!options.includeFrames && previous.includeValues === !!options.includeValues && previous.includeText === !!options.includeText && !previous.truncated && !full.truncated && !valueBudget.truncated && !unavailableFrames.length;
     const output = useDiff ? diffAXState(previous.text, full.text) : full;
     this.#lastText = (output.truncated && useDiff) || unavailableFrames.length || valueBudget.truncated ? undefined : { documentId, includeFrames: !!options.includeFrames, includeValues: !!options.includeValues, includeText: !!options.includeText, ...full };
-    return { snapshotId: id, nodes: nodes.map(({ index, role, name, frameId, checked, pressed, selected, expanded, placeholder, placeholderTruncated, altText, altTextTruncated, value, valueRedacted, valueUnavailable, valueTruncated }) => ({ index, role, name, ...(frameId ? {frameId} : {}), ...(checked !== undefined ? {checked} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated} : {}), ...(value !== undefined ? {value} : {}), ...(valueRedacted ? {valueRedacted} : {}), ...(valueUnavailable ? {valueUnavailable} : {}), ...(valueTruncated ? {valueTruncated} : {}) })), ...output, textMode: useDiff ? "diff" : "full", ...(options.includeFrames ? {frameCoverage: crossProcess ? "cross-process" as const : "same-process" as const, unavailableFrames} : {}), ...(options.includeValues ? {valuesTruncated:valueBudget.truncated} : {}) };
+    return { snapshotId: id, nodes: nodes.map(({ index, role, name, frameId, checked, disabled, pressed, selected, expanded, placeholder, placeholderTruncated, altText, altTextTruncated, value, valueRedacted, valueUnavailable, valueTruncated }) => ({ index, role, name, ...(frameId ? {frameId} : {}), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated} : {}), ...(value !== undefined ? {value} : {}), ...(valueRedacted ? {valueRedacted} : {}), ...(valueUnavailable ? {valueUnavailable} : {}), ...(valueTruncated ? {valueTruncated} : {}) })), ...output, textMode: useDiff ? "diff" : "full", ...(options.includeFrames ? {frameCoverage: crossProcess ? "cross-process" as const : "same-process" as const, unavailableFrames} : {}), ...(options.includeValues ? {valuesTruncated:valueBudget.truncated} : {}) };
   }
 
   private async readAXValues(tree: JsonValue, nodes: ObservedNode[], budget: {remaining: number; truncated: boolean}, sessionId?: string): Promise<void> {
@@ -844,10 +844,30 @@ export class OpenBrowserUseTab {
     const targetTree = node.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: node.frameId }, { sessionId: targetSession }) : await this.getAXState();
     const current = interactiveNodes(targetTree, 0, supplementalRoles.includes(node.role)).find((item) => item.backendNodeId === node.backendNodeId && item.role === node.role);
     if (!current || current.role !== node.role || current.name !== node.name || current.stateKey !== node.stateKey) throw new RetryablePreflightError("Target changed; observe again");
+    if (current.disabled && !hover) throw new RetryablePreflightError("Target is disabled; observe again");
     await this.verifyLocatorScope(observation,node);
     if (checked !== undefined) {
       if (!["checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio"].includes(node.role) || typeof current.checked !== "boolean") throw new Error("Target does not have a binary checked state");
-      if (current.checked === checked) return;
+      if (current.checked === checked) {
+        const resolved = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:node.backendNodeId},{sessionId:targetSession});
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string") throw new RetryablePreflightError("Target is unavailable; observe again");
+        try {
+          const result = await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,
+            functionDeclaration:`function() { if (!(this instanceof Element) || !this.isConnected) return 'unavailable'; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return 'disabled'; return 'enabled'; }`
+          },{sessionId:targetSession});
+          const status = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+          if (status === "disabled") throw new RetryablePreflightError("Target is disabled; observe again");
+          if (status !== "enabled") throw new RetryablePreflightError("Target is unavailable; observe again");
+          if (await this.documentId() !== observation.documentId) throw new RetryablePreflightError("Page changed; observe again");
+          if (node.frameChain) await this.validateFrames(node.frameChain);
+          await this.verifyLocatorScope(observation,node);
+          const tree = node.frameId ? await this.browser.cdp.call(this.id,"Accessibility.getFullAXTree",{frameId:node.frameId},{sessionId:targetSession}) : await this.getAXState();
+          const latest = interactiveNodes(tree).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
+          if (!latest || latest.name !== node.name || latest.stateKey !== node.stateKey) throw new RetryablePreflightError("Target changed; observe again");
+          return;
+        } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId:targetSession}).catch(() => {}); }
+      }
       if (!checked && ["radio", "menuitemradio"].includes(node.role)) throw new Error("A selected radio cannot be unchecked directly");
     }
     const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: node.backendNodeId }, { sessionId: targetSession });
@@ -857,11 +877,11 @@ export class OpenBrowserUseTab {
     try {
       const measure = async () => {
         const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
-          objectId, returnByValue: true,
-          functionDeclaration: `function() {
+          objectId, returnByValue: true, arguments:[{value:hover}],
+          functionDeclaration: `function(allowDisabled) {
             const element=this.nodeType===Node.TEXT_NODE ? this.parentElement : this;
             if (!this.isConnected || !(element instanceof Element)) return null;
-            for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return null;
+            if (!allowDisabled) for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return null;
             element.scrollIntoView({ block: 'center', inline: 'center' });
             let r;
             if (this.nodeType===Node.TEXT_NODE) {
@@ -1161,9 +1181,9 @@ export class OpenBrowserUseTabPlaywright {
 
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator {
     if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
-        Object.keys(options).some(key => !["name","exact","checked","pressed","selected","expanded"].includes(key)) ||
+        Object.keys(options).some(key => !["name","exact","checked","disabled","pressed","selected","expanded"].includes(key)) ||
         (options.name !== undefined && typeof options.name !== "string") ||
-        [options.exact,options.checked,options.pressed,options.selected,options.expanded].some(value => value !== undefined && typeof value !== "boolean")) throw new Error("Invalid role locator");
+        [options.exact,options.checked,options.disabled,options.pressed,options.selected,options.expanded].some(value => value !== undefined && typeof value !== "boolean")) throw new Error("Invalid role locator");
     return new OpenBrowserUseRoleLocator(this.tab, [role === "img" ? "image" : role], {...options});
   }
 
@@ -1232,6 +1252,7 @@ export class OpenBrowserUseRoleLocator {
       const value = node[this.field];
       return this.roles.includes(node.role) && typeof value === "string" &&
         (this.options.checked === undefined || node.checked === this.options.checked) &&
+        (this.options.disabled === undefined || !!node.disabled === this.options.disabled) &&
         (this.options.pressed === undefined || node.pressed === this.options.pressed) &&
         (this.options.selected === undefined || node.selected === this.options.selected) &&
         (this.options.expanded === undefined || node.expanded === this.options.expanded) &&
@@ -1564,15 +1585,13 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     if (!isObject(node) || node.ignored === true || typeof node.backendDOMNodeId !== "number" || !isObject(node.role)) continue;
     const role = node.role.value;
     if (typeof role !== "string" || !roles.has(role) || temporalAncestor(node)) continue;
-    const disabled = Array.isArray(node.properties) && node.properties.some((item) => isObject(item) && item.name === "disabled" && isObject(item.value) && item.value.value === true);
-    if (disabled) continue;
     const name = isObject(node.name) && typeof node.name.value === "string" ? node.name.value : "";
     const state = (name: string): boolean | "mixed" | undefined => {
       const property = Array.isArray(node.properties) ? node.properties.find(item => isObject(item) && item.name === name) : undefined;
       const value = isObject(property) && isObject(property.value) ? property.value.value : undefined;
       return value === true || value === "true" ? true : value === false || value === "false" ? false : value === "mixed" ? "mixed" : undefined;
     };
-    const checked = state("checked"), pressed = state("pressed");
+    const checked = state("checked"), pressed = state("pressed"), disabled = state("disabled") === true;
     const selectedValue = state("selected"), expandedValue = state("expanded");
     const selected = typeof selectedValue === "boolean" ? selectedValue : undefined;
     const expanded = typeof expandedValue === "boolean" ? expandedValue : undefined;
@@ -1588,7 +1607,7 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     const states = axProperties(node);
     if (placeholder !== undefined) states.push(`placeholder=${JSON.stringify(placeholder)}${placeholderTruncated ? createHash("sha256").update(rawPlaceholder as string).digest("hex") : ""}`);
     if (altText !== undefined) states.push(`alt=${JSON.stringify(altText)}${altTextTruncated ? createHash("sha256").update(rawAlt as string).digest("hex") : ""}`);
-    nodes.push({ index: offset + nodes.length + 1, role, name, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(checked !== undefined ? {checked} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
+    nodes.push({ index: offset + nodes.length + 1, role, name, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
   }
   return nodes;
 }

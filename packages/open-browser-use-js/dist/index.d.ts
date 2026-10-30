@@ -33,6 +33,7 @@ export type InteractiveNode = {
     name: string;
     frameId?: string;
     checked?: boolean | "mixed";
+    disabled?: boolean;
     pressed?: boolean | "mixed";
     selected?: boolean;
     expanded?: boolean;
@@ -53,6 +54,7 @@ export type RoleLocatorOptions = {
     name?: string;
     exact?: boolean;
     checked?: boolean;
+    disabled?: boolean;
     pressed?: boolean;
     selected?: boolean;
     expanded?: boolean;

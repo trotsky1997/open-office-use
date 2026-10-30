@@ -36,7 +36,7 @@
 - [x] macOS Electron 44 真实页面完成观察、可信点击/输入，以及 private/socket REPL 观察、截图和撤销检查。
 - [x] macOS Electron 44 完整 smoke 通过，包括保留标签、人工接管与清理。
 - [x] 观察结果包含有限长度的页面可访问性文字，并显式报告截断。
-- [x] getByRole 支持 checked、pressed、selected、expanded 状态筛选，并拒绝未知选项。
+- [x] getByRole 支持 checked、disabled、pressed、selected、expanded 状态筛选，并拒绝未知选项；禁用目标可观察和悬停，修改前检查目标及祖先。
 - [x] 观察包括勾选、展开等控件状态；动作前重新核对状态，防止对变化后的控件执行旧操作。
 - [x] 在嵌套 open/closed Shadow DOM 中校验目标和各层宿主的命中；隔离 Chromium 验证可信点击与覆盖拒绝。
 - [x] 可选观察同进程 iframe，换算嵌套 frame 坐标并拒绝导航后的旧目标；macOS Chromium 原生消息链路和 Electron 页面验证可信点击。

@@ -121,3 +121,5 @@ Linux ARM64 Chromium 150 隔离原生消息链路验证作用域跨 closed Shado
 文字筛选将同 frame 的包含关系按最多 32 个节点批量检查，跨 frame 按页面复用包含结果；失败时释放已解析对象。macOS 隔离 Chromium 单次 12 项筛选由约 1422 ms 降至 419 ms，测量仅代表该 fixture。
 
 getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察输出暴露这些状态；未知选项显式报错，mixed 与未提供状态不会匹配布尔条件。状态改变后拒绝旧目标。macOS/Linux Chromium 与 macOS Electron 的跨进程 iframe 验证状态选择及可信操作。Linux 使用隔离浏览器与 --no-sandbox。
+
+禁用控件保留在观察中并支持 disabled 状态筛选；可悬停以查看提示，点击、按键与状态修改会检查禁用状态和 DOM 祖先。幂等 check 也验证 DOM 祖先和最新状态。macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证原生 disabled、fieldset、aria-disabled 继承和可信悬停；Linux 使用隔离浏览器与 --no-sandbox。

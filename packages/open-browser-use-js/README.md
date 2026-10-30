@@ -205,12 +205,15 @@ accessible headings; `getByRole("img", ...)` supports accessible images.
 accessible dialog containers. To include these nodes in an indexed observation directly,
 use `includeText: true`; switching it resets the diff baseline.
 
-`getByRole` also accepts boolean `checked`, `pressed`, `selected` and
+`getByRole` also accepts boolean `checked`, `disabled`, `pressed`, `selected` and
 `expanded` filters. A filter matches when the corresponding state is explicitly
 present in the accessibility tree; a mixed state does not match either boolean.
-Observations expose these states when available, and a state change invalidates
-the old target before input. Disabled targets are omitted from observations;
-unsupported role options are rejected.
+For `disabled`, the absence of the accessibility flag is treated as enabled.
+Observations expose disabled targets and their state. Hover can target a disabled
+control; clicks, keyboard input and state changes check the target and its
+ancestors for disability before input. Even an already-correct check validates
+its enabled state. State changes invalidate old targets, and unsupported role
+options are rejected.
 
 `getByLabel` matches the accessible name of supported form controls and accepts
 the same `exact` option. `check()` and `uncheck()` check the current state,

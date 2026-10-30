@@ -445,7 +445,7 @@ test('role locators filter supported states and reject invalid options', async (
   assert.equal(await role.getByRole('tab',{name:'View',selected:true}).count(),1);
   assert.equal(await role.getByRole('button',{name:'Plain',pressed:false}).count(),0);
   assert.throws(()=>role.getByRole('button',{pressed:'true'}),/Invalid role locator/);
-  assert.throws(()=>role.getByRole('button',{disabled:true}),/Invalid role locator/);
+  assert.throws(()=>role.getByRole('button',{level:1}),/Invalid role locator/);
   const state=await tab.observe();
   assert.equal(state.nodes.find(node=>node.name==='Toggle').pressed,true);
   assert.equal(state.nodes.find(node=>node.name==='Toggle').expanded,false);
@@ -458,8 +458,53 @@ test('role locators filter supported states and reject invalid options', async (
   assert.equal(mouse,0);
 });
 
+test('disabled controls remain observable and never receive input', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'});
+  let disabled=true, input=0;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(params.method==='Accessibility.getFullAXTree')return {nodes:[
+      {backendDOMNodeId:10,role:{value:'checkbox'},name:{value:'Notifications'},properties:[{name:'checked',value:{value:true}},...(disabled?[{name:'disabled',value:{value:'true'}}]:[])]},
+      {backendDOMNodeId:11,role:{value:'checkbox'},name:{value:'Notifications'},properties:[{name:'checked',value:{value:false}}]}
+    ]};
+    if(params.method==='Input.dispatchMouseEvent' || params.method==='Input.dispatchKeyEvent')input++;
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1), role=tab.playwright;
+  assert.equal(await role.getByRole('checkbox',{name:'Notifications'}).count(),2);
+  assert.equal(await role.getByRole('checkbox',{name:'Notifications',disabled:true}).count(),1);
+  assert.equal(await role.getByRole('checkbox',{name:'Notifications',disabled:false}).count(),1);
+  await assert.rejects(role.getByRole('checkbox',{name:'Notifications',disabled:true}).check({timeoutMs:0}),/disabled/);
+  const snapshot=await tab.observe();
+  assert.equal(snapshot.nodes.find(node=>node.checked===true).disabled,true);
+  assert.match(snapshot.text,/disabled/);
+  disabled=false;
+  await assert.rejects(tab.click(snapshot.nodes.find(node=>node.checked===true).index,snapshot.snapshotId),/changed/);
+  assert.equal(input,0);
+});
+
+test('disabled controls may be hovered without being clicked', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), events=[];
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(params.method==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:10,role:{value:'button'},name:{value:'Locked'},properties:[{name:'disabled',value:{value:true}}]}]};
+    if(params.method==='DOM.resolveNode')return {object:{objectId:'target'}};
+    if(params.method==='Runtime.callFunctionOn'){assert.equal(params.commandParams.arguments[0].value,true);return {result:{value:{x:10,y:10,width:10,height:10}}};}
+    if(params.method==='Input.dispatchMouseEvent')events.push(params.commandParams.type);
+    return {};
+  };
+  const locator=new OpenBrowserUseBrowser({client}).tab(1).playwright.getByRole('button',{name:'Locked',disabled:true});
+  await locator.hover(); assert.deepEqual(events,['mouseMoved']);
+  await assert.rejects(locator.click({timeoutMs:0}),/disabled/);
+  assert.deepEqual(events,['mouseMoved']);
+});
+
 test('label locator checks and unchecks once, validates state and refuses mixed or radio clearing', async () => {
-  const client=new OpenBrowserUseClient({socketPath:'unused'});let checked='false',role='checkbox',mouse=0;
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let checked='false',role='checkbox',mouse=0,domDisabled=false;
   client.request=async(method,params)=>{
     if(method==='attach')return {};
     const command=params.method,args=params.commandParams;
@@ -467,7 +512,7 @@ test('label locator checks and unchecks once, validates state and refuses mixed 
     if(command==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
     if(command==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:7,role:{value:role},name:{value:'Alerts'},properties:[{name:'checked',value:{value:checked}}]}]};
     if(command==='DOM.resolveNode')return {object:{objectId:'target'}};
-    if(command==='Runtime.callFunctionOn')return {result:{value:{x:10,y:10,width:10,height:10}}};
+    if(command==='Runtime.callFunctionOn')return {result:{value:args.functionDeclaration.includes("return 'enabled'") ? (domDisabled?'disabled':'enabled') : {x:10,y:10,width:10,height:10}}};
     if(command==='Input.dispatchMouseEvent'){mouse++;if(args.type==='mouseReleased')checked=checked==='true'?'false':'true';}
     return {};
   };
@@ -475,6 +520,7 @@ test('label locator checks and unchecks once, validates state and refuses mixed 
   let state=await tab.observe();assert.equal(state.nodes[0].checked,false);
   await target.check();assert.equal(checked,'true');assert.equal(mouse,2);
   await target.check();assert.equal(mouse,2);
+  domDisabled=true;await assert.rejects(target.check({timeoutMs:0}),/disabled/);assert.equal(mouse,2);domDisabled=false;
   await target.uncheck();assert.equal(checked,'false');assert.equal(mouse,4);
   state=await tab.observe();checked='true';await assert.rejects(tab.setChecked(1,state.snapshotId,false),/changed/);assert.equal(mouse,4);
   checked='mixed';await assert.rejects(target.check(),/binary checked state/);assert.equal(mouse,4);
