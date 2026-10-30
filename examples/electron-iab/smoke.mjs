@@ -147,11 +147,20 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   async function selectionTarget(name){const state=await sdkTab.observe();const node=state.nodes.find(item=>item.name===name && item.role==='textbox');assert.ok(node);return [node.index,state.snapshotId];}
   await sdkTab.selectText(...await selectionTarget('Selection field'),'one',{prefix:'blue '});
   assert.deepEqual(await evaluate(a.id,`(()=>{const e=document.querySelector('#selection-field');return [e.selectionStart,e.selectionEnd,e.value.slice(e.selectionStart,e.selectionEnd)]})()`),[14,17,'one']);
+  await sdkTab.typeAtFocus('two');assert.equal(await evaluate(a.id,"document.querySelector('#selection-field').value"),'red one, blue two');
+  await evaluate(a.id,"document.querySelector('#selection-field').value='red one, blue one'");
   await sdkTab.selectText(...await selectionTarget('Selection field'),'one',{prefix:'red ',selectionType:'cursor_after'});
   assert.deepEqual(await evaluate(a.id,`(()=>{const e=document.querySelector('#selection-field');return [e.selectionStart,e.selectionEnd]})()`),[7,7]);
   await assert.rejects(sdkTab.selectText(...await selectionTarget('Selection field'),'one'),/ambiguous/);
   await sdkTab.selectText(...await selectionTarget('Rich selection'),'alpha bravo',{suffix:' charlie'});
   assert.equal(await evaluate(a.id,'document.getSelection().toString()'),'alpha bravo');
+  await evaluate(a.id,"document.querySelector('#selection-rich').setAttribute('aria-readonly','true')");
+  await assert.rejects(sdkTab.selectText(...await selectionTarget('Rich selection'),'bravo'),/disabled|readonly/);
+  await evaluate(a.id,"document.querySelector('#selection-rich').removeAttribute('aria-readonly')");
+  await evaluate(a.id,`(()=>{const host=document.createElement('div');host.id='selection-shadow-host';const shadow=host.attachShadow({mode:'open'});shadow.innerHTML='<div contenteditable="true" role="textbox" aria-label="Shadow selection">shadow <b>bravo</b> text</div>';document.body.append(host)})()`);
+  await sdkTab.selectText(...await selectionTarget('Shadow selection'),'shadow bravo');
+  assert.equal(await evaluate(a.id,`document.querySelector('#selection-shadow-host').shadowRoot.getSelection().toString()`),'shadow bravo');
+  await evaluate(a.id,"document.querySelector('#selection-shadow-host').remove()");
   await evaluate(a.id,"document.querySelector('#selection-field').remove();document.querySelector('#selection-rich').remove()");
   check('SDK indexed text selection: context, caret, ambiguity and rich text');
   await evaluate(a.id,"document.querySelector('#increment').focus()");
@@ -296,6 +305,9 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await sdkTab.selectText(selectFrame.index,selectFrameState.snapshotId,'ell');
   const selectionInFrame=await sdkTab.browser.cdp.call(a.id,'Runtime.evaluate',{expression:`(()=>{const e=document.querySelector('[aria-label="Cross-frame text"]');return [e.selectionStart,e.selectionEnd]})()`,returnByValue:true},{sessionId:crossSession});
   assert.deepEqual(selectionInFrame.result.value,[1,4]);
+  await sdkTab.typeAtFocus('XYZ');await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-text',value:'hXYZo',trusted:true});
+  await frameCss.fill('hello');
   const valueState=await sdkTab.observe({includeFrames:true,includeValues:true});
   assert.equal(valueState.nodes.find(node=>node.name==='Cross-frame text').value,'hello');
   assert.equal(valueState.nodes.find(node=>node.name==='Cross secret').valueRedacted,true);

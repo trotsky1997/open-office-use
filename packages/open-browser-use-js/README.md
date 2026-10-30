@@ -169,7 +169,8 @@ contenteditable target. `prefix` and `suffix` disambiguate adjacent text;
 `selectionType` can select the text or place the cursor before or after it.
 The operation focuses the target, so its focus handlers can run. Selection is
 limited to text content of at most 1 MiB and input types that support native
-text selection.
+text selection. Use `tab.typeAtFocus(text)` to replace the selected range; indexed
+`typeText` clicks its target before typing.
 
 `state.text` contains named accessibility nodes in the order returned by CDP;
 interactive nodes include their index and available checked, selected, expanded,

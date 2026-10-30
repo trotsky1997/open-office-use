@@ -1929,7 +1929,7 @@ export class OpenBrowserUseTab {
       const result=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text},{value:options.prefix ?? null},{value:options.suffix ?? null},{value:options.selectionType ?? "text"}],functionDeclaration:`function(text,prefix,suffix,kind){
         if(!this.isConnected || !(this instanceof Element))return 'unavailable';
         let element=this;while(true){const root=element.getRootNode();if(root.activeElement!==element)return 'focus';if(!(root instanceof ShadowRoot))break;element=root.host;}
-        for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null))if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return 'disabled';
+        for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null))if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true' || el.getAttribute('aria-readonly')==='true')return 'disabled';
         const native=(this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','tel','url','password'].includes(this.type))) && !this.readOnly && this.getAttribute('aria-readonly')!=='true';
         if(!native && (!this.isContentEditable || this.getAttribute('aria-readonly')==='true'))return 'unsupported';
         const value=native ? this.value : this.textContent;if(typeof value!=='string' || value.length>1048576)return 'unavailable';
