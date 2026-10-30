@@ -78,7 +78,8 @@ function testIdSelector(testId: string): string {
 type CssMatcher = string | {source:string; flags:string};
 type CssTextFilter = {hasText?:CssMatcher; hasNotText?:CssMatcher; has?:readonly CssStep[]; hasNot?:readonly CssStep[]; and?:readonly CssStep[]; visible?:boolean};
 type CssStep = {selector:string; position?:number; before?:readonly CssTextFilter[]; after?:readonly CssTextFilter[]; union?:readonly [readonly CssStep[],readonly CssStep[]]};
-type CssSnapshot = { step:CssStep; scopes:readonly CssStep[]; scopeIds:number[][]; framePath?:readonly string[]; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
+type SemanticRoot = {scope:OpenBrowserUseRoleLocator; roots:Array<{backendNodeId:number; frameId:string}>};
+type CssSnapshot = { step:CssStep; scopes:readonly CssStep[]; scopeIds:number[][]; framePath?:readonly string[]; semantic?:SemanticRoot; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
 type CssGuard = {snapshot:CssSnapshot; scopeId:number};
 type RoleGuard = {locator:OpenBrowserUseRoleLocator; expected:Array<{backendNodeId:number; frameId:string}>};
 type LocatorMatch = {node:InteractiveNode; path:number[]; filters:FilterGuard[]; css?:CssGuard};
@@ -791,17 +792,24 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async queryCss(step: CssStep, framePath?: readonly string[], scopes: readonly CssStep[] = []): Promise<CssSnapshot> {
+  async queryCss(step: CssStep, framePath?: readonly string[], scopes: readonly CssStep[] = [], semanticScope?: OpenBrowserUseRoleLocator): Promise<CssSnapshot> {
     const selector=step.selector;
     if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
     const documentId = await this.documentId();
     const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
     const frames = await this.frameTree();
     if (framePath && !crossProcess) throw new Error("Frame routing is unavailable");
-    const frameId = framePath ? await this.resolveFramePath(framePath) : frames[0].id;
+    const semantic=semanticScope ? await semanticScope.detachedRoots() : undefined;
+    if (semantic && (semantic.documentId!==documentId || JSON.stringify(semantic.frames)!==JSON.stringify(frames))) throw new RetryablePreflightError("Semantic scope changed; observe again");
+    if (semantic && semantic.roots.length>1000) throw new Error("Semantic scope matched more than 1000 elements");
+    const semanticFrames=new Set(semantic?.roots.map(root=>root.frameId || frames[0].id));
+    if (semanticFrames.size>1) throw new Error("Semantic CSS scope spans multiple frames; choose one frame");
+    const semanticFrame=semanticFrames.values().next().value;
+    const frameId = framePath ? await this.resolveFramePath(framePath) : semanticFrame ?? frames[0].id;
+    if (semanticFrame && frameId && semanticFrame!==frameId) throw new Error("Semantic scope and CSS frame differ");
     if (!frameId) {
       if (await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames)) throw new RetryablePreflightError("Frame tree changed; observe again");
-      return {step,scopes,scopeIds:[],framePath,frame:null,frames,documentId,ids:[]};
+      return {step,scopes,scopeIds:[],framePath,...(semanticScope && semantic ? {semantic:{scope:semanticScope,roots:semantic.roots}} : {}),frame:null,frames,documentId,ids:[]};
     }
     const frame = frames.find(item=>item.id === frameId);
     if (!frame) throw new RetryablePreflightError("Frame tree changed; observe again");
@@ -836,10 +844,21 @@ export class OpenBrowserUseTab {
         if(record){total+=selected.length;if(total>1000)throw new Error('Selector matched more than 1000 elements');output.push(i,...selected);}
         roots=selected;
       }return roots;};
-      resolve([document],steps,true);
+      resolve(${semantic ? (semantic.roots.length ? "roots" : "[]") : "[document]"},steps,true);
       return output;
     })()`;
-    const evaluated = await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression,contextId,returnByValue:false},{sessionId});
+    const rootObjects:string[]=[];
+    let evaluated:JsonValue;
+    try {
+      for (const root of semantic?.roots ?? []) {
+        const resolved=await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:root.backendNodeId,executionContextId:contextId},{sessionId});
+        const objectId=isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if(typeof objectId!=="string") throw new RetryablePreflightError("Semantic scope is unavailable; observe again");
+        rootObjects.push(objectId);
+      }
+      if (rootObjects.length) evaluated=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId:rootObjects[0],arguments:rootObjects.slice(1).map(objectId=>({objectId})),returnByValue:false,functionDeclaration:`function(...others) { const roots=[this,...others].filter(root=>typeof root.querySelectorAll==='function'); return ${expression}; }`},{sessionId});
+      else evaluated=await this.browser.cdp.call(this.id,"Runtime.evaluate",{expression,contextId,returnByValue:false},{sessionId});
+    } finally { for(const objectId of rootObjects) await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{}); }
     if (isObject(evaluated) && evaluated.exceptionDetails) {
       const details = isObject(evaluated.exceptionDetails) && isObject(evaluated.exceptionDetails.exception) ? evaluated.exceptionDetails.exception.description : undefined;
       if (typeof details === "string" && details.includes("Selector matched more than 1000 elements")) throw new Error("Selector matched more than 1000 elements");
@@ -868,7 +887,7 @@ export class OpenBrowserUseTab {
       }
       if (checkVisibility && await this.cssFrameVisible(frame,frames) !== frameVisible) throw new RetryablePreflightError("Frame visibility changed; observe again");
       if (stages.length !== scopes.length+1 || await this.documentId() !== documentId || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames)) throw new RetryablePreflightError("Frame tree changed; observe again");
-      return {step,scopes,scopeIds:stages.slice(0,-1),framePath,frame,frames,documentId,ids:stages[stages.length-1]};
+      return {step,scopes,scopeIds:stages.slice(0,-1),framePath,...(semanticScope && semantic ? {semantic:{scope:semanticScope,roots:semantic.roots}} : {}),frame,frames,documentId,ids:stages[stages.length-1]};
     } finally {
       for (const objectId of objectIds) await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{});
       await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId:arrayId},{sessionId}).catch(()=>{});
@@ -914,8 +933,8 @@ export class OpenBrowserUseTab {
       if (!isObject(payload) || (["visible","enabled","checked"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null)) throw new RetryablePreflightError("Selector target is unavailable; observe again");
       if (typeof payload.value === "string" && payload.value.length > 30_000) throw new Error("Locator value exceeds the 30000 character limit");
       const frameVisible = mode === "visible" && payload.value === true ? await this.cssFrameVisible(frame,snapshot.frames) : true;
-      const fresh = await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-      if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
+      const fresh = await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+      if (fresh.documentId !== snapshot.documentId || JSON.stringify(fresh.frames) !== JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots) !== JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds) !== JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids) !== JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
       return mode === "visible" && payload.value === true ? frameVisible : payload.value as string | boolean | null;
     } finally { await this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId}).catch(()=>{}); }
   }
@@ -963,8 +982,8 @@ export class OpenBrowserUseTab {
       const second=await measure();
       const moving=(a:number,b:number)=>Math.abs(a-b)>0.25;
       if (moving(first.geometry.x,second.geometry.x) || moving(first.geometry.y,second.geometry.y) || moving(first.geometry.width,second.geometry.width) || moving(first.geometry.height,second.geometry.height) || moving(first.point.x,second.point.x) || moving(first.point.y,second.point.y)) throw new RetryablePreflightError("Target is moving; observe again");
-      const fresh=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-      if (fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
+      const fresh=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+      if (fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
       const checkedState = async () => {
         const result=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function() {
           if (!this.isConnected) return null;
@@ -979,8 +998,8 @@ export class OpenBrowserUseTab {
       };
       if (checked !== undefined) {
         const state=await checkedState();
-        const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-        if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
+        const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+        if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
         const current=await checkedState();
         if (current.value!==state.value || current.radio!==state.radio) throw new RetryablePreflightError("Checked state changed; observe again");
         if (current.value===checked) return;
@@ -1005,8 +1024,8 @@ export class OpenBrowserUseTab {
         if (found.status==='ambiguous') throw new Error("Requested select option is ambiguous");
         if (found.status==='multiple') throw new Error("Multiple options require a multiple select");
         if (found.status!=='ok' || !Array.isArray(found.chosen)) throw new Error("Target is not an enabled native select");
-        const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-        if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
+        const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+        if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
         this.#observation=undefined;
         inputIssued=true;
         const applied=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:found.chosen},{value:selection}],functionDeclaration:`function(chosen,specs) {
@@ -1036,8 +1055,8 @@ export class OpenBrowserUseTab {
         if (status==='invalid') throw new Error("Invalid date or time value");
         if (status==='invalid-number') throw new Error("Invalid number value");
         if (status==='temporal') {
-          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
+          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new RetryablePreflightError("Selector target changed; observe again");
           this.#observation=undefined;
           inputIssued=true;
           const applied=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text}],functionDeclaration:`function(value) { if (!(this instanceof HTMLInputElement) || !['date','time','month','week','datetime-local'].includes(this.type) || !this.isConnected || this.disabled || this.readOnly || this.getAttribute('aria-readonly')==='true') return false; for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return false; const probe=this.ownerDocument.createElement('input');probe.type=this.type;probe.value=value;if(probe.value!==value)return false; const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;if(!setter)return false;setter.call(this,value);this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));return this.isConnected && this.value===value; }`},{sessionId});
@@ -1052,8 +1071,8 @@ export class OpenBrowserUseTab {
       if (key !== undefined || text !== undefined) {
         await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId});
         const verifyFocus = async () => {
-          const afterFocus=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-          if (afterFocus.documentId!==snapshot.documentId || JSON.stringify(afterFocus.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(afterFocus.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after focus; observe again");
+          const afterFocus=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+          if (afterFocus.documentId!==snapshot.documentId || JSON.stringify(afterFocus.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(afterFocus.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(afterFocus.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after focus; observe again");
           if ((await this.focusedInputFrame()).id !== frame.id) throw new Error("Target frame lost focus; observe again");
           const focused=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,arguments:[{value:text !== undefined},{value:text ?? ''}],functionDeclaration:`function(editable,value) { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; if (editable && (this.readOnly || this.getAttribute('aria-readonly') === 'true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))) return false; if(editable && this instanceof HTMLInputElement && this.type==='number'){const probe=this.ownerDocument.createElement('input');probe.type='number';probe.value=value;if(probe.value!==value)return 'invalid-number';} let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }`},{sessionId});
           if (isObject(focused) && isObject(focused.result) && focused.result.value==='invalid-number') throw new Error("Invalid number value");
@@ -1077,14 +1096,14 @@ export class OpenBrowserUseTab {
         await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:"left",buttons:1,clickCount:1},options);
         await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:"left",buttons:0,clickCount:1},options);
         if (checked !== undefined) {
-          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids) || (await checkedState()).value!==checked) throw new Error("Target did not retain the requested checked state");
+          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids) || (await checkedState()).value!==checked) throw new Error("Target did not retain the requested checked state");
         }
         if (doubleClick) {
           const after=await measure();
           if (moving(second.geometry.x,after.geometry.x) || moving(second.geometry.y,after.geometry.y) || moving(second.geometry.width,after.geometry.width) || moving(second.geometry.height,after.geometry.height) || moving(second.point.x,after.point.x) || moving(second.point.y,after.point.y)) throw new Error("Target moved after the first click; observe again");
-          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after the first click; observe again");
+          const latest=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+          if (latest.documentId!==snapshot.documentId || JSON.stringify(latest.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(latest.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(latest.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(latest.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after the first click; observe again");
           await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:"left",buttons:1,clickCount:2},options);
           await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseReleased",...second.inputPoint,button:"left",buttons:0,clickCount:2},options);
         }
@@ -1304,8 +1323,8 @@ export class OpenBrowserUseTab {
   private async verifyLocatorScope(observation: Observation, target: ObservedNode): Promise<void> {
     const guard = observation.guards.get(target.index);
     if (guard?.css) {
-      const {snapshot,scopeId}=guard.css, fresh=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes);
-      if(fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids) || !await this.cssScopeContains(observation,snapshot,scopeId,guard.scopes[0] ?? target.index)) throw new RetryablePreflightError("CSS scope changed; observe again");
+      const {snapshot,scopeId}=guard.css, fresh=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope);
+      if(fresh.documentId!==snapshot.documentId || JSON.stringify(fresh.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(fresh.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(fresh.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(fresh.ids)!==JSON.stringify(snapshot.ids) || !await this.cssScopeContains(observation,snapshot,scopeId,guard.scopes[0] ?? target.index)) throw new RetryablePreflightError("CSS scope changed; observe again");
     }
     if (guard?.framePath && await this.resolveFramePath(guard.framePath) !== target.frameId) throw new RetryablePreflightError("Frame selector changed; observe again");
     const scopes = guard?.scopes ?? [];
@@ -2163,18 +2182,18 @@ export class OpenBrowserUseFrameLocator {
 }
 
 export class OpenBrowserUseCssLocator {
-  constructor(private tab: OpenBrowserUseTab, private selector: string, private framePath?: readonly string[], private position?: number, private scopes: readonly CssStep[] = [], private before: readonly CssTextFilter[] = [], private after: readonly CssTextFilter[] = [], private union?: readonly [readonly CssStep[],readonly CssStep[]]) {
+  constructor(private tab: OpenBrowserUseTab, private selector: string, private framePath?: readonly string[], private position?: number, private scopes: readonly CssStep[] = [], private before: readonly CssTextFilter[] = [], private after: readonly CssTextFilter[] = [], private union?: readonly [readonly CssStep[],readonly CssStep[]], private semanticScope?: OpenBrowserUseRoleLocator) {
     if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
   }
   nth(index: number): OpenBrowserUseCssLocator {
     if (!Number.isSafeInteger(index) || index < 0) throw new Error("Locator index must be a non-negative integer");
-    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER,this.scopes,this.before,this.after,this.union);
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER,this.scopes,this.before,this.after,this.union,this.semanticScope);
   }
   first(): OpenBrowserUseCssLocator { return this.nth(0); }
-  last(): OpenBrowserUseCssLocator { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,-1,this.scopes,this.before,this.after,this.union) : this; }
+  last(): OpenBrowserUseCssLocator { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,-1,this.scopes,this.before,this.after,this.union,this.semanticScope) : this; }
   locator(selector: string): OpenBrowserUseCssLocator {
     if (this.scopes.length >= 31) throw new Error("CSS locator nesting exceeds 32 levels");
-    return new OpenBrowserUseCssLocator(this.tab,selector,this.framePath,undefined,[...this.scopes,this.step()]);
+    return new OpenBrowserUseCssLocator(this.tab,selector,this.framePath,undefined,[...this.scopes,this.step()],[],[],undefined,this.semanticScope);
   }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByRole(role,options).withinCss(this); }
@@ -2183,10 +2202,11 @@ export class OpenBrowserUseCssLocator {
   getByAltText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByAltText(text,options).withinCss(this); }
   getByPlaceholder(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByPlaceholder(text,options).withinCss(this); }
   /** @internal */
-  snapshot(): Promise<CssSnapshot> { return this.tab.queryCss(this.step(),this.framePath,this.scopes); }
+  snapshot(): Promise<CssSnapshot> { return this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope); }
   private step(): CssStep { return {selector:this.selector,...(this.position !== undefined ? {position:this.position} : {}),before:this.before,after:this.after,...(this.union ? {union:this.union} : {})}; }
   private innerSteps(value:OpenBrowserUseCssLocator):CssStep[] {
     if (!(value instanceof OpenBrowserUseCssLocator) || (value.tab.browser!==this.tab.browser || value.tab.id!==this.tab.id) || JSON.stringify(value.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Filter locator must belong to the same tab and frame");
+    if (value.semanticScope && value.semanticScope!==this.semanticScope) throw new Error("Filter locator must share the semantic scope");
     const steps=[...value.scopes,value.step()];
     const depth=(items:readonly CssStep[],level:number):void=>{
       if(level>8)throw new Error("Locator filter nesting exceeds 8 levels");
@@ -2196,20 +2216,22 @@ export class OpenBrowserUseCssLocator {
     return steps;
   }
   and(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator {
+    if (locator?.semanticScope!==this.semanticScope) throw new Error("Intersection locators must share a semantic scope");
     const filter:CssTextFilter={and:this.innerSteps(locator)};
-    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter],this.union);
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter],this.union,this.semanticScope);
   }
   or(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator {
-    return new OpenBrowserUseCssLocator(this.tab,"*",this.framePath,undefined,[],[],[],[this.innerSteps(this),this.innerSteps(locator)]);
+    if (locator?.semanticScope!==this.semanticScope) throw new Error("Union locators must share a semantic scope");
+    return new OpenBrowserUseCssLocator(this.tab,"*",this.framePath,undefined,[],[],[],[this.innerSteps(this),this.innerSteps(locator)],this.semanticScope);
   }
   filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher; has?: OpenBrowserUseCssLocator; hasNot?: OpenBrowserUseCssLocator; visible?: boolean}): OpenBrowserUseCssLocator {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key=>!["hasText","hasNotText","has","hasNot","visible"].includes(key)) ||
         (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined && options.visible === undefined) || (options.visible !== undefined && typeof options.visible !== "boolean") || [options.hasText,options.hasNotText].some(value=>value !== undefined && (typeof value === "string" ? value.length>30_000 : !types.isRegExp(value)))) throw new Error("Invalid locator filter");
     const encode=(value:TextMatcher):CssMatcher=>typeof value === "string" ? value : {source:value.source,flags:value.flags};
     const filter:CssTextFilter={...(options.hasText !== undefined ? {hasText:encode(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:encode(options.hasNotText)} : {}),...(options.has !== undefined ? {has:this.innerSteps(options.has)} : {}),...(options.hasNot !== undefined ? {hasNot:this.innerSteps(options.hasNot)} : {}),...(options.visible !== undefined ? {visible:options.visible} : {})};
-    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter],this.union);
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter],this.union,this.semanticScope);
   }
-  async count(): Promise<number> { return (await this.tab.queryCss(this.step(),this.framePath,this.scopes)).ids.length; }
+  async count(): Promise<number> { return (await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope)).ids.length; }
   async all(): Promise<OpenBrowserUseCssLocator[]> { return Array.from({length:await this.count()},(_,i)=>this.nth(i)); }
   async allTextContents(options: {timeoutMs?: number} = {}): Promise<string[]> {
     const timeoutMs=options.timeoutMs ?? 5000;
@@ -2217,7 +2239,7 @@ export class OpenBrowserUseCssLocator {
     const deadline=performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes), values:string[]=[];
+        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), values:string[]=[];
         let total=0;
         for (const id of snapshot.ids) {
           const value=await this.tab.readCss(snapshot,id,"textContent");
@@ -2237,7 +2259,7 @@ export class OpenBrowserUseCssLocator {
     const deadline = performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot = await this.tab.queryCss(this.step(),this.framePath,this.scopes);
+        const snapshot = await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope);
         const ids = snapshot.ids;
         if (ids.length > 1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
         if (ids.length) return await action(snapshot,ids[0]);
@@ -2253,7 +2275,7 @@ export class OpenBrowserUseCssLocator {
   isEnabled(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"enabled") as boolean); }
   isChecked(): Promise<boolean> { return this.perform(async (snapshot,id)=>await this.tab.readCss(snapshot,id,"checked") as boolean); }
   async isVisible(): Promise<boolean> {
-    const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes), ids=snapshot.ids;
+    const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), ids=snapshot.ids;
     if (!ids.length) return false;
     if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
     return await this.tab.readCss(snapshot,ids[0],"visible") as boolean;
@@ -2265,7 +2287,7 @@ export class OpenBrowserUseCssLocator {
     const deadline=performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes), ids=snapshot.ids;
+        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), ids=snapshot.ids;
         if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
         const matched=options.state==='attached' || options.state==='detached' ? ids.length>0 : ids.length>0 && await this.tab.readCss(snapshot,ids[0],"visible")===true;
         if (matched === (options.state==='attached' || options.state==='visible')) return;
@@ -2333,6 +2355,9 @@ export class OpenBrowserUseRoleLocator {
   last(): OpenBrowserUseRoleLocator {
     return this.position !== undefined ? this : new OpenBrowserUseRoleLocator(this.tab,this.roles,this.options,-1,this.textMatch,this.field,this.scope,this.filtersBefore,this.filtersAfter,this.framePath,this.cssScope);
   }
+
+  locator(selector: string): OpenBrowserUseCssLocator { return new OpenBrowserUseCssLocator(this.tab,selector,undefined,undefined,[],[],[],undefined,this); }
+  getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
 
   private child(locator: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator {
     return new OpenBrowserUseRoleLocator(this.tab,locator.roles,locator.options,locator.position,locator.textMatch,locator.field,this,locator.filtersBefore,locator.filtersAfter,this.framePath);
@@ -2410,6 +2435,14 @@ export class OpenBrowserUseRoleLocator {
       if(!node) throw new RetryablePreflightError("Locator target changed; observe again");
       return {backendNodeId:node.backendNodeId,frameId:node.frameId ?? ""};
     });
+  }
+
+  /** @internal */
+  async detachedRoots(): Promise<{documentId:number; frames:FrameInfo[]; roots:RoleGuard["expected"]}> {
+    const observation=await this.tab.freshFilterObservation();
+    const matches=await this.matches(observation);
+    if (!observation.frames) throw new Error("Frame information is unavailable");
+    return {documentId:observation.documentId,frames:observation.frames,roots:this.identities(observation,matches)};
   }
 
   private guard(snapshotId:string, matches:LocatorMatch[]): RoleGuard {

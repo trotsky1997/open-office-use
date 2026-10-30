@@ -312,7 +312,14 @@ Both operands must refer to the same browser tab and frame.
 Semantic locators are not yet supported as inner filters. CSS locators can scope
 `getByRole`, `getByLabel`, `getByText`, `getByAltText` and `getByPlaceholder`;
 the first semantic target is resolved in the CSS locator's selected frame.
-The CSS scope, its filters and containment are rechecked before reads and input. `filter({visible: true})` and
+The CSS scope, its filters and containment are rechecked before reads and input. A semantic locator can also scope `locator()`
+and `getByTestId()`; matching semantic containers are re-evaluated before
+reads and input. Their matched containers must be in one frame; select a frame
+or refine the semantic locator when they span multiple frames. Multiple
+containers are traversed in accessibility-observation order, with duplicate
+CSS descendants removed. A semantic text node has no CSS descendants. CSS
+`and`/`or` operands rooted in semantic scopes must share the same semantic
+locator object. `filter({visible: true})` and
 `filter({visible: false})` check CSS visibility and nonzero element and frame
 bounds. They can be combined with text and descendant filters; occlusion is
 checked by pointer actions. `waitFor`

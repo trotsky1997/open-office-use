@@ -449,7 +449,8 @@ export declare class OpenBrowserUseCssLocator {
     private before;
     private after;
     private union?;
-    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined, scopes?: readonly CssStep[], before?: readonly CssTextFilter[], after?: readonly CssTextFilter[], union?: readonly [readonly CssStep[], readonly CssStep[]] | undefined);
+    private semanticScope?;
+    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined, scopes?: readonly CssStep[], before?: readonly CssTextFilter[], after?: readonly CssTextFilter[], union?: readonly [readonly CssStep[], readonly CssStep[]] | undefined, semanticScope?: OpenBrowserUseRoleLocator | undefined);
     nth(index: number): OpenBrowserUseCssLocator;
     first(): OpenBrowserUseCssLocator;
     last(): OpenBrowserUseCssLocator;
@@ -546,6 +547,8 @@ export declare class OpenBrowserUseRoleLocator {
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
     last(): OpenBrowserUseRoleLocator;
+    locator(selector: string): OpenBrowserUseCssLocator;
+    getByTestId(testId: string): OpenBrowserUseCssLocator;
     private child;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
