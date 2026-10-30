@@ -147,6 +147,12 @@ with tempfile.TemporaryDirectory() as tmp:
         assert post('grid-freeze', freeze)['revision'] == 4
         assert load_workbook(draft / 'revision-000004.xlsx').active.freeze_panes == 'B2'
         assert post('grid', {'base_revision': 4, 'sheet': 'Sales Data', 'cell_range': 'A1'})['worksheet_view']['pane']['topLeftCell'] == 'B2'
+        merge = {'base_revision': 4, 'sheet': 'Sales Data', 'cell_range': 'C1:C2', 'merge': True}
+        try: post('grid-merge', merge, 'http://evil.test'); raise AssertionError('Cross-origin merge accepted')
+        except urllib.error.HTTPError as error: assert error.code == 403
+        assert post('grid-merge', merge)['revision'] == 5
+        assert 'C1:C2' in str(load_workbook(draft / 'revision-000005.xlsx').active.merged_cells)
+        assert post('grid-merge', {**merge, 'base_revision': 5, 'merge': False})['revision'] == 6
     finally:
         server.send_signal(signal.SIGINT); server.wait(timeout=10)
 print('Grid smoke passed: multiple cells, formulas, clear, range and revision safety')

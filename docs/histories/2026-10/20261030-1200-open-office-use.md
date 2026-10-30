@@ -139,3 +139,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Reset viewer formatting controls after a successful commit and lock them during the request, retaining options on failure to prevent accidental reuse of prior formatting.
 
 - Add versioned XLSX freeze/unfreeze operations through CLI, MCP and viewer, expose saved pane attributes in grid reads, and preserve unrelated workbook parts and formula caches.
+
+- Add versioned merge/unmerge through viewer, CLI and MCP, preserving cell XML and formula caches while rejecting occupied interiors, overlapping formulas and unsupported worksheet features.

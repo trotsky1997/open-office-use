@@ -188,6 +188,12 @@ def session_format_grid(directory: str, base_revision: int, sheet: str, cell_ran
 
 
 @server.tool()
+def session_merge_cells(directory: str, base_revision: int, sheet: str, cell_range: str, merge: bool = True) -> dict[str, Any]:
+    """Merge a bounded empty-interior range or unmerge an exact existing range."""
+    return session.merge_cells(directory, base_revision, sheet, cell_range, merge)
+
+
+@server.tool()
 def session_freeze_panes(directory: str, base_revision: int, sheet: str, cell: str | None) -> dict[str, Any]:
     """Freeze rows and columns above and left of cell; pass null or A1 to unfreeze."""
     return session.freeze_panes(directory, base_revision, sheet, cell)

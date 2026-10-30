@@ -237,6 +237,7 @@ def main():
     session_cell_diff = sub.add_parser('compare-cells'); session_cell_diff.add_argument('directory'); session_cell_diff.add_argument('--before', type=int, required=True); session_cell_diff.add_argument('--after', type=int, required=True); session_cell_diff.add_argument('--sheet', required=True); session_cell_diff.add_argument('--range', required=True, dest='cell_range')
     grid_edit = sub.add_parser('edit-grid'); grid_edit.add_argument('directory'); grid_edit.add_argument('--base', type=int, required=True); grid_edit.add_argument('--sheet', required=True); grid_edit.add_argument('--range', required=True, dest='cell_range'); grid_edit.add_argument('--changes', required=True, help='JSON array of cell/value objects')
     grid_resize = sub.add_parser('resize-grid'); grid_resize.add_argument('directory'); grid_resize.add_argument('--base', type=int, required=True); grid_resize.add_argument('--sheet', required=True); grid_resize.add_argument('--range', required=True, dest='cell_range'); grid_resize.add_argument('--target-range', required=True); grid_resize.add_argument('--column-width', type=float); grid_resize.add_argument('--row-height', type=float)
+    merge = sub.add_parser('merge-cells'); merge.add_argument('directory'); merge.add_argument('--base', type=int, required=True); merge.add_argument('--sheet', required=True); merge.add_argument('--range', required=True, dest='cell_range'); merge.add_argument('--unmerge', action='store_true')
     freeze = sub.add_parser('freeze-panes'); freeze.add_argument('directory'); freeze.add_argument('--base', type=int, required=True); freeze.add_argument('--sheet', required=True); freeze.add_argument('--cell', required=True, help='Top-left scrollable cell, or A1 to unfreeze')
     grid_format = sub.add_parser('format-grid'); grid_format.add_argument('directory'); grid_format.add_argument('--base', type=int, required=True); grid_format.add_argument('--sheet', required=True); grid_format.add_argument('--range', required=True, dest='cell_range'); grid_format.add_argument('--style-range', required=True); grid_format.add_argument('--properties', required=True, help='JSON formatting object')
     track_replace = sub.add_parser('track-replace-text'); track_replace.add_argument('directory'); track_replace.add_argument('--base', type=int, required=True); track_replace.add_argument('--path', required=True); track_replace.add_argument('--find', required=True); track_replace.add_argument('--replace', required=True, dest='replacement'); track_replace.add_argument('--author', required=True)
@@ -307,6 +308,8 @@ def main():
                 result = session.edit_grid(args.directory, args.base, args.sheet, args.cell_range, json.loads(args.changes))
             elif args.action == 'resize-grid':
                 result = session.resize_grid(args.directory, args.base, args.sheet, args.cell_range, args.target_range, args.column_width, args.row_height)
+            elif args.action == 'merge-cells':
+                result = session.merge_cells(args.directory, args.base, args.sheet, args.cell_range, not args.unmerge)
             elif args.action == 'freeze-panes':
                 result = session.freeze_panes(args.directory, args.base, args.sheet, args.cell)
             elif args.action == 'format-grid':
