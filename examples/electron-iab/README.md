@@ -180,3 +180,13 @@ Electron 44.7.0 / macOS arm64 is locally validated. Linux needs a desktop or Xvf
 for the smoke. Windows socket mode is unavailable, and Windows private channels
 still require validation. Site, IME, cross-origin-frame and minimized-window
 compatibility need further testing. The npm package has not been published.
+
+## Scoped upload smoke
+
+After building the Electron package and its native peer adapter, run
+`pnpm --filter @open-browser-use/electron-iab-example exec electron upload-smoke.mjs`
+on macOS or Linux. The smoke opens a visible window, uses a temporary profile
+and local fixture files, and checks the authorized socket client and file
+selection in the main page and, after hiding the initialized host window, a
+cross-process iframe. It does not submit the files to a server. A Linux virtual
+display can be used for an isolated run.

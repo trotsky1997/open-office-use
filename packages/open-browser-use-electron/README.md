@@ -357,7 +357,9 @@ enables/disables both effects during manual steps or automatic playback.
   changes. In a hidden presented window, preparation temporarily disables
   background throttling. The screenshot is discarded. Text and mouse events are verified as
   trusted on the example fixture; IME, cross-origin frames and minimized windows
-  require further validation. A stalled preparation or screenshot returns a
+  require further validation. A Linux ARM64 virtual-display run encountered a
+  screenshot timeout when the host window had never been shown. File selection
+  passed with the window visible and after showing then hiding it. A stalled preparation or screenshot returns a
   three-second timeout and releases the tab queue. Timeout detaches the debugger
   and invalidates iframe sessions; observe a timed-out input before retrying.
 - JavaScript `alert` and `confirm` dialogs can be observed and handled with
