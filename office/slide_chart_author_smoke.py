@@ -8,6 +8,7 @@ from pptx.enum.chart import XL_CHART_TYPE
 import open_office_use
 import officecli_backend
 import slide_charts
+import session
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); out = root/'charts.pptx'
@@ -35,6 +36,12 @@ with tempfile.TemporaryDirectory() as tmp:
     assert pie_chart.series[0].points[1].format.fill.fore_color.rgb == (0x62,0xa8,0x94)
     inventory = slide_charts.inspect(out); assert inventory['charts'][3]['reconciliation']['status'] == 'match', inventory
     assert inventory['charts'][0]['description'] == 'Revenue compared with target' and not inventory['charts'][0]['description_truncated']
+    chart_draft = root/'chart-description'; session.start(chart_draft,source=out)
+    chart_target = inventory['charts'][0]
+    result = session.set_slide_description(chart_draft,0,chart_target['path'],'Updated chart',inventory['snapshot_sha256'])
+    updated_inventory = slide_charts.inspect(result['file'])
+    assert updated_inventory['charts'][0]['description'] == 'Updated chart' and updated_inventory['charts'][0]['reconciliation']['status'] == 'match', updated_inventory
+    code, validation, _ = officecli_backend.invoke('validate',result['file']); assert code == 0 and validation['success'], validation
     book = load_workbook(io.BytesIO(first.part.chart_workbook.xlsx_part.blob)); ws = book.active
     assert [ws.cell(i,1).value for i in range(2,5)] == ['Q1','Q2','Q3'] and [ws.cell(i,2).value for i in range(2,5)] == [100,120,135]
     assert first.series[0].format.fill.fore_color.rgb == (0x23,0x6b,0x8e)

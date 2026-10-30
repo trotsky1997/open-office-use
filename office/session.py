@@ -797,6 +797,17 @@ def read_picture_file(path):
         if frozen.stat().st_size > 10 * 1024 * 1024: raise ValueError('Image must be at most 10 MiB')
         return frozen.read_bytes()
 
+def set_slide_description(directory, base_revision, path, description, expected_sha256=None):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'pptx': raise ValueError('Slide description requires a PPTX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
+    try: slides.set_description(source, output, path, description, expected_sha256)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'path': path}
+
+
 def replace_picture(directory, base_revision, path, image_data, expected_sha256=None):
     state = info(directory)
     source = revision_file(state, base_revision)

@@ -302,3 +302,5 @@ Authored Word TOC heading caches can be refreshed in a snapshot-bound session re
 TOC cache refresh resolves direct outline levels and paragraph-style inheritance, including custom styles; ambiguous and cyclic styles are rejected. Only direct-body headings are supported.
 
 Positioned PowerPoint elements accept nonvisual descriptions, including tables, charts, shapes and connectors; chart inspection and layout candidates report bounded descriptions. Screen-reader behavior and native PowerPoint remain unverified.
+
+Existing slide object descriptions can be updated in snapshot-bound session revisions for shapes, pictures, connectors, tables and charts, including groups. Native PowerPoint and screen-reader behavior remain unverified.

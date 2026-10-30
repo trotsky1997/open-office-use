@@ -3,11 +3,14 @@ import tempfile
 import json
 import sys
 import subprocess
+import hashlib
+import zipfile
 from pathlib import Path
 from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
+from pptx.enum.shapes import MSO_SHAPE
 import open_office_use
 import officecli_backend
 import slide_text_check
@@ -31,6 +34,24 @@ with tempfile.TemporaryDirectory() as tmp:
     assert len(slide.shapes) == 4 and slide.shapes[1].text == 'Quarterly review'
     assert slide.shapes[1].text_frame.paragraphs[0].runs[0].font.size.pt == 32
     assert slide.shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Teal illustration'
+    desc_draft = root/'description-draft'; session.start(desc_draft,source=out)
+    picture_path = f'/slide[1]/picture[@id={slide.shapes[3].shape_id}]'; digest = hashlib.sha256(out.read_bytes()).hexdigest()
+    try: session.set_slide_description(desc_draft,0,picture_path,'Wrong snapshot',expected_sha256='0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale description snapshot accepted')
+    assert session.info(desc_draft)['latest_revision'] == 0
+    described = session.set_slide_description(desc_draft,0,picture_path,'Updated illustration',expected_sha256=digest)
+    assert Presentation(described['file']).slides[0].shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Updated illustration'
+    with zipfile.ZipFile(out) as before, zipfile.ZipFile(described['file']) as after:
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name != 'ppt/slides/slide1.xml')
+    cli = Path(__file__).with_name('open_office_use.py'); shape_path = f'/slide[1]/shape[@id={slide.shapes[0].shape_id}]'
+    command = subprocess.run([sys.executable,str(cli),'session','set-slide-description',str(desc_draft),'--base','1','--path',shape_path,'--description','New accent'],capture_output=True,text=True,check=True)
+    assert json.loads(command.stdout)['revision'] == 2
+    assert Presentation(desc_draft/'revision-000002.pptx').slides[0].shapes[0]._element.nvSpPr.cNvPr.get('descr') == 'New accent'
+    try: session.set_slide_description(desc_draft,2,shape_path,'x'*1001)
+    except ValueError: pass
+    else: raise AssertionError('Oversize description accepted')
+    assert session.info(desc_draft)['latest_revision'] == 2
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
     line_file=root/'lines.pptx'
     lines=[{'type':'line','x':1,'y':1,'end_x':5,'end_y':1,'color':'236B8E','line_width':3,'arrow':'end'}, {'type':'line','x':5,'y':2,'end_x':1,'end_y':2,'color':'BA5A32','arrow':'end'}, {'type':'line','x':6,'y':1,'end_x':6,'end_y':3,'arrow':'both'}]
@@ -69,6 +90,16 @@ with tempfile.TemporaryDirectory() as tmp:
     assert first.find(a+'endCxn').get('id') == str(attached[1].shape_id) and first.find(a+'endCxn').get('idx') == '1'
     assert second.find(a+'endCxn').get('id') == str(attached[2].shape_id) and second.find(a+'endCxn').get('idx') == '2'
     assert attached[4].begin_x == attached[0].left + attached[0].width and attached[4].end_x == attached[1].left
+    connector_draft = root/'connector-description'; session.start(connector_draft,source=connector_file)
+    connection_path = f'/slide[1]/connector[@id={attached[4].shape_id}]'
+    connection_result = session.set_slide_description(connector_draft,0,connection_path,'Updated connection')
+    assert Presentation(connection_result['file']).slides[0].shapes[4]._element.nvCxnSpPr.cNvPr.get('descr') == 'Updated connection'
+    grouped = root/'grouped.pptx'; group_deck = Presentation(); group_slide = group_deck.slides.add_slide(group_deck.slide_layouts[6]); group = group_slide.shapes.add_group_shape()
+    child = group.shapes.add_shape(MSO_SHAPE.RECTANGLE,Inches(1),Inches(1),Inches(1),Inches(1)); group_deck.save(grouped)
+    group_draft = root/'group-description'; session.start(group_draft,source=grouped)
+    group_path = f'/slide[1]/group[@id={group.shape_id}]/shape[@id={child.shape_id}]'
+    grouped_result = session.set_slide_description(group_draft,0,group_path,'Grouped shape')
+    assert Presentation(grouped_result['file']).slides[0].shapes[0].shapes[0]._element.nvSpPr.cNvPr.get('descr') == 'Grouped shape'
     code, validation, _=officecli_backend.invoke('validate',connector_file); assert code==0 and validation['success'],validation
     for elements in ([nodes[0],nodes[0]], [nodes[0],connectors[0]], [nodes[0],dict(connectors[0],start={'shape':'node0','side':'corner'})]):
         invalid=root/'invalid-connector.pptx'
@@ -151,6 +182,13 @@ with tempfile.TemporaryDirectory() as tmp:
     table_spec = {'slide_size':{'width':13.333,'height':7.5}, 'slides':[{'layout':'blank','elements':[{'type':'table','x':1,'y':1,'width':8,'height':2,'rows':[['Metric','Current','Prior'],['Revenue','18%','12%'],['Retention','92%','90%']],'header':True,'font':'Arial','font_size':18,'color':'14283F','header_fill':'236B8E','header_color':'FFFFFF','column_weights':[2,1,1]}]}]}
     table_spec['slides'][0]['elements'][0]['description'] = 'Revenue and retention comparison'
     table_file = root/'table.pptx'; open_office_use.author(table_spec, table_file)
+    table_draft = root/'table-description'; session.start(table_draft,source=table_file)
+    table_id = Presentation(table_file).slides[0].shapes[0].shape_id
+    table_desc = session.set_slide_description(table_draft,0,f'/slide[1]/table[@id={table_id}]','Updated table')
+    assert Presentation(table_desc['file']).slides[0].shapes[0]._element.nvGraphicFramePr.cNvPr.get('descr') == 'Updated table'
+    try: session.set_slide_description(table_draft,1,f'/slide[1]/chart[@id={table_id}]','Wrong kind')
+    except ValueError: pass
+    else: raise AssertionError('Table selected as a chart')
     shape = Presentation(table_file).slides[0].shapes[0]; table = shape.table
     assert shape._element.nvGraphicFramePr.cNvPr.get('descr') == 'Revenue and retention comparison'
     assert table.cell(1,0).text == 'Revenue' and table.cell(0,1).text == 'Current' and table.first_row

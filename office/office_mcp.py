@@ -442,6 +442,12 @@ def session_add_comment(directory: str, base_revision: int, path: str, text: str
 
 
 @server.tool()
+def session_set_slide_description(directory: str, base_revision: int, path: str, description: str, expected_sha256: str | None = None) -> dict[str, Any]:
+    """Set alternative text on one PowerPoint shape, picture, connector, chart or table in a new revision."""
+    return session.set_slide_description(directory, base_revision, path, description, expected_sha256)
+
+
+@server.tool()
 def session_replace_picture(directory: str, base_revision: int, path: str, image_file: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Replace a PPTX picture with a local PNG or JPEG, preserving its geometry and crop."""
     image_data = session.read_picture_file(image_file)

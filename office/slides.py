@@ -355,6 +355,36 @@ def replace_text(source, output, path, find, replacement):
     return ooxml.edit_xml(source, output, lambda file: slide_part(file, slide_index), edit)
 
 
+def set_description(source, output, path, description, expected_sha256=None):
+    """Set one slide object's alternative description while preserving other parts."""
+    pattern = re.compile(r'/slide\[(' + INDEX + r')\](?:/group\[' + SELECTOR + r'\]){0,8}/(?:shape|picture|connector|chart|table)\[' + SELECTOR + r'\]\Z')
+    match = pattern.fullmatch(path) if isinstance(path, str) and len(path) <= 512 else None
+    if not match or Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx': raise ValueError('Target must be a PPTX slide object path')
+    if not isinstance(description, str) or len(description) > 1000: raise ValueError('Description must be text of at most 1,000 characters')
+    tags = {'group': ('grpSp', 'nvGrpSpPr'), 'shape': ('sp', 'nvSpPr'), 'picture': ('pic', 'nvPicPr'), 'connector': ('cxnSp', 'nvCxnSpPr'), 'table': ('graphicFrame', 'nvGraphicFramePr'), 'chart': ('graphicFrame', 'nvGraphicFramePr')}
+    def edit(tree, archive):
+        parent = tree.getroot().find(P + 'cSld/' + P + 'spTree')
+        if tree.getroot().tag != P + 'sld' or parent is None: raise ValueError('Invalid slide shape tree')
+        for kind, selector in re.findall(r'/(group|shape|picture|connector|chart|table)\[([^]]+)\]', path):
+            if parent.find(MC + 'AlternateContent') is not None: raise ValueError('Target container contains unsupported alternate content')
+            tag, nonvisual = tags[kind]; children = parent.findall(P + tag)
+            if kind in ('chart', 'table'):
+                uri = 'http://schemas.openxmlformats.org/drawingml/2006/' + kind
+                children = [child for child in children if any(node.get('uri') == uri for node in child.findall(A + 'graphic/' + A + 'graphicData'))]
+            if selector.startswith('@id='):
+                children = [child for child in children if child.find(P + nonvisual + '/' + P + 'cNvPr') is not None and child.find(P + nonvisual + '/' + P + 'cNvPr').get('id') == selector[4:]]
+                if len(children) != 1: raise ValueError('Object ID must identify exactly one object in its container')
+                parent = children[0]
+            else:
+                index = int(selector) - 1
+                if index >= len(children): raise ValueError('Slide object path does not exist')
+                parent = children[index]
+        metadata = parent.findall(P + tags[kind][1] + '/' + P + 'cNvPr')
+        if len(metadata) != 1: raise ValueError('Object has ambiguous nonvisual properties')
+        metadata[0].set('descr', description)
+    return ooxml.edit_xml(source, output, lambda file: slide_part(file, int(match.group(1)) - 1), edit, expected_sha256=expected_sha256)
+
+
 def replace_picture(source, output, path, image_data, expected_sha256=None):
     """Replace one embedded picture while preserving slide XML geometry and crop."""
     import io
