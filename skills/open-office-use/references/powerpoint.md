@@ -25,3 +25,5 @@ Textbox margins, vertical alignment, wrapping and auto-fit modes can be set duri
 When authoring new slides, set `notes` on each slide to create editable speaker notes; newlines separate paragraphs. Use notes read/search and session edits for review.
 
 Slide table cells accept strings or `{"paragraphs":[...]}` with the same rich runs, links and paragraph settings as textboxes. Inspect wrapping and use a paragraph-specific path for targeted edits.
+
+Rendered-text candidates can include `paragraph_candidates` for multi-paragraph shapes and table cells. Check truncation and rendered output; table paragraph targets open for supported text replacement, with hyperlinks and complex structures read-only.

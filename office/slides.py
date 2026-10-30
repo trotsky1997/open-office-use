@@ -138,6 +138,78 @@ def slide_part(file, index):
     return parts[index]
 
 
+def find_paragraph(tree, path):
+    match = PATH.fullmatch(path) if paragraph_path(path) else None
+    if not match: raise ValueError('Target must be a slide shape or table-cell paragraph path')
+    paragraph_index = int(match.group(2)) - 1 if match.group(2) else None
+    if tree.getroot().tag != P + 'sld':
+        raise ValueError('Slide XML has an invalid root')
+    parent = tree.getroot().find(P + 'cSld/' + P + 'spTree')
+    if parent is None:
+        raise ValueError('Slide has no shape tree')
+    for kind, selector in SEGMENT.findall(path):
+        if parent.find(MC + 'AlternateContent') is not None:
+            raise ValueError('Target container contains unsupported alternate content')
+        if kind in ('group', 'shape', 'table'):
+            tag = {'group': 'grpSp', 'shape': 'sp', 'table': 'graphicFrame'}[kind]
+            children = parent.findall(P + tag)
+            if kind == 'table':
+                children = [child for child in children if child.find(A + 'graphic/' + A + 'graphicData/' + A + 'tbl') is not None]
+            if selector.startswith('@id='):
+                requested = selector.partition('=')[2]
+                nonvisual = {'group': 'nvGrpSpPr', 'shape': 'nvSpPr', 'table': 'nvGraphicFramePr'}[kind]
+                children = [child for child in children if child.find(P + nonvisual + '/' + P + 'cNvPr') is not None
+                            and child.find(P + nonvisual + '/' + P + 'cNvPr').get('id') == requested]
+                if len(children) != 1:
+                    raise ValueError('Shape ID must identify exactly one shape in its container')
+                parent = children[0]
+            else:
+                index = int(selector) - 1
+                if index >= len(children):
+                    raise ValueError('Shape path does not exist')
+                parent = children[index]
+            if kind == 'table':
+                tables = parent.findall(A + 'graphic/' + A + 'graphicData/' + A + 'tbl')
+                if len(tables) != 1:
+                    raise ValueError('Table frame must contain exactly one table')
+                parent = tables[0]
+        else:
+            children = parent.findall(A + kind)
+            index = int(selector) - 1
+            if index >= len(children):
+                raise ValueError('Table cell path does not exist')
+            parent = children[index]
+            if kind == 'tc' and any(parent.get(key) not in (None, '0', 'false') for key in ('hMerge', 'vMerge')):
+                raise ValueError('Merged-cell placeholders cannot be edited; use the merged cell origin')
+    text_body = parent.find(A + 'txBody') if parent.tag == A + 'tc' else parent.find(P + 'txBody')
+    if text_body is None:
+        raise ValueError('Target has no editable text body')
+    paragraphs = text_body.findall(A + 'p')
+    if paragraph_index is None:
+        if len(paragraphs) != 1:
+            raise ValueError('Choose a paragraph in a target with multiple paragraphs')
+        paragraph_index_value = 0
+    else:
+        paragraph_index_value = paragraph_index
+    if paragraph_index_value >= len(paragraphs):
+        raise ValueError('Paragraph does not exist')
+    paragraph = paragraphs[paragraph_index_value]
+    return paragraph
+
+
+def paragraph_nodes(paragraph):
+    if any(child.tag not in (A + 'pPr', A + 'r', A + 'endParaRPr') for child in paragraph):
+        raise ValueError('Paragraph contains unsupported content such as fields or line breaks')
+    nodes = []
+    for run in paragraph.findall(A + 'r'):
+        if any(child.tag not in (A + 'rPr', A + 't') for child in run):
+            raise ValueError('Run contains unsupported content')
+        if run.find('.//' + A + 'hlinkClick') is not None or run.find('.//' + A + 'hlinkMouseOver') is not None:
+            raise ValueError('Paragraph contains a hyperlink')
+        nodes.extend(run.findall(A + 't'))
+    return nodes
+
+
 def replace_text(source, output, path, find, replacement):
     match = PATH.fullmatch(path) if paragraph_path(path) else None
     if not match:
@@ -145,71 +217,10 @@ def replace_text(source, output, path, find, replacement):
     if Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx':
         raise ValueError('Text replacement requires PPTX input and output')
     slide_index = int(match.group(1)) - 1
-    paragraph_index = int(match.group(2)) - 1 if match.group(2) else None
 
     def edit(tree, archive):
-        if tree.getroot().tag != P + 'sld':
-            raise ValueError('Slide XML has an invalid root')
-        parent = tree.getroot().find(P + 'cSld/' + P + 'spTree')
-        if parent is None:
-            raise ValueError('Slide has no shape tree')
-        for kind, selector in SEGMENT.findall(path):
-            if parent.find(MC + 'AlternateContent') is not None:
-                raise ValueError('Target container contains unsupported alternate content')
-            if kind in ('group', 'shape', 'table'):
-                tag = {'group': 'grpSp', 'shape': 'sp', 'table': 'graphicFrame'}[kind]
-                children = parent.findall(P + tag)
-                if kind == 'table':
-                    children = [child for child in children if child.find(A + 'graphic/' + A + 'graphicData/' + A + 'tbl') is not None]
-                if selector.startswith('@id='):
-                    requested = selector.partition('=')[2]
-                    nonvisual = {'group': 'nvGrpSpPr', 'shape': 'nvSpPr', 'table': 'nvGraphicFramePr'}[kind]
-                    children = [child for child in children if child.find(P + nonvisual + '/' + P + 'cNvPr') is not None
-                                and child.find(P + nonvisual + '/' + P + 'cNvPr').get('id') == requested]
-                    if len(children) != 1:
-                        raise ValueError('Shape ID must identify exactly one shape in its container')
-                    parent = children[0]
-                else:
-                    index = int(selector) - 1
-                    if index >= len(children):
-                        raise ValueError('Shape path does not exist')
-                    parent = children[index]
-                if kind == 'table':
-                    tables = parent.findall(A + 'graphic/' + A + 'graphicData/' + A + 'tbl')
-                    if len(tables) != 1:
-                        raise ValueError('Table frame must contain exactly one table')
-                    parent = tables[0]
-            else:
-                children = parent.findall(A + kind)
-                index = int(selector) - 1
-                if index >= len(children):
-                    raise ValueError('Table cell path does not exist')
-                parent = children[index]
-                if kind == 'tc' and any(parent.get(key) not in (None, '0', 'false') for key in ('hMerge', 'vMerge')):
-                    raise ValueError('Merged-cell placeholders cannot be edited; use the merged cell origin')
-        text_body = parent.find(A + 'txBody') if parent.tag == A + 'tc' else parent.find(P + 'txBody')
-        if text_body is None:
-            raise ValueError('Target has no editable text body')
-        paragraphs = text_body.findall(A + 'p')
-        if paragraph_index is None:
-            if len(paragraphs) != 1:
-                raise ValueError('Choose a paragraph in a target with multiple paragraphs')
-            paragraph_index_value = 0
-        else:
-            paragraph_index_value = paragraph_index
-        if paragraph_index_value >= len(paragraphs):
-            raise ValueError('Paragraph does not exist')
-        paragraph = paragraphs[paragraph_index_value]
-        if any(child.tag not in (A + 'pPr', A + 'r', A + 'endParaRPr') for child in paragraph):
-            raise ValueError('Paragraph contains unsupported content such as fields or line breaks')
-        nodes = []
-        for run in paragraph.findall(A + 'r'):
-            if any(child.tag not in (A + 'rPr', A + 't') for child in run):
-                raise ValueError('Run contains unsupported content')
-            if run.find('.//' + A + 'hlinkClick') is not None or run.find('.//' + A + 'hlinkMouseOver') is not None:
-                raise ValueError('Paragraph contains a hyperlink')
-            nodes.extend(run.findall(A + 't'))
-        ooxml.replace_nodes(nodes, find, replacement)
+        paragraph = find_paragraph(tree, path)
+        ooxml.replace_nodes(paragraph_nodes(paragraph), find, replacement)
 
     return ooxml.edit_xml(source, output, lambda file: slide_part(file, slide_index), edit)
 

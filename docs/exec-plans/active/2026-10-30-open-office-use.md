@@ -232,3 +232,5 @@ Workbook authoring supports bounded rectangular arrays per sheet, with overlap c
 Workbook authoring supports native typed date and millisecond date-time values, respecting the source workbook date epoch.
 
 Date-formatted grid cells support verified ISO date/date-time updates without replacing the saved number format; numeric results are checked against the workbook epoch.
+
+Rendered-text checks offer bounded paragraph-level candidates and table paragraph inspection/targeted replacement; paragraph matching shares container bounds and remains a visual-review heuristic.

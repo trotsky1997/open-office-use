@@ -627,6 +627,8 @@ async function loadElement(path) {
   document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
   if (target.replace_only && target.note_impact) {
    document.getElementById('edit-status').textContent=`Loaded ${target.note_impact.kind} ${target.note_impact.id} at revision ${target.revision}. References to this note share its text. Use Replace once; review the rendered document.`;
+  } else if (target.replace_only && target.format==='pptx') {
+   document.getElementById('edit-status').textContent=target.read_only_reason ? `Loaded read-only slide paragraph: ${target.read_only_reason}.` : `Loaded slide paragraph at revision ${target.revision}. Use Replace once; review the rendered slide.`;
   } else if (target.replace_only) {
    const impact=target.story_impact, linked=impact.linked_sections.map(r=>`${r.section} (${r.type}, ${r.inherited ? 'linked' : 'direct'}, ${r.relationship_id})`).join(', ') || 'none found';
    document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Part ${impact.part}; sections: ${linked}. ${impact.same_part_ids.length ? 'Other relationship IDs share this part: '+impact.same_part_ids.join(', ')+'. ' : ''}${impact.complete ? '' : 'Section links are incomplete. '}Use Replace once; verify the rendered document.`;
@@ -803,7 +805,18 @@ document.getElementById('slide-text-scan').addEventListener('click', async () =>
     if (pinned!==null || current!==revision || displayed!==revision || slideTextRevision!==revision) return;
     document.getElementById('edit-panel').open=true; await loadElement(candidate.path_hint);
    });
-   row.appendChild(use); document.getElementById('slide-text-results').appendChild(row);
+   row.appendChild(use);
+   for (const paragraph of candidate.paragraph_candidates || []) {
+    if (paragraph.path_hint === candidate.path_hint) continue;
+    const target=document.createElement('button'); target.type='button'; target.textContent=`Load ${paragraph.path_hint.split('/').pop()}`; target.disabled=pinned!==null || current!==revision;
+    target.addEventListener('click', async () => {
+     if (pinned!==null || current!==revision || displayed!==revision || slideTextRevision!==revision) return;
+     document.getElementById('edit-panel').open=true; await loadElement(paragraph.path_hint);
+    });
+    row.append(' ',target);
+   }
+   if (candidate.paragraph_candidates_truncated) row.append(' Additional paragraphs were not fully checked.');
+   document.getElementById('slide-text-results').appendChild(row);
   }
   document.getElementById('slide-text-output').textContent=JSON.stringify(result,null,2);
  } catch(error) { if (epoch===slideTextEpoch && displayed===revision) document.getElementById('slide-text-status').textContent=`Text check error: ${error.message}`; }

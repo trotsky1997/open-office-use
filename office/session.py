@@ -456,6 +456,18 @@ def edit_target(directory, base_revision, path):
         links = [{'relationship_id': item['id'], **link} for item in inventory['stories'] if item['part'] == story['part'] for link in item['linked_sections']]
         return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'docx', 'mode': 'text', 'value': paragraph['text'], 'replace_text_path_supported': True, 'replace_only': True,
                 'story_impact': {'part': story['part'], 'linked_sections': links, 'same_part_ids': story['same_part_ids'], 'complete': inventory['reference_resolution_complete']}}
+    slide_match = slides.PATH.fullmatch(path) if state['format'] == 'pptx' and slides.paragraph_path(path) else None
+    if slide_match and slide_match.group(2) and '/table[' in path:
+        part = slides.slide_part(source, int(slide_match.group(1)) - 1)
+        with zipfile.ZipFile(source) as archive:
+            if archive.getinfo(part).file_size > 8 * 1024 * 1024: raise ValueError('Slide XML exceeds inspection limit')
+            tree = ooxml.parse_xml(archive.read(part)); paragraph = slides.find_paragraph(tree, path)
+            text = ''.join(node.text or '' for node in paragraph.iter(slides.A + 't'))
+            try: slides.paragraph_nodes(paragraph); reason = None
+            except ValueError as exc: reason = str(exc)
+        if len(text) > 4000: raise ValueError('Slide paragraph exceeds the editor text limit')
+        if info(directory)['latest_revision'] != base_revision: raise ValueError('Revision conflict: latest revision changed')
+        return {'revision': base_revision, 'path': path, 'type': 'paragraph', 'format': 'pptx', 'mode': 'text', 'value': text, 'read_only_reason': reason, 'replace_text_path_supported': reason is None, 'replace_only': True}
     result = officecli_backend.read(source, 'get', path)
     if not isinstance(result, dict) or result.get('matches') != 1 or not isinstance(result.get('results'), list) or len(result['results']) != 1:
         raise ValueError('The path must identify exactly one editable element')
@@ -501,7 +513,7 @@ def edit(directory, base_revision, path, mode, value):
         raise ValueError('Value must be text of at most 4,000 characters')
     target = edit_target(directory, base_revision, path)
     if target.get('read_only_reason'): raise ValueError(f"Cell cannot be edited: {target['read_only_reason']}")
-    if target.get('replace_only'): raise ValueError('Use text replacement for header and footer paragraphs')
+    if target.get('replace_only'): raise ValueError('Use text replacement for this paragraph')
     if target['format'] == 'pptx' and target['type'] == 'tc':
         raise ValueError('Use text replacement to edit PowerPoint table cells')
     allowed = {'xlsx': {'value', 'formula', 'literal'}, 'docx': {'text'}, 'pptx': {'text'}}

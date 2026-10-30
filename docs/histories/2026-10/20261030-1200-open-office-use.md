@@ -335,3 +335,5 @@ Added bounded rectangular range input to workbook authoring, sharing cell valida
 Added typed date and date-time cells to workbook authoring for individual cells and rectangular ranges, respecting workbook date epochs. Verified 1900 and 1904 systems, invalid dates, CLI and OfficeCLI validation; native Excel remains unverified.
 
 Fixed ISO date edits to preserve existing date formatting while verifying the candidate value against the 1900/1904 workbook epoch. Other existing-format changes still require separate formatting edits.
+
+Rendered slide-text candidates now identify potentially missing paragraphs and can open supported PowerPoint table paragraphs for targeted edits, with complex or hyperlinked runs read-only. Verified rendered overflow and revision editing.

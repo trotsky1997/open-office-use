@@ -56,7 +56,7 @@ def table_cells(shape, prefix, matrix, width, height):
             x1, y1 = layout.point(matrix, x_edges[column], y_edges[row])
             x2, y2 = layout.point(matrix, x_edges[column + col_span], y_edges[row + row_span])
             bounds = [x1 / width, y1 / height, x2 / width, y2 / height]
-            entries.append((path, cell.text, bounds))
+            entries.append((path, cell.text, bounds, cell.text_frame.paragraphs))
     return entries, rows * columns
 
 def inspect(source, pdf):
@@ -148,8 +148,8 @@ def inspect(source, pdf):
                     x1, y1 = layout.point(matrix, shape.left, shape.top)
                     x2, y2 = layout.point(matrix, shape.left + shape.width, shape.top + shape.height)
                     x1, y1, x2, y2 = x1 / width, y1 / height, x2 / width, y2 / height
-                    entries = [(path, shape.text_frame.text, [x1, y1, x2, y2])]
-                for path, text, bounds in entries:
+                    entries = [(path, shape.text_frame.text, [x1, y1, x2, y2], shape.text_frame.paragraphs)]
+                for path, text, bounds, paragraphs in entries:
                     if not text.strip(): continue
                     if len(text) > 10000: skip(index, path, 'text_limit'); continue
                     expected = normalize(text)
@@ -162,7 +162,16 @@ def inspect(source, pdf):
                     if expected not in extracted:
                         result['candidate_count'] += 1
                         if len(result['candidates']) < 200:
-                            result['candidates'].append({'slide': index, 'path_hint': path, 'name': str(shape.name or '')[:200], 'source_text': text[:200], 'source_text_truncated': len(text) > 200,
+                            # shortcut: paragraph matching uses the whole container bounds; compare rendered output when text repeats or reading order differs.
+                            missing = []
+                            for paragraph_index, paragraph in enumerate(paragraphs[:500], 1):
+                                fragment = normalize(paragraph.text)
+                                if fragment and fragment not in extracted:
+                                    missing.append({'path_hint': f'{path}/paragraph[{paragraph_index}]', 'source_text': paragraph.text[:200], 'source_text_truncated': len(paragraph.text) > 200})
+                            candidates = missing[:100]; truncated = len(paragraphs) > 500 or len(missing) > 100
+                            hint = candidates[0]['path_hint'] if len(paragraphs) > 1 and len(missing) == 1 and not truncated else path
+                            result['candidates'].append({'slide': index, 'path_hint': hint, 'container_path': path, 'paragraph_candidates': candidates, 'paragraph_candidates_truncated': truncated,
+                                                         'name': str(shape.name or '')[:200], 'source_text': text[:200], 'source_text_truncated': len(text) > 200,
                                                          'bounds': bounds, 'extracted_text': extracted[:200]})
                 if stop: return
         walk(slide.shapes, (1, 0, 0, 1, 0, 0), f'/slide[{index}]', 0)

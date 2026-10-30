@@ -31,6 +31,19 @@ with tempfile.TemporaryDirectory() as tmp:
     cli = Path(__file__).with_name('open_office_use.py')
     command = subprocess.run([sys.executable, str(cli), 'session', 'inspect-slide-text', str(draft), '--revision', '0'], capture_output=True, text=True, check=True)
     assert json.loads(command.stdout)['candidate_count'] == 1
+    rich_table=root/'rich-table.pptx'
+    rich_spec={'slides':[{'layout':'blank','elements':[{'type':'table','x':1,'y':1,'width':4,'height':0.3,'font_size':20,'rows':[[{'paragraphs':[{'text':'First'},{'text':'Second paragraph is too long for the small cell'}]}]]}]}]}
+    open_office_use.author(rich_spec,rich_table);rich_report=slide_text_check.scan(rich_table,open_office_use.render)
+    assert rich_report['complete'] and len(rich_report['candidates'])==1,rich_report
+    candidate=rich_report['candidates'][0];assert candidate['path_hint'].endswith('/paragraph[2]') and candidate['container_path'].endswith('/tc[1]') and candidate['paragraph_candidates'][0]['path_hint']==candidate['path_hint'] and not candidate['paragraph_candidates_truncated']
+    rich_draft=root/'rich-draft';session.start(rich_draft,source=rich_table)
+    target=session.edit_target(rich_draft,0,candidate['path_hint']);assert target['replace_only'] and target['replace_text_path_supported'] and target['value']=='Second paragraph is too long for the small cell'
+    revised=session.replace_text(rich_draft,0,candidate['path_hint'],'Second paragraph','Brief')
+    assert Presentation(revised['file']).slides[0].shapes[0].table.cell(0,0).text_frame.paragraphs[1].text=='Brief is too long for the small cell'
+    linked=root/'linked-rich.pptx';linked_spec={'slides':[{'layout':'blank','elements':[{'type':'table','x':1,'y':1,'width':4,'height':1,'rows':[[{'paragraphs':[{'runs':[{'text':'Linked','url':'https://example.com'}]}]}]]}]}]}
+    open_office_use.author(linked_spec,linked);linked_draft=root/'linked-rich-draft';session.start(linked_draft,source=linked)
+    link_shape=Presentation(linked).slides[0].shapes[0];linked_target=session.edit_target(linked_draft,0,f'/slide[1]/table[@id={link_shape.shape_id}]/tr[1]/tc[1]/paragraph[1]')
+    assert linked_target['value']=='Linked' and not linked_target['replace_text_path_supported'] and 'hyperlink' in linked_target['read_only_reason']
     duplicate = root / 'duplicate.pptx'
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
