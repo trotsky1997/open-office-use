@@ -1954,3 +1954,20 @@ test('file chooser and download preparation respect their deadlines',async()=>{
   await assert.rejects(tab.prepareDownload({timeoutMs:20}),/Timed out preparing browser event wait/);
   assert.equal(requestSignal.aborted,true);assert.equal(handlers.size,1);
 });
+
+test('dialog event registration gates subsequent input without blocking its own setup',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let release,inputs=0;
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='Page.enable')return await new Promise(resolve=>{release=resolve;});
+    if(params.method==='Input.dispatchMouseEvent'){
+      inputs++;for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method:'Page.javascriptDialogOpening',params:{type:'confirm',message:'Ready?',url:'https://example.test'}}});return {};
+    }
+    throw new Error('Unexpected request');
+  };
+  const browser=new OpenBrowserUseBrowser({client}),tab=browser.tab(1),waiting=tab.playwright.waitForEvent('dialog',{timeoutMs:1000});
+  const action=browser.cdp.call(1,'Input.dispatchMouseEvent',{type:'mousePressed',x:1,y:1});
+  while(!release)await new Promise(resolve=>setImmediate(resolve));assert.equal(inputs,0);release({});
+  const [dialog]=await Promise.all([waiting,action]);assert.equal(inputs,1);assert.equal(dialog.info.message,'Ready?');
+});

@@ -584,3 +584,5 @@ JavaScript 对话框监听在附着前记录标签生命周期，Page.enable 前
 Chrome 文件选择等待向调试器附着传播取消信号，授权延迟返回后复核取消；活动标签关闭时清除旧活动标签及鼠标缓存，关闭事件仍按原归属路由。扩展 50 项检查通过；Linux ARM64 Chromium 原生消息注入授权延迟，确认取消信号到达扩展后不会迟到附着，关闭标签后旧活动状态清除。取消传播与浏览器派发之间存在竞态；Windows 未测。
 
 下载开始观察向 frame 自动附着传递取消信号，并使挂起的 frame 等待可取消。SDK 118 项检查通过；Linux ARM64 Chromium 原生消息注入附着准备延迟，确认超时后取消、无迟到 Page.enable，随后重新注册并观察真实下载开始。已提交给浏览器的准备命令可能完成；Windows 未测。
+
+Playwright 风格 waitForEvent("dialog") 在后续 SDK 输入前注册监听，监听准备和事件等待共享期限；Page.enable 允许通过准备屏障以避免自锁。SDK 119 项检查通过；Linux ARM64 Chromium 原生消息注入监听准备延迟，随后真实点击触发 confirm，显式拒绝并验证页面结果。低层客户端请求可绕过 SDK 准备协调；Windows 未测。

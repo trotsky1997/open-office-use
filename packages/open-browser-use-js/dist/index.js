@@ -3991,6 +3991,15 @@ export class OpenBrowserUseTabPlaywright {
         return new Promise(resolve => setTimeout(resolve, timeoutMs));
     }
     waitForEvent(event, options = {}) {
+        if (event === "dialog") {
+            const timeoutMs = options.timeoutMs ?? 10_000;
+            if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
+                throw new Error("Invalid dialog timeout");
+            const deadline = performance.now() + timeoutMs, controller = new AbortController();
+            const preparing = locatorReadBeforeDeadline(this.tab.watchDialogs(controller.signal), timeoutMs, deadline, "Timed out waiting for a JavaScript dialog").catch(error => { controller.abort(); throw error; });
+            this.tab.browser.cdp.blockUntilPrepared(this.tab.id, preparing);
+            return preparing.then(() => this.tab.waitForDialog({ timeoutMs: timeoutMs === 0 ? 0 : Math.max(0, deadline - performance.now()) }));
+        }
         if (event !== "download" && event !== "filechooser")
             throw new Error("Unsupported browser event");
         const preparing = event === "download" ? this.tab.prepareDownload(options) : this.tab.prepareFileChooser(options);
@@ -5083,7 +5092,7 @@ export class OpenBrowserUseCdp {
             throw new Error("Command cancelled before dispatch");
         const preparations = this.#eventPreparations.get(tabId);
         // Frame attachment and log setup must finish before a chooser can be registered.
-        if (preparations?.size && !["Target.setAutoAttach", "Runtime.enable", "Log.enable"].includes(method))
+        if (preparations?.size && !["Target.setAutoAttach", "Runtime.enable", "Log.enable", "Page.enable"].includes(method))
             await waitUntilAbortable(Promise.all([...preparations]), options.signal);
         const requestTimeoutMs = options.timeoutMs === undefined ? this.client.timeoutMs : Math.max(this.client.timeoutMs, Math.ceil(options.timeoutMs) + 2000);
         await waitUntilAbortable(this.ensureAttached(tabId, requestTimeoutMs, options.signal), options.signal);

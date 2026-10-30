@@ -3160,7 +3160,16 @@ export class OpenBrowserUseTabPlaywright {
 
   waitForEvent(event: "download", options?: {timeoutMs?: number}): Promise<OpenBrowserUseDownload>;
   waitForEvent(event: "filechooser", options?: {timeoutMs?: number}): Promise<OpenBrowserUseFileChooser>;
-  waitForEvent(event: "download" | "filechooser", options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownload | OpenBrowserUseFileChooser> {
+  waitForEvent(event: "dialog", options?: {timeoutMs?: number}): Promise<OpenBrowserUseDialog>;
+  waitForEvent(event: "download" | "filechooser" | "dialog", options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownload | OpenBrowserUseFileChooser | OpenBrowserUseDialog> {
+    if (event === "dialog") {
+      const timeoutMs=options.timeoutMs ?? 10_000;
+      if (!Number.isFinite(timeoutMs) || timeoutMs<0 || timeoutMs>120_000) throw new Error("Invalid dialog timeout");
+      const deadline=performance.now()+timeoutMs,controller=new AbortController();
+      const preparing=locatorReadBeforeDeadline(this.tab.watchDialogs(controller.signal),timeoutMs,deadline,"Timed out waiting for a JavaScript dialog").catch(error=>{controller.abort();throw error;});
+      this.tab.browser.cdp.blockUntilPrepared(this.tab.id,preparing);
+      return preparing.then(()=>this.tab.waitForDialog({timeoutMs:timeoutMs===0 ? 0 : Math.max(0,deadline-performance.now())}));
+    }
     if (event !== "download" && event !== "filechooser") throw new Error("Unsupported browser event");
     const preparing: Promise<OpenBrowserUseDownloadWait | OpenBrowserUseFileChooserWait> = event === "download" ? this.tab.prepareDownload(options) : this.tab.prepareFileChooser(options);
     this.tab.browser.cdp.blockUntilPrepared(this.tab.id,preparing);
@@ -3997,7 +4006,7 @@ export class OpenBrowserUseCdp {
     if(options.signal?.aborted)throw new Error("Command cancelled before dispatch");
     const preparations=this.#eventPreparations.get(tabId);
     // Frame attachment and log setup must finish before a chooser can be registered.
-    if (preparations?.size && !["Target.setAutoAttach","Runtime.enable","Log.enable"].includes(method)) await waitUntilAbortable(Promise.all([...preparations]),options.signal);
+    if (preparations?.size && !["Target.setAutoAttach","Runtime.enable","Log.enable","Page.enable"].includes(method)) await waitUntilAbortable(Promise.all([...preparations]),options.signal);
     const requestTimeoutMs=options.timeoutMs === undefined ? this.client.timeoutMs : Math.max(this.client.timeoutMs,Math.ceil(options.timeoutMs)+2000);
     await waitUntilAbortable(this.ensureAttached(tabId,requestTimeoutMs,options.signal),options.signal);
     if(options.signal?.aborted)throw new Error("Command cancelled before dispatch");

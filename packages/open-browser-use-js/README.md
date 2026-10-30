@@ -807,6 +807,17 @@ await dialog.dismiss(); // or await dialog.accept()
 console.log(await action);
 ```
 
+The event API also prepares the listener before later SDK input:
+
+```js
+const waiting = tab.playwright.waitForEvent("dialog", {timeoutMs: 5000});
+const action = tab.playwright.getByRole("button", {name: "Continue"}).click();
+void action.catch(() => {});
+const dialog = await waiting;
+await dialog.dismiss();
+await action;
+```
+
 A pending dialog or load-event wait fails promptly when its tab closes, its
 debugger detaches, or the client connection closes. A different tab's lifecycle
 events do not interrupt the wait.
