@@ -5,3 +5,5 @@ Forked the browser project locally and added an independent Python CLI for basic
 Reference review: documented GenOffice and OfficeCLI capabilities and licensing boundaries. Locally exercised OfficeCLI 1.0.147 with basic create, edit, outline and schema-validation operations for all three formats. Recorded engine evaluation and session lifecycle as next steps; no integration or fidelity claim has been made.
 
 Added optional OfficeCLI structured reads and isolated batch authoring, with exclusive output publication and session closure. Added per-page PNG preview through LibreOffice and Poppler. Verified basic paths for all three formats, including failures and source preservation.
+
+Added optional MCP stdio access to the office workbench with image delivery for page inspection. Verified discovery, authoring, structured reads, visual output and error propagation with the official MCP client.

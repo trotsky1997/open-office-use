@@ -16,3 +16,7 @@ Prioritize evaluating OfficeCLI as an optional existing authoring engine before 
 ## Implemented next step
 
 Added optional OfficeCLI-backed outline, get, query and atomic copy-based batches, plus LibreOffice/Poppler page PNG previews. Real OfficeCLI 1.0.147 checks cover create, copy edit, structured reads, failed multi-operation batches and existing output protection in each format. Follow-up remains: rich real-world fidelity fixtures, formula calculation, interactive sessions, visual comparison, and stronger artifact validation.
+
+## MCP access
+
+The optional stdio MCP server exposes structured reads, isolated batch edits, PDF rendering, page previews and image delivery. Tested with Python MCP SDK 1.30.0. It has local filesystem access; session sharing, rich in-app review, and cross-platform validation remain open work.

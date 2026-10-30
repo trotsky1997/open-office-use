@@ -140,8 +140,18 @@ def main():
     images = commands.add_parser('preview'); images.add_argument('file'); images.add_argument('--out-dir', required=True)
     structured = commands.add_parser('structured'); structured.add_argument('file'); structured.add_argument('mode', choices=['outline', 'get', 'query']); structured.add_argument('target', nargs='?')
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
+    commands.add_parser('mcp', help='Start the local MCP stdio server (requires the mcp extra)')
     args = parser.parse_args()
     try:
+        if args.command == 'mcp':
+            try:
+                import office_mcp
+            except ModuleNotFoundError as exc:
+                if exc.name == 'mcp':
+                    raise RuntimeError('Install the MCP extra from this checkout: pip install ./office[mcp]') from exc
+                raise
+            office_mcp.main()
+            return 0
         if args.command == 'inspect':
             result = inspect(args.file)
         elif args.command == 'author':

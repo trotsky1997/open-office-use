@@ -65,9 +65,28 @@ Operations run on a temporary file. A successful batch is closed before the comp
 
 `preview` creates a new directory containing one PNG per rendered page. It refuses an existing directory. Inspect the images, since a successful render or schema validation alone does not establish visual quality or Office fidelity.
 
+## MCP for agents
+
+Install the optional MCP dependency from the repository root:
+
+```sh
+python3 -m pip install './office[mcp]'
+```
+
+Configure a local stdio MCP client, for example in Codex:
+
+```toml
+[mcp_servers.open_office_use]
+command = "office-use"
+args = ["mcp"]
+```
+
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, and `view_page`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+
 ## Verification
 
 ```sh
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
+python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
 ```
