@@ -190,6 +190,9 @@ same match and length checks.
 observation, returning an empty array when there are none. Each value is limited
 to 30000 characters and the total to 1000000. The page can change between reads;
 stale targets are retried within the optional `timeoutMs`.
+`inputValue()` reads the current value of an input, textarea or select (up to
+30,000 characters); password values are redacted. Multiple-select values follow
+the browser’s single `value` property.
 `isChecked()` reads a binary checked state from the accessibility tree and rejects
 mixed or unsupported states.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and
@@ -279,7 +282,7 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
 `textContent`, `allTextContents`, `getAttribute`, `isVisible`, `isEnabled`,
-`isChecked`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
+`isChecked`, `inputValue`, `waitFor`, `click`, `dblclick`, `hover`, `press`, `fill`, `type`, `check`,
 `uncheck`, `setChecked` and `selectOption`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a
 `frameLocator` is selected. Matches are limited to 1,000 elements and single

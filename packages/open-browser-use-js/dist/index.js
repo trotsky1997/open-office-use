@@ -37,6 +37,7 @@ function locatorClickOptions(options) {
         throw new Error("Invalid mouse button");
     return { button, buttons: masks[button], modifiers: cuaModifiers(options.modifiers) };
 }
+const inputValueFunction = `function(){if(this instanceof HTMLInputElement && this.type==='password')return {error:'redacted'};if(!(this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement || this instanceof HTMLSelectElement))return {error:'unsupported'};return {value:this.value.slice(0,30001)}}`;
 const domIdentityFunction = `function(){
   if(!this.isConnected)return null;
   const root=this.getRootNode(),references=(this.getAttribute('aria-labelledby') || '').trim().split(/\\s+/).filter(Boolean).map(id=>root.getElementById?.(id)?.textContent || '').join(' ').trim();
@@ -1270,8 +1271,12 @@ export class OpenBrowserUseTab {
         if (typeof objectId !== "string")
             throw new RetryablePreflightError("Selector target is unavailable; observe again");
         try {
-            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; if(mode==='visible'){const r=this.getBoundingClientRect();return {value:getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0};} if(mode==='checked'){if(this instanceof HTMLInputElement && ['checkbox','radio'].includes(this.type))return {value:this.indeterminate ? null : this.checked};const role=(this.getAttribute('role') || '').trim().split(/\\s+/)[0], checked=this.getAttribute('aria-checked');if(['checkbox','radio','switch','menuitemcheckbox','menuitemradio'].includes(role) && ['true','false'].includes(checked))return {value:checked==='true'};return {value:null};} if(mode==='enabled'){for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return {value:false};return {value:true};} const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }], functionDeclaration: `function(mode,name) { if (!this.isConnected) return null; if(mode==='inputValue')return (${inputValueFunction}).call(this); if(mode==='visible'){const r=this.getBoundingClientRect();return {value:getComputedStyle(this).visibility==='visible' && r.width>0 && r.height>0};} if(mode==='checked'){if(this instanceof HTMLInputElement && ['checkbox','radio'].includes(this.type))return {value:this.indeterminate ? null : this.checked};const role=(this.getAttribute('role') || '').trim().split(/\\s+/)[0], checked=this.getAttribute('aria-checked');if(['checkbox','radio','switch','menuitemcheckbox','menuitemradio'].includes(role) && ['true','false'].includes(checked))return {value:checked==='true'};return {value:null};} if(mode==='enabled'){for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return {value:false};return {value:true};} const value=mode === 'attribute' ? this.getAttribute(name) : this[mode]; return {value:typeof value === 'string' ? value.slice(0,30001) : null}; }` }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (isObject(payload) && payload.error === "redacted")
+                throw new Error("Password values are redacted");
+            if (isObject(payload) && payload.error === "unsupported")
+                throw new Error("Target is not an input, textarea or select");
             if (isObject(payload) && mode === "checked" && payload.value === null)
                 throw new Error("Target does not have a binary checked state");
             if (!isObject(payload) || (["visible", "enabled", "checked"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
@@ -1592,16 +1597,30 @@ export class OpenBrowserUseTab {
             await this.verifyLocatorScope(observation, target);
             return fresh.checked;
         }
-        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: target.backendNodeId }, { sessionId });
+        let executionContextId;
+        if (mode === "inputValue") {
+            const frameId = target.frameId ?? observation.frames?.[0]?.id;
+            if (!frameId)
+                throw new RetryablePreflightError("Target frame is unavailable; observe again");
+            const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId, worldName: "open-browser-use-selector" }, { sessionId });
+            if (!isObject(world) || typeof world.executionContextId !== "number")
+                throw new RetryablePreflightError("Target context is unavailable; observe again");
+            executionContextId = world.executionContextId;
+        }
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: target.backendNodeId, ...(executionContextId === undefined ? {} : { executionContextId }) }, { sessionId });
         const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
         if (typeof objectId !== "string")
             throw new RetryablePreflightError("Target is unavailable; observe again");
         try {
             const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                 objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }],
-                functionDeclaration: `function(mode, name) { if (!this.isConnected) return null; if (mode === 'enabled' || mode === 'visible') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; if (mode === 'visible') { const r = this.nodeType === 3 ? (() => {const range=document.createRange();range.selectNode(this);return range.getBoundingClientRect();})() : element.getBoundingClientRect(); return {value:getComputedStyle(element).visibility === 'visible' && r.width > 0 && r.height > 0}; } for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
+                functionDeclaration: `function(mode, name) { if (!this.isConnected) return null; if (mode === 'inputValue') return (${inputValueFunction}).call(this); if (mode === 'enabled' || mode === 'visible') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; if (mode === 'visible') { const r = this.nodeType === 3 ? (() => {const range=document.createRange();range.selectNode(this);return range.getBoundingClientRect();})() : element.getBoundingClientRect(); return {value:getComputedStyle(element).visibility === 'visible' && r.width > 0 && r.height > 0}; } for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
             }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (isObject(payload) && payload.error === "redacted")
+                throw new Error("Password values are redacted");
+            if (isObject(payload) && payload.error === "unsupported")
+                throw new Error("Target is not an input, textarea or select");
             if (!isObject(payload) || (["enabled", "visible"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
                 throw new RetryablePreflightError("Target value is unavailable; observe again");
             const value = payload.value;
@@ -3273,6 +3292,7 @@ export class OpenBrowserUseCssLocator {
     }
     isEnabled() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "enabled")); }
     isChecked() { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "checked")); }
+    inputValue(options = {}) { return this.perform(async (snapshot, id) => await this.tab.readCss(snapshot, id, "inputValue"), options.timeoutMs); }
     async isVisible() {
         const snapshot = await this.tab.queryCss(this.step(), this.framePath, this.scopes, this.semanticScope), ids = snapshot.ids;
         if (!ids.length)
@@ -3604,6 +3624,7 @@ export class OpenBrowserUseRoleLocator {
     async textContent(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "textContent")), options.timeoutMs); }
     async isEnabled() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "enabled"))); }
     async isChecked() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "checked"))); }
+    inputValue(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "inputValue")), options.timeoutMs); }
     async isVisible() {
         const { state, matches } = await this.find();
         if (!matches.length)

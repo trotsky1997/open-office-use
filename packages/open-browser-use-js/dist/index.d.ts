@@ -641,6 +641,9 @@ export declare class OpenBrowserUseCssLocator {
     private read;
     isEnabled(): Promise<boolean>;
     isChecked(): Promise<boolean>;
+    inputValue(options?: {
+        timeoutMs?: number;
+    }): Promise<string>;
     isVisible(): Promise<boolean>;
     waitFor(options: {
         state: "attached" | "detached" | "visible" | "hidden";
@@ -742,6 +745,9 @@ export declare class OpenBrowserUseRoleLocator {
     }): Promise<string | null>;
     isEnabled(): Promise<boolean>;
     isChecked(): Promise<boolean>;
+    inputValue(options?: {
+        timeoutMs?: number;
+    }): Promise<string>;
     isVisible(): Promise<boolean>;
     waitFor(options: {
         state: "visible" | "hidden";

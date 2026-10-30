@@ -395,7 +395,7 @@ assert.equal((await tab.getPresentation()).selected,true);
  await tab.cua.keypress({keys:['c']});await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB c',trusted:true});
  await tab.pressKey('Backspace');await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB ',trusted:true});
  await tab.cua.type({text:'中🙂'});await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB 中🙂',trusted:true});
- await tab.playwright.getByLabel('Cross-process text',{exact:true}).fill('aB ');
+ await tab.playwright.getByLabel('Cross-process text',{exact:true}).fill('aB ');assert.equal(await tab.playwright.getByLabel('Cross-process text',{exact:true}).inputValue(),'aB ');assert.equal(await crossFrame.locator('input[placeholder]').first().inputValue(),'aB ');await assert.rejects(crossFrame.locator('input[type=password]').inputValue(),/redacted/);await assert.rejects(crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).inputValue(),/not an input/);
  for (const key of ['1','Shift+1','@','.','+']) await tab.playwright.getByLabel('Cross-process text',{exact:true}).press(key);
  await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB 1!@.+',trusted:true});

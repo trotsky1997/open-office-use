@@ -325,3 +325,5 @@ DOM CUA 跨进程 frame 的节点滚动沿 frame 会话派发可信滚轮，沿�
 DOM CUA 在 frame 文档报告 hidden 时直接采用既有几何回退并标记 visibility_incomplete，跳过可能因后台节流延迟三秒的 IntersectionObserver；可见文档保持原有观察和变化检查。SDK 70 项通过；Linux ARM64 Chromium 原生扩展后台专项验证无交叉观察调用及不完整标记，完整原生 smoke 通过；macOS 与 Linux ARM64 Electron 44 完整 socket smoke 通过。后台回退仍无法过滤 overflow 祖先裁剪，Windows 未测。
 
 DOM CUA 后台几何回退沿祖先滚动容器边界做保守矩形裁剪；处理绝对和固定定位跨越祖先容器，复杂裁剪继续标记 visibility_incomplete。SDK 70 项通过；Linux ARM64 Chromium 原生扩展后台专项验证裁掉的节点与越出容器的固定节点，完整原生 smoke 通过；macOS 和 Linux ARM64 Electron 44 实页回归通过。圆角、clip-path 和遮挡仍不由该回退完整表示，Windows 未测。
+
+CSS 与语义定位器新增 inputValue，使用隔离 world 读取 input、textarea 和 select 的当前值，密码字段明确拒绝，单值限制 30000 字符；多选 select 返回浏览器 value 属性。SDK 70 项通过；Linux ARM64 Electron 44 实页验证跨进程文本框、文本域、下拉框、密码及不支持的控件；macOS Electron 44 和 Linux ARM64 Chromium 原生扩展验证跨进程文本框及拒绝情况。Windows 未测。
