@@ -142,6 +142,7 @@ For semantic selection, the REPL and SDK also accept:
 
 ```js
 const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
+console.log(await save.innerText());
 await save.hover(); // move the pointer over the matched control
 await save.click();
 await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
@@ -159,6 +160,9 @@ await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
 await tab.playwright.getByRole("listitem").filter({ hasText: "Apples" })
   .getByRole("button", { name: "Add", exact: true }).click();
 ```
+
+`innerText()` reads the matched DOM node, including in supported frames. It
+requires one match and rejects text longer than 30,000 characters.
 
 This locator covers the interactive roles exposed by `observe`, including
 accessible frames, plus headings, accessible text, images, dialogs and

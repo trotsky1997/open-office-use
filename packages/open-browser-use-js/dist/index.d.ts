@@ -306,6 +306,9 @@ export declare class OpenBrowserUseRoleLocator {
     private matches;
     private find;
     count(): Promise<number>;
+    innerText(options?: {
+        timeoutMs?: number;
+    }): Promise<string>;
     private perform;
     click(options?: {
         timeoutMs?: number;

@@ -626,6 +626,46 @@ export class OpenBrowserUseTab {
             throw new RetryablePreflightError("Observation is stale; observe again");
         return this.scopeText(observation, index);
     }
+    /** @internal */
+    async locatorInnerText(snapshotId, index) {
+        const observation = this.#observation;
+        if (!observation || observation.id !== snapshotId)
+            throw new RetryablePreflightError("Observation is stale; observe again");
+        const target = observation.nodes.find(node => node.index === index);
+        if (!target || await this.documentId() !== observation.documentId)
+            throw new RetryablePreflightError("Page changed; observe again");
+        if (target.frameChain)
+            await this.validateFrames(target.frameChain);
+        await this.verifyLocatorScope(observation, target);
+        const sessionId = target.frameChain?.[0]?.sessionId;
+        const tree = target.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: target.frameId }, { sessionId }) : await this.getAXState();
+        const fresh = interactiveNodes(tree, 0, true).find(node => node.backendNodeId === target.backendNodeId && node.role === target.role);
+        if (!fresh || fresh.name !== target.name || fresh.stateKey !== target.stateKey)
+            throw new RetryablePreflightError("Target changed; observe again");
+        const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: target.backendNodeId }, { sessionId });
+        const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
+        if (typeof objectId !== "string")
+            throw new RetryablePreflightError("Target is unavailable; observe again");
+        try {
+            const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
+                objectId, returnByValue: true,
+                functionDeclaration: `function() { if (!this.isConnected) return null; const text = this.nodeType === 3 ? this.textContent : this.innerText; return typeof text === 'string' ? text.slice(0, 30001) : null; }`
+            }, { sessionId });
+            const value = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+            if (typeof value !== "string")
+                throw new RetryablePreflightError("Target text is unavailable; observe again");
+            if (value.length > 30_000)
+                throw new Error("Locator text exceeds the 30000 character limit");
+            if (await this.documentId() !== observation.documentId)
+                throw new RetryablePreflightError("Page changed; observe again");
+            if (target.frameChain)
+                await this.validateFrames(target.frameChain);
+            return value;
+        }
+        finally {
+            await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId }, { sessionId }).catch(() => { });
+        }
+    }
     async scopeText(observation, index) {
         const scope = observation.nodes.find(node => node.index === index);
         if (!scope)
@@ -1622,6 +1662,7 @@ export class OpenBrowserUseRoleLocator {
         return { state, matches: await this.matches(state) };
     }
     async count() { return (await this.find()).matches.length; }
+    async innerText(options = {}) { return this.perform((node, id) => this.tab.locatorInnerText(id, node.index), options.timeoutMs); }
     async perform(action, timeoutMs = 5_000) {
         if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000)
             throw new Error("Invalid locator timeout");

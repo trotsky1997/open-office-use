@@ -77,6 +77,24 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test('locator innerText requires a unique current target and enforces its size limit',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let text='Visible text',count=1,released=0;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'one',url:'https://example.test'}}};
+    if(params.method==='Accessibility.getFullAXTree')return {nodes:Array.from({length:count},(_,i)=>({backendDOMNodeId:7+i,role:{value:'button'},name:{value:'Save'}}))};
+    if(params.method==='DOM.resolveNode')return {object:{objectId:'node'}};
+    if(params.method==='Runtime.callFunctionOn')return {result:{value:text}};
+    if(params.method==='Runtime.releaseObject'){released++;return {};}
+    return {};
+  };
+  const locator=new OpenBrowserUseBrowser({client}).tab(1).playwright.getByRole('button',{name:'Save',exact:true});
+  assert.equal(await locator.innerText(),'Visible text');
+  text='x'.repeat(30001);await assert.rejects(locator.innerText({timeoutMs:0}),/30000 character limit/);
+  assert.equal(released,2);count=2;await assert.rejects(locator.innerText({timeoutMs:0}),/matched 2/);
+});
+
 test('history navigation stays within the tab and does not repeat a failed action', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), calls=[], handlers=new Set();
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
