@@ -394,6 +394,17 @@ def track_replace_text(directory, base_revision, path, find, replacement, author
     return {'revision': base_revision + 1, 'file': str(output), 'path': path}
 
 
+def resolve_tracked_runs(directory, base_revision, part, ids, accept):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'docx': raise ValueError('Tracked revision resolution requires a DOCX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
+    try: word.resolve_tracked_runs(source, output, part, ids, accept)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'part': part, 'ids': ids, 'accepted': accept}
+
+
 def read_notes(directory, revision, slide):
     state = info(directory); source = revision_file(state, revision)
     result = notes.read(source, slide); result['revision'] = revision

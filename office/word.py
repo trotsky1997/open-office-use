@@ -511,6 +511,86 @@ def track_replace_text(source, output, path, find, replacement, author):
     return ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
 
 
+def resolve_tracked_runs(source, output, part, ids, accept):
+    """Accept or reject selected simple insertion/deletion run records in one part."""
+    if Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx': raise ValueError('Tracked revision resolution requires DOCX input and output')
+    if not isinstance(accept, bool): raise ValueError('Accept must be true or false')
+    if not isinstance(part, str) or len(part) > 512 or not part.startswith('word/') or '..' in part.split('/'):
+        raise ValueError('Provide a supported Word story part')
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 100 or any(not isinstance(value, str) or not re.fullmatch(r'[+-]?[0-9]{1,100}', value) for value in ids):
+        raise ValueError('Provide 1 to 100 numeric revision IDs')
+    requested = [int(value) for value in ids]
+    if len(set(requested)) != len(requested): raise ValueError('Revision IDs must be distinct')
+    selected_kind = None
+
+    def select_part(file):
+        nonlocal selected_kind
+        if part == 'word/document.xml': selected_kind = 'document'; return part
+        with zipfile.ZipFile(file) as archive:
+            rels = ooxml.parse_xml(archive.read('word/_rels/document.xml.rels')).getroot()
+            if rels.tag != REL + 'Relationships': raise ValueError('Invalid document relationships')
+            base = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+            matches = set()
+            for rel in rels.findall(REL + 'Relationship'):
+                kind = rel.get('Type', '').removeprefix(base)
+                if rel.get('Type') != base + kind or kind not in ('header', 'footer', 'footnotes', 'endnotes') or rel.get('TargetMode') not in (None, 'Internal'): continue
+                target = rel.get('Target', '')
+                resolved = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+                if target and resolved == part: matches.add(kind)
+            if len(matches) == 1:
+                selected_kind = {'header': 'hdr', 'footer': 'ftr', 'footnotes': 'footnotes', 'endnotes': 'endnotes'}[matches.pop()]
+                return part
+        raise ValueError('Part is not a related Word story')
+
+    def edit(tree, archive):
+        if tree.getroot().tag != W + selected_kind: raise ValueError('Word story has an invalid root')
+        known = {W + name for name in ('ins', 'del', 'moveFrom', 'moveTo')}
+        ranges = {W + name for name in ('moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd', 'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart', 'customXmlDelRangeEnd')}
+        if any(node.tag in ranges for node in tree.iter()): raise ValueError('Parts containing tracked move or custom XML ranges are not supported')
+        matches = {identifier: [] for identifier in requested}
+        for node in tree.iter():
+            if node.tag not in known: continue
+            value = node.get(W + 'id', '').strip()
+            if re.fullmatch(r'[+-]?[0-9]{1,100}', value):
+                key = int(value)
+                if key in matches: matches[key].append(node)
+        chosen = []
+        for identifier in requested:
+            candidates = matches[identifier]
+            if len(candidates) != 1: raise ValueError(f'Revision ID {identifier} is missing or ambiguous')
+            node = candidates[0]; parent = node.getparent()
+            if node.tag not in (W + 'ins', W + 'del') or parent is None or parent.tag != W + 'p':
+                raise ValueError('Only direct paragraph insertion or deletion runs can be resolved')
+            if any(ancestor.tag in known for ancestor in node.iterancestors()): raise ValueError('Nested tracked revisions are not supported')
+            for ancestor in node.iterancestors():
+                prop_name = {W + 'p': 'pPr', W + 'tr': 'trPr', W + 'tc': 'tcPr', W + 'tbl': 'tblPr'}.get(ancestor.tag)
+                props = ancestor.find(W + prop_name) if prop_name else None
+                if props is not None and any(item.tag in known or isinstance(item.tag, str) and item.tag.startswith(W) and item.tag.endswith('PrChange') for item in props.iter()):
+                    raise ValueError('Tracked paragraph, table or row properties are not supported')
+            if any(key not in (W + 'id', W + 'author', W + 'date') for key in node.attrib): raise ValueError('Revision has unsupported metadata')
+            runs = list(node)
+            if not runs or any(run.tag != W + 'r' for run in runs): raise ValueError('Revision contains unsupported content')
+            text_tag = W + ('t' if node.tag == W + 'ins' else 'delText')
+            for run in runs:
+                if any(child.tag not in (W + 'rPr', text_tag) for child in run) or not run.findall(text_tag):
+                    raise ValueError('Revision contains unsupported run content')
+                if any(item.tag in known or item.tag == W + 'rPrChange' for item in run.iter()):
+                    raise ValueError('Revision contains nested tracked formatting')
+                for text in run.findall(text_tag):
+                    if len(text) or any(key != '{http://www.w3.org/XML/1998/namespace}space' for key in text.attrib):
+                        raise ValueError('Revision text has unsupported content or attributes')
+            chosen.append(node)
+        for node in chosen:
+            parent = node.getparent(); keep = (node.tag == W + 'ins') == accept
+            if keep:
+                position = parent.index(node)
+                for run in list(node):
+                    for text in run.findall(W + 'delText'): text.tag = W + 't'
+                    parent.insert(position, run); position += 1
+            parent.remove(node)
+    return ooxml.edit_xml(source, output, select_part, edit)
+
+
 def add_comment(source, output, path, text, author, anchor=None):
     """Attach a plain-text comment to a paragraph or a unique literal range."""
     import posixpath

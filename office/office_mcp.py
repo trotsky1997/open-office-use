@@ -197,6 +197,12 @@ def session_track_replace_text(directory: str, base_revision: int, path: str, fi
 
 
 @server.tool()
+def session_resolve_tracked_runs(directory: str, base_revision: int, part: str, ids: list[str], accept: bool) -> dict[str, Any]:
+    """Accept or reject selected simple Word insertion/deletion run records in one part; create a new revision."""
+    return session.resolve_tracked_runs(directory, base_revision, part, ids, accept)
+
+
+@server.tool()
 def read_slide_notes(file: str, slide: int) -> dict[str, Any]:
     """Read speaker notes for a one-based slide number without creating a notes slide."""
     return notes.read(file, slide)

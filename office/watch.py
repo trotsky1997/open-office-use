@@ -74,7 +74,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="stories-load">Load displayed revision</button><p id="stories-status" role="status"></p><ul id="stories-list"></ul></details>
 <details id="tracked-panel" hidden><summary>Word tracked changes</summary>
 <p>Inspect common revision records in the displayed saved revision. Records are XML elements; paragraph marks, formatting and moves may need review in Word. Comments and some revision types are outside this scan.</p>
-<button type="button" id="tracked-load">Inspect displayed revision</button><p id="tracked-status" role="status"></p><ul id="tracked-results"></ul></details>
+<button type="button" id="tracked-load">Inspect displayed revision</button> <button type="button" id="tracked-accept" disabled>Accept selected</button> <button type="button" id="tracked-reject" disabled>Reject selected</button><p id="tracked-status" role="status"></p><ul id="tracked-results"></ul></details>
 <details id="comments-panel" hidden><summary>Word comments</summary>
 <p>Read comments from the displayed revision. Anchor text and paths are bounded body hints. Word 2013 thread metadata is shown when available; review unknown or ambiguous states in Word. Root comments can be resolved or reopened in the latest revision.</p>
 <button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul>
@@ -151,7 +151,7 @@ let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loa
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
-let trackedEpoch=0, trackedRevision=null;
+let trackedEpoch=0, trackedRevision=null, trackedBusy=false;
 function clearTextSearch() {
  textSearchEpoch++; textSearchState=null; document.getElementById('text-search-next').disabled=true;
  document.getElementById('text-search-results').replaceChildren(); document.getElementById('text-search-status').textContent='';
@@ -677,22 +677,52 @@ function clearWorkbookFor(revision) {
  if (workbookRevision!==null && workbookRevision!==revision) { workbookEpoch++; workbookRevision=null; document.getElementById('workbook-status').textContent=''; document.getElementById('workbook-results').replaceChildren(); }
 }
 function clearTrackedFor(revision) {
- if (trackedRevision!==null && trackedRevision!==revision) { trackedEpoch++; trackedRevision=null; document.getElementById('tracked-status').textContent=''; document.getElementById('tracked-results').replaceChildren(); }
+ if (trackedRevision!==null && trackedRevision!==revision) { trackedEpoch++; trackedRevision=null; document.getElementById('tracked-status').textContent=''; document.getElementById('tracked-results').replaceChildren(); document.getElementById('tracked-accept').disabled=true; document.getElementById('tracked-reject').disabled=true; }
 }
 document.getElementById('tracked-load').addEventListener('click', async () => {
- if (displayed<0) return;
+ if (displayed<0 || trackedBusy) return;
  const revision=displayed, epoch=++trackedEpoch, button=document.getElementById('tracked-load'), status=document.getElementById('tracked-status'), output=document.getElementById('tracked-results');
- trackedRevision=revision; button.disabled=true; output.replaceChildren(); status.textContent=`Inspecting revision ${revision}…`;
+ trackedRevision=revision; button.disabled=true; document.getElementById('tracked-accept').disabled=true; document.getElementById('tracked-reject').disabled=true; output.replaceChildren(); status.textContent=`Inspecting revision ${revision}…`;
  try {
   const response=await fetch('tracked-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not inspect tracked changes');
   if (epoch!==trackedEpoch || displayed!==revision) return;
-  for (const item of result.records) { const row=document.createElement('li'); row.textContent=`${item.story} · ${item.kind} in ${item.parent || 'unknown parent'} · ${item.author || 'unknown author'}${item.date ? ' · '+item.date : ''}: ${item.text || '(no text)'}${item.text_truncated ? '…' : ''}`; output.appendChild(row); }
+  for (const item of result.records) {
+   const row=document.createElement('li'), label=document.createElement('label'), box=document.createElement('input');
+   box.type='checkbox'; box.dataset.part=item.part; box.dataset.id=item.id;
+   box.dataset.supported=String((item.kind==='ins' || item.kind==='del') && item.parent==='p' && /^[+-]?[0-9]{1,100}$/.test(item.id));
+   box.disabled=box.dataset.supported!=='true' || pinned!==null || current!==revision;
+   label.append(box,document.createTextNode(` ${item.story} · ${item.kind} in ${item.parent || 'unknown parent'} · ${item.author || 'unknown author'}${item.date ? ' · '+item.date : ''}: ${item.text || '(no text)'}${item.text_truncated ? '…' : ''}`)); row.appendChild(label); output.appendChild(row);
+  }
+  document.getElementById('tracked-accept').disabled=pinned!==null || current!==revision;
+  document.getElementById('tracked-reject').disabled=pinned!==null || current!==revision;
   const tracking=result.tracking_enabled===null ? 'unknown' : result.tracking_enabled ? 'on' : 'off';
   status.textContent=`Revision ${revision}: ${result.records_scanned} record(s) scanned; saved tracking setting ${tracking}. ${result.records_truncated ? 'Showing the first 200 records. ' : ''}${result.scan_complete ? '' : 'Scan incomplete. '}Other parts and revision types are outside this inventory.`;
  } catch(error) { if (epoch===trackedEpoch) status.textContent=`Tracked changes error: ${error.message}`; }
  finally {button.disabled=false;}
 });
+async function resolveTracked(accept) {
+ if (trackedBusy || trackedRevision===null || displayed!==trackedRevision || current!==trackedRevision || pinned!==null) return;
+ const selected=[...document.querySelectorAll('#tracked-results input:checked:not(:disabled)')], status=document.getElementById('tracked-status');
+ if (!selected.length) {status.textContent='Select at least one supported run revision.'; return;}
+ const part=selected[0].dataset.part;
+ if (selected.some(item=>item.dataset.part!==part)) {status.textContent='Select revisions from one document part at a time.'; return;}
+ const revision=trackedRevision, ids=selected.map(item=>item.dataset.id); trackedBusy=true;
+ document.querySelectorAll('#tracked-panel button, #tracked-results input').forEach(item=>item.disabled=true);
+ try {
+  const response=await fetch('tracked-resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:revision,part,ids,accept})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not resolve revisions');
+  await refresh(); status.textContent=`Selected revisions ${accept ? 'accepted' : 'rejected'} in revision ${result.revision}.`;
+ } catch(error) { status.textContent=`Resolution error: ${error.message}`; }
+ finally {
+  trackedBusy=false; document.getElementById('tracked-load').disabled=false;
+  const live=pinned===null && current===trackedRevision && displayed===trackedRevision;
+  document.getElementById('tracked-accept').disabled=!live; document.getElementById('tracked-reject').disabled=!live;
+  document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=!live || item.dataset.supported!=='true');
+ }
+}
+document.getElementById('tracked-accept').addEventListener('click',()=>resolveTracked(true));
+document.getElementById('tracked-reject').addEventListener('click',()=>resolveTracked(false));
 function clearChartCacheFor(revision) {
  if (chartCacheRevision!==null && chartCacheRevision!==revision) { chartCacheEpoch++; chartCacheRevision=null; document.getElementById('chart-cache-status').textContent=''; document.getElementById('chart-cache-output').textContent=''; document.getElementById('chart-cache-actions').replaceChildren(); }
 }
@@ -882,6 +912,8 @@ document.getElementById('notes-replace-text').addEventListener('click', async ()
 });
 function display(state, live) {
  clearTrackedFor(state.revision);
+ document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=trackedBusy || !live || item.dataset.supported!=='true');
+ document.getElementById('tracked-accept').disabled=trackedBusy || !live || trackedRevision!==state.revision; document.getElementById('tracked-reject').disabled=trackedBusy || !live || trackedRevision!==state.revision;
  if (textSearchState && textSearchState.revision!==state.revision) clearTextSearch();
  document.querySelectorAll('#text-search-results button').forEach(button=>button.disabled=!live);
  clearChartCacheFor(state.revision);
@@ -920,6 +952,7 @@ function displayComparison(state) {
  clearNotesFor(state.revision, false);
  clearCommentsFor(state.revision);
  clearTrackedFor(state.revision);
+ document.querySelectorAll('#tracked-results input, #tracked-accept, #tracked-reject').forEach(item=>item.disabled=true);
  clearLayoutFor(state.revision);
  const key=`compare:${state.revision}:${state.latest_revision}`;
  if (key === viewKey) return;
@@ -1108,7 +1141,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1257,6 +1290,10 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) not in ({'base_revision', 'path', 'text', 'author'}, {'base_revision', 'path', 'text', 'author', 'anchor'}):
                                 raise ValueError('Comment requires revision, path, text and author')
                             saved = session.add_comment(directory, payload['base_revision'], payload['path'], payload['text'], payload['author'], payload.get('anchor'))
+                        elif route.endswith('/tracked-resolve'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'part', 'ids', 'accept'}:
+                                raise ValueError('Resolution requires revision, part, IDs and decision')
+                            saved = session.resolve_tracked_runs(directory, payload['base_revision'], payload['part'], payload['ids'], payload['accept'])
                         elif route.endswith('/track-replace-text'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement', 'author'}:
                                 raise ValueError('Tracked replacement requires revision, path, find, replacement and author')
