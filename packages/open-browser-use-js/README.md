@@ -322,7 +322,7 @@ frame position; this catches movement visible between those samples. Before
 input and scoped reads, a separate accessibility observation re-evaluates the
 locator and its position; changed matches trigger a fresh attempt before input.
 The recheck leaves the active operation's observation intact.
-For `click`, `dblclick`, and `focus`, a positive timeout also bounds preparation and reports
+For `click`, `dblclick`, `hover`, and `focus`, a positive timeout also bounds preparation and reports
 when the input outcome is unknown. A timed-out click or double click may still release an already
 pressed mouse button; preparation may have scrolled the page. Other actions can
 finish a slow browser request after the deadline. Multiple matches fail immediately.

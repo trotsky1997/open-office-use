@@ -83,7 +83,7 @@ async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number,
     return result;
   } finally { if (timer) clearTimeout(timer); }
 }
-async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click"):Promise<void> {
+async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover"):Promise<void> {
   if(timeoutMs===0)return action(()=>undefined);
   const controller=new AbortController();
   let expired=false,issued=false,timer:ReturnType<typeof setTimeout> | undefined;
@@ -1492,7 +1492,7 @@ export class OpenBrowserUseTab {
       }
       const pointerPoint=mouse.force ? second.point : second.inputPoint;
       const pointerOptions=mouse.force ? (domConnectionGeneration !== undefined ? {expectedGeneration:domConnectionGeneration} : {}) : options;
-      if (hover) await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseMoved",...pointerPoint,button:"none",buttons:0},pointerOptions);
+      if (hover) await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseMoved",...pointerPoint,button:"none",buttons:0},{...pointerOptions,signal:markClick()});
       else {
         await this.dispatchClick(pointerPoint,mouse,1,{...pointerOptions,signal:markClick()});
         if (checked !== undefined) {
@@ -1896,8 +1896,8 @@ export class OpenBrowserUseTab {
     await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true, mouse, false, undefined, markClick,signal,check);
   }
 
-  async hover(index: number, snapshotId: string): Promise<void> {
-    await this.act(index, snapshotId, undefined, false, undefined, undefined, true);
+  async hover(index: number, snapshotId: string, mark:()=>AbortSignal | undefined = ()=>undefined, signal?:AbortSignal, check?:()=>void): Promise<void> {
+    await this.act(index, snapshotId, undefined, false, undefined, undefined, true, undefined, false, undefined, false, undefined, mark, signal, check);
   }
 
   /** @internal */
@@ -2372,7 +2372,7 @@ export class OpenBrowserUseTab {
       if(mouse.force)inputPoint=point;
       inputIssued = true;
       if (hover) {
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, inputOptions);
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, {...inputOptions,signal:markClick()});
         return;
       }
       await this.dispatchClick({x:inputPoint.x as number,y:inputPoint.y as number},mouse,1,{...inputOptions,signal:markClick()});
@@ -3066,7 +3066,7 @@ export class OpenBrowserUseCssLocator {
   }
   click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,undefined,false,mouse,undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Click"),options.timeoutMs); }
   dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,undefined,true,undefined,undefined,false,mouse,undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Double click"),options.timeoutMs); }
-  hover(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,true);},options.timeoutMs); }
+  hover(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,true,undefined,undefined,false,undefined,undefined,false,undefined,undefined,undefined,false,undefined,mark,signal,check);},options.timeoutMs ?? 5000,deadline,"Hover"),options.timeoutMs); }
   check(options: LocatorCheckOptions = {}): Promise<void> { return this.setChecked(true,options); }
   uncheck(options: LocatorCheckOptions = {}): Promise<void> { return this.setChecked(false,options); }
   setChecked(checked: boolean, options: LocatorCheckOptions = {}): Promise<void> {
@@ -3401,7 +3401,7 @@ export class OpenBrowserUseRoleLocator {
   }
   async click(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.click(node.index,id,mouse,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Click"), options.timeoutMs); }
   async dblclick(options: LocatorClickOptions = {}): Promise<void> { const mouse=locatorClickOptions(options); await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.dblclick(node.index,id,mouse,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Double click"), options.timeoutMs); }
-  async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.hover(node.index,id), options.timeoutMs); }
+  async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.hover(node.index,id,mark,signal,check),options.timeoutMs ?? 5000,deadline,"Hover"), options.timeoutMs); }
   async focus(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id,deadline)=>actionBeforeDeadline(mark=>this.tab.focus(node.index,id,mark),options.timeoutMs ?? 5000,deadline,"Focus"),options.timeoutMs); }
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }
   clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }

@@ -180,6 +180,20 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#double-deadline').remove()");
   check('SDK double click deadline: no second press after timeout');
 
+  await evaluate(a.id,`(()=>{const el=document.createElement('button');el.id='hover-deadline';el.textContent='Hover deadline';document.body.append(el)})()`);
+  for (const locator of [sdkTab.playwright.locator('#hover-deadline'),sdkTab.playwright.getByRole('button',{name:'Hover deadline',exact:true})]) {
+    let unblockPrepare,moves=0;
+    sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.resolveNode' && !unblockPrepare)await new Promise(resolve=>{unblockPrepare=resolve});if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mouseMoved')moves++;return originalCdpCall(...args);};
+    try {await assert.rejects(locator.hover({timeoutMs:500}),/timed out/i);assert.ok(unblockPrepare);unblockPrepare();await new Promise(resolve=>setTimeout(resolve,250));assert.equal(moves,0);}
+    finally {unblockPrepare?.();sdkTab.browser.cdp.call=originalCdpCall;}
+    let unblockMove,issued=0;
+    sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='Input.dispatchMouseEvent' && args[2].type==='mouseMoved'){issued++;const result=await originalCdpCall(...args);await new Promise(resolve=>{unblockMove=resolve});return result;}return originalCdpCall(...args);};
+    try {await assert.rejects(locator.hover({timeoutMs:1000}),/outcome is unknown/i);assert.ok(unblockMove);unblockMove();await new Promise(resolve=>setTimeout(resolve,100));assert.equal(issued,1);}
+    finally {unblockMove?.();sdkTab.browser.cdp.call=originalCdpCall;}
+  }
+  await evaluate(a.id,"document.querySelector('#hover-deadline').remove()");
+  check('SDK hover deadline: no late movement and unknown issued outcome');
+
   await evaluate(a.id,`(()=>{window.focusChanges=0;const el=document.createElement('input');el.id='focus-changing';el.addEventListener('focus',()=>{window.focusChanges++;el.id='focus-changed'});document.body.append(el)})()`);
   await assert.rejects(sdkTab.playwright.locator('#focus-changing').focus({timeoutMs:1000}),/changed|focus/i);
   assert.equal(await evaluate(a.id,'window.focusChanges'),1);await evaluate(a.id,"document.querySelector('#focus-changed').remove()");

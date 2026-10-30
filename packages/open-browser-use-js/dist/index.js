@@ -1756,7 +1756,7 @@ export class OpenBrowserUseTab {
             const pointerPoint = mouse.force ? second.point : second.inputPoint;
             const pointerOptions = mouse.force ? (domConnectionGeneration !== undefined ? { expectedGeneration: domConnectionGeneration } : {}) : options;
             if (hover)
-                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", ...pointerPoint, button: "none", buttons: 0 }, pointerOptions);
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", ...pointerPoint, button: "none", buttons: 0 }, { ...pointerOptions, signal: markClick() });
             else {
                 await this.dispatchClick(pointerPoint, mouse, 1, { ...pointerOptions, signal: markClick() });
                 if (checked !== undefined) {
@@ -2272,8 +2272,8 @@ export class OpenBrowserUseTab {
     async dblclick(index, snapshotId, mouse, markClick = () => undefined, signal, check) {
         await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true, mouse, false, undefined, markClick, signal, check);
     }
-    async hover(index, snapshotId) {
-        await this.act(index, snapshotId, undefined, false, undefined, undefined, true);
+    async hover(index, snapshotId, mark = () => undefined, signal, check) {
+        await this.act(index, snapshotId, undefined, false, undefined, undefined, true, undefined, false, undefined, false, undefined, mark, signal, check);
     }
     /** @internal */
     async focus(index, snapshotId, markFocus = () => undefined) { await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, false, undefined, true, markFocus); }
@@ -2848,7 +2848,7 @@ export class OpenBrowserUseTab {
                 inputPoint = point;
             inputIssued = true;
             if (hover) {
-                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, inputOptions);
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: inputPoint.x, y: inputPoint.y, button: "none", buttons: 0 }, { ...inputOptions, signal: markClick() });
                 return;
             }
             await this.dispatchClick({ x: inputPoint.x, y: inputPoint.y }, mouse, 1, { ...inputOptions, signal: markClick() });
@@ -3803,7 +3803,7 @@ export class OpenBrowserUseCssLocator {
     }
     click(options = {}) { const mouse = locatorClickOptions(options); return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark, signal, check) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, false, undefined, undefined, false, mouse, undefined, undefined, false, undefined, mark, signal, check); }, options.timeoutMs ?? 5000, deadline, "Click"), options.timeoutMs); }
     dblclick(options = {}) { const mouse = locatorClickOptions(options); return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark, signal, check) => { await this.tab.actCss(snapshot, id, false, undefined, undefined, true, undefined, undefined, false, mouse, undefined, undefined, false, undefined, mark, signal, check); }, options.timeoutMs ?? 5000, deadline, "Double click"), options.timeoutMs); }
-    hover(options = {}) { return this.perform(async (snapshot, id) => { await this.tab.actCss(snapshot, id, true); }, options.timeoutMs); }
+    hover(options = {}) { return this.perform((snapshot, id, deadline) => actionBeforeDeadline(async (mark, signal, check) => { await this.tab.actCss(snapshot, id, true, undefined, undefined, false, undefined, undefined, false, undefined, undefined, undefined, false, undefined, mark, signal, check); }, options.timeoutMs ?? 5000, deadline, "Hover"), options.timeoutMs); }
     check(options = {}) { return this.setChecked(true, options); }
     uncheck(options = {}) { return this.setChecked(false, options); }
     setChecked(checked, options = {}) {
@@ -4238,7 +4238,7 @@ export class OpenBrowserUseRoleLocator {
     }
     async click(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.click(node.index, id, mouse, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Click"), options.timeoutMs); }
     async dblclick(options = {}) { const mouse = locatorClickOptions(options); await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.dblclick(node.index, id, mouse, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Double click"), options.timeoutMs); }
-    async hover(options = {}) { await this.perform((node, id) => this.tab.hover(node.index, id), options.timeoutMs); }
+    async hover(options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.hover(node.index, id, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Hover"), options.timeoutMs); }
     async focus(options = {}) { await this.perform((node, id, deadline) => actionBeforeDeadline(mark => this.tab.focus(node.index, id, mark), options.timeoutMs ?? 5000, deadline, "Focus"), options.timeoutMs); }
     async press(key, options = {}) { await this.perform((node, id) => this.tab.press(node.index, id, key), options.timeoutMs); }
     clear(options = {}) { return this.fill("", options); }

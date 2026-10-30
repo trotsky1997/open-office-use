@@ -99,3 +99,4 @@
 
 - [x] CSS 和语义 locator 的 click 正数超时覆盖输入前准备；输入开始后报告结果未知，保留鼠标释放。macOS Electron 实页验证。
 - [x] CSS 和语义 locator 的 dblclick 在同一正数期限内停止迟到的第二次按下；过期后停止新的滚动测量。macOS Electron 实页验证。
+- [x] CSS 和语义 locator 的 hover 正数期限覆盖准备和鼠标移动；超时后禁止迟到的移动，已发出时报告结果未知。macOS Electron 实页验证。
