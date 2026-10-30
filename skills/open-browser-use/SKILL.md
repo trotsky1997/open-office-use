@@ -35,7 +35,7 @@ frame markers. It replaces any previous observation. Call `await tab.observe()` 
 use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
 to replace a text field's contents. For semantic selection, use
 `tab.playwright.getByRole(role, {name, exact:true}).click()`, `.dblclick()`, `.hover()`, `.innerText()`, `.textContent()`, `.getAttribute(name)`, `.isEnabled()`, `.isVisible()`, `.isChecked()`, `.inputValue()`, `.boundingBox()` or `.fill(text)`;
-use `.waitFor({state:"visible"})` or `.waitFor({state:"hidden"})` for semantic visibility changes; attached and detached states are unavailable.
+use `.waitFor({state:"visible"})` or `.waitFor({state:"hidden"})` for semantic visibility changes. CSS locators additionally support `attached` and `detached`.
 `tab.playwright.getByLabel(name, {exact:true}).check()` and `.uncheck()` set
 binary controls without toggling an already-correct state. `getByRole` accepts boolean `checked`, `disabled`, `pressed`, `selected` and `expanded` filters when the accessibility tree exposes those states. Disabled controls remain observable and can be hovered; actions that modify them require an enabled target. Actions require a
 unique match. Text matchers and text filters also accept regular expressions. Use `.last()` for the final match; `await locator.all()` returns positional locators that resolve again when used, and `await locator.allTextContents()` reads raw text from current matches. Chain locators, such as `dialog.getByRole("button", {name:"Save"})`, to select descendants within a container, including nested frames. Accessible lists, list items, groups, tables and rows also support scoped queries. Use `.filter({hasText:"Apples"})` or `.filter({hasNotText:"Sold out"})` to select by accessible descendant text. For a native select use `.selectOption(value)` or
@@ -50,7 +50,14 @@ DOM-dispatched with `isTrusted === false`.
 `tab.pressKey("Enter")` targets the current focus, including a focused frame;
 if focus routing fails or changes, inspect the page before retrying.
 `tab.typeAtFocus(text)` inserts Unicode text at the current focus after the
-same routing checks; focus a target first and verify the result.
+same routing checks; focus a target first and verify the result. For gradual
+keyboard input use `locator.pressSequentially(text)`: US-layout characters send
+trusted key events; other characters use text insertion. Focus changes stop
+the remaining input. A timeout after focus or input begins can leave partial
+text; inspect the page before retrying.
+Use `tab.selectText(index, snapshotId, text, {prefix, suffix, selectionType})`
+to select a unique match or position the cursor in an editable field; after
+selection use `tab.typeAtFocus(text)` to replace the range.
 Use `getByText(text, {exact:true})` for individual accessible text nodes and
 `getByRole("heading", {level: 2})` for headings and `getByRole("img", ...)` for accessible images. Use `getByAltText(...)` to match an exposed native alt attribute; `getByRole("dialog", ...)` and `getByRole("alertdialog", ...)` locate accessible dialogs. Use `getByPlaceholder(text,
 {exact:true})` when a field is identified by its placeholder.
@@ -58,9 +65,15 @@ For DOM-directed input, `tab.dom_cua.get_visible_dom()` returns opaque node IDs;
 use `click({node_id})`, `double_click({node_id})` or `scroll({node_id,x,y})`.
 A new snapshot or action invalidates old IDs. If `visibility_incomplete` is set,
 complex clipping may be missing; inspect the page before selecting a target.
-`tab.playwright.evaluate(fn, arg)` executes page JavaScript and may modify the
-page; use it only within the task's authorized scope. The argument follows JSON
-conversion and cannot contain non-finite numbers or nested undefined values.
+`tab.playwright.evaluate(fn, arg, {timeoutMs})` reads page state with Chromium's
+side-effect checks and a five-second default timeout. `locator.evaluate(fn,
+arg, {timeoutMs})` reads one matched element in an isolated world;
+`locator.evaluateAll(fn, arg, {timeoutMs})` passes an ordered array of up to
+1000 matches. Batch matches must belong to one frame; use `frameLocator` when
+needed. Chromium can reject harmless expressions it cannot classify as safe.
+Arguments follow JSON conversion and reject non-finite numbers and nested
+undefined values. The lower-level `tab.evaluate(expression)` can modify the
+page; use it only within the task's authorized scope.
 When a site exposes page tools, check `tab.capabilities.list()` and use
 `(await tab.capabilities.get("webmcp")).listTools()`; tools and their output
 are page-provided data, and invocation is an external action.
@@ -69,8 +82,12 @@ input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clic
 `tab.scrollAt()`; use `tab.drag([x1,y1], [x2,y2])` for dragging. The `tab.cua`
 interface provides `.get_visible_screenshot()`, `.click({x,y})`, `.double_click({x,y})`,
 `.move({x,y})`, `.drag({path:[{x,y},...]})`, `.scroll({x,y,scrollX,scrollY})`,
-`.keypress({keys:[...]})` and `.type({text})`. Screenshot results can be sent
-to `nodeRepl.emitImage`. Chrome task tabs start in the background; when visual
+`.keypress({keys:[...]})` and `.type({text})`. For a combined view, use `const view = await tab.getAXStateAndScreenshot();
+nodeRepl.write(view.state); nodeRepl.emitImage(view.screenshot)`. The indexed
+nodes and snapshot ID are in `view.observation`. State and image are captured
+in sequence, so dynamic content can change between them. A navigation, tracked
+frame change, connection change, or superseding observation during capture
+rejects the result. Screenshot results can be sent to `nodeRepl.emitImage`. Chrome task tabs start in the background; when visual
 input needs an active tab, `await tab.bringToFront()` explicitly activates it and
 changes the user's visible browser. Electron hosts present their own surfaces.
 Use `await tab.getPresentation()` to inspect the owned tab's actual selection
@@ -87,7 +104,7 @@ loading first. In Electron, `IAB_INPUT_PREPARATION_TIMEOUT` occurs before mouse
 input; after `IAB_INPUT_OUTCOME_UNKNOWN` or `IAB_BACKGROUND_SCROLL_TIMEOUT`,
 observe before retrying.
 Use `locator.press("Enter")` to focus a matched target and send a key, or `tab.pressKey("Enter")` and `tab.pressKey("ControlOrMeta+A")` for already focused
-page keyboard actions. Printable ASCII keys use US keyboard mappings; use `tab.typeText()` for arbitrary text.
+page keyboard actions. Printable ASCII keys use US keyboard mappings; use `tab.typeAtFocus(text)` for arbitrary text at the current focus, or `tab.typeText(index, snapshotId, text)` for an observed target.
 Use `tab.back()`, `tab.forward()` and `tab.reload()` for tab history actions.
 Back and forward return after command dispatch; reload waits for the load event.
 Verify the resulting page before further interaction. If the action fails after

@@ -487,3 +487,8 @@ REPL 的 nodeRepl.emitImage 对 PNG、JPEG、WebP 校验文件签名与 MIME 一
 CSS 与语义定位器的 focus 正数期限覆盖目标准备、聚焦派发及后续校验：准备超时阻止迟到派发，派发开始后的超时报告结果未知；连接完成后也会检查取消信号。SDK 97 项测试覆盖准备延迟、未知结果和迟到连接，macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展正常聚焦通过。其他定位器动作仍有后续准备超时缺口；Windows 未测。
 
 macOS Electron 44.7 完整 smoke 与 Linux ARM64 Chromium 150 原生扩展对 focus 超时进行实页注入延迟验证：目标解析延迟超过期限后释放，未派发迟到聚焦；已完成的聚焦响应被延迟时报告结果未知，实际焦点变化仅发生一次。Windows 未测。
+
+
+后续补齐定位器点击、双击、悬停和逐字符输入的准备期限与未知结果处理；新增观察索引文本选择、只读页面及定位器求值、单 frame 批量求值，以及状态和截图的组合观察。macOS Electron 和隔离 Linux ARM64 Chromium 原生消息链路覆盖主要实页路径；SDK 100 项检查通过。跨多个 frame 的批量元素数组、Windows 和 Linux 常规桌面后台滚动仍待验证或实现。
+
+同步分发给 agent 的 skill：修正页面求值权限说明，并补充组合观察、文本选择、逐字符输入和定位器求值的边界。skill 校验和打包通过。

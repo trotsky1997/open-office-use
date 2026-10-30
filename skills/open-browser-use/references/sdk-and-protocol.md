@@ -71,6 +71,22 @@ try {
 }
 ```
 
+The source-built JavaScript harness also exposes a combined observation:
+
+```ts
+const view = await tab.getAXStateAndScreenshot();
+console.log(view.state);
+// In the persistent MCP REPL: nodeRepl.emitImage(view.screenshot)
+// Use view.observation.nodes and snapshotId for an observed target.
+```
+
+`playwright.evaluate` and locator `evaluate` / `evaluateAll` use Chromium's
+side-effect checks and bounded execution. `evaluateAll` requires matches in a
+single frame. The separate `tab.evaluate` is a lower-level page execution API
+that can mutate the page. `locator.pressSequentially` sends supported US-layout
+keys individually and inserts other Unicode characters as text. Consult the
+JavaScript SDK README for full behavior and timeout limits.
+
 Use the low-level client when you need direct Browser Use JSON-RPC/CDP calls:
 
 ```ts
