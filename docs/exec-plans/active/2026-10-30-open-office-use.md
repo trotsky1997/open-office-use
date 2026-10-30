@@ -88,3 +88,7 @@ Added bounded XLSX worksheet listing and grid editing through the local viewer a
 ## Slide layout candidates
 
 Added bounded PPTX off-slide and overlap-candidate inspection through CLI, MCP and the revision viewer. Geometry covers rotations and nested group transforms; results include shapes and intersection polygons. Intentional layering, master content and text overflow still require rendered visual review.
+
+## Atomic text batches
+
+Added explicit ordered formatting-preserving text replacements across Word, PowerPoint and Excel as a single revision via CLI and MCP. Failure leaves no published batch revision; concurrent writers compete for the same revision. Verified the three formats, rollback and concurrent publication.

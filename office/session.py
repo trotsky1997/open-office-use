@@ -399,6 +399,30 @@ def replace_text(directory, base_revision, path, find, replacement):
     return {'revision': base_revision + 1, 'file': str(output), 'path': path, **({'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True} if state['format'] == 'xlsx' else {})}
 
 
+def replace_text_batch(directory, base_revision, changes):
+    if not isinstance(changes, list) or not 1 <= len(changes) <= 25:
+        raise ValueError('Provide 1 to 25 text replacements')
+    for change in changes:
+        if not isinstance(change, dict) or set(change) != {'path', 'find', 'replacement'} or not all(isinstance(change[key], str) for key in change):
+            raise ValueError('Each replacement requires text path, find and replacement')
+    state = info(directory); source = revision_file(state, base_revision)
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f"revision-{base_revision + 1:06d}.{state['format']}"
+    replace = {'docx': word, 'pptx': slides, 'xlsx': cell_text}[state['format']].replace_text
+    with tempfile.TemporaryDirectory(dir=state['directory'], prefix='.office-replace-batch-') as tmp:
+        previous = source
+        for index, change in enumerate(changes):
+            candidate = Path(tmp) / f"step-{index:02d}.{state['format']}"
+            try: replace(previous, candidate, change['path'], change['find'], change['replacement'])
+            except ValueError as exc: raise ValueError(f'Replacement {index + 1}: {exc}') from exc
+            if previous != source: previous.unlink()
+            previous = candidate
+        try: os.link(previous, output)
+        except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'count': len(changes), **({'formula_cache_effect': 'may_be_stale', 'recalculation_requested': True} if state['format'] == 'xlsx' else {})}
+
+
 def track_replace_text(directory, base_revision, path, find, replacement, author):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'docx': raise ValueError('Tracked replacement requires a DOCX session')

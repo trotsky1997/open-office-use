@@ -99,3 +99,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 网格使用多行字段并支持粘贴带引号的多行文本；浏览器检查加载、无改动判断、原值保留和批量保存。
 
 - 网格为各单元格提供文本和自动类型覆盖，支持同批混合公式、文本及仅改变类型；版本变化时保留待提交输入并锁定控件。
+
+- 新增 Word、Excel 和 PowerPoint 的原子批量定向文本替换，通过 CLI 和 MCP 在一次版本中顺序提交，并验证失败回滚及并发冲突。

@@ -198,6 +198,12 @@ def session_replace_text(directory: str, base_revision: int, path: str, find: st
 
 
 @server.tool()
+def session_replace_text_batch(directory: str, base_revision: int, changes: list[dict[str, str]]) -> dict[str, Any]:
+    """Apply 1–25 ordered formatting-preserving text replacements in a single atomic revision."""
+    return session.replace_text_batch(directory, base_revision, changes)
+
+
+@server.tool()
 def session_track_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str, author: str) -> dict[str, Any]:
     """Create Word deletion and insertion revisions for one unique body, header or footer text range; preserve run formatting."""
     return session.track_replace_text(directory, base_revision, path, find, replacement, author)
