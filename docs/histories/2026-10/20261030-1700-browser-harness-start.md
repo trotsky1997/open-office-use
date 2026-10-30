@@ -119,3 +119,5 @@ Linux ARM64 Chromium 150 隔离原生消息链路验证作用域跨 closed Shado
 新增基于可访问静态文字的 hasText/hasNotText 筛选：支持多层作用域、closed Shadow DOM 与跨进程 frame；输入前及聚焦后重新读取文字。可能属于当前作用域的不可索引文字、无法判定归属的文字或超长内容会报错，防止遗漏使排除筛选产生错误结果；可证明不相关的文字不会阻断筛选。macOS/Linux Chromium 与 macOS Electron 实机验证；Linux 使用隔离浏览器与 --no-sandbox。
 
 文字筛选将同 frame 的包含关系按最多 32 个节点批量检查，跨 frame 按页面复用包含结果；失败时释放已解析对象。macOS 隔离 Chromium 单次 12 项筛选由约 1422 ms 降至 419 ms，测量仅代表该 fixture。
+
+getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察输出暴露这些状态；未知选项显式报错，mixed 与未提供状态不会匹配布尔条件。状态改变后拒绝旧目标。macOS/Linux Chromium 与 macOS Electron 的跨进程 iframe 验证状态选择及可信操作。Linux 使用隔离浏览器与 --no-sandbox。

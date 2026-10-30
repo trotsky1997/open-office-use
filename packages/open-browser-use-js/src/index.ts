@@ -49,8 +49,9 @@ export type OpenBrowserUseWaitForLoadStateOptions = {
 
 export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | { client: OpenBrowserUseClient };
 
-export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; checked?: boolean | "mixed"; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
+export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; checked?: boolean | "mixed"; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
 export type SelectOption = string | {value?: string; label?: string};
+export type RoleLocatorOptions = {name?: string; exact?: boolean; checked?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
@@ -463,7 +464,7 @@ export class OpenBrowserUseTab {
     const useDiff = options.diff === true && previous?.documentId === documentId && previous.includeFrames === !!options.includeFrames && previous.includeValues === !!options.includeValues && previous.includeText === !!options.includeText && !previous.truncated && !full.truncated && !valueBudget.truncated && !unavailableFrames.length;
     const output = useDiff ? diffAXState(previous.text, full.text) : full;
     this.#lastText = (output.truncated && useDiff) || unavailableFrames.length || valueBudget.truncated ? undefined : { documentId, includeFrames: !!options.includeFrames, includeValues: !!options.includeValues, includeText: !!options.includeText, ...full };
-    return { snapshotId: id, nodes: nodes.map(({ index, role, name, frameId, checked, placeholder, placeholderTruncated, altText, altTextTruncated, value, valueRedacted, valueUnavailable, valueTruncated }) => ({ index, role, name, ...(frameId ? {frameId} : {}), ...(checked !== undefined ? {checked} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated} : {}), ...(value !== undefined ? {value} : {}), ...(valueRedacted ? {valueRedacted} : {}), ...(valueUnavailable ? {valueUnavailable} : {}), ...(valueTruncated ? {valueTruncated} : {}) })), ...output, textMode: useDiff ? "diff" : "full", ...(options.includeFrames ? {frameCoverage: crossProcess ? "cross-process" as const : "same-process" as const, unavailableFrames} : {}), ...(options.includeValues ? {valuesTruncated:valueBudget.truncated} : {}) };
+    return { snapshotId: id, nodes: nodes.map(({ index, role, name, frameId, checked, pressed, selected, expanded, placeholder, placeholderTruncated, altText, altTextTruncated, value, valueRedacted, valueUnavailable, valueTruncated }) => ({ index, role, name, ...(frameId ? {frameId} : {}), ...(checked !== undefined ? {checked} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated} : {}), ...(value !== undefined ? {value} : {}), ...(valueRedacted ? {valueRedacted} : {}), ...(valueUnavailable ? {valueUnavailable} : {}), ...(valueTruncated ? {valueTruncated} : {}) })), ...output, textMode: useDiff ? "diff" : "full", ...(options.includeFrames ? {frameCoverage: crossProcess ? "cross-process" as const : "same-process" as const, unavailableFrames} : {}), ...(options.includeValues ? {valuesTruncated:valueBudget.truncated} : {}) };
   }
 
   private async readAXValues(tree: JsonValue, nodes: ObservedNode[], budget: {remaining: number; truncated: boolean}, sessionId?: string): Promise<void> {
@@ -1158,8 +1159,11 @@ export class OpenBrowserUseTabPlaywright {
     return this.tab.domSnapshot();
   }
 
-  getByRole(role: string, options: {name?: string; exact?: boolean} = {}): OpenBrowserUseRoleLocator {
-    if (typeof role !== "string" || !role || (options.name !== undefined && typeof options.name !== "string") || (options.exact !== undefined && typeof options.exact !== "boolean")) throw new Error("Invalid role locator");
+  getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator {
+    if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
+        Object.keys(options).some(key => !["name","exact","checked","pressed","selected","expanded"].includes(key)) ||
+        (options.name !== undefined && typeof options.name !== "string") ||
+        [options.exact,options.checked,options.pressed,options.selected,options.expanded].some(value => value !== undefined && typeof value !== "boolean")) throw new Error("Invalid role locator");
     return new OpenBrowserUseRoleLocator(this.tab, [role === "img" ? "image" : role], {...options});
   }
 
@@ -1185,7 +1189,7 @@ export class OpenBrowserUseTabPlaywright {
 }
 
 export class OpenBrowserUseRoleLocator {
-  constructor(private tab: OpenBrowserUseTab, private roles: readonly string[], private options: {name?: string; exact?: boolean}, private position?: number, private textMatch = false, private field: "name" | "placeholder" | "altText" = "name", private scope?: OpenBrowserUseRoleLocator, private filtersBefore: TextFilter[] = [], private filtersAfter: TextFilter[] = []) {}
+  constructor(private tab: OpenBrowserUseTab, private roles: readonly string[], private options: RoleLocatorOptions, private position?: number, private textMatch = false, private field: "name" | "placeholder" | "altText" = "name", private scope?: OpenBrowserUseRoleLocator, private filtersBefore: TextFilter[] = [], private filtersAfter: TextFilter[] = []) {}
 
   nth(index: number): OpenBrowserUseRoleLocator {
     if (!Number.isSafeInteger(index) || index < 0) throw new Error("Locator index must be a non-negative integer");
@@ -1199,7 +1203,7 @@ export class OpenBrowserUseRoleLocator {
     return new OpenBrowserUseRoleLocator(this.tab,locator.roles,locator.options,locator.position,locator.textMatch,locator.field,this,locator.filtersBefore,locator.filtersAfter);
   }
 
-  getByRole(role: string, options: {name?: string; exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByRole(role,options)); }
+  getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByRole(role,options)); }
   getByLabel(name: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByLabel(name,options)); }
   getByText(text: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByText(text,options)); }
   getByAltText(text: string, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.child(this.tab.playwright.getByAltText(text,options)); }
@@ -1226,8 +1230,12 @@ export class OpenBrowserUseRoleLocator {
     const normalize = (value: string) => this.textMatch ? value.replace(/\s+/g," ").trim() : value;
     const candidates = state.nodes.filter(node => {
       const value = node[this.field];
-      return this.roles.includes(node.role) && typeof value === "string" && (this.options.name === undefined ||
-        (this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
+      return this.roles.includes(node.role) && typeof value === "string" &&
+        (this.options.checked === undefined || node.checked === this.options.checked) &&
+        (this.options.pressed === undefined || node.pressed === this.options.pressed) &&
+        (this.options.selected === undefined || node.selected === this.options.selected) &&
+        (this.options.expanded === undefined || node.expanded === this.options.expanded) &&
+        (this.options.name === undefined || (this.options.exact ? normalize(value) === normalize(this.options.name) : normalize(value).toLowerCase().includes(normalize(this.options.name).toLowerCase())));
     });
     const matches: Array<{node:InteractiveNode; path:number[]; filters:FilterGuard[]}> = [];
     if (!this.scope) for (const node of candidates) matches.push({node,path:[],filters:[]});
@@ -1559,9 +1567,15 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     const disabled = Array.isArray(node.properties) && node.properties.some((item) => isObject(item) && item.name === "disabled" && isObject(item.value) && item.value.value === true);
     if (disabled) continue;
     const name = isObject(node.name) && typeof node.name.value === "string" ? node.name.value : "";
-    const property = Array.isArray(node.properties) ? node.properties.find(item => isObject(item) && item.name === "checked") : undefined;
-    const raw = isObject(property) && isObject(property.value) ? property.value.value : undefined;
-    const checked = raw === true || raw === "true" ? true : raw === false || raw === "false" ? false : raw === "mixed" ? "mixed" : undefined;
+    const state = (name: string): boolean | "mixed" | undefined => {
+      const property = Array.isArray(node.properties) ? node.properties.find(item => isObject(item) && item.name === name) : undefined;
+      const value = isObject(property) && isObject(property.value) ? property.value.value : undefined;
+      return value === true || value === "true" ? true : value === false || value === "false" ? false : value === "mixed" ? "mixed" : undefined;
+    };
+    const checked = state("checked"), pressed = state("pressed");
+    const selectedValue = state("selected"), expandedValue = state("expanded");
+    const selected = typeof selectedValue === "boolean" ? selectedValue : undefined;
+    const expanded = typeof expandedValue === "boolean" ? expandedValue : undefined;
     const sources = isObject(node.name) && Array.isArray(node.name.sources) ? node.name.sources : [];
     const placeholderSource = ["placeholder", "aria-placeholder"].map(attribute => sources.find(source => isObject(source) && source.attribute === attribute && isObject(source.attributeValue) && typeof source.attributeValue.value === "string")).find(Boolean);
     const rawPlaceholder = isObject(placeholderSource) && isObject(placeholderSource.attributeValue) ? placeholderSource.attributeValue.value : undefined;
@@ -1574,7 +1588,7 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     const states = axProperties(node);
     if (placeholder !== undefined) states.push(`placeholder=${JSON.stringify(placeholder)}${placeholderTruncated ? createHash("sha256").update(rawPlaceholder as string).digest("hex") : ""}`);
     if (altText !== undefined) states.push(`alt=${JSON.stringify(altText)}${altTextTruncated ? createHash("sha256").update(rawAlt as string).digest("hex") : ""}`);
-    nodes.push({ index: offset + nodes.length + 1, role, name, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(checked !== undefined ? {checked} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
+    nodes.push({ index: offset + nodes.length + 1, role, name, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(checked !== undefined ? {checked} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
   }
   return nodes;
 }

@@ -127,6 +127,15 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'(()=>{const box=document.createElement(\'section\');box.id=\'state-fixture\';box.innerHTML=\'<input type="checkbox" aria-label="Notifications" checked><input type="checkbox" aria-label="Notifications"><button aria-label="View mode" aria-pressed="true">On</button><button aria-label="View mode" aria-pressed="false">Off</button><button aria-label="Details" aria-expanded="false">Details</button><div role="tablist"><button role="tab" aria-label="Period" aria-selected="true">One</button><button role="tab" aria-label="Period" aria-selected="false">Two</button></div>\';box.querySelectorAll(\'input\').forEach((el,i)=>el.onchange=e=>parent.postMessage({kind:\'state-check\',index:i,checked:el.checked,trusted:e.isTrusted},\'*\'));box.querySelectorAll(\'[aria-pressed]\').forEach((el,i)=>el.onclick=e=>parent.postMessage({kind:\'state-pressed\',index:i,trusted:e.isTrusted},\'*\'));document.body.append(box)})()'},{sessionId:crossSession});
+ assert.equal(await tab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).count(),1);
+ await tab.playwright.getByRole('checkbox',{name:'Notifications',checked:false}).check();await new Promise(r=>setTimeout(r,100));
+ assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'state-check',index:1,checked:true,trusted:true});
+ assert.equal(await tab.playwright.getByRole('tab',{name:'Period',selected:true}).count(),1);
+ assert.equal(await tab.playwright.getByRole('button',{name:'Details',expanded:false}).count(),1);
+ await tab.playwright.getByRole('button',{name:'View mode',pressed:true}).click();await new Promise(r=>setTimeout(r,100));
+ assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'state-pressed',index:0,trusted:true});
+
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(async()=>{const c=document.createElement('section');c.setAttribute('role','dialog');c.setAttribute('aria-label','Nested cross container');const f=document.createElement('iframe');f.src='http://127.0.0.1:${http.address().port}/inner?scoped=1';c.append(f);document.body.append(c);await new Promise(resolve=>f.onload=resolve)})()`,awaitPromise:true},{sessionId:crossSession});
  await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('dialog',{name:'Nested cross container',exact:true}).getByRole('button',{name:'Nested action',exact:true}).click();
  const frameSessions=await browser.cdp.frameSessions(tab.id);

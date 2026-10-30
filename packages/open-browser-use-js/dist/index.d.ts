@@ -33,6 +33,9 @@ export type InteractiveNode = {
     name: string;
     frameId?: string;
     checked?: boolean | "mixed";
+    pressed?: boolean | "mixed";
+    selected?: boolean;
+    expanded?: boolean;
     placeholder?: string;
     placeholderTruncated?: boolean;
     altText?: string;
@@ -45,6 +48,14 @@ export type InteractiveNode = {
 export type SelectOption = string | {
     value?: string;
     label?: string;
+};
+export type RoleLocatorOptions = {
+    name?: string;
+    exact?: boolean;
+    checked?: boolean;
+    pressed?: boolean;
+    selected?: boolean;
+    expanded?: boolean;
 };
 export type InteractiveState = {
     snapshotId: string;
@@ -166,10 +177,7 @@ export declare class OpenBrowserUseTabPlaywright {
     constructor(tab: OpenBrowserUseTab);
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
     domSnapshot(): Promise<string>;
-    getByRole(role: string, options?: {
-        name?: string;
-        exact?: boolean;
-    }): OpenBrowserUseRoleLocator;
+    getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: string, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;
@@ -193,17 +201,11 @@ export declare class OpenBrowserUseRoleLocator {
     private scope?;
     private filtersBefore;
     private filtersAfter;
-    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: {
-        name?: string;
-        exact?: boolean;
-    }, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[]);
+    constructor(tab: OpenBrowserUseTab, roles: readonly string[], options: RoleLocatorOptions, position?: number | undefined, textMatch?: boolean, field?: "name" | "placeholder" | "altText", scope?: OpenBrowserUseRoleLocator | undefined, filtersBefore?: TextFilter[], filtersAfter?: TextFilter[]);
     nth(index: number): OpenBrowserUseRoleLocator;
     first(): OpenBrowserUseRoleLocator;
     private child;
-    getByRole(role: string, options?: {
-        name?: string;
-        exact?: boolean;
-    }): OpenBrowserUseRoleLocator;
+    getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: string, options?: {
         exact?: boolean;
     }): OpenBrowserUseRoleLocator;

@@ -419,6 +419,45 @@ test("locator does not repeat a click when a frame changes after input", async (
   assert.equal(mouse,2);assert.equal(inserted,0);
 });
 
+test('role locators filter supported states and reject invalid options', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'});
+  let checked=false, pressed='true', changeOnMeasure=false, mouse=0;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(params.method==='Accessibility.getFullAXTree')return {nodes:[
+      {backendDOMNodeId:10,role:{value:'checkbox'},name:{value:'Alerts'},properties:[{name:'checked',value:{value:checked}}]},
+      {backendDOMNodeId:11,role:{value:'checkbox'},name:{value:'Alerts'},properties:[{name:'checked',value:{value:'mixed'}}]},
+      {backendDOMNodeId:12,role:{value:'button'},name:{value:'Toggle'},properties:[{name:'pressed',value:{value:pressed}},{name:'expanded',value:{value:false}}]},
+      {backendDOMNodeId:13,role:{value:'tab'},name:{value:'View'},properties:[{name:'selected',value:{value:true}}]},
+      {backendDOMNodeId:14,role:{value:'button'},name:{value:'Plain'}}
+    ]};
+    if(params.method==='DOM.resolveNode')return {object:{objectId:'target'}};
+    if(params.method==='Runtime.callFunctionOn'){if(changeOnMeasure)pressed='false';return {result:{value:{x:10,y:10,width:10,height:10}}};}
+    if(params.method==='Input.dispatchMouseEvent')mouse++;
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1), role=tab.playwright;
+  assert.equal(await role.getByRole('checkbox',{name:'Alerts',checked:false}).count(),1);
+  assert.equal(await role.getByRole('checkbox',{name:'Alerts',checked:true}).count(),0);
+  assert.equal(await role.getByRole('button',{name:'Toggle',pressed:true,expanded:false}).count(),1);
+  assert.equal(await role.getByRole('tab',{name:'View',selected:true}).count(),1);
+  assert.equal(await role.getByRole('button',{name:'Plain',pressed:false}).count(),0);
+  assert.throws(()=>role.getByRole('button',{pressed:'true'}),/Invalid role locator/);
+  assert.throws(()=>role.getByRole('button',{disabled:true}),/Invalid role locator/);
+  const state=await tab.observe();
+  assert.equal(state.nodes.find(node=>node.name==='Toggle').pressed,true);
+  assert.equal(state.nodes.find(node=>node.name==='Toggle').expanded,false);
+  assert.equal(state.nodes.find(node=>node.role==='tab').selected,true);
+  const first=state.nodes.find(node=>node.role==='checkbox' && node.checked===false);
+  checked=true;
+  await assert.rejects(tab.click(first.index,state.snapshotId),/Target changed/);
+  changeOnMeasure=true;
+  await assert.rejects(role.getByRole('button',{name:'Toggle',pressed:true}).click({timeoutMs:0}),/Target changed/);
+  assert.equal(mouse,0);
+});
+
 test('label locator checks and unchecks once, validates state and refuses mixed or radio clearing', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});let checked='false',role='checkbox',mouse=0;
   client.request=async(method,params)=>{

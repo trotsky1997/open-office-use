@@ -148,6 +148,7 @@ await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
 await tab.playwright.getByRole("textbox", { name: "Message" }).press("Enter");
 await tab.playwright.getByPlaceholder("Email address", { exact: true }).fill("user@example.com");
 await tab.playwright.getByLabel("Email updates", { exact: true }).check();
+await tab.playwright.getByRole("checkbox", { name: "Alerts", checked: false }).check();
 await tab.playwright.getByLabel("Colour", { exact: true }).selectOption({ label: "Blue" });
 await tab.playwright.getByText("Continue", { exact: true }).click();
 await tab.playwright.getByRole("img", { name: "Product photo", exact: true }).click();
@@ -203,6 +204,13 @@ accessible headings; `getByRole("img", ...)` supports accessible images.
 `getByRole("dialog", ...)` and `getByRole("alertdialog", ...)` support
 accessible dialog containers. To include these nodes in an indexed observation directly,
 use `includeText: true`; switching it resets the diff baseline.
+
+`getByRole` also accepts boolean `checked`, `pressed`, `selected` and
+`expanded` filters. A filter matches when the corresponding state is explicitly
+present in the accessibility tree; a mixed state does not match either boolean.
+Observations expose these states when available, and a state change invalidates
+the old target before input. Disabled targets are omitted from observations;
+unsupported role options are rejected.
 
 `getByLabel` matches the accessible name of supported form controls and accepts
 the same `exact` option. `check()` and `uncheck()` check the current state,
