@@ -133,3 +133,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Check source stability before OfficeCLI batches and session creation, restore and export; concurrent writes abort publication, and session startup now shares the 128 MiB snapshot limit.
 
 - Add versioned XLSX grid border formatting, individual side styles, all-side RGB colors, border readback, and viewer controls while retaining unrelated workbook parts and formula caches.
+
+- Extend XLSX grid borders with range outline and interior placement, per-side RGB colors, viewer placement controls, and verification that untouched edges retain their existing styles.

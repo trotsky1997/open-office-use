@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory() as tmp:
         sizing = {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'target_range': 'B1', 'column_width': 20, 'row_height': 28}
         try: post('grid-resize', sizing, 'http://evil.test'); raise AssertionError('Cross-origin sizing accepted')
         except urllib.error.HTTPError as error: assert error.code == 403
-        assert post('grid-format', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'style_range': 'B1', 'properties': {'bold': True, 'border': 'thin', 'border_color': '336699'}})['revision'] == 2
+        assert post('grid-format', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'style_range': 'B1', 'properties': {'bold': True, 'border': 'thin', 'border_scope': 'outline', 'border_color': '336699'}})['revision'] == 2
         formatted = load_workbook(draft / 'revision-000002.xlsx').active['B1']
         assert formatted.border.left.style == 'thin' and formatted.border.left.color.rgb[-6:] == '336699'
         payload['base_revision'] = 2

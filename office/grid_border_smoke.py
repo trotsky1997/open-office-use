@@ -43,4 +43,34 @@ with tempfile.TemporaryDirectory() as tmp:
     cleared = session.format_grid(draft, 2, 'Sheet', 'A1', 'A1', {'border':'none'})
     cell = load_workbook(cleared['file']).active['A1']
     assert all(getattr(cell.border, side).style is None for side in ('top', 'bottom', 'left', 'right'))
+    scoped = root / 'scoped'; session.start(scoped, source=source)
+    baseline = session.format_grid(scoped, 0, 'Sheet', 'A1:C3', 'A1:C3', {'border':'thin','border_color':'336699'})
+    outline = session.format_grid(scoped, 1, 'Sheet', 'A1:C3', 'A1:C3', {'border':'double','border_scope':'outline','border_color':'FF0000'})
+    sheet = load_workbook(outline['file']).active
+    for row in range(1, 4):
+        for col in range(1, 4):
+            cell = sheet.cell(row, col)
+            for side, outside in (('top', row == 1), ('bottom', row == 3), ('left', col == 1), ('right', col == 3)):
+                line = getattr(cell.border, side)
+                assert (line.style, line.color.rgb[-6:]) == (('double', 'FF0000') if outside else ('thin', '336699'))
+    inside = session.format_grid(scoped, 2, 'Sheet', 'A1:C3', 'A1:C3', {'border':'dashed','border_scope':'inside','border_color':'00AA00'})
+    sheet = load_workbook(inside['file']).active
+    for row in range(1, 4):
+        for col in range(1, 4):
+            cell = sheet.cell(row, col)
+            for side, outside in (('top', row == 1), ('bottom', row == 3), ('left', col == 1), ('right', col == 3)):
+                line = getattr(cell.border, side)
+                assert (line.style, line.color.rgb[-6:]) == (('double', 'FF0000') if outside else ('dashed', '00AA00'))
+    side = session.format_grid(scoped, 3, 'Sheet', 'A1', 'A1', {'border_top':'thick','border_top_color':'123456'})
+    sheet = load_workbook(side['file']).active
+    assert sheet['A1'].border.top.style == 'thick' and sheet['A1'].border.top.color.rgb[-6:] == '123456'
+    assert sheet['A1'].border.left.style == 'double' and sheet['A1'].border.left.color.rgb[-6:] == 'FF0000'
+    for props in ({'border_scope':'inside'}, {'border':'thin','border_scope':'bad'}, {'border_top_color':'123456'}, {'border_top':'none','border_top_color':'123456'}):
+        try: session.format_grid(scoped, 4, 'Sheet', 'A1', 'A1', props)
+        except ValueError: pass
+        else: raise AssertionError(f'Invalid scoped border accepted: {props}')
+    try: session.format_grid(scoped, 4, 'Sheet', 'A1', 'A1', {'border':'thin','border_scope':'inside'})
+    except ValueError: pass
+    else: raise AssertionError('Empty inside border created a revision')
+    assert session.info(scoped)['latest_revision'] == 4
 print('Grid border smoke passed: styles, color, preservation and validation')

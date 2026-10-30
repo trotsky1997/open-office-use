@@ -123,7 +123,8 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <label>Vertical <select id="grid-vertical"><option value="">Keep</option><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option></select></label>
 <label>Wrap <select id="grid-wrap"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
 <label><input id="grid-fill-enabled" type="checkbox"> Set fill</label> <input id="grid-fill" type="color" value="#ffcc00" aria-label="Fill color">
-<label>All borders <select id="grid-border"><option value="">Keep</option><option value="none">None</option><option value="thin">Thin</option><option value="medium">Medium</option><option value="thick">Thick</option><option value="double">Double</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select></label>
+<label>Border style <select id="grid-border"><option value="">Keep</option><option value="none">None</option><option value="thin">Thin</option><option value="medium">Medium</option><option value="thick">Thick</option><option value="double">Double</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select></label>
+<label>Border placement <select id="grid-border-scope"><option value="all">All cell edges</option><option value="outline">Outside of range</option><option value="inside">Inside range</option></select></label>
 <label><input id="grid-border-color-enabled" type="checkbox"> Set border color</label> <input id="grid-border-color" type="color" value="#000000" aria-label="Border color">
 <label>Number format <input id="grid-numberformat" maxlength="120" placeholder="Keep"></label>
 <button type="button" id="grid-format" disabled>Apply formatting</button></fieldset>
@@ -471,7 +472,7 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  if (document.getElementById('grid-font-color-enabled').checked) properties.font_color=document.getElementById('grid-font-color').value.slice(1);
  if (document.getElementById('grid-fill-enabled').checked) properties.fill=document.getElementById('grid-fill').value.slice(1);
  const border=document.getElementById('grid-border').value;
- if (border) properties.border=border;
+ if (border) { properties.border=border; properties.border_scope=document.getElementById('grid-border-scope').value; }
  if (document.getElementById('grid-border-color-enabled').checked) {
   if (!border || border==='none') { document.getElementById('grid-status').textContent='Choose a border style before setting its color.'; return; }
   properties.border_color=document.getElementById('grid-border-color').value.slice(1);

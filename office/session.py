@@ -675,7 +675,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
 
 
 def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):
-    allowed = {'bold', 'italic', 'underline', 'font_name', 'font_size', 'font_color', 'fill', 'horizontal', 'vertical', 'wrap', 'numberformat', 'border', 'border_color', 'border_top', 'border_bottom', 'border_left', 'border_right'}
+    allowed = {'bold', 'italic', 'underline', 'font_name', 'font_size', 'font_color', 'fill', 'horizontal', 'vertical', 'wrap', 'numberformat', 'border', 'border_color', 'border_top', 'border_bottom', 'border_left', 'border_right', 'border_scope', 'border_top_color', 'border_bottom_color', 'border_left_color', 'border_right_color'}
     if not isinstance(properties, dict) or not properties or not set(properties) <= allowed:
         raise ValueError('Provide supported cell formatting properties')
     props = {}
@@ -702,6 +702,15 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
         if not isinstance(color, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', color): raise ValueError('border_color must be a six-digit RGB color')
         if properties.get('border') in (None, 'none'): raise ValueError('border_color requires an all-sides border style')
         props['border.color'] = color
+    scope = properties.get('border_scope', 'all')
+    if scope not in ('all', 'outline', 'inside') or ('border_scope' in properties and 'border' not in properties): raise ValueError('Border scope requires an all-sides border style')
+    for side in ('top', 'bottom', 'left', 'right'):
+        key = f'border_{side}_color'
+        if key in properties:
+            color = properties[key]
+            if not isinstance(color, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', color): raise ValueError(f'{key} must be a six-digit RGB color')
+            if properties.get(f'border_{side}') in (None, 'none'): raise ValueError(f'{key} requires a matching border style')
+            props[f'border.{side}.color'] = color
     if 'font_name' in properties:
         value = properties['font_name']
         if not isinstance(value, str) or not value.strip() or len(value) > 100 or any(ord(c) < 32 for c in value): raise ValueError('Font name must contain 1 to 100 characters without control characters')
@@ -727,9 +736,19 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
             match = re.fullmatch(r'([A-Z]+)([0-9]+)', cell['cell'])
             col, number = column_index_from_string(match.group(1)), int(match.group(2))
             if sc1 <= col <= sc2 and sr1 <= number <= sr2:
+                cell_props = props.copy()
+                if scope != 'all':
+                    cell_props.pop('border.all'); cell_props.pop('border.color', None)
+                    edges = {'top': number == sr1, 'bottom': number == sr2, 'left': col == sc1, 'right': col == sc2}
+                    for side, outer in edges.items():
+                        if outer == (scope == 'outline'):
+                            cell_props[f'border.{side}'] = properties['border']
+                            if 'border_color' in properties: cell_props[f'border.{side}.color'] = properties['border_color']
+                if not cell_props: continue
                 if not cell['editable'] or cell['dynamic_formula_anchor']:
                     raise ValueError(f"Cell cannot be formatted in the grid: {cell['cell']} ({cell['read_only_reason'] or 'formula_range'})")
-                operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': props})
+                operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': cell_props})
+    if not operations: raise ValueError('Formatting selection contains no applicable changes')
     state = info(directory); source = revision_file(state, base_revision)
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
