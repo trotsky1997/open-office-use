@@ -30,7 +30,7 @@ img{display:block;max-width:100%;height:auto;background:white;box-shadow:0 2px 1
 details{margin:.6rem 1.5rem;background:#fff;border:1px solid #ccd3da;border-radius:.4rem;padding:.65rem .8rem}
 summary{cursor:pointer;font-weight:600}form{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;padding-top:.6rem}
 #comparison-text,#comparison-parts,#formula-scan-output,#layout-scan-output,#slide-text-output,#chart-cache-output,#grid-dimensions{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fa;padding:.75rem;border-radius:.3rem}
-input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly],textarea[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}#grid-output textarea{width:10rem;min-height:2.4rem;resize:vertical;box-sizing:border-box}
+input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,textarea{font:inherit}button{cursor:pointer}form p{flex-basis:100%}.grid-scroll{overflow:auto;max-height:32rem;flex-basis:100%}input[readonly],textarea[readonly]{background:#f4f6f8}table{border-collapse:collapse}th,td{border:1px solid #ccd3da;padding:.15rem}#grid-output textarea{display:block;width:10rem;min-height:2.4rem;resize:vertical;box-sizing:border-box}#grid-output select{max-width:10rem;font-size:.8rem}
 .comparison-page{position:relative;width:100%}.comparison-page img{display:block}.layout-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}.layout-overlay polygon{vector-effect:non-scaling-stroke;stroke-width:2}
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
@@ -108,7 +108,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
-<div id="grid-output" class="grid-scroll"></div><label>Changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
+<div id="grid-output" class="grid-scroll"></div><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
 <fieldset><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
@@ -131,7 +131,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Changes affect entire columns or rows, including cells outside this range.</p>
 <details><summary>Stored dimensions for loaded range</summary><pre id="grid-dimensions"></pre></details></fieldset>
 <p>Formatting applies to the loaded range or a smaller range. Existing patterned fills keep their pattern; theme colors are not previewed in the grid.</p>
-<p>Up to 200 cells. Paste tab-separated cells starting at the focused cell. Enter formulas beginning with =. Choose literal text to retain leading zeros or = characters. Enter line breaks in a cell; quoted clipboard cells may contain line breaks. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
+<p>Up to 200 cells. Paste tab-separated cells starting at the focused cell. Enter formulas beginning with =. Choose a default type or override it for each cell. Literal text retains leading zeros or = characters. Changing a nonempty cell’s type also saves it. Enter line breaks in a cell; quoted clipboard cells may contain line breaks. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
 <p id="grid-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
 <label>Page <input name="page" type="number" min="1" required value="1"></label>
@@ -272,8 +272,14 @@ document.getElementById('picture-replace').addEventListener('click', async () =>
  } catch(error) { document.getElementById('picture-status').textContent=`Picture error: ${error.message}`; }
  finally {button.disabled=false;}
 });
+function gridChanged(input) {
+ return input.value!==input.dataset.baseline || (input.value!=='' && input.parentElement.querySelector('select').value!=='default');
+}
 function gridDirty() {
- return [...document.querySelectorAll('#grid-output textarea')].some(input=>input.value!==input.dataset.baseline);
+ return [...document.querySelectorAll('#grid-output textarea')].some(gridChanged);
+}
+function lockGridInputs(inputs, locked) {
+ inputs.forEach(input=>{input.readOnly=locked || input.dataset.editable!=='true'; input.parentElement.querySelector('select').disabled=input.readOnly;});
 }
 function elementDirty() {
  return editBaseline !== null && (document.getElementById('edit-value').value !== editBaseline.value || document.getElementById('edit-mode').value !== editBaseline.mode);
@@ -309,7 +315,7 @@ document.getElementById('formula-recalculate').addEventListener('click', async (
 });
 function invalidateGrid(message) {
  gridLoaded=null; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true;
- document.querySelectorAll('#grid-output textarea').forEach(input=>input.readOnly=true);
+ lockGridInputs([...document.querySelectorAll('#grid-output textarea')], true);
  if (message) document.getElementById('grid-status').textContent=message;
 }
 for (const id of ['grid-sheet','grid-range']) document.getElementById(id).addEventListener('change', () => invalidateGrid('Reload the range before saving.'));
@@ -367,7 +373,9 @@ async function loadGrid(target=null) {
     if (typeof formula==='string') input.title+=`; cached result: ${cell.value == null ? 'unknown' : cell.value}`;
     if (!cell.editable) input.title=cell.read_only_reason==='merged_placeholder' ? `Merged cell placeholder; edit ${cell.merged_anchor}` : cell.read_only_reason==='locked_cell' ? 'Locked cell on a protected worksheet' : cell.read_only_reason==='overlapping_merges' ? 'Overlapping merged ranges' : cell.read_only_reason==='value_too_long' ? 'Cell content exceeds the 4,000 UTF-16-unit editing limit' : cell.read_only_reason==='unverified_text' ? 'Text could not be verified; inspect the source before editing' : 'Protected formula range';
     else if (cell.merged_anchor) input.title+=`; merged region anchor ${cell.merged_anchor}`;
-    td.appendChild(input); tr.appendChild(td);
+    const mode=document.createElement('select'); mode.setAttribute('aria-label', `${sheet} ${cell.cell} input type`);
+    for (const [value,label] of [['default','Default'],['auto','Automatic'],['text','Literal text']]) { const option=document.createElement('option'); option.value=value; option.textContent=label; mode.appendChild(option); }
+    mode.disabled=!cell.editable; td.append(input,mode); tr.appendChild(td);
    }
    body.appendChild(tr);
   }
@@ -423,26 +431,26 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
  event.preventDefault(); if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
  const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output textarea')];
- const changes=inputs.filter(input=>input.dataset.editable==='true' && input.value!==input.dataset.baseline).map(input=>({cell:input.dataset.cell,value:input.value,...(document.getElementById('grid-input-type').value==='text' && input.value ? {type:'text'} : {})}));
+ const changes=inputs.filter(input=>input.dataset.editable==='true' && gridChanged(input)).map(input=>{const choice=input.parentElement.querySelector('select').value, mode=choice==='default' ? document.getElementById('grid-input-type').value : choice; return {cell:input.dataset.cell,value:input.value,...(mode==='text' && input.value ? {type:'text'} : {})};});
  if (!changes.length) { document.getElementById('grid-status').textContent='No changed cells.'; return; }
  const body=JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,changes});
  if (new TextEncoder().encode(body).length > 20000) { document.getElementById('grid-status').textContent='Changes exceed 20 KB; save fewer cells at a time.'; return; }
- gridBusy=true; const button=document.getElementById('grid-save'); button.disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; inputs.forEach(input=>input.readOnly=true);
+ gridBusy=true; const button=document.getElementById('grid-save'); button.disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-resize').disabled=true; lockGridInputs(inputs,true);
  try {
   const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
-  inputs.forEach(input=>input.dataset.baseline=input.value);
+  inputs.forEach(input=>{input.dataset.baseline=input.value; input.parentElement.querySelector('select').value='default';});
   invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Formula caches may be stale; recalculation is requested on open.${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
-  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; }
+  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; }
  } finally { gridBusy=false; }
 });
 document.getElementById('grid-format').addEventListener('click', async () => {
  if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
  const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output textarea')];
- if (inputs.some(input=>input.value!==input.dataset.baseline)) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before formatting.'; return; }
+ if (inputs.some(gridChanged)) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before formatting.'; return; }
  const properties={}, bold=document.getElementById('grid-bold').value, numberformat=document.getElementById('grid-numberformat').value;
  if (bold) properties.bold=bold==='true';
  for (const name of ['italic','wrap']) {const value=document.getElementById(`grid-${name}`).value; if (value) properties[name]=value==='true';}
@@ -454,31 +462,31 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  if (document.getElementById('grid-fill-enabled').checked) properties.fill=document.getElementById('grid-fill').value.slice(1);
  if (numberformat) properties.numberformat=numberformat;
  if (!Object.keys(properties).length) { document.getElementById('grid-status').textContent='Choose a formatting change.'; return; }
- gridBusy=true; const button=document.getElementById('grid-format'); button.disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-save').disabled=true; inputs.forEach(input=>input.readOnly=true);
+ gridBusy=true; const button=document.getElementById('grid-format'); button.disabled=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-save').disabled=true; lockGridInputs(inputs,true);
  try {
   const response=await fetch('grid-format', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,style_range:document.getElementById('grid-style-range').value,properties})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Formatting failed');
   invalidateGrid(`Formatting saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
-  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false; }
+  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false; }
  } finally { gridBusy=false; }
 });
 document.getElementById('grid-resize').addEventListener('click', async () => {
  if (gridBusy) return;
  if (!gridLoaded || gridLoaded.revision!==current || pinned!==null) {invalidateGrid('Version changed; reload the range.'); return;}
  const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output textarea')];
- if (inputs.some(input=>input.value!==input.dataset.baseline)) {document.getElementById('grid-status').textContent='Save or copy pending cell edits before sizing.'; return;}
+ if (inputs.some(gridChanged)) {document.getElementById('grid-status').textContent='Save or copy pending cell edits before sizing.'; return;}
  const width=document.getElementById('grid-column-width').value, height=document.getElementById('grid-row-height').value;
  if (!width && !height) {document.getElementById('grid-status').textContent='Enter a width or height.'; return;}
- gridBusy=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-save').disabled=true; inputs.forEach(input=>input.readOnly=true);
+ gridBusy=true; document.getElementById('grid-resize').disabled=true; document.getElementById('grid-format').disabled=true; document.getElementById('grid-save').disabled=true; lockGridInputs(inputs,true);
  try {
   const response=await fetch('grid-resize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,target_range:document.getElementById('grid-size-range').value,column_width:width ? Number(width) : null,row_height:height ? Number(height) : null})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Sizing failed');
   invalidateGrid(`Sizing saved as revision ${result.revision}.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
-  if (gridLoaded===loaded && current===loaded.revision && pinned===null) {inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false;}
+  if (gridLoaded===loaded && current===loaded.revision && pinned===null) {lockGridInputs(inputs,false); document.getElementById('grid-resize').disabled=loaded.sheet_protected; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-save').disabled=false;}
  } finally {gridBusy=false;}
 });
 function invalidateEdit(message) {
