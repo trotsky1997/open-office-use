@@ -227,6 +227,7 @@ test('prepared file chooser validates paths and permits one file decision',async
   const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let complete,waitId,chosen;
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
   client.request=(method,params)=>{
+    if(method==='attach' || method==='executeCdp')return Promise.resolve({});
     if(method==='waitForFileChooser'){waitId=params.waitId;return new Promise(resolve=>{complete=resolve;});}
     if(method==='setFileChooserFiles'){chosen=params;return Promise.resolve({});}
     throw new Error('Unexpected request');

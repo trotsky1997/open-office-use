@@ -313,11 +313,14 @@ class BrowserBackend {
     this.cursorArrivalWaitersByKey = new Map();
     this.fileChoosersById = new Map();
     this.fileChooserWaitersByTabId = new Map();
+    this.frameSessionsByTabId = new Map();
     this.nextCursorMoveSequence = 1;
     chrome.debugger.onDetach.addListener((source) => {
       if (typeof source.tabId === "number") {
         this.attachedTabs.delete(source.tabId);
         this.invalidateFileChoosers(source.tabId);
+        this.frameSessionsByTabId.delete(source.tabId);
+        this.fileChooserWaitersByTabId.get(source.tabId)?.reject(new Error("File chooser debugger detached"));
       }
     });
   }
@@ -697,17 +700,25 @@ class BrowserBackend {
         : DEFAULT_CDP_TIMEOUT_MS;
     if (params.waitId !== undefined && (typeof params.waitId !== "string" || !/^[0-9a-f-]{36}$/.test(params.waitId))) throw new Error("Invalid file chooser wait ID");
     const waitForEvent = this.waitForFileChooserEvent(tabId);
+    void waitForEvent.catch(() => {});
+    const enabled = [];
     try {
-      await chrome.debugger.sendCommand({ tabId }, "Page.setInterceptFileChooserDialog", {
-        enabled: true
-      });
+      const sessions = [undefined, ...(this.frameSessionsByTabId.get(tabId)?.keys() ?? [])];
+      for (const sessionId of sessions) {
+        const target = {tabId, ...(sessionId ? {sessionId} : {})};
+        await chrome.debugger.sendCommand(target, "Page.enable");
+        enabled.push(target);
+        await chrome.debugger.sendCommand(target, "Page.setInterceptFileChooserDialog", { enabled: true });
+      }
+      const waiter = this.fileChooserWaitersByTabId.get(tabId);
+      if (waiter?.error) throw waiter.error;
       if (params.waitId) for (const listener of this.fileChooserReadyListeners) listener(params.waitId);
       return await withTimeout(timeoutMs, () => waitForEvent);
     } finally {
-      this.fileChooserWaitersByTabId.delete(tabId);
-      await chrome.debugger
-        .sendCommand({ tabId }, "Page.setInterceptFileChooserDialog", { enabled: false })
-        .catch(() => {});
+      this.fileChooserWaitersByTabId.get(tabId)?.reject(new Error("File chooser wait ended"));
+      try {
+        await Promise.all(enabled.map(target => chrome.debugger.sendCommand(target, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {})));
+      } finally { this.fileChooserWaitersByTabId.delete(tabId); }
     }
   }
 
@@ -962,7 +973,20 @@ class BrowserBackend {
 
   handleCdpEvent(source, method, params) {
     if (typeof source?.tabId !== "number") return;
+    if (method === "Target.attachedToTarget" && params?.targetInfo?.type === "iframe" && typeof params.sessionId === "string") {
+      let sessions = this.frameSessionsByTabId.get(source.tabId);
+      if (!sessions) this.frameSessionsByTabId.set(source.tabId, sessions = new Map());
+      sessions.set(params.sessionId, source.sessionId);
+    }
+    if (method === "Target.detachedFromTarget" && typeof params?.sessionId === "string") {
+      const sessions = this.frameSessionsByTabId.get(source.tabId);
+      const remove = id => { sessions?.delete(id); for (const [child, parent] of sessions ?? []) if (parent === id) remove(child); };
+      remove(params.sessionId);
+    }
     if (["Page.frameNavigated", "Page.frameDetached", "Target.detachedFromTarget"].includes(method)) this.invalidateFileChoosers(source.tabId);
+    if (["Page.frameNavigated", "Page.frameDetached", "Target.attachedToTarget", "Target.detachedFromTarget"].includes(method)) {
+      this.fileChooserWaitersByTabId.get(source.tabId)?.reject(new Error("Frame tree changed while waiting for file chooser"));
+    }
     if (method !== "Page.fileChooserOpened") return;
     const waiter = this.fileChooserWaitersByTabId.get(source.tabId);
     waiter?.resolve(params ?? {}, source.sessionId);
@@ -973,13 +997,22 @@ class BrowserBackend {
       throw new Error(`Already waiting for file chooser in tab ${tabId}`);
     }
     return new Promise((resolve, reject) => {
-      this.fileChooserWaitersByTabId.set(tabId, {
+      const waiter = {
+        settled: false,
+        error: null,
+        reject: error => {
+          if (waiter.settled) return;
+          waiter.settled = true;
+          waiter.error = error;
+          reject(error);
+        },
         resolve: (event, sessionId) => {
-          this.fileChooserWaitersByTabId.delete(tabId);
+          if (waiter.settled) return;
           if (!Number.isInteger(event.backendNodeId)) {
-            reject(new Error("File chooser event did not include backendNodeId"));
+            waiter.reject(new Error("File chooser event did not include backendNodeId"));
             return;
           }
+          waiter.settled = true;
           const fileChooserId = crypto.randomUUID();
           const chooser = {
             tabId,
@@ -993,7 +1026,8 @@ class BrowserBackend {
             isMultiple: chooser.isMultiple
           });
         }
-      });
+      };
+      this.fileChooserWaitersByTabId.set(tabId, waiter);
     });
   }
 

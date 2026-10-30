@@ -549,9 +549,10 @@ await click;
 accepts an absolute path or an array of absolute paths and permits one decision
 per chooser. Frame navigation or debugger detachment invalidates outstanding
 chooser handles. An error after issuing a decision can leave the outcome
-unknown; inspect the page before another action. Cross-process frame chooser
-handling has not been verified in a real browser. Electron does not expose
-uploads.
+unknown; inspect the page before another action. Cross-process iframe sessions
+already attached at preparation are intercepted. If the frame tree changes
+while waiting, the wait fails; prepare a new one after observing the page.
+Electron does not expose uploads.
 
 ## Waiting for a download
 

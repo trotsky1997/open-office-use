@@ -39,9 +39,11 @@ test('download readiness is emitted only after the waiter is installed',async()=
 test('file chooser readiness follows interception and preserves the frame session',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.requireSession=async()=>({});backend.attachedTabs.add(1);
   commands.length=0;let ready=false;
+  backend.handleCdpEvent({tabId:1},'Target.attachedToTarget',{sessionId:'frame-session',targetInfo:{type:'iframe'}});
   backend.fileChooserReadyListeners.add(()=>{ready=true;assert.equal(commands.at(-1).method,'Page.setInterceptFileChooserDialog');assert.equal(commands.at(-1).params.enabled,true);});
   const pending=backend.waitForFileChooser({tabId:1,timeoutMs:1000,waitId:'00000000-0000-0000-0000-000000000000'});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(ready,true);
+  assert.ok(commands.some(call=>call.target.sessionId==='frame-session' && call.method==='Page.setInterceptFileChooserDialog' && call.params.enabled));
   backend.handleCdpEvent({tabId:1,sessionId:'frame-session'},'Page.fileChooserOpened',{backendNodeId:42,mode:'selectMultiple'});
   const result=await pending;assert.equal(result.isMultiple,true);
   await backend.setFileChooserFiles({fileChooserId:result.fileChooserId,files:['/tmp/fixture']});
@@ -67,5 +69,42 @@ test('file chooser decision is consumed before a failed browser command',async()
     await assert.rejects(backend.setFileChooserFiles({fileChooserId:'chooser',files:['/tmp/fixture']}),/outcome unknown/);
     await assert.rejects(backend.setFileChooserFiles({fileChooserId:'chooser',files:['/tmp/fixture']}),/Unknown file chooser/);
     assert.equal(count,1);
+  } finally {chrome.debugger.sendCommand=original;}
+});
+
+test('frame changes stop an armed chooser and release interception',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.attachedTabs.add(1);
+  const pending=backend.waitForFileChooser({tabId:1,timeoutMs:1000});
+  const rejected=assert.rejects(pending,/Frame tree changed/);
+  await new Promise(resolve=>setImmediate(resolve));
+  backend.handleCdpEvent({tabId:1},'Target.attachedToTarget',{sessionId:'new-frame',targetInfo:{type:'iframe'}});
+  await rejected;assert.equal(backend.fileChooserWaitersByTabId.size,0);
+});
+
+test('a second chooser cannot arm while interception is being released',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.attachedTabs.add(1);
+  const original=chrome.debugger.sendCommand;let release;
+  chrome.debugger.sendCommand=async(_target,method,params)=>{
+    if(method==='Page.setInterceptFileChooserDialog' && !params.enabled)await new Promise(resolve=>{release=resolve;});
+  };
+  try {
+    const pending=backend.waitForFileChooser({tabId:1,timeoutMs:1000});
+    await new Promise(resolve=>setImmediate(resolve));
+    backend.handleCdpEvent({tabId:1},'Page.fileChooserOpened',{backendNodeId:7,mode:'selectSingle'});
+    await new Promise(resolve=>setImmediate(resolve));
+    await assert.rejects(backend.waitForFileChooser({tabId:1,timeoutMs:1000}),/Already waiting/);
+    release();await pending;assert.equal(backend.fileChooserWaitersByTabId.size,0);
+  } finally {chrome.debugger.sendCommand=original;}
+});
+
+test('interception setup failure still attempts to disable interception',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.attachedTabs.add(1);
+  const original=chrome.debugger.sendCommand;const states=[];
+  chrome.debugger.sendCommand=async(_target,method,params)=>{
+    if(method==='Page.setInterceptFileChooserDialog'){states.push(params.enabled);if(params.enabled)throw new Error('setup outcome unknown');}
+  };
+  try {
+    await assert.rejects(backend.waitForFileChooser({tabId:1,timeoutMs:1000}),/setup outcome unknown/);
+    assert.deepEqual(states,[true,false]);assert.equal(backend.fileChooserWaitersByTabId.size,0);
   } finally {chrome.debugger.sendCommand=original;}
 });

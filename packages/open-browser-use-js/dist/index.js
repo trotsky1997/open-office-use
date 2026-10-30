@@ -845,6 +845,7 @@ export class OpenBrowserUseTab {
         const timeoutMs = options.timeoutMs ?? 10_000;
         if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120_000)
             throw new Error("Invalid file chooser timeout");
+        await this.browser.cdp.enableFrameSessions(this.id);
         const prepared = await this.prepareBrowserEvent("waitForFileChooser", "onFileChooserWaitReady", timeoutMs);
         return new OpenBrowserUseFileChooserWait(this.browser.client, prepared.result);
     }

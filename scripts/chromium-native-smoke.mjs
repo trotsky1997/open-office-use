@@ -190,6 +190,14 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const input=document.createElement('input');input.type='file';input.multiple=true;input.id='cross-chooser';input.setAttribute('aria-label','Cross upload');document.body.prepend(input)})()`},{sessionId:crossSession});
+ const crossChooserReady=await tab.prepareFileChooser({timeoutMs:20000});const crossChoosing=crossChooserReady.wait();void crossChoosing.catch(()=>{});
+ const crossChooserClick=tab.playwright.getByRole('button',{name:'Cross upload',exact:true}).click({timeoutMs:20000});void crossChooserClick.catch(()=>{});
+ const crossChooser=await crossChoosing;assert.equal(crossChooser.isMultiple(),true);await crossChooser.setFiles([fixtureFile]);await crossChooserClick;
+ const selectedCross=await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`Array.from(document.querySelector('#cross-chooser').files,f=>f.name)`,returnByValue:true},{sessionId:crossSession});
+ assert.deepEqual(selectedCross.result.value,['upload-fixture.txt']);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('#cross-chooser').remove()`},{sessionId:crossSession});
+
  nativeDialogWait=tab.waitForDialog({timeoutMs:5000});
  const frameConfirm=browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`confirm('Frame?')`,returnByValue:true},{sessionId:crossSession});void frameConfirm.catch(()=>{});
  nativeDialog=await nativeDialogWait;assert.equal(nativeDialog.info.message,'Frame?');await nativeDialog.dismiss();assert.equal((await frameConfirm).result.value,false);

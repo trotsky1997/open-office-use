@@ -145,3 +145,5 @@ SDK 增加标签页 back、forward、reload。历史边界直接返回，导航�
 Chrome 下载等待新增注册确认：`tab.prepareDownload()` 等扩展实际安装监听器后返回句柄，触发页面动作后可通过 `wait()` 和 `path()` 获取结果；长等待的客户端请求超时覆盖服务端等待。macOS/Linux Chromium 原生消息链路连续两次真实下载，确认后立即点击，无人为延时；Linux 使用 --no-sandbox。Chrome 下载事件仍缺少可靠标签归属，Electron 下载未开放。
 
 Chrome SDK 新增文件选择器准备握手：监听与拦截就绪后返回句柄，支持单文件或多文件绝对路径；同一个选择器只允许一次文件决策。页面 frame 导航或调试器断开会清除旧句柄，发送前再次核实并消费句柄，未知结果不重复提交。macOS/Linux Chromium 隔离 profile 通过真实本地文件选择；跨进程 frame 的会话路由有单元覆盖，尚未实机验证。Electron 未开放文件上传；Linux 使用 --no-sandbox。
+
+Chrome 文件选择器覆盖已附着的跨进程 iframe 会话：准备阶段启用 frame 会话并逐个开启拦截，文件决策发送到来源会话。等待期间 frame 树变化会中止并清理；拦截关闭完成前拒绝第二个等待，设置拦截失败也尝试关闭。macOS/Linux Chromium 实页验证跨进程多文件选择和本地测试文件；Linux 使用 --no-sandbox。iframe 后续动态变化时需重新准备。
