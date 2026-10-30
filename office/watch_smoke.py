@@ -84,6 +84,14 @@ with tempfile.TemporaryDirectory() as tmp:
             raise AssertionError('Stale candidate lookup was accepted')
         except urllib.error.HTTPError as error:
             assert error.code == 400
+        reply_data = {'base_revision': 0, 'parent_id': '0', 'text': 'Reply', 'author': 'Reviewer'}
+        for request_origin, expected in [('http://evil.test', 403), (origin, 400)]:
+            request = urllib.request.Request(url + 'reply-comment', data=json.dumps(reply_data).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(request)
+                raise AssertionError('Cross-origin or stale reply accepted')
+            except urllib.error.HTTPError as error:
+                assert error.code == expected
         state_data = {'base_revision': 0, 'comment_id': '0', 'resolved': True}
         for request_origin, expected in [('http://evil.test', 403), (origin, 400)]:
             request = urllib.request.Request(url + 'resolve-comment', data=json.dumps(state_data).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})

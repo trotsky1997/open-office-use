@@ -489,3 +489,115 @@ def set_comment_resolved(source, output, comment_id, resolved):
         return additional
 
     return ooxml.edit_xml(source, output, select_part, edit, allow_new=True)
+
+
+def reply_comment(source, output, parent_id, text, author):
+    """Add a plain-text reply to a root comment using its existing body range."""
+    import posixpath
+    import secrets
+    import tempfile
+    import zipfile
+    from datetime import datetime, timezone
+    from lxml import etree
+
+    if Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
+        raise ValueError('Comment replies require DOCX input and output')
+    if not isinstance(parent_id, str) or not re.fullmatch(r'0|[1-9][0-9]{0,9}', parent_id) or int(parent_id) > 2147483647:
+        raise ValueError('Parent comment ID must be a nonnegative decimal string')
+    if not isinstance(text, str) or not text.strip() or len(text) > 4000 or any(ord(c) < 32 and c != '\n' for c in text):
+        raise ValueError('Reply must contain 1 to 4,000 characters without control characters')
+    if not isinstance(author, str) or not author.strip() or len(author) > 100 or any(ord(c) < 32 for c in author):
+        raise ValueError('Author must contain 1 to 100 characters without control characters')
+    state = list_comments(source); parent = next((item for item in state['comments'] if item['id'] == parent_id), None)
+    if parent is None: raise ValueError('Parent comment was not found in the first 200 comments')
+    if not state['anchor_scan_complete'] or parent['anchor_status'] != 'range':
+        raise ValueError('Parent comment must have one complete main-body anchor')
+    if parent['thread_metadata'] == 'matched':
+        if parent['reply_parent_status'] != 'root': raise ValueError('Reply to a root comment')
+        if parent['resolved']: raise ValueError('Reopen the resolved comment before replying')
+        initialize = False
+    elif state['thread_metadata_status'] in ('absent', 'available') and parent['thread_metadata'] in ('missing', 'unavailable'):
+        initialize = True
+    else:
+        raise ValueError('Parent comment thread metadata is ambiguous or invalid')
+    rel_ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+    w15 = '{http://schemas.microsoft.com/office/word/2012/wordml}'
+    mc = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+    comments_type = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
+    extended_type = 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended'
+    created_id = None
+
+    def edit(tree, archive):
+        nonlocal created_id
+        if tree.getroot().tag != W + 'document': raise ValueError('Invalid document XML')
+        rels = ooxml.parse_xml(archive.read('word/_rels/document.xml.rels'))
+        if rels.getroot().tag != rel_ns + 'Relationships': raise ValueError('Invalid document relationships')
+        relationships = rels.getroot().findall(rel_ns + 'Relationship')
+        if any(item.get('Type', '').endswith(('/commentsIds', '/commentsExtensible')) for item in relationships):
+            raise ValueError('Replies with newer comment-ID metadata are not supported')
+        def part_for(kind):
+            links = [item for item in relationships if item.get('Type') == kind]
+            if len(links) != 1 or links[0].get('TargetMode') == 'External' or not links[0].get('Target'):
+                raise ValueError('Invalid comment relationship')
+            target = links[0].get('Target')
+            name = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+            if not name.startswith('word/') or name not in archive.namelist(): raise ValueError('Invalid comment part')
+            return name
+        comments_part = part_for(comments_type); ext_part = part_for(extended_type)
+        comments_bytes = archive.read(comments_part); ext_bytes = archive.read(ext_part)
+        comments = ooxml.parse_xml(comments_bytes); ext = ooxml.parse_xml(ext_bytes)
+        if comments.getroot().tag != W + 'comments' or ext.getroot().tag != w15 + 'commentsEx': raise ValueError('Invalid comment XML')
+        nodes = comments.getroot().findall(W + 'comment'); values = [node.get(W + 'id') for node in nodes]
+        if any(value is None or not re.fullmatch(r'[0-9]{1,10}', value) or int(value) > 2147483646 for value in values) or len({int(value) for value in values}) != len(values):
+            raise ValueError('Invalid or duplicate comment identifiers')
+        parents = [node for node in nodes if node.get(W + 'id') == parent_id]
+        if len(parents) != 1: raise ValueError('Parent comment is ambiguous')
+        metadata, status = comment_thread_metadata(archive, relationships, nodes); parent_meta = metadata.get(parent_id, {})
+        if status != 'available' or parent_meta.get('thread_metadata') != 'matched' or parent_meta.get('reply_parent_status') != 'root' or parent_meta.get('resolved') is not False:
+            raise ValueError('Parent must have unambiguous open root-thread metadata')
+        parent_paragraphs = list(parents[0].iter(W + 'p')); parent_para = parent_paragraphs[-1].get(W14_PARAGRAPH_ID) if parent_paragraphs else None
+        if not parent_para or not re.fullmatch(r'[0-9A-Fa-f]{8}', parent_para) or not 0 < int(parent_para, 16) < 0x80000000 or sum((node.get(W14_PARAGRAPH_ID) or '').upper() == parent_para.upper() for node in comments.getroot().iter(W + 'p')) != 1:
+            raise ValueError('Parent paragraph ID is ambiguous')
+        markers = [node for node in tree.getroot().iter() if node.tag in (W + 'commentRangeStart', W + 'commentRangeEnd', W + 'commentReference') and node.get(W + 'id') == parent_id]
+        if [node.tag for node in markers] != [W + 'commentRangeStart', W + 'commentRangeEnd', W + 'commentReference']:
+            raise ValueError('Parent comment must have one ordered main-body anchor')
+        body = tree.getroot().find(W + 'body')
+        if body is None or any(body not in node.iterancestors() for node in markers): raise ValueError('Parent anchor is outside the main body')
+        if any(node.getparent() is None or node.getparent().tag != W + 'p' for node in markers[:2]):
+            raise ValueError('Parent anchor boundaries must be direct paragraph children')
+        used_ids = [int(value) for value in values]
+        for tag in ('commentRangeStart', 'commentRangeEnd', 'commentReference'):
+            for marker in tree.getroot().iter(W + tag):
+                value = marker.get(W + 'id')
+                if value is None or not re.fullmatch(r'[0-9]{1,10}', value) or int(value) > 2147483646:
+                    raise ValueError('Unsupported comment identifier')
+                used_ids.append(int(value))
+        created_id = max(used_ids, default=-1) + 1
+        para_ids = {(node.get(W14_PARAGRAPH_ID) or '').upper() for node in comments.getroot().iter(W + 'p')}
+        ext_ids = {(node.get(w15 + 'paraId') or '').upper() for node in ext.getroot().findall(w15 + 'commentEx')}
+        para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
+        while para_id in para_ids or para_id in ext_ids: para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
+        comment = etree.SubElement(comments.getroot(), W + 'comment', {W + 'id': str(created_id), W + 'author': author, W + 'date': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')})
+        lines = text.split('\n')
+        for index, line in enumerate(lines):
+            p = etree.SubElement(comment, W + 'p', nsmap={'w14': W14_PARAGRAPH_ID[1:].split('}', 1)[0], 'mc': mc[1:-1]})
+            if index == len(lines) - 1:
+                p.set(W14_PARAGRAPH_ID, para_id); p.set(mc + 'Ignorable', 'w14')
+            r = etree.SubElement(p, W + 'r'); t = etree.SubElement(r, W + 't'); t.text = line
+            if line.startswith(' ') or line.endswith(' '): t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+        etree.SubElement(ext.getroot(), w15 + 'commentEx', {w15 + 'paraId': para_id, w15 + 'paraIdParent': parent_para.upper(), w15 + 'done': '0'})
+        start = etree.Element(W + 'commentRangeStart', {W + 'id': str(created_id)})
+        end = etree.Element(W + 'commentRangeEnd', {W + 'id': str(created_id)})
+        markers[0].addprevious(start); markers[1].addnext(end)
+        reference = etree.Element(W + 'r'); props = etree.SubElement(reference, W + 'rPr')
+        etree.SubElement(props, W + 'rStyle', {W + 'val': 'CommentReference'})
+        etree.SubElement(reference, W + 'commentReference', {W + 'id': str(created_id)}); end.addnext(reference)
+        return {comments_part: ooxml.serialize_xml(comments, comments_bytes), ext_part: ooxml.serialize_xml(ext, ext_bytes)}
+
+    with tempfile.TemporaryDirectory(dir=Path(output).absolute().parent, prefix='.office-reply-') as tmp:
+        prepared = source
+        if initialize:
+            prepared = Path(tmp) / 'prepared.docx'
+            set_comment_resolved(source, prepared, parent_id, False)
+        file = ooxml.edit_xml(prepared, output, lambda _: 'word/document.xml', edit)
+    return {'file': file, 'comment_id': created_id, 'parent_id': parent_id}

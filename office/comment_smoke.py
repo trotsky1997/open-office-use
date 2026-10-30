@@ -77,6 +77,11 @@ with tempfile.TemporaryDirectory() as tmp:
     span_file = root / 'span.docx'; spanning.save(span_file); item = word.list_comments(span_file)['comments'][0]
     assert item['anchor_text'] == 'First anchor\nSecond anchor' and item['paragraph_paths'] == ['/body/p[1]', '/body/p[2]'], item
     assert item['anchor_status'] == 'range'
+    span_draft = root / 'span-draft'; session.start(span_draft, source=span_file)
+    session.reply_comment(span_draft, 0, '0', 'Reply to both', 'Editor')
+    span_reply = session.list_comments(span_draft, 1)['comments'][1]
+    assert span_reply['anchor_text'] == 'First anchor\nSecond anchor' and span_reply['reply_to_comment_id'] == '0', span_reply
+
     many = Document()
     for number in range(201):
         paragraph = many.add_paragraph(str(number)); many.add_comment(paragraph.runs[0], text=f'Comment {number}', author='Reviewer')
@@ -85,6 +90,28 @@ with tempfile.TemporaryDirectory() as tmp:
     cli = Path(__file__).with_name('open_office_use.py')
     listed_cli = subprocess.run([sys.executable, str(cli), 'session', 'comments', str(draft), '--revision', '2'], check=True, capture_output=True, text=True)
     assert json.loads(listed_cli.stdout)['total_comments'] == 2
+    reply_draft = root / 'reply-draft'; session.start(reply_draft, source=first['file'])
+    reply = session.reply_comment(reply_draft, 0, '0', 'Thanks for reviewing\nWill revise', 'Editor')
+    assert reply['comment_id'] == 1 and reply['parent_id'] == '0'
+    reply_listing = session.list_comments(reply_draft, 1); root_item, reply_item = reply_listing['comments']
+    assert reply_item['reply_to_comment_id'] == '0' and reply_item['anchor_text'] == root_item['anchor_text'] == 'Important text', reply_listing
+    assert reply_item['text'] == 'Thanks for reviewing\nWill revise'
+    assert Document(reply['file']).paragraphs[0].runs[0].bold and Document(reply['file']).paragraphs[0].runs[1].italic
+    validation = officecli_backend.audit(reply['file'])['validation']; assert validation['exit_code'] == 0, validation
+    repeated_draft = root / 'repeat-draft'; session.start(repeated_draft, source=reply['file'])
+    session.reply_comment(repeated_draft, 0, '0', 'Another reply', 'Editor')
+    repeated = session.list_comments(repeated_draft, 1)['comments']
+    assert [item['reply_to_comment_id'] for item in repeated] == [None, '0', '0']
+    assert all(item['anchor_text'] == 'Important text' for item in repeated)
+    session.resolve_comment(reply_draft, 1, '0', True)
+    for base, parent in [(0, '0'), (2, '0'), (2, '1')]:
+        try: session.reply_comment(reply_draft, base, parent, 'No', 'Editor')
+        except ValueError: pass
+        else: raise AssertionError('Stale, resolved or nonroot reply accepted')
+    assert session.info(reply_draft)['latest_revision'] == 2
+    cli_reply_draft = root / 'cli-reply'; session.start(cli_reply_draft, source=first['file'])
+    subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'session', 'reply-comment', str(cli_reply_draft), '--base', '0', '--parent-id', '0', '--text', 'CLI reply', '--author', 'Editor'], check=True, capture_output=True)
+    assert session.list_comments(cli_reply_draft, 1)['comments'][1]['reply_to_comment_id'] == '0'
     cli_state_draft = root / 'cli-state'; session.start(cli_state_draft, source=first['file'])
     subprocess.run([sys.executable, str(Path(__file__).with_name('open_office_use.py')), 'session', 'resolve-comment', str(cli_state_draft), '--base', '0', '--id', '0', '--resolved', 'true'], check=True, capture_output=True)
     assert session.list_comments(cli_state_draft, 1)['comments'][0]['resolved'] is True

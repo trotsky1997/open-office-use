@@ -167,6 +167,7 @@ def main():
     candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
+    reply = sub.add_parser('reply-comment'); reply.add_argument('directory'); reply.add_argument('--base', type=int, required=True); reply.add_argument('--parent-id', required=True); reply.add_argument('--text', required=True); reply.add_argument('--author', required=True)
     resolve = sub.add_parser('resolve-comment'); resolve.add_argument('directory'); resolve.add_argument('--base', type=int, required=True); resolve.add_argument('--id', required=True); resolve.add_argument('--resolved', choices=['true', 'false'], required=True)
     comment = sub.add_parser('add-comment'); comment.add_argument('directory'); comment.add_argument('--base', type=int, required=True); comment.add_argument('--path', required=True); comment.add_argument('--text', required=True); comment.add_argument('--author', required=True)
     picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True)
@@ -206,6 +207,8 @@ def main():
                 result = selection_candidates.candidates(args.directory, render)
             elif args.action == 'replace-text':
                 result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
+            elif args.action == 'reply-comment':
+                result = session.reply_comment(args.directory, args.base, args.parent_id, args.text, args.author)
             elif args.action == 'resolve-comment':
                 result = session.resolve_comment(args.directory, args.base, args.id, args.resolved == 'true')
             elif args.action == 'add-comment':

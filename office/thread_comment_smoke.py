@@ -60,6 +60,14 @@ if __name__ == '__main__':
         with zipfile.ZipFile(source) as before, zipfile.ZipFile(opened['file']) as after:
             assert set(before.namelist()) == set(after.namelist())
             assert all(before.read(name) == after.read(name) for name in before.namelist() if name != 'word/commentsExtended.xml')
+        modern_reply_draft = Path(tmp) / 'modern-reply'; session.start(modern_reply_draft, source=opened['file'])
+        new_reply = session.reply_comment(modern_reply_draft, 0, a['id'], 'Modern reply', 'Editor')
+        listed = session.list_comments(modern_reply_draft, 1)
+        assert listed['comments'][-1]['reply_to_comment_id'] == a['id'], listed
+        with zipfile.ZipFile(opened['file']) as before, zipfile.ZipFile(new_reply['file']) as after:
+            assert set(before.namelist()) == set(after.namelist())
+            changed = {'word/document.xml', 'word/comments.xml', 'word/commentsExtended.xml'}
+            assert all(before.read(name) == after.read(name) for name in before.namelist() if name not in changed)
         for bad_id in (b['id'], c['id'], '999'):
             try: session.resolve_comment(draft, 1, bad_id, True)
             except ValueError: pass

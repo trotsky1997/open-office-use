@@ -65,7 +65,9 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p id="edit-status" role="status"></p></form></details>
 <details id="comments-panel" hidden><summary>Word comments</summary>
 <p>Read comments from the displayed revision. Anchor text and paths are bounded body hints. Word 2013 thread metadata is shown when available; review unknown or ambiguous states in Word. Root comments can be resolved or reopened in the latest revision.</p>
-<button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul></details>
+<button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul>
+<fieldset id="reply-panel" hidden><legend>Reply to comment</legend><p id="reply-target"></p><label>Author <input id="reply-author" maxlength="100"></label>
+<label>Reply <textarea id="reply-text" maxlength="4000"></textarea></label><button type="button" id="reply-send">Save reply as new revision</button></fieldset></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
 <button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details></details>
@@ -111,7 +113,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -548,13 +550,13 @@ document.getElementById('visual-diff-form').addEventListener('submit', async eve
 });
 function clearCommentsFor(revision) {
  if (commentListRevision !== null && commentListRevision !== revision) {
-  commentListEpoch++; commentListRevision=null; document.getElementById('comments-status').textContent=''; document.getElementById('comments-list').replaceChildren();
+  commentListEpoch++; commentListRevision=null; replyTarget=null; document.getElementById('reply-panel').hidden=true; document.getElementById('comments-status').textContent=''; document.getElementById('comments-list').replaceChildren();
  }
 }
 document.getElementById('comments-load').addEventListener('click', async () => {
  if (commentsBusy || displayed<0) return;
  const revision=displayed, epoch=++commentListEpoch, button=document.getElementById('comments-load'); commentsBusy=true; commentListRevision=revision; button.disabled=true;
- const status=document.getElementById('comments-status'), list=document.getElementById('comments-list'); list.replaceChildren(); status.textContent=`Loading revision ${revision} comments…`;
+ const status=document.getElementById('comments-status'), list=document.getElementById('comments-list'); replyTarget=null; document.getElementById('reply-panel').hidden=true; list.replaceChildren(); status.textContent=`Loading revision ${revision} comments…`;
  try {
   const response=await fetch('comments-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not read comments');
@@ -579,12 +581,30 @@ document.getElementById('comments-load').addEventListener('click', async () => {
      finally {commentsBusy=false; button.disabled=false; if (current===revision && pinned===null) list.querySelectorAll('button').forEach(item=>item.disabled=false);}
     });
     row.appendChild(document.createTextNode(' ')); row.appendChild(change);
+    if (comment.resolved!==true && comment.anchor_status==='range' && result.anchor_scan_complete) {
+     const reply=document.createElement('button'); reply.type='button'; reply.textContent='Reply'; reply.setAttribute('aria-label',`Reply to comment ${comment.id}`);
+     reply.addEventListener('click',()=>{if (current!==revision || pinned!==null || displayed!==revision || commentsBusy) return; replyTarget={revision,parent_id:comment.id}; document.getElementById('reply-target').textContent=`Replying to comment ${comment.id}`; document.getElementById('reply-text').value=''; document.getElementById('reply-panel').hidden=false;});
+     row.appendChild(document.createTextNode(' ')); row.appendChild(reply);
+    }
    }
    list.appendChild(row);
   }
   status.textContent=`Revision ${revision}: ${result.total_comments} comment(s). ${result.truncated ? 'First 200 shown. ' : ''}${result.anchor_scan_complete ? '' : 'Anchor scan incomplete. ' }${result.thread_metadata_status==='available' ? 'Thread metadata loaded; unmatched states remain unknown.' : 'Resolved status is unavailable.'}`;
  } catch(error) { if (epoch===commentListEpoch && displayed===revision) status.textContent=`Comments error: ${error.message}`; }
  finally { commentsBusy=false; button.disabled=false; }
+});
+document.getElementById('reply-send').addEventListener('click', async () => {
+ const target=replyTarget, author=document.getElementById('reply-author').value, text=document.getElementById('reply-text').value;
+ const button=document.getElementById('reply-send'), load=document.getElementById('comments-load'), status=document.getElementById('comments-status');
+ if (commentsBusy || !target || current!==target.revision || displayed!==target.revision || pinned!==null) return;
+ if (!author.trim() || !text.trim()) { status.textContent='Enter an author and reply.'; return; }
+ commentsBusy=true; button.disabled=true; load.disabled=true; document.querySelectorAll('#comments-list button').forEach(item=>item.disabled=true);
+ try {
+  const response=await fetch('reply-comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,parent_id:target.parent_id,text,author})});
+  const saved=await response.json(); if (!response.ok) throw new Error(saved.error || 'Could not save reply');
+  await refresh(); status.textContent=`Reply saved in revision ${saved.revision}. Load comments to review.`;
+ } catch(error) {status.textContent=`Reply error: ${error.message}`;}
+ finally {commentsBusy=false; button.disabled=false; load.disabled=false; if (current===target.revision && pinned===null) document.querySelectorAll('#comments-list button').forEach(item=>item.disabled=false);}
 });
 function display(state, live) {
  clearCommentsFor(state.revision);
@@ -773,7 +793,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 20000
@@ -858,6 +878,10 @@ def serve(directory, preview, port=0, render=None):
                                 raise ValueError('Picture replacement requires revision, path and image')
                             image_data = base64.b64decode(payload['image'], validate=True)
                             saved = session.replace_picture(directory, payload['base_revision'], payload['path'], image_data)
+                        elif route.endswith('/reply-comment'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'parent_id', 'text', 'author'}:
+                                raise ValueError('Reply requires revision, parent ID, text and author')
+                            saved = session.reply_comment(directory, payload['base_revision'], payload['parent_id'], payload['text'], payload['author'])
                         elif route.endswith('/resolve-comment'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'comment_id', 'resolved'}:
                                 raise ValueError('Comment state requires revision, comment ID and resolved')

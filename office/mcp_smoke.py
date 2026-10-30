@@ -27,7 +27,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_add_comment', 'session_resolve_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_add_comment', 'session_reply_comment', 'session_resolve_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -94,9 +94,13 @@ async def main():
                 assert threaded.structuredContent['comments'][1]['reply_to_comment_id'] == threaded.structuredContent['comments'][0]['id'], threaded
                 historic_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 0})
                 assert not historic_comments.isError and historic_comments.structuredContent['total_comments'] == 0, historic_comments
-                resolved_comment = await session.call_tool('session_resolve_comment', {'directory': str(comment_draft), 'base_revision': 1, 'comment_id': '0', 'resolved': True})
-                assert not resolved_comment.isError and resolved_comment.structuredContent['revision'] == 2, resolved_comment
-                resolved_listing = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 2})
+                replied = await session.call_tool('session_reply_comment', {'directory': str(comment_draft), 'base_revision': 1, 'parent_id': '0', 'text': 'Acknowledged', 'author': 'Editor'})
+                assert not replied.isError and replied.structuredContent['revision'] == 2, replied
+                replied_listing = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 2})
+                assert not replied_listing.isError and replied_listing.structuredContent['comments'][1]['reply_to_comment_id'] == '0', replied_listing
+                resolved_comment = await session.call_tool('session_resolve_comment', {'directory': str(comment_draft), 'base_revision': 2, 'comment_id': '0', 'resolved': True})
+                assert not resolved_comment.isError and resolved_comment.structuredContent['revision'] == 3, resolved_comment
+                resolved_listing = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 3})
                 assert not resolved_listing.isError and resolved_listing.structuredContent['comments'][0]['resolved'] is True, resolved_listing
                 stale_comment = await session.call_tool('session_add_comment', {'directory': str(comment_draft), 'base_revision': 0, 'path': '/body/p[1]', 'text': 'Stale', 'author': 'Reviewer'})
                 assert stale_comment.isError, stale_comment
