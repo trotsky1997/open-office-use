@@ -199,3 +199,7 @@ Exposed JSON-spec `author_file` through MCP and snapshot-checked source files be
 ### Basic structured Word authoring
 
 Added ordered Word content blocks for headings, paragraphs with inline formatting, list paragraphs, styled tables with optional repeating header rows, and page breaks through CLI and MCP. Verified structure, invalid-input handling, real MCP creation and rendered output. Existing document library round-tripping and native Word rendering remain unverified.
+
+### Positioned slide authoring
+
+Extended basic CLI/MCP PPTX authoring with explicit slide dimensions, blank layouts, backgrounds, positioned formatted text, rectangles and embedded PNG/JPEG images with descriptions. Checked real output, rendered preview, invalid input and MCP creation. Images stretch to their target rectangle; native PowerPoint fidelity remains unverified.

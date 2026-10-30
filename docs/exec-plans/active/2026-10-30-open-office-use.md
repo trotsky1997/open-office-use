@@ -146,3 +146,7 @@ MCP `author_file` exposes the existing JSON-spec authoring path for DOCX, XLSX a
 ## Structured basic Word authoring
 
 JSON `blocks` in CLI/MCP authoring create ordered semantic headings, formatted text runs, bullets, numbered paragraphs, styled tables with repeating headers, and page breaks. Verified generated DOCX structure and LibreOffice page previews; advanced formatting and fidelity in existing rich documents still require targeted workflows.
+
+## Positioned basic slide authoring
+
+JSON slide specs support new-deck sizing, blank layouts, backgrounds, positioned textboxes, rectangles and local PNG/JPEG images with alt descriptions. Image sources are snapshotted and bounded; existing templates supply their own Blank layout. Validated PPTX structure, MCP, and LibreOffice rendering. Native PowerPoint fidelity and advanced visual features remain open.

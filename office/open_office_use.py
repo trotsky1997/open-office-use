@@ -2,6 +2,9 @@
 import argparse
 import importlib
 import importlib.metadata
+import io
+import math
+import re
 import json
 import os
 import shutil
@@ -16,6 +19,11 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook
 from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Inches, Pt
+from PIL import Image
 
 import layout
 import slide_text_check
@@ -145,10 +153,89 @@ def append_word_blocks(doc, blocks):
             raise ValueError('Unsupported Word block type')
 
 
+def append_slides(presentation, slides):
+    """Add bounded slides with optional positioned visual elements."""
+    if not isinstance(slides, list) or len(slides) > 100 or len(json.dumps(slides, ensure_ascii=False)) > 2000000:
+        raise ValueError('Slides must be a list of at most 100 items and 2,000,000 characters')
+    def number(value, name, minimum, maximum):
+        if isinstance(value, bool) or not isinstance(value, (float, int)) or not minimum <= value <= maximum or not math.isfinite(value):
+            raise ValueError(f'{name} must be between {minimum} and {maximum}')
+        return value
+    def color(value):
+        if not isinstance(value, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', value): raise ValueError('Colors must be six-digit RGB values')
+        return RGBColor.from_string(value.upper())
+    image_bytes = 0
+    for item in slides:
+        if not isinstance(item, dict) or set(item) - {'layout', 'title', 'body', 'background', 'elements'}: raise ValueError('Invalid slide properties')
+        layout_name = item.get('layout', 'title_content')
+        if layout_name == 'blank':
+            matches = [layout for layout in presentation.slide_layouts if layout.name.casefold() == 'blank']
+            if len(matches) != 1: raise ValueError('A unique Blank slide layout is required')
+            if 'title' in item or 'body' in item: raise ValueError('Blank slides use positioned textboxes instead of title or body')
+            slide = presentation.slides.add_slide(matches[0])
+        elif layout_name == 'title_content':
+            if not isinstance(item.get('title'), str) or not isinstance(item.get('body', ''), str): raise ValueError('Title and body must be text')
+            if len(item['title']) > 10000 or len(item.get('body', '')) > 10000: raise ValueError('Slide text exceeds 10,000 characters')
+            slide = presentation.slides.add_slide(presentation.slide_layouts[1])
+            if slide.shapes.title is None or 1 not in [placeholder.placeholder_format.idx for placeholder in slide.placeholders]: raise ValueError('Title and Content placeholders are unavailable')
+            slide.shapes.title.text = item['title']; slide.placeholders[1].text = item.get('body', '')
+        else: raise ValueError('Slide layout must be blank or title_content')
+        if 'background' in item:
+            fill = slide.background.fill; fill.solid(); fill.fore_color.rgb = color(item['background'])
+        elements = item.get('elements', [])
+        if not isinstance(elements, list) or len(elements) > 200: raise ValueError('Slide elements must be a list of at most 200 items')
+        for element in elements:
+            if not isinstance(element, dict): raise ValueError('Slide elements must be objects')
+            kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
+            allowed = {'textbox': geometry | {'text', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill'},
+                       'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description'}}
+            if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
+            x = Inches(number(element.get('x'), 'x', -100, 100)); y = Inches(number(element.get('y'), 'y', -100, 100))
+            width = Inches(number(element.get('width'), 'width', 0.01, 100)); height = Inches(number(element.get('height'), 'height', 0.01, 100))
+            if kind == 'textbox':
+                text = element.get('text')
+                if not isinstance(text, str) or len(text) > 10000: raise ValueError('Textbox text must be at most 10,000 characters')
+                for key in ('bold', 'italic'):
+                    if key in element and not isinstance(element[key], bool): raise ValueError(f'{key} must be a boolean')
+                if 'font' in element and (not isinstance(element['font'], str) or not 1 <= len(element['font']) <= 100): raise ValueError('Font must be a name of at most 100 characters')
+                alignment = {'left': PP_ALIGN.LEFT, 'center': PP_ALIGN.CENTER, 'right': PP_ALIGN.RIGHT}
+                if 'align' in element and (not isinstance(element['align'], str) or element['align'] not in alignment): raise ValueError('Alignment must be left, center or right')
+                if 'font_size' in element: number(element['font_size'], 'font_size', 1, 400)
+                shape = slide.shapes.add_textbox(x, y, width, height); shape.text = text; shape.text_frame.word_wrap = True
+                if 'fill' in element: shape.fill.solid(); shape.fill.fore_color.rgb = color(element['fill'])
+                for paragraph in shape.text_frame.paragraphs:
+                    if 'align' in element: paragraph.alignment = alignment[element['align']]
+                    for run in paragraph.runs:
+                        font = run.font
+                        if 'font_size' in element: font.size = Pt(element['font_size'])
+                        if 'font' in element: font.name = element['font']
+                        if 'color' in element: font.color.rgb = color(element['color'])
+                        for key in ('bold', 'italic'):
+                            if key in element: setattr(font, key, element[key])
+            elif kind == 'rectangle':
+                if 'fill' not in element: raise ValueError('Rectangle requires a fill color')
+                shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, width, height)
+                shape.fill.solid(); shape.fill.fore_color.rgb = color(element['fill']); shape.line.fill.background()
+            else:
+                path = element.get('path'); description = element.get('description', '')
+                if not isinstance(path, str) or not isinstance(description, str) or len(description) > 1000: raise ValueError('Image requires a local path and optional short description')
+                if Path(path).stat().st_size > 20 * 1024 * 1024: raise ValueError('Image exceeds 20 MiB')
+                with tempfile.TemporaryDirectory(prefix='office-slide-image-') as directory:
+                    image_snapshot, _ = snapshots.copy(path, directory); data = image_snapshot.read_bytes()
+                image_bytes += len(data)
+                if len(data) > 20 * 1024 * 1024 or image_bytes > 128 * 1024 * 1024: raise ValueError('Image size exceeds per-image or presentation limits')
+                with Image.open(io.BytesIO(data)) as image:
+                    if image.format not in ('PNG', 'JPEG') or image.width * image.height > 40000000: raise ValueError('Image must be PNG or JPEG with at most 40 million pixels')
+                    image.verify()
+                shape = slide.shapes.add_picture(io.BytesIO(data), x, y, width, height)
+                shape._element.nvPicPr.cNvPr.set('descr', description)
+
+
 def author(spec, output, source=None):
     if not isinstance(spec, dict): raise ValueError('Author specification must be a JSON object')
     suffix = kind(output)
     if 'blocks' in spec and suffix != '.docx': raise ValueError('Word blocks require DOCX output')
+    if 'slide_size' in spec and suffix != '.pptx': raise ValueError('Slide size requires PPTX output')
     if source and kind(source) != suffix:
         raise ValueError('Source and output formats must match')
     out = Path(output)
@@ -184,10 +271,12 @@ def author(spec, output, source=None):
                 if not shape.has_text_frame:
                     raise ValueError('Selected shape has no text frame')
                 shape.text = item['text']
-            for item in spec.get('slides', []):
-                slide = obj.slides.add_slide(obj.slide_layouts[1])
-                slide.shapes.title.text = item['title']
-                slide.placeholders[1].text = item.get('body', '')
+            if 'slide_size' in spec:
+                size = spec['slide_size']
+                if source: raise ValueError('Slide size can only be set when creating a new presentation')
+                if not isinstance(size, dict) or set(size) != {'width', 'height'} or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not 1 <= v <= 56 or not math.isfinite(v) for v in size.values()): raise ValueError('Slide width and height must be 1 to 56 inches')
+                obj.slide_width, obj.slide_height = Inches(size['width']), Inches(size['height'])
+            append_slides(obj, spec.get('slides', []))
         out.parent.mkdir(parents=True, exist_ok=True)
         # Save into the target directory, then exclusively create the requested output.
         with tempfile.TemporaryDirectory(dir=out.parent) as tmp:

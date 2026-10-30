@@ -62,7 +62,7 @@ def inspect_file(file: str) -> dict[str, Any]:
 
 @server.tool()
 def author_file(spec: dict[str, Any], output: str, source: str | None = None) -> dict[str, str]:
-    """Create a new file from a simple spec: DOCX {paragraphs: [text], blocks: [ordered heading, paragraph, bullet, numbered, table or page_break objects]}, XLSX {sheets: {name: {cell: value}}}, or PPTX {slides: [{title, body}]}. Word text blocks use text or runs; headings accept level 1–9, table blocks accept rectangular string rows, optional header and style. With source, also supports DOCX replace_paragraphs and PPTX replace_text. Output must not exist. Whole-element replacement and library saves can change rich formatting and features."""
+    """Create a new file from a simple spec: DOCX {paragraphs: [text], blocks: [ordered heading, paragraph, bullet, numbered, table or page_break objects]}, XLSX {sheets: {name: {cell: value}}}, or PPTX {slides: [{title, body}]}. PPTX also supports slide_size and blank slides with positioned textbox, rectangle and image elements. Word text blocks use text or runs; headings accept level 1–9, table blocks accept rectangular string rows, optional header and style. With source, also supports DOCX replace_paragraphs and PPTX replace_text. Output must not exist. Whole-element replacement and library saves can change rich formatting and features."""
     return {'output': author(spec, output, source)}
 
 
