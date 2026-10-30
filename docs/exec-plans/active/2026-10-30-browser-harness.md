@@ -55,6 +55,7 @@
 - [x] US 键盘数字和常见标点，包括 Shift 和快捷键组合；真实输入产生可信事件。
 - [x] 定位器按键先聚焦并校验目标，在跨进程 frame 中路由可信按键；输入失败后尝试释放按键。
 - [x] 当前焦点按键通过 frame 宿主链识别调试会话，发送前重核焦点和 frame；Linux Chromium 与 Electron 44 验证跨进程 frame 可信输入。
+- [x] 当前焦点 Unicode 文本输入复用 frame 路由校验，发送文本后由调用方验证目标结果。
 - [x] 常用按键与修饰键组合；Chrome 和 Electron 真实页面验证可信 Enter 和全选。
 - [x] Electron 已呈现的隐藏窗口通过可信 wheel 事件滚动，并限制等待时间；超时后恢复队列。
 - [x] macOS Electron 可见宿主窗口坐标滚动通过真实页面验证。

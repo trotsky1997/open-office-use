@@ -45,6 +45,8 @@ unique match. Text matchers and text filters also accept regular expressions. Us
 DOM-dispatched with `isTrusted === false`.
 `tab.pressKey("Enter")` targets the current focus, including a focused frame;
 if focus routing fails or changes, inspect the page before retrying.
+`tab.typeAtFocus(text)` inserts Unicode text at the current focus after the
+same routing checks; focus a target first and verify the result.
 Use `getByText(text, {exact:true})` for individual accessible text nodes and
 `getByRole("heading", {level: 2})` for headings and `getByRole("img", ...)` for accessible images. Use `getByAltText(...)` to match an exposed native alt attribute; `getByRole("dialog", ...)` and `getByRole("alertdialog", ...)` locate accessible dialogs. Use `getByPlaceholder(text,
 {exact:true})` when a field is identified by its placeholder.

@@ -630,7 +630,7 @@ test("number and symbol keys use their physical code and shifted text", async ()
 });
 
 test("focused frame changes prevent sending keyboard input", async () => {
-  const client=new OpenBrowserUseClient({socketPath:'unused'});let checks=0,keys=0;
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let checks=0,keys=0,insertions=0;
   client.request=async(method,params)=>{
     if(method==='attach')return {};
     if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
@@ -639,10 +639,13 @@ test("focused frame changes prevent sending keyboard input", async () => {
     if(params.method==='DOM.resolveNode')return {object:{objectId:'frame'}};
     if(params.method==='Runtime.callFunctionOn')return {result:{value:++checks===1}};
     if(params.method==='Input.dispatchKeyEvent')keys++;
+    if(params.method==='Input.insertText')insertions++;
     return {};
   };
   const tab=new OpenBrowserUseBrowser({client}).tab(1);
   await assert.rejects(tab.pressKey('Enter'),/Frame focus changed/);assert.equal(keys,0);
+  checks=0;await assert.rejects(tab.typeAtFocus('hello'),/Frame focus changed/);assert.equal(insertions,0);
+  await assert.rejects(tab.typeAtFocus(42),/Text must be a string/);
 });
 
 test("text input requires an editable focused observed textbox", async () => {

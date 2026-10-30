@@ -245,6 +245,8 @@ export declare class OpenBrowserUseTab {
     scrollAt(x: number, y: number, deltaX: number, deltaY: number): Promise<void>;
     private parseKey;
     pressKey(key: string): Promise<void>;
+    typeAtFocus(text: string): Promise<void>;
+    private focusedInputSession;
     private sendKey;
     private checkPoint;
     getViewport(): Promise<{

@@ -243,6 +243,8 @@ try {
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB ',trusted:true});
  await tab.pressKey('c');await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB c',trusted:true});
  await tab.pressKey('Backspace');await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB ',trusted:true});
+ await tab.typeAtFocus('中🙂');await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB 中🙂',trusted:true});
+ await tab.playwright.getByLabel('Cross-process text',{exact:true}).fill('aB ');
  for (const key of ['1','Shift+1','@','.','+']) await tab.playwright.getByLabel('Cross-process text',{exact:true}).press(key);
  await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB 1!@.+',trusted:true});

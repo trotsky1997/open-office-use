@@ -1068,6 +1068,17 @@ export class OpenBrowserUseTab {
   async pressKey(key: string): Promise<void> {
     this.parseKey(key);
     this.#observation = undefined;
+    await this.sendKey(key,await this.focusedInputSession());
+  }
+
+  async typeAtFocus(text: string): Promise<void> {
+    if (typeof text !== "string") throw new Error("Text must be a string");
+    this.#observation = undefined;
+    const sessionId = await this.focusedInputSession();
+    if (text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId});
+  }
+
+  private async focusedInputSession(): Promise<string | undefined> {
     const documentId = await this.documentId();
     const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
     const frames = await this.frameTree();
@@ -1095,7 +1106,7 @@ export class OpenBrowserUseTab {
     };
     const target = await focusedFrame();
     if ((await focusedFrame()).id !== target.id || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames) || await this.documentId() !== documentId) throw new RetryablePreflightError("Frame focus changed; observe again");
-    await this.sendKey(key,target.sessionId);
+    return target.sessionId;
   }
 
   private async sendKey(key: string, sessionId?: string): Promise<void> {

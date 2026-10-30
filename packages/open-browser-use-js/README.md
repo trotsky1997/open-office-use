@@ -355,6 +355,11 @@ Supported keys include Enter, Tab, Escape, Backspace, Delete, arrows,
 Home, End, PageUp, PageDown, Space, letters, digits and common ASCII punctuation.
 Prefix modifiers with `+`, for example `ControlOrMeta+A` selects all on the
 host platform. `+` is supported alone; use `Shift+=` with other modifiers.
+
+`await tab.typeAtFocus("你好 🙂")` inserts text at the current focus, using the
+same frame routing checks as `pressKey`. It does not select a target or verify
+that the focused element accepted the text. It uses text insertion rather than
+individual key events; inspect the page after an error before retrying.
 For arbitrary Unicode text, use `typeText`. Pressing a key invalidates the previous
 observation.
 

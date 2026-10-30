@@ -76,8 +76,8 @@ app.whenReady().then(async()=>{
     assert.deepEqual((await sdk.playwright.getByRole('button',{name:/^(Batch one|Cross-frame action)$/i}).allTextContents()).sort(),['Batch one hidden','Cross-frame action']);
     await crossButton.dblclick();assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.childDouble',returnByValue:true},{sessionId:session})).result.value,{trusted:true,detail:2});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{window.keyInput=[];document.querySelector('[aria-label="Cross-frame text"]').addEventListener('input',e=>keyInput.push(e.isTrusted))})()`},{sessionId:session});
-    await sdk.playwright.getByLabel('Cross-frame text',{exact:true}).press('a');await sdk.pressKey('b');
-    assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`({value:document.querySelector('[aria-label="Cross-frame text"]').value,events:window.keyInput})`,returnByValue:true},{sessionId:session})).result.value,{value:'ab',events:[true,true]});
+    await sdk.playwright.getByLabel('Cross-frame text',{exact:true}).press('a');await sdk.pressKey('b');await sdk.typeAtFocus('中🙂');
+    assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`({value:document.querySelector('[aria-label="Cross-frame text"]').value,events:window.keyInput})`,returnByValue:true},{sessionId:session})).result.value,{value:'ab中🙂',events:[true,true,true]});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const e=document.createElement('input');e.type='file';e.id='child-upload';e.setAttribute('aria-label','Child upload');document.body.prepend(e)})()`},{sessionId:session});
     const childReady=await sdk.prepareFileChooser({timeoutMs:20000});const childWait=childReady.wait();void childWait.catch(()=>{});
     const childClick=sdk.playwright.getByRole('button',{name:'Child upload',exact:true}).click({timeoutMs:20000});void childClick.catch(()=>{});
