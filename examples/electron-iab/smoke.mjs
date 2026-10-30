@@ -37,12 +37,17 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   sdkClient.onNotification = handler => runtime.subscribe(event => { if (event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
   const sdkTab = new OpenBrowserUseBrowser({ client:sdkClient }).tab(a.id);
   assert.equal(await sdkTab.playwright.getByRole('heading',{name:'login',exact:true}).count(),1);
-  await evaluate(a.id,`(()=>{const root=document.createElement('div');root.id='bulk-text-test';root.innerHTML='<button aria-label="Bulk first">Alpha<span hidden> concealed</span></button><button aria-label="Bulk second">Beta</button>';document.body.append(root)})()`);
+  await evaluate(a.id,`(()=>{const root=document.createElement('div');root.id='bulk-text-test';root.innerHTML='<button title="  Helpful   Action  " aria-label="Bulk first">Alpha<span title="Nested Tip"></span><span hidden> concealed</span></button><button title="Another Action" aria-label="Bulk second">Beta</button>';document.body.append(root)})()`);
   const cssBulk=sdkTab.playwright.locator('#bulk-text-test button'),roleBulk=sdkTab.playwright.getByRole('button',{name:/^Bulk /});
   for (const locator of [cssBulk,roleBulk]) {
     assert.deepEqual(await locator.allInnerTexts(),['Alpha','Beta']);
     assert.deepEqual(await locator.allTextContents(),['Alpha concealed','Beta']);
   }
+  assert.equal(await sdkTab.playwright.getByTitle('helpful action',{exact:true}).count(),0);
+  assert.equal(await sdkTab.playwright.getByTitle('Helpful Action',{exact:true}).count(),1);
+  assert.equal(await sdkTab.playwright.getByTitle('action').count(),2);
+  assert.equal(await sdkTab.playwright.locator('#bulk-text-test').getByTitle(/^Another/i).count(),1);
+  assert.equal(await sdkTab.playwright.getByRole('button',{name:'Bulk first'}).getByTitle('Nested Tip',{exact:true}).count(),1);
   const cssFirst=cssBulk.first(),roleFirst=roleBulk.first();
   for (const locator of [cssFirst,roleFirst]) { await locator.waitFor({state:'visible',timeoutMs:1000});assert.equal(await locator.isHidden(),false);assert.equal(await locator.isDisabled(),false); }
   await evaluate(a.id,"document.querySelector('#bulk-text-test button').disabled=true");
@@ -84,6 +89,8 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   assert.ok(frameButton?.frameId);
   await sdkTab.click(frameButton.index,frameState.snapshotId);
   assert.equal(await evaluate(a.id,'document.querySelector("#frame-test").contentWindow.frameTrusted'),true);
+  await evaluate(a.id,"document.querySelector('#frame-test').contentDocument.querySelector('button').title='Frame Help'");
+  assert.equal(await sdkTab.playwright.frameLocator('#frame-test').getByTitle(/frame help/i).count(),1);
   await evaluate(a.id,'document.querySelector("#frame-test").remove()');
   check('SDK frame observation: indexed trusted click');
   await evaluate(a.id,`setTimeout(()=>{const b=document.createElement('button');b.id='delayed-sdk';b.textContent='Delayed SDK';b.onclick=e=>window.delayedSdkTrusted=e.isTrusted;document.body.prepend(b)},250)`);

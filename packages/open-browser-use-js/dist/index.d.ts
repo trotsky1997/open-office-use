@@ -129,6 +129,10 @@ type CssMatcher = string | {
     flags: string;
 };
 type CssTextFilter = {
+    title?: {
+        matcher: CssMatcher;
+        exact: boolean;
+    };
     hasText?: CssMatcher;
     hasNotText?: CssMatcher;
     has?: readonly CssStep[];
@@ -578,6 +582,9 @@ export declare class OpenBrowserUseTabPlaywright {
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
     locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
+    getByTitle(title: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -599,6 +606,9 @@ export declare class OpenBrowserUseFrameLocator {
     frameLocator(selector: string): OpenBrowserUseFrameLocator;
     locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
+    getByTitle(title: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -629,6 +639,9 @@ export declare class OpenBrowserUseCssLocator {
     last(): OpenBrowserUseCssLocator;
     locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
+    getByTitle(title: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseCssLocator;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
         exact?: boolean;
@@ -741,6 +754,9 @@ export declare class OpenBrowserUseRoleLocator {
     last(): OpenBrowserUseRoleLocator;
     locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator;
     getByTestId(testId: string): OpenBrowserUseCssLocator;
+    getByTitle(title: TextMatcher, options?: {
+        exact?: boolean;
+    }): OpenBrowserUseCssLocator;
     private child;
     getByRole(role: string, options?: RoleLocatorOptions): OpenBrowserUseRoleLocator;
     getByLabel(name: TextMatcher, options?: {
