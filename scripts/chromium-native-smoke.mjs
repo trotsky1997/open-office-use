@@ -94,6 +94,12 @@ try {
  await tab.playwright.getByLabel('Cross-process text',{exact:true}).press('Enter');
  await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-key',key:'Enter',trusted:true});
+ await tab.playwright.getByLabel('Cross-process text',{exact:true}).press('a');
+ await tab.playwright.getByLabel('Cross-process text',{exact:true}).press('Shift+B');
+ await tab.playwright.getByLabel('Cross-process text',{exact:true}).press('Space');
+ await new Promise(r=>setTimeout(r,100));
+ assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB ',trusted:true});
+ await tab.playwright.getByLabel('Cross-process text',{exact:true}).fill('');
  assert.equal(await tab.evaluate(`window.frameMessages.some(message=>message.kind==='cross-click')`),false);
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click();
  await new Promise(r=>setTimeout(r,100));

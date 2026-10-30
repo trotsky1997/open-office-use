@@ -243,8 +243,9 @@ the SDK attempts to release the button if a move fails.
 
 A locator’s `press("Enter")` focuses its matched target, verifies focus and
 then sends the key; focus handlers can change the page. Frame targets use their
-own debugger session. A focus or key event that has been issued is not retried
-after an error.
+own debugger session. Unmodified letters and Space produce text in editable
+targets; `Shift+B` produces an uppercase letter. A focus or key event that has
+been issued is not retried after an error.
 
 `await tab.pressKey("Enter")` sends a key press to the currently focused
 element. Supported keys include Enter, Tab, Escape, Backspace, Delete, arrows,

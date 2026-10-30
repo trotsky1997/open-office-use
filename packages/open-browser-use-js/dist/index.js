@@ -501,8 +501,9 @@ export class OpenBrowserUseTab {
             const actualKey = name === "Space" ? " " : /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
             const params = { key: actualKey, code: definition[0], windowsVirtualKeyCode: definition[1], modifiers: mask };
             const selectAll = actualKey === "a" && (mask === 2 || mask === 4);
+            const printable = (name === "Space" || /^[a-zA-Z]$/.test(name)) && !(mask & 7);
             activeKey = params;
-            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "rawKeyDown", ...(selectAll ? { commands: ["selectAll"] } : {}) }, { sessionId });
+            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? { text: actualKey, unmodifiedText: name === "Space" ? " " : name.toLowerCase() } : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, { sessionId });
             await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "keyUp" }, { sessionId });
             activeKey = undefined;
         }

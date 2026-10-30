@@ -105,3 +105,5 @@ Linux ARM64 Chromium 150 在隔离临时 profile 中复跑真实扩展、原生 
 新增 dialog 与 alertdialog 语义角色。macOS Electron 验证原生模态 dialog 的定位和可信悬停；macOS Chromium 原生消息链路验证主页面 dialog 与跨进程 frame alertdialog。
 
 新增定位器 press：输入前检查目标和焦点，DOM.focus 可能触发页面焦点处理器；跨 frame 将按键发送到对应会话。支持 Space，按下结果未知时尽力释放按键。macOS Chromium 与 Electron 的跨进程输入框验证可信 Enter，Electron 验证复选框 Space。
+
+修复普通字母和 Space 按键无法输入文本：可打印按键使用包含 text 的 keyDown，组合键保留 rawKeyDown。macOS Chromium 与 Electron 的跨进程输入框验证小写、大写、空格及可信 input；Electron 复选框继续验证 Space。

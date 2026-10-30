@@ -244,9 +244,14 @@ test("keyboard input validates keys and sends paired events with modifiers", asy
   await tab.pressKey("Space");
   assert.equal(events[4].key," ");
   assert.equal(events[4].code,"Space");
+  assert.equal(events[4].text," ");
+  await tab.pressKey("Shift+B");
+  assert.equal(events[7].key,"B");
+  assert.equal(events[7].text,"B");
+  assert.equal(events[7].unmodifiedText,"b");
   await assert.rejects(tab.pressKey("Unknown+Enter"), /modifiers/);
   await assert.rejects(tab.pressKey("F42"), /Unsupported/);
-  assert.equal(events.length, 6);
+  assert.equal(events.length, 10);
   failDown = true;
   await assert.rejects(tab.pressKey("Control+A"),/unknown outcome/);
   assert.deepEqual(events.slice(-4).map(event=>event.type),["rawKeyDown","rawKeyDown","keyUp","keyUp"]);
