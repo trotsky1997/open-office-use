@@ -1,5 +1,10 @@
 """MCP access to the local office authoring workbench."""
 from pathlib import Path
+from io import BytesIO
+import math
+import tempfile
+
+from PIL import Image as PILImage
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP, Image
@@ -48,6 +53,35 @@ def start_session(directory: str, source: str | None = None, format: Literal['do
 def session_info(directory: str) -> dict[str, Any]:
     """List immutable revision files and the latest revision number."""
     return session.info(directory)
+
+
+@server.tool()
+def session_selection(directory: str) -> dict[str, Any]:
+    """Read the latest saved visual selection, its revision and whether it is stale."""
+    return session.get_selection(directory)
+
+
+@server.tool()
+def session_selection_image(directory: str) -> Image:
+    """Render and return the selected region of the exact selected revision as PNG."""
+    selection = session.get_selection(directory)
+    state = session.info(directory)
+    source = session.revision_file(state, selection['revision'])
+    with tempfile.TemporaryDirectory(prefix='office-selection-') as tmp:
+        pages = preview(source, Path(tmp) / 'pages')
+        page = selection['page']
+        if page > len(pages):
+            raise ValueError('Selected page does not exist in this revision')
+        with PILImage.open(pages[page - 1]) as image:
+            x1, y1, x2, y2 = selection['box']
+            box = (math.floor(x1 * image.width), math.floor(y1 * image.height),
+                   math.ceil(x2 * image.width), math.ceil(y2 * image.height))
+            result = BytesIO()
+            image.crop(box).save(result, format='PNG')
+    data = result.getvalue()
+    if len(data) > 10 * 1024 * 1024:
+        raise ValueError('Selected image exceeds 10 MiB')
+    return Image(data=data, format='png')
 
 
 @server.tool()

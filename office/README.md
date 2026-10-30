@@ -84,7 +84,7 @@ To watch the latest revision in a browser, run this in a separate terminal:
 office-use watch ./draft
 ```
 
-Open the printed URL on the same machine. The read-only page refreshes after a new revision is committed and shows LibreOffice/Poppler page images. Stop the server with Ctrl+C. It binds to `127.0.0.1`, uses a random URL token and rejects other Host headers. Anyone who obtains that URL and can reach the local server can view the document; keep it private. The viewer is a preview: editing and exporting continue through the CLI or MCP. Render fidelity and page layout depend on LibreOffice.
+Open the printed URL on the same machine. The preview refreshes after a new revision is committed and shows LibreOffice/Poppler page images. Drag a rectangle on a page to save a visual selection for the agent; the selection form also accepts page-relative percentages by keyboard. The selection is stored in the session directory and replaces the previous selection. Stop the server with Ctrl+C. It binds to `127.0.0.1`, uses a random URL token and rejects other Host headers. Anyone who obtains that URL and can reach the local server can view the document; keep it private. The viewer changes selection metadata; editing and exporting documents continue through the CLI or MCP. Render fidelity and page layout depend on LibreOffice.
 
 ## Inspect for issues
 
@@ -129,7 +129,7 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, `audit_file`, `start_session`, `session_info`, `session_apply`, and `session_export`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_export`, `session_selection`, and `session_selection_image`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. The selection is visual and does not identify an editable document element; find the appropriate element through structured reads before editing. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 

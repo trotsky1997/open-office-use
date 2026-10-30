@@ -40,3 +40,7 @@ Added persistent local multi-step sessions with explicit base revisions, concurr
 ## Visible preview
 
 Added a local read-only browser preview that updates for committed session revisions. Tested route isolation, real LibreOffice/Poppler images, and automatic revision refresh in Chrome. Direct editing, selection-aware requests and collaborative synchronization remain open.
+
+## Visual selections
+
+Added page rectangle selection in the local viewer, persisted with revision and page. MCP returns selection metadata, staleness, and a rendered crop of the selected revision. Verified browser drag, stale selection rejection and cross-origin request rejection. Selection-to-element mapping and direct editing remain open.

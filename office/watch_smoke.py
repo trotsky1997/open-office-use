@@ -6,6 +6,7 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from pathlib import Path
 
 from docx import Document
@@ -31,10 +32,27 @@ with tempfile.TemporaryDirectory() as tmp:
         first = json.loads(get(url + 'state'))
         assert first['revision'] == 0 and first['pages'] > 0
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
+        origin = f"http://{urlsplit(url).netloc}"
+        selection = {'revision': 0, 'page': 1, 'box': [0.1, 0.1, 0.7, 0.4]}
+        request = urllib.request.Request(url + 'selection', data=json.dumps(selection).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        assert json.loads(urllib.request.urlopen(request).read()) == selection
+        assert json.loads((directory / 'selection.json').read_text()) == selection
+        bad_origin = urllib.request.Request(url + 'selection', data=b'{}', headers={'Origin': 'http://evil.test', 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(bad_origin)
+            raise AssertionError('Unexpected cross-origin success')
+        except urllib.error.HTTPError as error:
+            assert error.code == 403
         spec = root / 'ops.json'; spec.write_text(json.dumps([{'command': 'set', 'path': '/body/p[1]', 'props': {'text': 'Changed'}}]))
         run('session', 'apply', directory, '--base', '0', '--spec', spec)
         second = json.loads(get(url + 'state'))
         assert second['revision'] == 1 and second['pages'] > 0
+        stale = urllib.request.Request(url + 'selection', data=json.dumps(selection).encode(), headers={'Origin': origin, 'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(stale)
+            raise AssertionError('Unexpected stale selection success')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400
         assert get(url + 'page/1/0').startswith(b'\x89PNG\r\n\x1a\n')
         for address, headers, status in [(url.replace('/state', '') + '../state', {}, 404), (url + 'state', {'Host': 'example.com'}, 403)]:
             try:

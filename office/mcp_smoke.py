@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from openpyxl import Workbook
+from session import set_selection
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -17,7 +18,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image'}
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
@@ -36,6 +37,15 @@ async def main():
                 assert not started.isError and started.structuredContent['latest_revision'] == 0, started
                 updated = await session.call_tool('session_apply', {'directory': str(directory), 'base_revision': 0, 'operations': [{'command': 'set', 'path': '/body/p[1]', 'props': {'text': 'Session edit'}}]})
                 assert not updated.isError and updated.structuredContent['revision'] == 1, updated
+                set_selection(directory, {'revision': 1, 'page': 1, 'box': [0.1, 0.1, 0.7, 0.4]})
+                selected = await session.call_tool('session_selection', {'directory': str(directory)})
+                assert not selected.isError and selected.structuredContent['stale'] is False, selected
+                cropped = await session.call_tool('session_selection_image', {'directory': str(directory)})
+                assert not cropped.isError and cropped.content[0].type == 'image', cropped
+                advanced = await session.call_tool('session_apply', {'directory': str(directory), 'base_revision': 1, 'operations': []})
+                assert not advanced.isError, advanced
+                stale_selection = await session.call_tool('session_selection', {'directory': str(directory)})
+                assert not stale_selection.isError and stale_selection.structuredContent['stale'] is True, stale_selection
                 conflict = await session.call_tool('session_apply', {'directory': str(directory), 'base_revision': 0, 'operations': []})
                 assert conflict.isError and 'conflict' in str(conflict).lower(), conflict
                 exported = await session.call_tool('session_export', {'directory': str(directory), 'revision': 1, 'output': str(root / 'session.docx')})

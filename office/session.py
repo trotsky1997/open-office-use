@@ -98,3 +98,48 @@ def export(directory, revision, output):
         shutil.copyfile(source, candidate)
         os.link(candidate, output)
     return {'revision': revision, 'output': str(output)}
+
+
+def validate_selection(selection):
+    if not isinstance(selection, dict) or set(selection) != {'revision', 'page', 'box'}:
+        raise ValueError('Selection requires revision, page and box')
+    revision, page, box = selection['revision'], selection['page'], selection['box']
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        raise ValueError('Invalid selection revision')
+    if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+        raise ValueError('Invalid selection page')
+    if not isinstance(box, list) or len(box) != 4 or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in box):
+        raise ValueError('Selection box requires four normalized coordinates')
+    x1, y1, x2, y2 = box
+    if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
+        raise ValueError('Invalid selection box')
+    return {'revision': revision, 'page': page, 'box': box}
+
+
+def set_selection(directory, selection):
+    selection = validate_selection(selection)
+    state = info(directory)
+    if selection['revision'] != state['latest_revision']:
+        raise ValueError('Selection revision is stale; select the latest page')
+    directory = Path(state['directory'])
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=directory, prefix='.selection-', delete=False) as f:
+        temp = Path(f.name)
+        try:
+            json.dump(selection, f, allow_nan=False)
+        except BaseException:
+            temp.unlink(missing_ok=True)
+            raise
+    try:
+        os.replace(temp, directory / 'selection.json')
+    finally:
+        temp.unlink(missing_ok=True)
+    return selection
+
+
+def get_selection(directory):
+    state = info(directory)
+    with (Path(state['directory']) / 'selection.json').open(encoding='utf-8') as f:
+        selection = validate_selection(json.load(f))
+    revision_file(state, selection['revision'])
+    return {**selection, 'latest_revision': state['latest_revision'],
+            'stale': selection['revision'] != state['latest_revision']}

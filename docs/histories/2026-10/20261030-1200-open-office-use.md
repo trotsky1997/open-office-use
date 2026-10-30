@@ -17,3 +17,5 @@ Added audit commands for OfficeCLI schema validation and issue checks with a sav
 Added file-backed versioned draft sessions with conflict detection and export via CLI and MCP. Verified all formats, failure and concurrent write handling.
 
 Added loopback browser preview for the latest session revision with random URL access and automatic refresh. Tested real rendering, route restrictions and Chrome revision updates.
+
+Added revision-bound visual area selection in the session viewer and MCP access to metadata and rendered crops. Tested browser interaction, origin restrictions and stale revisions.
