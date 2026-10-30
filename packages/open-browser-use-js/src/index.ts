@@ -531,11 +531,57 @@ export class OpenBrowserUseTab {
       const withProbe = {...observation,nodes:[...observation.nodes,probe]};
       if (await this.scopeContains(withProbe,index,-1) || await this.scopeContains(withProbe,-1,index)) throw new Error("Some accessible text cannot be indexed; locator text results are incomplete");
     }
+    const textNodes = observation.nodes.filter(node => node.name && node.role === "StaticText");
+    const included = new Set<number>();
+    if (scope.role === "StaticText") included.add(scope.index);
+    const sameFrame = textNodes.filter(node => node.index !== index && node.frameId === scope.frameId);
+    if (sameFrame.length) {
+      if (await this.documentId() !== observation.documentId) throw new RetryablePreflightError("Page changed; observe again");
+      if (scope.frameChain) await this.validateFrames(scope.frameChain);
+      const sessionId = scope.frameChain?.[0]?.sessionId;
+      const objects: string[] = [];
+      const resolve = async (node: ObservedNode): Promise<string> => {
+        const result = await this.browser.cdp.call(this.id,"DOM.resolveNode",{backendNodeId:node.backendNodeId},{sessionId});
+        const objectId = isObject(result) && isObject(result.object) ? result.object.objectId : undefined;
+        if (typeof objectId !== "string") throw new RetryablePreflightError("Scope target is unavailable; observe again");
+        return objectId;
+      };
+      try {
+        const scopeObject = await resolve(scope); objects.push(scopeObject);
+        for (let offset=0; offset<sameFrame.length; offset+=32) {
+          const batch = sameFrame.slice(offset,offset+32);
+          const resolved = await Promise.allSettled(batch.map(resolve));
+          for (const result of resolved) if (result.status === "fulfilled") objects.push(result.value);
+          const failure = resolved.find(result => result.status === "rejected");
+          if (failure?.status === "rejected") throw failure.reason;
+          const targetObjects = resolved.map(result => (result as PromiseFulfilledResult<string>).value);
+          const result = await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{
+            objectId:scopeObject, arguments:targetObjects.map(objectId=>({objectId})), returnByValue:true,
+            functionDeclaration:`function(...targets) { return targets.map(target => { if (!this.isConnected || !target.isConnected) return null; if (target===this) return false; for (let node=target; node; node=node.parentNode || node.getRootNode()?.host) if (node===this) return true; return false; }); }`
+          },{sessionId});
+          const values = isObject(result) && isObject(result.result) ? result.result.value : undefined;
+          if (!Array.isArray(values) || values.length !== batch.length || values.some(value => typeof value !== "boolean")) throw new RetryablePreflightError("Scope target changed; observe again");
+          for (let i=0; i<batch.length; i++) if (values[i]) included.add(batch[i].index);
+          await Promise.allSettled(targetObjects.map(objectId=>this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId})));
+          objects.splice(1);
+        }
+        if (await this.documentId() !== observation.documentId) throw new RetryablePreflightError("Page changed; observe again");
+        if (scope.frameChain) await this.validateFrames(scope.frameChain);
+      } finally {
+        await Promise.allSettled(objects.map(objectId=>this.browser.cdp.call(this.id,"Runtime.releaseObject",{objectId},{sessionId})));
+      }
+    }
+    const frameMembership = new Map<string,boolean>();
+    for (const node of textNodes) {
+      if (node.frameId === scope.frameId) continue;
+      const key = node.frameId ?? "root";
+      if (!frameMembership.has(key)) frameMembership.set(key,await this.scopeContains(observation,index,node.index));
+      if (frameMembership.get(key)) included.add(node.index);
+    }
     const parts: string[] = [];
     let length = 0;
-    for (const node of observation.nodes) {
-      if (!node.name || node.role !== "StaticText") continue;
-      if (node.index !== index && !await this.scopeContains(observation,index,node.index)) continue;
+    for (const node of textNodes) {
+      if (!included.has(node.index)) continue;
       length += node.name.length + 1;
       if (length > 30_000) throw new Error("Locator text exceeds the 30000 character limit");
       parts.push(node.name);

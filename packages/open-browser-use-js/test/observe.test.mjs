@@ -606,6 +606,7 @@ test('text filters select unnamed containers and recheck changing text before in
     if(command==='DOM.focus'){if(changeOnFocus)apple='Bananas';return {};}
     if(command==='Input.dispatchKeyEvent')keys++;
     if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('activeElement')) return {result:{value:true}};
+    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('targets.map')) return {result:{value:args.arguments.map(argument => args.objectId==='10' && argument.objectId==='20' || args.objectId==='11' && argument.objectId==='21')}};
     if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('target===this')) return {result:{value:args.objectId==='10' && ['20','30'].includes(args.arguments[0].objectId) || args.objectId==='11' && ['21','31'].includes(args.arguments[0].objectId)}};
     if(command==='Runtime.callFunctionOn'){if(changeOnMeasure)apple='Bananas';return {result:{value:{x:10,y:10,width:10,height:10}}};}
     if(command==='Input.dispatchMouseEvent')mouse++;
@@ -633,6 +634,28 @@ test('text filters select unnamed containers and recheck changing text before in
   await assert.rejects(items.filter({hasNotText:'unindexed'}).count(),/cannot be indexed/);
   unindexed=false; apple='x'.repeat(30001);
   await assert.rejects(items.filter({hasText:'x'}).count(),/30000 character limit/);
+});
+
+test('text filters batch checks and release all resolved nodes after failure', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), batches=[], released=[];
+  let fail=false;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    const command=params.method,args=params.commandParams;
+    if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(command==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(command==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:10,role:{value:'listitem'},name:{value:''}},...Array.from({length:35},(_,i)=>({backendDOMNodeId:100+i,role:{value:'StaticText'},name:{value:`word${i}`}}))]};
+    if(command==='DOM.resolveNode'){if(fail && args.backendNodeId===110)throw new Error('resolve failed');return {object:{objectId:String(args.backendNodeId)}};}
+    if(command==='Runtime.callFunctionOn' && args.functionDeclaration.includes('targets.map')) {batches.push(args.arguments.length);return {result:{value:args.arguments.map(()=>true)}};}
+    if(command==='Runtime.releaseObject')released.push(args.objectId);
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  assert.equal(await tab.playwright.getByRole('listitem').filter({hasText:'word34'}).count(),1);
+  assert.deepEqual(batches,[32,3]); assert.equal(released.length,36);
+  released.length=0; fail=true;
+  await assert.rejects(tab.playwright.getByRole('listitem').filter({hasText:'word34'}).count(),/resolve failed/);
+  assert.equal(released.length,32); assert.ok(released.includes('10'));
 });
 
 test('truncated alt text rejects locator matching and invalidates stale observations', async () => {
