@@ -53,3 +53,5 @@ Protected unsaved grid and element input during reload and navigation; stale ele
 Added rectangular TSV paste to the worksheet grid, with all-or-nothing bounds and formula-range checks.
 
 Added bounded workbook-wide scanning of stored formula caches and error cells through CLI and MCP, including hidden worksheets and explicit completeness indicators.
+
+Added versioned, run-preserving Word text replacement for simple direct-body paragraphs through CLI, MCP and the viewer, with package preservation and explicit structural rejection.

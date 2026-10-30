@@ -7,7 +7,7 @@ name = "open-office-use"
 version = "0.1.0"
 description = "Local, agent-friendly office file authoring and inspection"
 requires-python = ">=3.10"
-dependencies = ["python-docx>=1.1,<2", "openpyxl>=3.1,<4", "python-pptx>=1,<2", "Pillow>=10,<13"]
+dependencies = ["python-docx>=1.1,<2", "lxml>=4.9,<7", "openpyxl>=3.1,<4", "python-pptx>=1,<2", "Pillow>=10,<13"]
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.30,<2"]
@@ -16,4 +16,4 @@ mcp = ["mcp>=1.30,<2"]
 office-use = "open_office_use:main"
 
 [tool.setuptools]
-py-modules = ["open_office_use", "officecli_backend", "office_mcp", "spreadsheet", "review", "session", "watch", "selection_text", "selection_candidates"]
+py-modules = ["open_office_use", "officecli_backend", "office_mcp", "spreadsheet", "review", "session", "watch", "selection_text", "selection_candidates", "word"]

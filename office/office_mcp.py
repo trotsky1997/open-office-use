@@ -135,6 +135,12 @@ def session_edit(directory: str, base_revision: int, path: str, mode: Literal['t
 
 
 @server.tool()
+def session_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str) -> dict[str, Any]:
+    """Replace one unique text match across simple Word runs, retaining run formatting."""
+    return session.replace_text(directory, base_revision, path, find, replacement)
+
+
+@server.tool()
 def session_apply(directory: str, base_revision: int, operations: list[dict[str, Any]]) -> dict[str, Any]:
     """Apply an OfficeCLI batch to the latest revision; reject concurrent or stale edits."""
     return session.apply(directory, base_revision, operations)

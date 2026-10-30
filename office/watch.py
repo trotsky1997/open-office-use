@@ -32,7 +32,7 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 .comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.comparison section{min-width:0}.comparison h2{font-size:1rem;margin:.5rem 0}.comparison img{width:100%}
 @media(max-width:700px){.comparison{grid-template-columns:1fr}}
 #compare-sheet{width:min(14rem,70vw)}#compare-range{width:8rem}#cell-comparison-output td{max-width:24rem;overflow-wrap:anywhere}
-#edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
+#word-find,#word-replacement{width:min(14rem,65vw)}#edit-path{width:min(28rem,80vw)}#edit-value{width:min(40rem,90vw);min-height:6rem}#edit-form label{display:flex;gap:.4rem;align-items:center}
 
 </style></head><body><header><h1>Office session preview</h1><p id="status" role="status">Loading…</p><p id="selection" role="status">Drag on a page to save a selection for the agent.</p></header>
 <details><summary>Restore a previous revision</summary><form id="restore-form">
@@ -47,6 +47,11 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <label>Kind <select id="edit-mode" disabled></select></label>
 <label>Content <textarea id="edit-value" maxlength="4000" disabled></textarea></label>
 <button type="submit" id="edit-save" disabled>Save as new revision</button>
+<fieldset id="word-replace-panel" hidden><legend>Replace text while retaining run formatting</legend>
+<label>Find text <input id="word-find" maxlength="4000"></label>
+<label>Replace with <input id="word-replacement" maxlength="4000"></label>
+<button type="button" id="word-replace">Replace once</button>
+<p>Requires one exact match in a simple body paragraph. Replacement takes the first matched run's formatting; fields, links and annotations require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
@@ -270,7 +275,7 @@ document.getElementById('grid-format').addEventListener('click', async () => {
  } finally { gridBusy=false; }
 });
 function invalidateEdit(message) {
- loaded=null; document.getElementById('edit-save').disabled=true;
+ loaded=null; document.getElementById('edit-save').disabled=true; document.getElementById('word-replace-panel').hidden=true;
  document.getElementById('edit-mode').disabled=true; document.getElementById('edit-value').readOnly=true;
  if (message) document.getElementById('edit-status').textContent=message;
 }
@@ -291,6 +296,7 @@ async function loadElement(path) {
   const value=document.getElementById('edit-value'); value.disabled=false; value.readOnly=false; value.value=target.value;
   editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=false;
+  document.getElementById('word-replace-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && (/^\\/body\\/p\\[[1-9][0-9]{0,5}\\]$/).test(target.path));
   document.getElementById('edit-status').textContent=`Loaded ${target.type} at revision ${target.revision}. Review content before saving.`;
  } catch (error) { invalidateEdit(`Load error: ${error.message}`); }
  finally { editBusy=false; button.disabled = pinned !== null; }
@@ -311,6 +317,22 @@ document.getElementById('edit-form').addEventListener('submit', async event => {
   if (loaded === target && current === target.revision && pinned === null) { value.readOnly=false; mode.disabled=false; button.disabled=false; }
  }
  finally { editBusy=false; path.disabled=pinned !== null; document.getElementById('edit-load').disabled=pinned !== null; }
+});
+document.getElementById('word-replace').addEventListener('click', async () => {
+ if (editBusy) return;
+ if (!loaded || loaded.format!=='docx' || loaded.type!=='paragraph' || pinned!==null || loaded.revision!==current) { invalidateEdit('Version changed; load the paragraph again.'); return; }
+ if (elementDirty()) { document.getElementById('edit-status').textContent='Save or copy pending element edits before replacing text.'; return; }
+ const target=loaded, path=document.getElementById('edit-path'), mode=document.getElementById('edit-mode'), value=document.getElementById('edit-value');
+ const find=document.getElementById('word-find'), replacement=document.getElementById('word-replacement'), button=document.getElementById('word-replace');
+ editBusy=true; button.disabled=true; find.disabled=true; replacement.disabled=true; document.getElementById('edit-save').disabled=true; document.getElementById('edit-load').disabled=true; path.disabled=true; mode.disabled=true; value.readOnly=true;
+ try {
+  const response=await fetch('replace-text', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,find:find.value,replacement:replacement.value})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Replacement failed');
+  invalidateEdit(`Replacement saved as revision ${result.revision}.`); await refresh();
+ } catch(error) {
+  document.getElementById('edit-status').textContent=`Replacement error: ${error.message}`;
+  if (loaded===target && current===target.revision && pinned===null) { value.readOnly=false; mode.disabled=false; document.getElementById('edit-save').disabled=false; }
+ } finally { editBusy=false; button.disabled=false; find.disabled=false; replacement.disabled=false; path.disabled=pinned!==null; document.getElementById('edit-load').disabled=pinned!==null; }
 });
 document.getElementById('restore-form').addEventListener('submit', async event => {
  event.preventDefault(); const button = event.currentTarget.querySelector('button'); button.disabled = true;
@@ -527,7 +549,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/replace-text'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
@@ -575,6 +597,10 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'revision'}:
                                 raise ValueError('Restore requires base_revision and revision')
                             saved = session.restore(directory, payload['base_revision'], payload['revision'])
+                        elif route.endswith('/replace-text'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path', 'find', 'replacement'}:
+                                raise ValueError('Text replacement requires revision, path, find and replacement')
+                            saved = session.replace_text(directory, payload['base_revision'], payload['path'], payload['find'], payload['replacement'])
                         elif route.endswith('/element'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'path'}:
                                 raise ValueError('Element requires base_revision and path')

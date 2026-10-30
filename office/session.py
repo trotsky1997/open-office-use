@@ -11,6 +11,7 @@ from openpyxl.utils.cell import column_index_from_string, get_column_letter, ran
 
 import officecli_backend
 import spreadsheet
+import word
 
 FORMATS = ('.docx', '.xlsx', '.pptx')
 
@@ -217,6 +218,23 @@ def edit(directory, base_revision, path, mode, value):
     if mode == 'formula' and (not value.startswith('=') or len(value) < 2):
         raise ValueError('A formula must start with = and contain an expression')
     return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])
+
+
+def replace_text(directory, base_revision, path, find, replacement):
+    state = info(directory)
+    source = revision_file(state, base_revision)
+    if state['format'] != 'docx':
+        raise ValueError('Text replacement requires a DOCX session')
+    if base_revision != state['latest_revision']:
+        raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999:
+        raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
+    try:
+        word.replace_text(source, output, path, find, replacement)
+    except FileExistsError as exc:
+        raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': str(output), 'path': path}
 
 
 def grid_bounds(cell_range):

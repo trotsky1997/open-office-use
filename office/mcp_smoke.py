@@ -18,7 +18,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_edit_target', 'session_edit', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_edit_target', 'session_edit', 'session_replace_text', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
@@ -32,6 +32,11 @@ async def main():
                 assert not compared.isError and 'Revised' in str(compared.structuredContent['text_diff']), compared
                 audited = await session.call_tool('audit_file', {'file': str(revised)})
                 assert not audited.isError and audited.structuredContent['validation']['result']['success'] is True, audited
+                word_draft = root / 'word-draft'
+                word_started = await session.call_tool('start_session', {'directory': str(word_draft), 'source': str(output)})
+                assert not word_started.isError, word_started
+                word_edit = await session.call_tool('session_replace_text', {'directory': str(word_draft), 'base_revision': 0, 'path': '/body/p[1]', 'find': 'MCP works', 'replacement': 'MCP changed'})
+                assert not word_edit.isError and word_edit.structuredContent['revision'] == 1, word_edit
                 directory = root / 'draft'
                 started = await session.call_tool('start_session', {'directory': str(directory), 'source': str(output)})
                 assert not started.isError and started.structuredContent['latest_revision'] == 0, started

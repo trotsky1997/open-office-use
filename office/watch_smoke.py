@@ -69,6 +69,14 @@ with tempfile.TemporaryDirectory() as tmp:
             raise AssertionError('Stale candidate lookup was accepted')
         except urllib.error.HTTPError as error:
             assert error.code == 400
+        replace_data = {'base_revision': 0, 'path': '/body/p[1]', 'find': 'First', 'replacement': 'Edit'}
+        for request_origin, expected in [('http://evil.test', 403), (origin, 400)]:
+            replacement = urllib.request.Request(url + 'replace-text', data=json.dumps(replace_data).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(replacement)
+                raise AssertionError('Cross-origin or stale replacement accepted')
+            except urllib.error.HTTPError as error:
+                assert error.code == expected
         history = json.loads(get(url + 'revision/0/state'))
         assert history['revision'] == 0 and history['pages'] > 0
         comparison = json.loads(get(url + 'comparison/0/state'))

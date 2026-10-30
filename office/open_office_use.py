@@ -158,6 +158,7 @@ def main():
     selected_text = sub.add_parser('selection-text'); selected_text.add_argument('directory')
     candidates = sub.add_parser('selection-candidates'); candidates.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
+    replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
     restore = sub.add_parser('restore'); restore.add_argument('directory'); restore.add_argument('--base', type=int, required=True); restore.add_argument('--revision', type=int, required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
     watcher = commands.add_parser('watch'); watcher.add_argument('directory'); watcher.add_argument('--port', type=int, default=0)
@@ -188,6 +189,8 @@ def main():
                 result = selection_text.extract(args.directory, render)
             elif args.action == 'selection-candidates':
                 result = selection_candidates.candidates(args.directory, render)
+            elif args.action == 'replace-text':
+                result = session.replace_text(args.directory, args.base, args.path, args.find, args.replacement)
             elif args.action == 'restore':
                 result = session.restore(args.directory, args.base, args.revision)
             elif args.action == 'apply':
