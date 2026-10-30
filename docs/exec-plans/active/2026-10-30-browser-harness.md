@@ -56,6 +56,8 @@
 - [x] 定位器按键先聚焦并校验目标，在跨进程 frame 中路由可信按键；输入失败后尝试释放按键。
 - [x] 当前焦点按键通过 frame 宿主链识别调试会话，发送前重核焦点和 frame；Linux Chromium 与 Electron 44 验证跨进程 frame 可信输入。
 - [x] 当前焦点 Unicode 文本输入复用 frame 路由校验，发送文本后由调用方验证目标结果。
+- [x] `tab.cua` 提供坐标鼠标、路径拖拽、滚动、按键、文本与截图；Electron 44 实页验证鼠标修饰键及跨 frame 输入。
+- [ ] 修复隔离 Linux ARM64 headless Chromium 150 中修饰键 wheel 超时，以及固定嵌套滚动容器手势未滚动和随后截图超时；常规 Chromium 桌面仍需验证。
 - [x] 常用按键与修饰键组合；Chrome 和 Electron 真实页面验证可信 Enter 和全选。
 - [x] Electron 已呈现的隐藏窗口通过可信 wheel 事件滚动，并限制等待时间；超时后恢复队列。
 - [x] macOS Electron 可见宿主窗口坐标滚动通过真实页面验证。

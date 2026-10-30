@@ -77,6 +77,8 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     assert.equal((await js("selected.close(); nodeRepl.write((await getBrowserState()).sessions.length)")).content[0].text,"1");
     const image = (await js("nodeRepl.emitImage(await tab.getScreenshot())")).content[0];
     assert.deepEqual(image, { type: "image", mimeType: "image/png", data: Buffer.from("image").toString("base64") });
+    const cuaImage = (await js("nodeRepl.emitImage(await tab.cua.get_visible_screenshot())")).content[0];
+    assert.deepEqual(cuaImage,image);
     assert.equal((await js("throw new Error('failure')")).isError, true);
     assert.equal((await js("await Promise.reject(new Error('async failure'))")).isError, true);
     await js("setTimeout(() => nodeRepl.write('late output'), 10)");

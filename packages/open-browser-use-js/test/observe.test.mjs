@@ -584,6 +584,28 @@ test("drag sends a pointer path and releases the button after failure", async ()
   assert.equal(events.length, count);
 });
 
+test("CUA routes pointer paths, modifiers and screenshot images", async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let fail=false,wheelTimeout=false;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='Page.getLayoutMetrics')return {cssVisualViewport:{clientWidth:100,clientHeight:80}};
+    if(params.method==='Page.captureScreenshot')return {data:Buffer.from('png').toString('base64')};
+    if(params.method==='Input.dispatchMouseEvent') {events.push(params.commandParams);if(fail && params.commandParams.type==='mouseMoved' && params.commandParams.buttons===1)throw new Error('move failed');if(wheelTimeout && params.commandParams.type==='mouseWheel')throw new Error('Timed out after 10000ms waiting for CDP command.');}
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await tab.cua.click({x:10,y:10,button:3,keypress:['Shift']});
+  assert.deepEqual([events[1].button,events[1].buttons,events[1].modifiers],['right',2,8]);
+  await tab.cua.double_click({x:10,y:10});assert.deepEqual(events.filter(event=>event.type==='mousePressed').map(event=>event.clickCount),[1,1,2]);
+  await tab.cua.drag({path:[{x:10,y:10},{x:20,y:15},{x:30,y:25}],keys:['Alt']});
+  assert.deepEqual(events.filter(event=>event.type==='mouseMoved' && event.buttons===1).map(event=>[event.x,event.y,event.modifiers]),[[20,15,1],[30,25,1]]);
+  await tab.cua.scroll({x:10,y:10,scrollX:2,scrollY:5,keypress:['Shift']});assert.deepEqual([events.at(-1).type,events.at(-1).deltaY,events.at(-1).modifiers],['mouseWheel',5,8]);
+  wheelTimeout=true;await assert.rejects(tab.cua.scroll({x:10,y:10,scrollX:0,scrollY:5,keypress:['Shift']}),/Wheel outcome unknown/);wheelTimeout=false;
+  const image=await tab.cua.get_visible_screenshot();assert.ok(image instanceof Uint8Array);assert.equal(image.toBase64(),Buffer.from('png').toString('base64'));
+  fail=true;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:2,y:2}]}),/move failed/);assert.equal(events.at(-1).type,'mouseReleased');
+  const count=events.length;await assert.rejects(tab.cua.drag({path:[{x:1,y:1},{x:100,y:2}]}),/outside/);assert.equal(events.length,count);
+});
+
 test("keyboard input validates keys and sends paired events with modifiers", async () => {
   const client = new OpenBrowserUseClient({ socketPath: "unused" });
   const events = [];
@@ -615,6 +637,8 @@ test("keyboard input validates keys and sends paired events with modifiers", asy
   failDown = true;
   await assert.rejects(tab.pressKey("Control+A"),/unknown outcome/);
   assert.deepEqual(events.slice(-4).map(event=>event.type),["rawKeyDown","rawKeyDown","keyUp","keyUp"]);
+  failDown=false;await tab.cua.keypress({keys:['Shift']});assert.deepEqual(events.slice(-2).map(event=>[event.key,event.modifiers]),[['Shift',8],['Shift',0]]);
+  await assert.rejects(tab.pressKey('toString'),/Unsupported/);
 });
 
 test("number and symbol keys use their physical code and shifted text", async () => {

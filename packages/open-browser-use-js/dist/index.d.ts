@@ -192,6 +192,7 @@ export declare class OpenBrowserUseTab {
     readonly browser: OpenBrowserUseBrowser;
     readonly id: number;
     readonly playwright: OpenBrowserUseTabPlaywright;
+    readonly cua: OpenBrowserUseTabCUA;
     readonly dev: OpenBrowserUseTabDev;
     readonly clipboard: OpenBrowserUseTabClipboard;
     constructor(browser: OpenBrowserUseBrowser, id: number);
@@ -239,10 +240,18 @@ export declare class OpenBrowserUseTab {
     dblclick(index: number, snapshotId: string): Promise<void>;
     hover(index: number, snapshotId: string): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;
-    hoverAt(x: number, y: number): Promise<void>;
-    clickAt(x: number, y: number): Promise<void>;
+    hoverAt(x: number, y: number, modifiers?: number): Promise<void>;
+    clickAt(x: number, y: number, options?: {
+        button?: number;
+        modifiers?: number;
+        double?: boolean;
+    }): Promise<void>;
+    dragPath(path: Array<{
+        x: number;
+        y: number;
+    }>, modifiers?: number): Promise<void>;
     drag(from: [number, number], to: [number, number]): Promise<void>;
-    scrollAt(x: number, y: number, deltaX: number, deltaY: number): Promise<void>;
+    scrollAt(x: number, y: number, deltaX: number, deltaY: number, modifiers?: number): Promise<void>;
     private parseKey;
     pressKey(key: string): Promise<void>;
     typeAtFocus(text: string): Promise<void>;
@@ -275,6 +284,50 @@ export declare class OpenBrowserUseTab {
         awaitPromise?: boolean;
     }): Promise<JsonValue>;
     close(): Promise<JsonValue>;
+}
+export declare class OpenBrowserUseImage extends Uint8Array {
+    toBase64(): string;
+}
+export declare class OpenBrowserUseTabCUA {
+    private tab;
+    constructor(tab: OpenBrowserUseTab);
+    click(options: {
+        x: number;
+        y: number;
+        button?: number;
+        keypress?: string[];
+    }): Promise<void>;
+    double_click(options: {
+        x: number;
+        y: number;
+        keypress?: string[];
+    }): Promise<void>;
+    move(options: {
+        x: number;
+        y: number;
+        keys?: string[];
+    }): Promise<void>;
+    scroll(options: {
+        x: number;
+        y: number;
+        scrollX: number;
+        scrollY: number;
+        keypress?: string[];
+    }): Promise<void>;
+    drag(options: {
+        path: Array<{
+            x: number;
+            y: number;
+        }>;
+        keys?: string[];
+    }): Promise<void>;
+    type(options: {
+        text: string;
+    }): Promise<void>;
+    keypress(options: {
+        keys: string[];
+    }): Promise<void>;
+    get_visible_screenshot(): Promise<OpenBrowserUseImage>;
 }
 export declare class OpenBrowserUseTabClipboard {
     private tab;

@@ -20,6 +20,12 @@ app.whenReady().then(async()=>{
     const grant=runtime.connections.grant(scope.id,'socket',{ttlMs:120000,operations:['page.control','files.upload','files.download',...(process.env.OBU_IAB_TEST_CLIPBOARD==='1'?['clipboard.read','clipboard.write']:[])]},process.pid);
     const client=await connectSocketIab(grant);
     const sdk=client.browser().tab(tab.id);
+    await sdk.evaluate(`(()=>{window.cuaEvents=[];const b=document.createElement('div');b.id='cua-box';Object.assign(b.style,{position:'fixed',left:'200px',top:'40px',width:'100px',height:'80px',zIndex:'9999',background:'red'});for(const type of ['mousemove','mousedown','dblclick','wheel','contextmenu'])b.addEventListener(type,e=>{cuaEvents.push({type,button:e.button,shift:e.shiftKey,alt:e.altKey,x:e.clientX,y:e.clientY,trusted:e.isTrusted});if(type==='contextmenu'||type==='wheel')e.preventDefault()});document.body.append(b)})()`);
+    await sdk.cua.move({x:210,y:50,keys:['Shift']});
+    await sdk.cua.double_click({x:220,y:60,keypress:['Shift']});await sdk.cua.click({x:220,y:60,button:3});await sdk.cua.scroll({x:220,y:60,scrollX:0,scrollY:20,keypress:['Shift']});
+    await sdk.cua.drag({path:[{x:220,y:60},{x:230,y:70},{x:240,y:80}],keys:['Alt']});
+    const cuaEvents=await sdk.evaluate('window.cuaEvents');assert.ok(cuaEvents.some(e=>e.type==='mousemove'&&e.x===210&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='dblclick'&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='mousedown'&&e.button===2&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='wheel'&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='mousemove'&&e.x===230&&e.y===70&&e.alt&&e.trusted));
+    assert.equal(Buffer.from((await sdk.cua.get_visible_screenshot()).toBase64(),'base64').subarray(1,4).toString(),'PNG');await sdk.evaluate(`document.querySelector('#cua-box').remove()`);
     if(process.env.OBU_IAB_TEST_CLIPBOARD==='1'){
       await sdk.clipboard.writeText('isolated fixture');assert.equal(await sdk.clipboard.readText(),'isolated fixture');
       await sdk.clipboard.write([{entries:[{mimeType:'text/plain',text:'plain fixture'},{mimeType:'text/html',text:'<b>rich fixture</b>'}]}]);
@@ -76,7 +82,7 @@ app.whenReady().then(async()=>{
     assert.deepEqual((await sdk.playwright.getByRole('button',{name:/^(Batch one|Cross-frame action)$/i}).allTextContents()).sort(),['Batch one hidden','Cross-frame action']);
     await crossButton.dblclick();assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.childDouble',returnByValue:true},{sessionId:session})).result.value,{trusted:true,detail:2});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{window.keyInput=[];document.querySelector('[aria-label="Cross-frame text"]').addEventListener('input',e=>keyInput.push(e.isTrusted))})()`},{sessionId:session});
-    await sdk.playwright.getByLabel('Cross-frame text',{exact:true}).press('a');await sdk.pressKey('b');await sdk.typeAtFocus('中🙂');
+    await sdk.playwright.getByLabel('Cross-frame text',{exact:true}).press('a');await sdk.cua.keypress({keys:['b']});await sdk.cua.type({text:'中🙂'});
     assert.deepEqual((await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`({value:document.querySelector('[aria-label="Cross-frame text"]').value,events:window.keyInput})`,returnByValue:true},{sessionId:session})).result.value,{value:'ab中🙂',events:[true,true,true]});
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const e=document.createElement('input');e.type='file';e.id='child-upload';e.setAttribute('aria-label','Child upload');document.body.prepend(e)})()`},{sessionId:session});
     const childReady=await sdk.prepareFileChooser({timeoutMs:20000});const childWait=childReady.wait();void childWait.catch(()=>{});

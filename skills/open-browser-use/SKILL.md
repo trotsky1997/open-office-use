@@ -52,7 +52,11 @@ Use `getByText(text, {exact:true})` for individual accessible text nodes and
 {exact:true})` when a field is identified by its placeholder.
 For visual
 input use `tab.getScreenshot()`, `tab.getViewport()`, `tab.hoverAt()`, `tab.clickAt()` and
-`tab.scrollAt()`; use `tab.drag([x1,y1], [x2,y2])` for dragging, and convert
+`tab.scrollAt()`; use `tab.drag([x1,y1], [x2,y2])` for dragging. The `tab.cua`
+interface provides `.get_visible_screenshot()`, `.click({x,y})`, `.double_click({x,y})`,
+`.move({x,y})`, `.drag({path:[{x,y},...]})`, `.scroll({x,y,scrollX,scrollY})`,
+`.keypress({keys:[...]})` and `.type({text})`. Screenshot results can be sent
+to `nodeRepl.emitImage`. Coordinates are CSS viewport pixels. Convert
 screenshot pixels to CSS viewport coordinates. For a closer view use
 `tab.getScreenshot({clip:{x,y,width,height}})` with a rectangle inside the CSS
 viewport; convert cropped image pixels using the clip dimensions and add its

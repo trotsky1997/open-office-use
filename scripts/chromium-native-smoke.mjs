@@ -37,6 +37,11 @@ try {
  const client=new OpenBrowserUseClient({socketPath,sessionId:'native-e2e',timeoutMs:15000});browser=new OpenBrowserUseBrowser({client});await browser.connect();
  const info=await client.getInfo();assert.equal(info.metadata.extensionId,id);
  const tab=await browser.newTab();await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
+ if(process.env.OBU_TEST_CUA_POINTER==='1') {
+ await tab.evaluate(`(()=>{window.cuaEvents=[];const b=document.createElement('div');b.id='cua-box';Object.assign(b.style,{position:'fixed',left:'200px',top:'40px',width:'100px',height:'80px',zIndex:'9999',background:'red',overflow:'auto'});b.innerHTML='<div style="height:600px;width:400px"></div>';for(const type of ['mousemove','mousedown','dblclick','wheel','contextmenu'])b.addEventListener(type,e=>{cuaEvents.push({type,button:e.button,shift:e.shiftKey,alt:e.altKey,x:e.clientX,y:e.clientY,trusted:e.isTrusted});if(type==='contextmenu')e.preventDefault()});document.body.append(b)})()`);
+ const modifiedWheel=process.env.OBU_TEST_MODIFIED_WHEEL==='1';await tab.cua.move({x:210,y:50,keys:['Shift']});await tab.cua.double_click({x:220,y:60,keypress:['Shift']});await tab.cua.click({x:220,y:60,button:3});await tab.cua.scroll({x:220,y:60,scrollX:0,scrollY:20,...(modifiedWheel?{keypress:['Shift']}:{})});await tab.cua.drag({path:[{x:220,y:60},{x:230,y:70},{x:240,y:80}],keys:['Alt']});
+ const cuaEvents=await tab.evaluate('window.cuaEvents');assert.ok(cuaEvents.some(e=>e.type==='mousemove'&&e.x===210&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='dblclick'&&e.shift&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='mousedown'&&e.button===2&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='wheel'&&(!modifiedWheel||e.shift)&&e.trusted));assert.ok(cuaEvents.some(e=>e.type==='mousemove'&&e.x===230&&e.y===70&&e.alt&&e.trusted));assert.equal(Buffer.from((await tab.cua.get_visible_screenshot()).toBase64(),'base64').subarray(1,4).toString(),'PNG');await tab.evaluate(`document.querySelector('#cua-box').remove()`);
+ }
  if(process.env.OBU_TEST_CLIPBOARD==='1'){
    const [port,wsPath]=(await readFile(join(profile,'DevToolsActivePort'),'utf8')).trim().split('\n');
    const ws=new WebSocket(`ws://127.0.0.1:${port}${wsPath}`);await once(ws,'open');let sequence=0;const pending=new Map();
@@ -241,9 +246,9 @@ try {
  await tab.playwright.getByLabel('Cross-process text',{exact:true}).press('Space');
  await new Promise(r=>setTimeout(r,100));
  assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB ',trusted:true});
- await tab.pressKey('c');await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB c',trusted:true});
+ await tab.cua.keypress({keys:['c']});await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB c',trusted:true});
  await tab.pressKey('Backspace');await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB ',trusted:true});
- await tab.typeAtFocus('中🙂');await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB 中🙂',trusted:true});
+ await tab.cua.type({text:'中🙂'});await new Promise(r=>setTimeout(r,100));assert.deepEqual(await tab.evaluate('window.frameMessages.at(-1)'),{kind:'cross-text',value:'aB 中🙂',trusted:true});
  await tab.playwright.getByLabel('Cross-process text',{exact:true}).fill('aB ');
  for (const key of ['1','Shift+1','@','.','+']) await tab.playwright.getByLabel('Cross-process text',{exact:true}).press(key);
  await new Promise(r=>setTimeout(r,100));

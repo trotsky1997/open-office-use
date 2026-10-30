@@ -439,6 +439,7 @@ export class OpenBrowserUseTab {
     browser;
     id;
     playwright;
+    cua;
     dev;
     clipboard;
     #observation;
@@ -447,6 +448,7 @@ export class OpenBrowserUseTab {
         this.browser = browser;
         this.id = id;
         this.playwright = new OpenBrowserUseTabPlaywright(this);
+        this.cua = new OpenBrowserUseTabCUA(this);
         this.dev = new OpenBrowserUseTabDev(this);
         this.clipboard = new OpenBrowserUseTabClipboard(this);
     }
@@ -1063,17 +1065,60 @@ export class OpenBrowserUseTab {
         this.parseKey(key);
         await this.act(index, snapshotId, undefined, false, undefined, undefined, false, key);
     }
-    async hoverAt(x, y) {
+    async hoverAt(x, y, modifiers = 0) {
         this.#observation = undefined;
+        if (!Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15)
+            throw new Error("Invalid mouse modifiers");
         await this.checkPoint(x, y);
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers });
     }
-    async clickAt(x, y) {
+    async clickAt(x, y, options = {}) {
         this.#observation = undefined;
+        const buttons = [{ name: "left", mask: 1 }, { name: "middle", mask: 4 }, { name: "right", mask: 2 }, { name: "back", mask: 8 }, { name: "forward", mask: 16 }];
+        const button = buttons[(options.button ?? 1) - 1], modifiers = options.modifiers ?? 0;
+        if (!Number.isInteger(options.button ?? 1) || !button || !Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15 || (options.double !== undefined && typeof options.double !== "boolean"))
+            throw new Error("Invalid mouse options");
         await this.checkPoint(x, y);
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers });
+        for (let count = 1; count <= (options.double ? 2 : 1); count++) {
+            let pressed = true;
+            try {
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: button.name, buttons: button.mask, clickCount: count, modifiers });
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: button.name, buttons: 0, clickCount: count, modifiers });
+                pressed = false;
+            }
+            finally {
+                if (pressed)
+                    await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: button.name, buttons: 0, clickCount: count, modifiers }).catch(() => { });
+            }
+        }
+    }
+    async dragPath(path, modifiers = 0) {
+        this.#observation = undefined;
+        if (!Array.isArray(path) || path.length < 2 || path.length > 1000 || !Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15)
+            throw new Error("Invalid drag path");
+        path = path.map(point => ({ x: point?.x, y: point?.y }));
+        const viewport = await this.getViewport();
+        for (const point of path)
+            if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0 || point.x >= viewport.width || point.y >= viewport.height)
+                throw new Error("Drag point is outside the viewport");
+        let { x, y } = path[0], pressed = false;
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers });
+        try {
+            pressed = true;
+            await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1, modifiers });
+            for (const point of path.slice(1)) {
+                x = point.x;
+                y = point.y;
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1, modifiers });
+            }
+            await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1, modifiers });
+            pressed = false;
+        }
+        finally {
+            if (pressed)
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1, modifiers }).catch(() => { });
+        }
     }
     async drag(from, to) {
         this.#observation = undefined;
@@ -1099,13 +1144,26 @@ export class OpenBrowserUseTab {
                 await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 }).catch(() => { });
         }
     }
-    async scrollAt(x, y, deltaX, deltaY) {
+    async scrollAt(x, y, deltaX, deltaY, modifiers = 0) {
         this.#observation = undefined;
         if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY))
             throw new Error("Scroll deltas must be finite numbers");
+        if (!Number.isInteger(modifiers) || modifiers < 0 || modifiers > 15)
+            throw new Error("Invalid mouse modifiers");
         await this.checkPoint(x, y);
-        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
-        await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true });
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0, modifiers });
+        if (modifiers) {
+            try {
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX, deltaY, modifiers });
+            }
+            catch (error) {
+                if (error instanceof Error && /Timed out after \d+ms waiting for CDP command/.test(error.message))
+                    throw new Error("Wheel outcome unknown after timeout; inspect the page before retrying", { cause: error });
+                throw error;
+            }
+        }
+        else
+            await this.browser.cdp.call(this.id, "Input.synthesizeScrollGesture", { x, y, xDistance: -deltaX, yDistance: -deltaY, gestureSourceType: "mouse", preventFling: true });
     }
     parseKey(key) {
         if (typeof key !== "string")
@@ -1114,13 +1172,15 @@ export class OpenBrowserUseTab {
             Enter: ["Enter", 13], Tab: ["Tab", 9], Escape: ["Escape", 27], Backspace: ["Backspace", 8],
             Delete: ["Delete", 46], ArrowLeft: ["ArrowLeft", 37], ArrowUp: ["ArrowUp", 38],
             ArrowRight: ["ArrowRight", 39], ArrowDown: ["ArrowDown", 40], Home: ["Home", 36], End: ["End", 35],
-            PageUp: ["PageUp", 33], PageDown: ["PageDown", 34], Space: ["Space", 32]
+            PageUp: ["PageUp", 33], PageDown: ["PageDown", 34], Space: ["Space", 32],
+            Alt: ["AltLeft", 18], Control: ["ControlLeft", 17], Meta: ["MetaLeft", 91], Shift: ["ShiftLeft", 16]
         };
         const parts = key === "+" ? ["+"] : key.split("+");
-        const name = parts.pop() ?? "";
+        const rawName = parts.pop() ?? "";
+        const name = rawName === "ControlOrMeta" ? (process.platform === "darwin" ? "Meta" : "Control") : rawName;
         const modifierBits = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
         const modifiers = parts.map(part => part === "ControlOrMeta" ? (process.platform === "darwin" ? "Meta" : "Control") : part);
-        if (new Set(modifiers).size !== modifiers.length || modifiers.some(modifier => !Object.hasOwn(modifierBits, modifier)))
+        if (new Set(modifiers).size !== modifiers.length || modifiers.includes(name) || modifiers.some(modifier => !Object.hasOwn(modifierBits, modifier)))
             throw new Error("Invalid keyboard modifiers");
         const pairs = [
             ...Array.from({ length: 10 }, (_, digit) => [String(digit), ")!@#$%^&*("[digit], `Digit${digit}`, 48 + digit]),
@@ -1132,7 +1192,7 @@ export class OpenBrowserUseTab {
         const printablePair = pairs.find(([plain, shifted]) => name === plain || name === shifted);
         if (printablePair && name === printablePair[1] && !modifiers.includes("Shift"))
             modifiers.push("Shift");
-        const definition = definitions[name] ?? (printablePair ? [printablePair[2], printablePair[3]] : /^[a-zA-Z]$/.test(name) ? [`Key${name.toUpperCase()}`, name.toUpperCase().charCodeAt(0)] : undefined);
+        const definition = (Object.hasOwn(definitions, name) ? definitions[name] : undefined) ?? (printablePair ? [printablePair[2], printablePair[3]] : /^[a-zA-Z]$/.test(name) ? [`Key${name.toUpperCase()}`, name.toUpperCase().charCodeAt(0)] : undefined);
         if (!definition)
             throw new Error("Unsupported key");
         return { name, modifiers, modifierBits, definition, printablePair };
@@ -1207,17 +1267,17 @@ export class OpenBrowserUseTab {
                 await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, { sessionId });
             }
             const actualKey = name === "Space" ? " " : printablePair ? printablePair[mask & 8 ? 1 : 0] : /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
-            const params = { key: actualKey, code: definition[0], windowsVirtualKeyCode: definition[1], modifiers: mask };
+            const params = { key: actualKey, code: definition[0], windowsVirtualKeyCode: definition[1], modifiers: mask | (Object.hasOwn(modifierBits, name) ? modifierBits[name] : 0) };
             const selectAll = actualKey === "a" && (mask === 2 || mask === 4);
             const printable = (name === "Space" || !!printablePair || /^[a-zA-Z]$/.test(name)) && !(mask & 7);
             activeKey = params;
             await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? { text: actualKey, unmodifiedText: name === "Space" ? " " : printablePair ? printablePair[0] : name.toLowerCase() } : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, { sessionId });
-            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: "keyUp" }, { sessionId });
+            await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, modifiers: mask, type: "keyUp" }, { sessionId });
             activeKey = undefined;
         }
         finally {
             if (activeKey)
-                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...activeKey, type: "keyUp" }, { sessionId }).catch(() => { });
+                await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...activeKey, modifiers: mask, type: "keyUp" }, { sessionId }).catch(() => { });
             for (const modifier of pressed.reverse()) {
                 mask &= ~modifierBits[modifier];
                 const [code, windowsVirtualKeyCode] = modifierCodes[modifier];
@@ -1716,6 +1776,43 @@ export class OpenBrowserUseTab {
     close() {
         return this.browser.cdp.call(this.id, "Page.close");
     }
+}
+export class OpenBrowserUseImage extends Uint8Array {
+    toBase64() { return Buffer.from(this).toString("base64"); }
+}
+function cuaModifiers(keys = []) {
+    if (!Array.isArray(keys))
+        throw new Error("Invalid mouse modifiers");
+    const bits = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+    const normalized = keys.map(key => key === "ControlOrMeta" ? (process.platform === "darwin" ? "Meta" : "Control") : key);
+    if (new Set(normalized).size !== normalized.length || normalized.some(key => typeof key !== "string" || !Object.hasOwn(bits, key)))
+        throw new Error("Invalid mouse modifiers");
+    return normalized.reduce((mask, key) => mask | bits[key], 0);
+}
+export class OpenBrowserUseTabCUA {
+    tab;
+    constructor(tab) {
+        this.tab = tab;
+    }
+    click(options) { return this.tab.clickAt(options.x, options.y, { button: options.button, modifiers: cuaModifiers(options.keypress) }); }
+    double_click(options) { return this.tab.clickAt(options.x, options.y, { double: true, modifiers: cuaModifiers(options.keypress) }); }
+    move(options) { return this.tab.hoverAt(options.x, options.y, cuaModifiers(options.keys)); }
+    scroll(options) { return this.tab.scrollAt(options.x, options.y, options.scrollX, options.scrollY, cuaModifiers(options.keypress)); }
+    drag(options) { return this.tab.dragPath(options.path, cuaModifiers(options.keys)); }
+    type(options) { return this.tab.typeAtFocus(options.text); }
+    keypress(options) {
+        if (!Array.isArray(options.keys) || !options.keys.length || options.keys.some(key => typeof key !== "string" || !key))
+            throw new Error("Invalid key combination");
+        const aliases = { ctrl: "ControlOrMeta", control: "Control", controlormeta: "ControlOrMeta", cmd: "Meta", meta: "Meta", alt: "Alt", option: "Alt", shift: "Shift", esc: "Escape", return: "Enter", del: "Delete", space: "Space", left: "ArrowLeft", right: "ArrowRight", up: "ArrowUp", down: "ArrowDown" };
+        const keys = options.keys.map(key => Object.hasOwn(aliases, key.toLowerCase()) ? aliases[key.toLowerCase()] : key);
+        if (keys.length > 1 && keys.at(-1) === "+") {
+            keys[keys.length - 1] = "=";
+            if (!keys.includes("Shift"))
+                keys.splice(keys.length - 1, 0, "Shift");
+        }
+        return this.tab.pressKey(keys.join("+"));
+    }
+    async get_visible_screenshot() { return new OpenBrowserUseImage(await this.tab.getScreenshot()); }
 }
 export class OpenBrowserUseTabClipboard {
     tab;

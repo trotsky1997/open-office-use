@@ -340,6 +340,37 @@ the page before retrying.
 through intermediate points. Both endpoints use CSS viewport coordinates;
 the SDK attempts to release the button if a move fails.
 
+The `tab.cua` interface exposes the same visual workflow with Codex-style
+options:
+
+```js
+const image = await tab.cua.get_visible_screenshot(); // Uint8Array with toBase64()
+nodeRepl.emitImage(image);
+await tab.cua.click({x: 120, y: 80});
+await tab.cua.double_click({x: 120, y: 80, keypress: ["Shift"]});
+await tab.cua.move({x: 140, y: 90});
+await tab.cua.drag({path: [{x: 140, y: 90}, {x: 180, y: 90}, {x: 200, y: 120}]});
+await tab.cua.scroll({x: 200, y: 120, scrollX: 0, scrollY: 300});
+await tab.cua.keypress({keys: ["ControlOrMeta", "a"]});
+await tab.cua.type({text: "Hello"});
+```
+
+Coordinates are CSS viewport pixels. Click buttons 1–5 map to left, middle,
+right, back and forward; mouse modifiers accept Alt, Control, ControlOrMeta,
+Meta and Shift. Drag uses the supplied path, limited to 1000 points, and
+attempts to release the button on failure. Coordinate actions do not verify
+the identity of the element under the pointer; observe the page again after
+an uncertain outcome. Typing targets the current focus and does not verify the
+result. Pointer modifiers set the event's modifier flags. Electron scrolling
+requires a presented surface. In isolated Linux ARM64 headless Chromium 150,
+the direct wheel command with modifiers timed out; the event outcome was
+unknown. A gesture on a fixed nested scroll container also returned without
+scrolling, and a subsequent screenshot timed out in that environment. Inspect
+the page before retrying. The modified-wheel path was verified on Electron
+44/Xvfb; other Chromium environments need validation. The Chromium pointer
+fixture can be run explicitly with `OBU_TEST_CUA_POINTER=1`, and its modified
+wheel variant additionally uses `OBU_TEST_MODIFIED_WHEEL=1`.
+
 A locator’s `press("Enter")` focuses its matched target, verifies focus and
 then sends the key; focus handlers can change the page. Frame targets use their
 own debugger session. Letters, digits, Space and common ASCII punctuation

@@ -213,3 +213,5 @@ domSnapshot 从页面正文文本改为有界可访问性快照，包含角色�
 pressKey 根据当前焦点逐层检查 iframe 宿主并选择对应调试会话，发送前重核 frame 树和焦点；检查失败时不发出按键。SDK 62 项通过，覆盖焦点变化拒绝；Linux ARM64 隔离 Chromium 原生消息与 Electron 44/Xvfb socket 实测跨进程 frame 的可信键盘输入。最终检查后页面仍可能改变焦点，macOS 和 Windows 尚未实测此次变更。
 
 新增 typeAtFocus，复用焦点 frame 路由检查后调用文本插入，支持 Unicode；焦点变化时不发送。SDK 62 项通过；Linux ARM64 隔离 Chromium 原生消息和 Electron 44/Xvfb socket 实测跨进程 frame 中的中文、emoji 和可信 input 事件。调用方需要先聚焦并检查结果；文本插入不逐个发送键盘事件。
+
+新增 tab.cua，提供坐标移动、1–5 鼠标按钮、双击、带修饰键滚动、路径拖拽、焦点按键/文本及带 toBase64 的截图；拖拽失败尝试释放按钮，wheel 超时报告结果未知。SDK 63 项通过，包括 REPL 图片输出；Linux ARM64 Electron 44/Xvfb 实测修饰键移动、双击、右键、滚轮、拖拽、PNG 和跨进程文本输入。隔离 Chromium 150 的原生消息常规链路验证 CUA 按键和文本；该环境中直接带修饰键 wheel 超时，固定嵌套容器的滚动手势返回但未滚动且后续截图超时，单独测试入口需显式启用。正常 Chromium 桌面、macOS 和 Windows 尚未验证。
