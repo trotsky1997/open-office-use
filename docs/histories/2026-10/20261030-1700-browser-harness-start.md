@@ -441,3 +441,5 @@ getByTitle 支持匹配 SVG 元素的直接 title 子元素，返回该 SVG 元�
 frameLocator 匹配宿主时刷新其布局，修复 Linux Chromium 中替换跨站 frame 后子 viewport 保持 0×0、导致新定位器点击超时的实测问题。原生扩展三次独立验证旧观察拒绝及新目标可信点击；SDK 92 项测试与 macOS Electron 44.7 完整 smoke（同进程 frame 替换）通过。直接索引路径及 Windows 尚未验证。
 
 隔离 Linux ARM64 Chromium 150 原生扩展进一步验证跨站 frame 元素替换：旧索引被拒绝，重新观察后直接索引点击与全局 getByRole 点击分别在三次独立运行中产生可信事件。该场景的 Windows 和其他 Linux 桌面环境尚未测。
+
+隔离 Linux ARM64 Electron / Xvfb 补充实验：未呈现标签的 CDP 布局与视觉 viewport 均为 800×600；设置设备视口仿真后首次输入截图仍超时，启动 Page.startScreencast 后也仍超时。两种实验未修改正式实现；隐藏窗口和未呈现标签仍需进一步处理。
