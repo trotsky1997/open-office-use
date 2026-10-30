@@ -281,6 +281,9 @@ before capture. Electron requires the target tab to be
 presented in a host window for wheel gestures; detached tabs return
 `IAB_SCROLL_REQUIRES_PRESENTED_SURFACE`. Hidden or minimized windows temporarily
 disable background throttling while dispatching a trusted wheel event.
+`IAB_INPUT_PREPARATION_TIMEOUT` means mouse input was not sent;
+`IAB_INPUT_OUTCOME_UNKNOWN` and `IAB_BACKGROUND_SCROLL_TIMEOUT` require observing
+the page before retrying.
 
 `await tab.drag([startX, startY], [endX, endY])` sends a left-button drag
 through intermediate points. Both endpoints use CSS viewport coordinates;

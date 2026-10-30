@@ -343,3 +343,15 @@ test('stalled chooser setup times out and does not issue late interception', asy
   release();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(commands,['Page.enable','Runtime.evaluate']);
 });
+
+test('socket distinguishes input already issued from preparation timeout', {skip:!['darwin','linux'].includes(process.platform)}, async t => {
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create(),debug=adapter.views[0].webContents.debugger;
+  let release;const commands=[];
+  debug.sendCommand=async method=>{commands.push(method);if(method==='Input.dispatchMouseEvent')await new Promise(resolve=>{release=resolve;});return {};};
+  await runtime.connections.openSocket();
+  const grant=runtime.connections.grant('a','socket',{ttlMs:10000,operations:['page.control']},process.pid);
+  const client=await connectSocketIab(grant);t.after(()=>client.close());
+  await assert.rejects(client.request('executeCdp',{target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mousePressed',x:1,y:1}}),error=>error.message==='IAB_INPUT_OUTCOME_UNKNOWN');
+  release();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(commands,['Page.captureScreenshot','Input.dispatchMouseEvent']);
+});

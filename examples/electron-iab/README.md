@@ -190,3 +190,12 @@ and local fixture files, and checks the authorized socket client and file
 selection in the main page and, after hiding the initialized host window, a
 cross-process iframe. It does not submit the files to a server. A Linux virtual
 display can be used for an isolated run.
+
+## Hidden input probe
+
+After building the Electron package and native peer adapter, run
+`pnpm --filter @open-browser-use/electron-iab-example exec electron hidden-input-probe.mjs`
+to exercise a never-shown host window over the authenticated socket. It prints
+`clicked` and exits 0 after a trusted click, or prints `preparation-timeout` and
+exits 2 after confirming that no click occurred. Linux ARM64 Xvfb produced the
+latter result; desktop compositor behavior needs separate verification.

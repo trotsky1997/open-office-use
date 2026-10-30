@@ -50,7 +50,9 @@ screenshot pixels to CSS viewport coordinates. For a closer view use
 viewport; convert cropped image pixels using the clip dimensions and add its
 x/y origin before clicking. `tab.getScreenshot({fullPage:true})` captures the
 whole document subject to the SDK size limit; offscreen lazy content may need
-loading first.
+loading first. In Electron, `IAB_INPUT_PREPARATION_TIMEOUT` occurs before mouse
+input; after `IAB_INPUT_OUTCOME_UNKNOWN` or `IAB_BACKGROUND_SCROLL_TIMEOUT`,
+observe before retrying.
 Use `locator.press("Enter")` to focus a matched target and send a key, or `tab.pressKey("Enter")` and `tab.pressKey("ControlOrMeta+A")` for already focused
 page keyboard actions. Printable ASCII keys use US keyboard mappings; use `tab.typeText()` for arbitrary text.
 Use `tab.back()`, `tab.forward()` and `tab.reload()` for tab history actions.

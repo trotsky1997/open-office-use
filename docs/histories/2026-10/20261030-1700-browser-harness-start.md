@@ -151,3 +151,5 @@ Chrome 文件选择器覆盖已附着的跨进程 iframe 会话：准备阶段�
 Electron 新增显式授权的文件选择：宿主通过 scope.files.authorize 设置允许的现有常规文件，客户端需同时持有 page.control 与 files.upload 权限；文件路径在授权和决策时解析校验，授权替换或撤销会阻止尚未发送的决策。主页面和已附着跨进程 frame 使用 SDK 的 prepareFileChooser；选择器句柄一次性消费，导航或断连失效，准备超时会释放队列并阻止迟发命令。macOS Electron 实页验证主页面单文件与跨进程 frame 多文件；本机套接字集成与单元测试覆盖作用域、拒绝、符号链接改向、撤权和超时。路径授权不固定文件内容；Linux/Windows Electron 尚未实测。
 
 Linux ARM64 的 Electron 44.7 在临时 Xvfb、独立 profile 和 no-sandbox 进程中通过原生 socket 授权的文件选择实测：主页面可见时及宿主窗口显示后隐藏时的跨进程 iframe 均选中本地 fixture。新增 upload-smoke.mjs 便于复现。完整 scroll-smoke 在从未显示的隐藏宿主窗口遇到输入预备截图超时并断开调试器；该平台限制待修复，Xvfb 实验不覆盖普通桌面环境。
+
+Linux ARM64 Xvfb 中，从未显示的宿主窗口验证了输入准备截图超时；禁用宿主节流、改变窗口大小和截取宿主页面均未恢复输入，绕过准备截图则点击事件未到达页面。保留保护并新增 hidden-input-probe：Linux 真正授权 socket 返回 IAB_INPUT_PREPARATION_TIMEOUT 且未发生点击，macOS 隐藏窗口产生可信点击。传输层仅公开固定的安全错误，其他异常继续隐藏细节；截图准备超时与输入发送后的 IAB_INPUT_OUTCOME_UNKNOWN 分开，后者需先观察。已显示后隐藏的窗口仍可用，从未显示窗口的根本修复未完成；Linux 实验使用隔离虚拟显示、--no-sandbox 和禁用 GPU。

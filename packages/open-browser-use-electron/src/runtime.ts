@@ -250,10 +250,10 @@ export class IabRuntime implements Backend {
     const previousThrottling = backgroundInput ? tab.contents.backgroundThrottling : undefined;
     if (backgroundInput) tab.contents.setBackgroundThrottling(false);
     const bounded = backgroundInput || preparingMouse || command === 'Page.captureScreenshot';
-    const timeoutError = backgroundInput && scroll ? 'IAB_BACKGROUND_SCROLL_TIMEOUT' : preparingMouse ? 'IAB_INPUT_PREPARATION_TIMEOUT' : 'IAB_SCREENSHOT_TIMEOUT';
-    let expired = false;
+    let expired = false, inputIssued = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const check = () => { if (expired) throw new Error(timeoutError); if (!authorized()) throw new Error('IAB_AUTH_REVOKED'); };
+    const timeoutError = () => preparingMouse && !inputIssued ? 'IAB_INPUT_PREPARATION_TIMEOUT' : scroll ? 'IAB_BACKGROUND_SCROLL_TIMEOUT' : inputIssued ? 'IAB_INPUT_OUTCOME_UNKNOWN' : 'IAB_SCREENSHOT_TIMEOUT';
+    const check = () => { if (expired) throw new Error(timeoutError()); if (!authorized()) throw new Error('IAB_AUTH_REVOKED'); };
     const run = async () => {
       if (!tab.contents.debugger.isAttached()) tab.contents.debugger.attach('1.3');
       tab.attached = true;
@@ -267,14 +267,15 @@ export class IabRuntime implements Backend {
         await this.feedbackController.input(tab.contents,command,visualPoint ? {...commandParams,...visualPoint} : sessionId ? {} : commandParams);
       }
       check();
+      if (command.startsWith('Input.')) inputIssued = true;
       const result = await tab.contents.debugger.sendCommand(command, commandParams, sessionId);
-      if (expired) throw new Error(timeoutError);
+      if (expired) throw new Error(timeoutError());
       if (backgroundInput) {
         check();
         // Allow Chromium to apply input before restoring hidden-page throttling.
         const painted = await tab.contents.executeJavaScriptInIsolatedWorld(999,[{code:'Promise.race([new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))), new Promise(resolve => setTimeout(() => resolve(false), 1000))])'}]);
         check();
-        if (!painted) throw new Error(timeoutError);
+        if (!painted) throw new Error(timeoutError());
       }
       if (method === 'Page.captureScreenshot') {
         if (typeof result?.data === 'string' && Buffer.byteLength(result.data) > 8 * 1024 * 1024 - 1024) throw new Error('IAB_SCREENSHOT_TOO_LARGE');
@@ -288,7 +289,7 @@ export class IabRuntime implements Backend {
       return await Promise.race([run(),new Promise<never>((_,reject) => { timer=setTimeout(() => {
         expired = true;
         try { if (!tab.contents.isDestroyed() && tab.contents.debugger.isAttached()) tab.contents.debugger.detach(); } catch {}
-        reject(new Error(timeoutError));
+        reject(new Error(timeoutError()));
       },3000); })]);
     } finally {
       if (timer) clearTimeout(timer);

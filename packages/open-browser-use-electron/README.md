@@ -133,6 +133,14 @@ try {
 }
 ```
 
+The client receives a small allowlist of actionable IAB failure messages,
+including `IAB_INPUT_PREPARATION_TIMEOUT`, `IAB_INPUT_OUTCOME_UNKNOWN`,
+`IAB_BACKGROUND_SCROLL_TIMEOUT`, `IAB_SCREENSHOT_TIMEOUT`, `IAB_SCREENSHOT_TOO_LARGE` and
+`IAB_OPERATION_DENIED`. Other backend errors remain generic to avoid exposing
+host details. A background scroll timeout or `IAB_INPUT_OUTCOME_UNKNOWN` can
+leave the input outcome unknown; inspect the page before retrying. A mouse
+preparation timeout occurs before input is sent.
+
 FD 3 carries a private bootstrap followed by framed JSON-RPC. The bootstrap
 fixes instance, scope, grant and credential. Credentials are not passed in
 argv, environment variables or discovery files. The tool must never log its

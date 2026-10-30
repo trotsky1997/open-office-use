@@ -8,6 +8,15 @@ import type { Duplex } from 'node:stream';
 import { FramedChannel, type Message } from './wire.js';
 import { processIdentity, peerIdentity, sameIdentity, type ProcessIdentity } from './peer.js';
 
+const publicErrors = new Set([
+  'IAB_INPUT_PREPARATION_TIMEOUT', 'IAB_INPUT_OUTCOME_UNKNOWN', 'IAB_BACKGROUND_SCROLL_TIMEOUT', 'IAB_SCREENSHOT_TIMEOUT',
+  'IAB_SCROLL_REQUIRES_PRESENTED_SURFACE', 'IAB_BACKGROUND_SCROLL_UNSUPPORTED_GESTURE',
+  'IAB_SCREENSHOT_TOO_LARGE', 'IAB_OPERATION_DENIED', 'IAB_AUTH_REVOKED', 'IAB_SCOPE_CLOSED',
+  'Frame tree changed while waiting for file chooser', 'File chooser debugger detached',
+  'File chooser tab closed', 'Timed out waiting for file chooser',
+  'File chooser is unavailable', 'Upload file is not authorized',
+]);
+
 export type Operation = 'tabs.read' | 'tabs.create' | 'page.control' | 'files.upload';
 export type IabEvent = { scopeId: string; method: string; params: Record<string, any> };
 export interface Backend {
@@ -162,8 +171,9 @@ export class IabConnections {
       inFlight++;
       void this.backend.dispatch(current.scope, message.method, params, current.operations, () => this.valid(current)).then(result => {
         if (this.valid(current)) channel.send({ jsonrpc: '2.0', id: message.id, result });
-      }, () => {
-        if (this.valid(current)) channel.send({ jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'IAB request rejected' } });
+      }, error => {
+        const messageText = error instanceof Error && publicErrors.has(error.message) ? error.message : 'IAB request rejected';
+        if (this.valid(current)) channel.send({ jsonrpc: '2.0', id: message.id, error: { code: -32001, message: messageText } });
       }).finally(() => { inFlight--; });
     });
     return channel;

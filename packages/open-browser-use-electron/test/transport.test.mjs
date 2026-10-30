@@ -112,3 +112,15 @@ test('file chooser readiness requires both upload and page control grants', {ski
   await new Promise(resolve=>setTimeout(resolve,30));
   assert.equal(seenRead.length,0);assert.deepEqual(seenUpload.map(event=>event.params.waitId),['test']);
 });
+
+test('socket returns approved failure reasons and hides other backend errors', {skip:!supported}, async t => {
+  const backend={instanceId:'errors',hasScope:()=>true,subscribe:()=>()=>{},async dispatch(_scope,_method,params){throw new Error(params.reason);}};
+  const connections=new IabConnections(backend);t.after(()=>connections.dispose());await connections.openSocket();
+  const grant=connections.grant('a','socket',{ttlMs:5000,operations:['page.control']},process.pid);
+  const client=await connectSocketIab(grant);t.after(()=>client.close());
+  for(const reason of ['IAB_INPUT_PREPARATION_TIMEOUT','IAB_INPUT_OUTCOME_UNKNOWN','IAB_BACKGROUND_SCROLL_TIMEOUT','IAB_SCREENSHOT_TIMEOUT','IAB_SCREENSHOT_TOO_LARGE','IAB_OPERATION_DENIED','Upload file is not authorized']) {
+    await assert.rejects(client.request('test',{reason}),error=>error.message===reason);
+  }
+  await assert.rejects(client.request('test',{reason:'private file /sensitive/example.txt'}),error=>error.message==='IAB request rejected');
+  await assert.rejects(client.request('test',{reason:'IAB_INPUT_PREPARATION_TIMEOUT /sensitive/example.txt'}),error=>error.message==='IAB request rejected');
+});
