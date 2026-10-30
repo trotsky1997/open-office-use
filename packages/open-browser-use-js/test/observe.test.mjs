@@ -1597,3 +1597,15 @@ test('locator wait deadline bounds stalled browser reads',async()=>{
   const role=tab.playwright.getByRole('button');role.isVisible=()=>new Promise(()=>{});
   await assert.rejects(role.waitFor({state:'visible',timeoutMs:20}),/Timed out/);
 });
+
+test('bulk locator text deadline bounds stalled reads',async()=>{
+  const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1), css=tab.playwright.locator('button');
+  tab.queryCss=()=>new Promise(()=>{});
+  await assert.rejects(css.allInnerTexts({timeoutMs:20}),/Timed out reading/);
+  tab.queryCss=async()=>({ids:[1]});tab.readCss=()=>new Promise(()=>{});
+  await assert.rejects(css.allTextContents({timeoutMs:20}),/Timed out reading/);
+  tab.observe=()=>new Promise(()=>{});
+  await assert.rejects(tab.playwright.getByRole('button').allInnerTexts({timeoutMs:20}),/Timed out reading/);
+  const role=tab.playwright.getByRole('button');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};tab.locatorRead=()=>new Promise(()=>{});
+  await assert.rejects(role.allTextContents({timeoutMs:20}),/Timed out reading/);
+});

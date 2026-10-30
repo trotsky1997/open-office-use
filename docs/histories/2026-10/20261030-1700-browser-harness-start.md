@@ -419,3 +419,5 @@ macOS Electron 44.7 完整示例验证 allInnerTexts：CSS 与语义定位器均
 CSS 与语义定位器新增 isHidden 和 isDisabled，分别复用可见性与启用状态读取；缺失目标的 isHidden 返回 true，isDisabled 延续等待目标的行为。SDK 88 项测试和 macOS Electron 44.7 完整 smoke 通过，实测两类定位器的可见、禁用及目标移除状态。Linux 与 Windows 本轮未测。
 
 CSS 与语义定位器 waitFor 的正数期限覆盖浏览器只读请求；零期限仍执行一次读取，超时的已发出只读请求可能继续完成。SDK 89 项测试通过，包含停滞查询及可见性读取；macOS Electron 44.7 完整 smoke 验证真实页面的可见与移除等待。Linux 和 Windows 本轮未测。
+
+CSS 与语义定位器的 allTextContents/allInnerTexts 正数期限覆盖查询、观察和逐项读取；零期限仍执行一次读取，超时的只读请求可能继续完成。SDK 90 项测试通过，覆盖卡住的查询和文本读取；macOS Electron 44.7 完整 smoke 通过真实页面批量读取。Linux 与 Windows 本轮未测。

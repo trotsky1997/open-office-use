@@ -238,7 +238,8 @@ same match and length checks.
 from all current semantic matches in one
 observation, returning an empty array when there are none. Each value is limited
 to 30000 characters and the total to 1000000. The page can change between reads;
-stale targets are retried within the optional `timeoutMs`.
+stale targets are retried within the optional `timeoutMs`. A positive deadline
+also bounds each browser read; timed-out reads may finish later.
 Editable text inputs exposed as `combobox` support `fill()` and `type()`;
 noneditable comboboxes reject text before mouse input.
 `inputValue()` reads the current value of an input, textarea or select (up to

@@ -73,10 +73,10 @@ function selectSpecs(values: SelectOption | SelectOption[]): SelectSpec[] {
     return {...value,either:false};
   });
 }
-async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number, deadline: number, state: string): Promise<T> {
+async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number, deadline: number, message: string): Promise<T> {
   if (timeoutMs === 0) return await read;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout=()=>new Error(`Timed out waiting for locator to become ${state}`);
+  const timeout=()=>new Error(message);
   try {
     const result=await Promise.race([read,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(timeout()),Math.max(0,deadline-performance.now()));})]);
     if (performance.now()>=deadline) throw timeout();
@@ -2880,10 +2880,10 @@ export class OpenBrowserUseCssLocator {
     const deadline=performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot=await this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope), values:string[]=[];
+        const snapshot=await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,"Timed out reading locator texts"), values:string[]=[];
         let total=0;
         for (const id of snapshot.ids) {
-          const value=await this.tab.readCss(snapshot,id,mode);
+          const value=await locatorReadBeforeDeadline(this.tab.readCss(snapshot,id,mode),timeoutMs,deadline,"Timed out reading locator texts");
           if (typeof value !== "string") throw new RetryablePreflightError("Target text is unavailable; observe again");
           total+=value.length;if(total>1_000_000) throw new Error("Locator values exceed the 1000000 character limit");
           values.push(value);
@@ -2932,9 +2932,9 @@ export class OpenBrowserUseCssLocator {
     const deadline=performance.now()+timeoutMs;
     while (true) {
       try {
-        const snapshot=await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,options.state), ids=snapshot.ids;
+        const snapshot=await locatorReadBeforeDeadline(this.tab.queryCss(this.step(),this.framePath,this.scopes,this.semanticScope),timeoutMs,deadline,`Timed out waiting for locator to become ${options.state}`), ids=snapshot.ids;
         if (ids.length>1) throw new Error(`Locator matched ${ids.length} elements; expected exactly one`);
-        const matched=options.state==='attached' || options.state==='detached' ? ids.length>0 : ids.length>0 && await locatorReadBeforeDeadline(this.tab.readCss(snapshot,ids[0],"visible"),timeoutMs,deadline,options.state)===true;
+        const matched=options.state==='attached' || options.state==='detached' ? ids.length>0 : ids.length>0 && await locatorReadBeforeDeadline(this.tab.readCss(snapshot,ids[0],"visible"),timeoutMs,deadline,`Timed out waiting for locator to become ${options.state}`)===true;
         if (matched === (options.state==='attached' || options.state==='visible')) return;
       } catch(error) { if (!(error instanceof RetryablePreflightError)) throw error; }
       const remaining=deadline-performance.now();
@@ -3187,12 +3187,12 @@ export class OpenBrowserUseRoleLocator {
     const deadline = performance.now() + timeoutMs;
     while (true) {
       try {
-        const {state,matches} = await this.find();
+        const {state,matches} = await locatorReadBeforeDeadline(this.find(),timeoutMs,deadline,"Timed out reading locator texts");
         const values: string[] = [];
         let total = 0;
         for (const match of matches) {
           this.tab.bindLocatorScope(state.snapshotId,match.node.index,match.path,match.filters,this.framePath ? [...this.framePath] : undefined,match.css,this.guard(state.snapshotId,matches));
-          const value = await this.tab.locatorRead(state.snapshotId,match.node.index,mode);
+          const value = await locatorReadBeforeDeadline(this.tab.locatorRead(state.snapshotId,match.node.index,mode),timeoutMs,deadline,"Timed out reading locator texts");
           if (typeof value !== "string") throw new RetryablePreflightError("Target text is unavailable; observe again");
           total += value.length;
           if (total > 1_000_000) throw new Error("Locator values exceed the 1000000 character limit");
@@ -3228,7 +3228,7 @@ export class OpenBrowserUseRoleLocator {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid locator timeout");
     const deadline = performance.now() + timeoutMs;
     while (true) {
-      try { if (await locatorReadBeforeDeadline(this.isVisible(),timeoutMs,deadline,options.state) === (options.state === "visible")) return; }
+      try { if (await locatorReadBeforeDeadline(this.isVisible(),timeoutMs,deadline,`Timed out waiting for locator to become ${options.state}`) === (options.state === "visible")) return; }
       catch (error) { if (!(error instanceof RetryablePreflightError)) throw error; }
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error(`Timed out waiting for locator to become ${options.state}`);
