@@ -1,0 +1,48 @@
+"""Verify local watch routes, preview updates and access restrictions."""
+import json
+import signal
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+from docx import Document
+
+cli = Path(__file__).with_name('open_office_use.py')
+def run(*args):
+    result = subprocess.run([sys.executable, str(cli), *map(str, args)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+def get(url, headers=None):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}), timeout=60) as response:
+        return response.read()
+
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp); source = root / 'source.docx'; directory = root / 'session'
+    doc = Document(); doc.add_paragraph('First'); doc.save(source)
+    run('session', 'start', directory, '--source', source)
+    server = subprocess.Popen([sys.executable, str(cli), 'watch', str(directory)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        url = json.loads(server.stdout.readline())['url']
+        assert b'Office session preview' in get(url)
+        first = json.loads(get(url + 'state'))
+        assert first['revision'] == 0 and first['pages'] > 0
+        assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
+        spec = root / 'ops.json'; spec.write_text(json.dumps([{'command': 'set', 'path': '/body/p[1]', 'props': {'text': 'Changed'}}]))
+        run('session', 'apply', directory, '--base', '0', '--spec', spec)
+        second = json.loads(get(url + 'state'))
+        assert second['revision'] == 1 and second['pages'] > 0
+        assert get(url + 'page/1/0').startswith(b'\x89PNG\r\n\x1a\n')
+        for address, headers, status in [(url.replace('/state', '') + '../state', {}, 404), (url + 'state', {'Host': 'example.com'}, 403)]:
+            try:
+                get(address, headers)
+                raise AssertionError('Unexpected successful request')
+            except urllib.error.HTTPError as error:
+                assert error.code == status, error.code
+    finally:
+        server.send_signal(signal.SIGINT)
+        server.wait(timeout=10)
+print('Watch smoke passed: revision updates, page PNG, token path and host restriction')

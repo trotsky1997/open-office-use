@@ -310,3 +310,5 @@ The spreadsheet module provides bounded formula/cache inspection and explicit Li
 CLI `audit` and MCP `audit_file` run OfficeCLI schema validation and a bounded issue scan against a disk snapshot. They preserve validator exit status and report issue-scan errors. Visual and application compatibility review remain separate.
 
 Local draft sessions store saved revision files in a caller-chosen directory. Each batch creates the next revision by exclusive publication with optimistic base-revision checking; export copies a selected revision to a new external path. This is a file-backed editing session, without a live editor connection.
+
+`office-use watch` serves a read-only local browser preview of the latest draft revision. It binds to loopback, uses a random URL token and exact Host checking, and renders page images in a temporary directory. The preview polls for committed revisions; it does not edit the session.

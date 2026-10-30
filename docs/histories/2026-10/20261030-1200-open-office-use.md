@@ -15,3 +15,5 @@ Added bounded saved-file comparison through CLI and MCP, reporting textual excer
 Added audit commands for OfficeCLI schema validation and issue checks with a saved snapshot. Validated real schema errors, formula issues and MCP access.
 
 Added file-backed versioned draft sessions with conflict detection and export via CLI and MCP. Verified all formats, failure and concurrent write handling.
+
+Added loopback browser preview for the latest session revision with random URL access and automatic refresh. Tested real rendering, route restrictions and Chrome revision updates.

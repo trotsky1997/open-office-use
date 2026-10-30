@@ -36,3 +36,7 @@ Added OfficeCLI schema validation and issue scanning via CLI and MCP, retaining 
 ## Draft sessions
 
 Added persistent local multi-step sessions with explicit base revisions, concurrent-writer conflict protection and copy-based export through CLI and MCP. Tested all three formats, stale writes, failed edits, competing writers and exports. A visible editor, collaborative CRDT state, undo UI and external-editor synchronization remain open.
+
+## Visible preview
+
+Added a local read-only browser preview that updates for committed session revisions. Tested route isolation, real LibreOffice/Poppler images, and automatic revision refresh in Chrome. Direct editing, selection-aware requests and collaborative synchronization remain open.

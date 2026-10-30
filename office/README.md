@@ -78,6 +78,14 @@ office-use session export ./draft --revision 1 --out final.docx
 
 Each successful batch creates the next revision. `--base` must match the latest revision; a stale or concurrent competing write fails. A failed batch leaves the previous revision intact. `info` lists file paths for use with `structured`, `compare`, `audit` and `preview`. Export copies any revision to a new output outside the session directory. Session operations never replace the source or an existing export. Keep the session directory private to its owner and do not edit its revision files directly: the session protocol assumes those files remain unchanged. Save and close external editing sessions before creating a session from a source. Session history persists until the directory is removed manually.
 
+To watch the latest revision in a browser, run this in a separate terminal:
+
+```sh
+office-use watch ./draft
+```
+
+Open the printed URL on the same machine. The read-only page refreshes after a new revision is committed and shows LibreOffice/Poppler page images. Stop the server with Ctrl+C. It binds to `127.0.0.1`, uses a random URL token and rejects other Host headers. Anyone who obtains that URL and can reach the local server can view the document; keep it private. The viewer is a preview: editing and exporting continue through the CLI or MCP. Render fidelity and page layout depend on LibreOffice.
+
 ## Inspect for issues
 
 ```sh
@@ -128,6 +136,7 @@ The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`
 ```sh
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
+python3 office/watch_smoke.py       # requires OfficeCLI, LibreOffice and Poppler
 python3 office/session_smoke.py     # requires OfficeCLI
 python3 office/audit_smoke.py       # requires OfficeCLI
 python3 office/review_smoke.py      # requires OfficeCLI

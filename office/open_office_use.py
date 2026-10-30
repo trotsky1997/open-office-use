@@ -152,6 +152,7 @@ def main():
     state = sub.add_parser('info'); state.add_argument('directory')
     apply = sub.add_parser('apply'); apply.add_argument('directory'); apply.add_argument('--base', type=int, required=True); apply.add_argument('--spec', required=True)
     export = sub.add_parser('export'); export.add_argument('directory'); export.add_argument('--revision', type=int, required=True); export.add_argument('--out', required=True)
+    watcher = commands.add_parser('watch'); watcher.add_argument('directory'); watcher.add_argument('--port', type=int, default=0)
     commands.add_parser('mcp', help='Start the local MCP stdio server (requires the mcp extra)')
     args = parser.parse_args()
     try:
@@ -163,6 +164,10 @@ def main():
                     raise RuntimeError('Install the MCP extra from this checkout: pip install ./office[mcp]') from exc
                 raise
             office_mcp.main()
+            return 0
+        if args.command == 'watch':
+            import watch
+            watch.serve(args.directory, preview, args.port)
             return 0
         if args.command == 'session':
             if args.action == 'start':
