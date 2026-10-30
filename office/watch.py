@@ -52,6 +52,13 @@ input{width:4.5rem}button,select,input,textarea{font:inherit}button{cursor:point
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
 <div id="grid-output" class="grid-scroll"></div><button type="submit" id="grid-save" disabled>Save changed cells</button>
+<fieldset><legend>Format a range</legend>
+<label>Format range <input id="grid-style-range" maxlength="32"></label>
+<label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
+<label><input id="grid-fill-enabled" type="checkbox"> Set fill</label> <input id="grid-fill" type="color" value="#ffcc00" aria-label="Fill color">
+<label>Number format <input id="grid-numberformat" maxlength="120" placeholder="Keep"></label>
+<button type="button" id="grid-format" disabled>Apply formatting</button></fieldset>
+<p>Formatting applies to the loaded range or a smaller range. Existing patterned fills keep their pattern; theme colors are not previewed in the grid.</p>
 <p>Up to 200 cells. Enter formulas beginning with =. Numeric and date values can be converted by OfficeCLI; declared array, data-table and shared formula ranges are read-only.</p>
 <p id="grid-status" role="status"></p></form></details>
 <details><summary>Enter a selection with the keyboard</summary><form id="selection-form">
@@ -111,7 +118,7 @@ document.getElementById('candidate-search').addEventListener('click', async () =
  finally { if (epoch === selectionEpoch && pinned === null && savedSelection) button.disabled=false; }
 });
 function invalidateGrid(message) {
- gridLoaded=null; document.getElementById('grid-save').disabled=true;
+ gridLoaded=null; document.getElementById('grid-save').disabled=true; document.getElementById('grid-format').disabled=true;
  document.querySelectorAll('#grid-output input').forEach(input=>input.readOnly=true);
  if (message) document.getElementById('grid-status').textContent=message;
 }
@@ -145,14 +152,21 @@ document.getElementById('grid-load').addEventListener('click', async () => {
     const formula=cell.formula, value=typeof formula==='string' ? formula : (formula && typeof formula==='object' ? (formula.text || '[complex formula]') : (cell.value == null ? '' : String(cell.value)));
     input.value=value; input.dataset.baseline=value; input.dataset.cell=cell.cell; input.dataset.editable=String(cell.editable);
     input.readOnly=!cell.editable; input.setAttribute('aria-label', `${sheet} ${cell.cell}`);
-    if (typeof formula==='string') input.title=`Cached result: ${cell.value == null ? 'unknown' : cell.value}`;
+    if (cell.style.bold) input.style.fontWeight='bold';
+    if (/^[0-9A-Fa-f]{6}$/.test(cell.style.fill_rgb || '')) {
+     input.style.backgroundColor='#'+cell.style.fill_rgb;
+     const rgb=cell.style.fill_rgb.match(/../g).map(part=>parseInt(part,16));
+     input.style.color=(rgb[0]*299+rgb[1]*587+rgb[2]*114)/1000 < 140 ? 'white' : 'black';
+    }
+    input.title=`Number format: ${cell.style.number_format}`;
+    if (typeof formula==='string') input.title+=`; cached result: ${cell.value == null ? 'unknown' : cell.value}`;
     if (!cell.editable) input.title='Protected formula range: use a supported workflow';
     td.appendChild(input); tr.appendChild(td);
    }
    body.appendChild(tr);
   }
   table.appendChild(body); document.getElementById('grid-output').replaceChildren(table); gridLoaded={revision,sheet,cell_range};
-  document.getElementById('grid-save').disabled=false; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.`;
+  document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=false; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
  finally { button.disabled=pinned !== null; }
 });
@@ -163,14 +177,33 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
  if (!changes.length) { document.getElementById('grid-status').textContent='No changed cells.'; return; }
  const body=JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,changes});
  if (new TextEncoder().encode(body).length > 20000) { document.getElementById('grid-status').textContent='Changes exceed 20 KB; save fewer cells at a time.'; return; }
- const button=document.getElementById('grid-save'); button.disabled=true; inputs.forEach(input=>input.readOnly=true);
+ const button=document.getElementById('grid-save'); button.disabled=true; document.getElementById('grid-format').disabled=true; inputs.forEach(input=>input.readOnly=true);
  try {
   const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
   invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}.`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
-  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; }
+  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-format').disabled=false; }
+ }
+});
+document.getElementById('grid-format').addEventListener('click', async () => {
+ if (!gridLoaded || gridLoaded.revision !== current || pinned !== null) { invalidateGrid('Version changed; reload the range.'); return; }
+ const loaded=gridLoaded, inputs=[...document.querySelectorAll('#grid-output input')];
+ if (inputs.some(input=>input.value!==input.dataset.baseline)) { document.getElementById('grid-status').textContent='Save or copy pending cell edits before formatting.'; return; }
+ const properties={}, bold=document.getElementById('grid-bold').value, numberformat=document.getElementById('grid-numberformat').value;
+ if (bold) properties.bold=bold==='true';
+ if (document.getElementById('grid-fill-enabled').checked) properties.fill=document.getElementById('grid-fill').value.slice(1);
+ if (numberformat) properties.numberformat=numberformat;
+ if (!Object.keys(properties).length) { document.getElementById('grid-status').textContent='Choose a formatting change.'; return; }
+ const button=document.getElementById('grid-format'); button.disabled=true; document.getElementById('grid-save').disabled=true; inputs.forEach(input=>input.readOnly=true);
+ try {
+  const response=await fetch('grid-format', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:loaded.revision,sheet:loaded.sheet,cell_range:loaded.cell_range,style_range:document.getElementById('grid-style-range').value,properties})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Formatting failed');
+  invalidateGrid(`Formatting saved as revision ${result.revision}.`); await refresh();
+ } catch(error) {
+  document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
+  if (gridLoaded === loaded && current === loaded.revision && pinned === null) { inputs.forEach(input=>input.readOnly=input.dataset.editable!=='true'); button.disabled=false; document.getElementById('grid-save').disabled=false; }
  }
 });
 function invalidateEdit(message) {
@@ -392,7 +425,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 if self.headers.get('Content-Type') != 'application/json' or not length.isdecimal() or len(length) > 5 or not 0 < int(length) <= 20000:
@@ -438,6 +471,10 @@ def serve(directory, preview, port=0, render=None):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range'}:
                                 raise ValueError('Grid requires base_revision, sheet and cell_range')
                             saved = session.read_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'])
+                        elif route.endswith('/grid-format'):
+                            if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'style_range', 'properties'}:
+                                raise ValueError('Grid formatting requires revision, sheet, ranges and properties')
+                            saved = session.format_grid(directory, payload['base_revision'], payload['sheet'], payload['cell_range'], payload['style_range'], payload['properties'])
                         elif route.endswith('/grid-edit'):
                             if not isinstance(payload, dict) or set(payload) != {'base_revision', 'sheet', 'cell_range', 'changes'}:
                                 raise ValueError('Grid edit requires base_revision, sheet, cell_range and changes')

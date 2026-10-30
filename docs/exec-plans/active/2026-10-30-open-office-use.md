@@ -83,4 +83,4 @@ Added on-demand text and OOXML part change details to the visual comparison view
 
 ## Worksheet grid
 
-Added bounded XLSX worksheet listing and grid editing through the local viewer and MCP. Real OfficeCLI and Chrome checks cover multiple cells, formulas, clearing cells, stale updates, retained unsaved input and origin restriction. Declared array, data-table and shared formula ranges are protected from grid edits. Rich formatting, other advanced formula structures, large sheets and live Office interoperability remain open.
+Added bounded XLSX worksheet listing and grid editing through the local viewer and MCP. Real OfficeCLI and Chrome checks cover multiple cells, formulas, clearing cells, stale updates, retained unsaved input and origin restriction. Declared array, data-table and shared formula ranges are protected from grid edits. Bold, RGB fill and number formats are available for grid subranges. Broader formatting, other advanced formula structures, large sheets and live Office interoperability remain open.

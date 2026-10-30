@@ -78,6 +78,24 @@ with tempfile.TemporaryDirectory() as tmp:
         raise AssertionError('Shared formula range edit was accepted')
     except ValueError as error:
         assert 'shared' in str(error)
+    format_draft = root / 'format-draft'; session.start(format_draft, source=source)
+    formatted = session.format_grid(format_draft, 0, 'Sales Data', 'A1:C2', 'B1:B2', {'bold': True, 'fill': 'FFCC00', 'numberformat': '0.00'})
+    cells = load_workbook(formatted['file']).active
+    assert cells['B1'].value == 4 and cells['B2'].value == '=B1*2'
+    assert cells['B1'].font.bold and cells['B2'].fill.fgColor.rgb[-6:] == 'FFCC00' and cells['B1'].number_format == '0.00'
+    style = session.read_grid(format_draft, 1, 'Sales Data', 'B1')['rows'][0][0]['style']
+    assert style == {'bold': True, 'fill_rgb': 'FFCC00', 'number_format': '0.00'}
+    for base, target, properties in [(0, 'B1', {'bold': True}), (1, 'D1', {'bold': True}), (1, 'B1', {'fill': 'evil'}), (1, 'B1', {'value': 'bad'})]:
+        try:
+            session.format_grid(format_draft, base, 'Sales Data', 'A1:C2', target, properties)
+            raise AssertionError('Invalid formatting accepted')
+        except ValueError:
+            pass
+    try:
+        session.format_grid(array_draft, 0, 'Sheet', 'A2:B2', 'A2', {'bold': True})
+        raise AssertionError('Protected formula formatting accepted')
+    except ValueError:
+        pass
     cli = Path(__file__).with_name('open_office_use.py')
     server = subprocess.Popen([sys.executable, str(cli), 'watch', str(draft)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
@@ -95,8 +113,10 @@ with tempfile.TemporaryDirectory() as tmp:
             raise AssertionError('Cross-origin edit was accepted')
         except urllib.error.HTTPError as error:
             assert error.code == 403
-        assert post('grid-edit', payload)['revision'] == 2
-        assert load_workbook(draft / 'revision-000002.xlsx').active['A1'].value == 'Updated'
+        assert post('grid-format', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'style_range': 'B1', 'properties': {'bold': True}})['revision'] == 2
+        payload['base_revision'] = 2
+        assert post('grid-edit', payload)['revision'] == 3
+        assert load_workbook(draft / 'revision-000003.xlsx').active['A1'].value == 'Updated'
         try:
             post('grid-edit', payload)
             raise AssertionError('Stale grid edit was accepted')

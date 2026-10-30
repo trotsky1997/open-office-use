@@ -323,4 +323,4 @@ XLSX `compare-cells` and MCP `compare_cells` compare bounded saved-cell ranges, 
 
 The comparison viewer can request bounded text and OOXML part differences for its explicit revision pair; the client clears those results when the displayed pair changes.
 
-XLSX sessions expose worksheet listing and bounded 200-cell grid reads and atomic edits through the viewer and MCP. Only changed cells are submitted; stale edits are rejected and the viewer retains unsaved text in read-only inputs. Complex formulas and format fidelity need separate review.
+XLSX sessions expose worksheet listing and bounded 200-cell grid reads and atomic edits through the viewer and MCP. Only changed cells are submitted; stale edits are rejected and the viewer retains unsaved text in read-only inputs. Grid formatting supports bold, RGB fill and number format on a bounded subrange with the same revision and formula-range checks. Complex formulas and format fidelity need separate review.

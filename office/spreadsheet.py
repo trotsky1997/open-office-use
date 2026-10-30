@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
 
 
-def read_range(file, sheet, cell_range):
+def read_range(file, sheet, cell_range, include_style=False):
     if Path(file).suffix.lower() != '.xlsx':
         raise ValueError('Worksheet reading requires an .xlsx file')
     try:
@@ -45,6 +45,15 @@ def read_range(file, sheet, cell_range):
                     row.append({'formula': formula, 'value': v.value if v else None, 'type': v.data_type if v else 'n'})
                 else:
                     row.append({'value': f.value if f else None, 'type': f.data_type if f else 'n'})
+            if include_style:
+                for index, cell in enumerate(row):
+                    f = f_row[index] if index < len(f_row) else None
+                    font, fill = getattr(f, 'font', None), getattr(f, 'fill', None)
+                    color = getattr(fill, 'fgColor', None)
+                    rgb = color.rgb if fill and fill.patternType == 'solid' and color and color.type == 'rgb' else None
+                    cell['style'] = {'bold': bool(getattr(font, 'bold', False)),
+                                     'fill_rgb': rgb[-6:] if isinstance(rgb, str) else None,
+                                     'number_format': getattr(f, 'number_format', 'General')}
             rows.append(row)
         return {'sheet': sheet, 'range': cell_range, 'rows': rows, 'cache_freshness': 'unknown'}
     finally:

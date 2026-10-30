@@ -117,6 +117,12 @@ def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range
 
 
 @server.tool()
+def session_format_grid(directory: str, base_revision: int, sheet: str, cell_range: str, style_range: str, properties: dict[str, Any]) -> dict[str, Any]:
+    """Apply bold, RGB fill or number format to cells in a version-bound range."""
+    return session.format_grid(directory, base_revision, sheet, cell_range, style_range, properties)
+
+
+@server.tool()
 def session_edit_target(directory: str, base_revision: int, path: str) -> dict[str, Any]:
     """Read one editable element in the latest revision before editing it."""
     return session.edit_target(directory, base_revision, path)

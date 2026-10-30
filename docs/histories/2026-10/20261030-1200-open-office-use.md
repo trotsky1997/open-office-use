@@ -41,3 +41,5 @@ Connected bounded text and OOXML part comparison to the side-by-side viewer; ver
 Added version-bound XLSX grid editing in viewer and MCP. Verified real formula and cell changes, stale input retention and origin checks.
 
 Added formula-range protection for array, data-table and shared formula spans during grid editing, including anchors outside the displayed range.
+
+Added version-bound grid formatting for bold, RGB fill and number formats, with protected formula ranges and preservation of pending edits.

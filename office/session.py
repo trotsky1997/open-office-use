@@ -243,7 +243,7 @@ def read_grid(directory, base_revision, sheet, cell_range):
         raise ValueError('Grid editing requires an XLSX session')
     if base_revision != state['latest_revision']:
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
-    result = spreadsheet.read_range(source, sheet, cell_range)
+    result = spreadsheet.read_range(source, sheet, cell_range, include_style=True)
     protected = spreadsheet.protected_formula_ranges(source, sheet)
     rows = []
     for row_index, row in enumerate(result['rows']):
@@ -290,6 +290,40 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
         seen.add(address)
         mode = 'formula' if value.startswith('=') else 'value'
         operations.append({'command': 'set', 'path': f'/{sheet}/{address}', 'props': {mode: value}})
+    return apply(directory, base_revision, operations)
+
+
+def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):
+    if not isinstance(properties, dict) or not properties or not set(properties) <= {'bold', 'fill', 'numberformat'}:
+        raise ValueError('Provide bold, fill and/or numberformat')
+    props = {}
+    if 'bold' in properties:
+        if not isinstance(properties['bold'], bool):
+            raise ValueError('Bold must be true or false')
+        props['font.bold'] = str(properties['bold']).lower()
+    if 'fill' in properties:
+        if not isinstance(properties['fill'], str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', properties['fill']):
+            raise ValueError('Fill must be a six-digit RGB color')
+        props['fill'] = properties['fill']
+    if 'numberformat' in properties:
+        value = properties['numberformat']
+        if not isinstance(value, str) or not value or len(value) > 120:
+            raise ValueError('Number format must contain 1 to 120 characters')
+        props['numberformat'] = value
+    grid = read_grid(directory, base_revision, sheet, cell_range)
+    c1, r1, c2, r2 = grid_bounds(cell_range)
+    sc1, sr1, sc2, sr2 = grid_bounds(style_range)
+    if not (c1 <= sc1 <= sc2 <= c2 and r1 <= sr1 <= sr2 <= r2):
+        raise ValueError('Formatting range must be within the loaded range')
+    operations = []
+    for row in grid['rows']:
+        for cell in row:
+            match = re.fullmatch(r'([A-Z]+)([0-9]+)', cell['cell'])
+            col, number = column_index_from_string(match.group(1)), int(match.group(2))
+            if sc1 <= col <= sc2 and sr1 <= number <= sr2:
+                if not cell['editable']:
+                    raise ValueError('Array, data-table or shared formula ranges are not supported by grid formatting')
+                operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': props})
     return apply(directory, base_revision, operations)
 
 
