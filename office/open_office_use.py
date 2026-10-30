@@ -144,6 +144,7 @@ def main():
     batch = commands.add_parser('batch'); batch.add_argument('--spec', required=True); batch.add_argument('--out', required=True); batch.add_argument('--source')
     cells = commands.add_parser('cells'); cells.add_argument('file'); cells.add_argument('--sheet', required=True); cells.add_argument('--range', required=True, dest='cell_range')
     calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
+    audit = commands.add_parser('audit'); audit.add_argument('file')
     comparison = commands.add_parser('compare'); comparison.add_argument('before'); comparison.add_argument('after')
     commands.add_parser('mcp', help='Start the local MCP stdio server (requires the mcp extra)')
     args = parser.parse_args()
@@ -167,6 +168,8 @@ def main():
             result = {'pdf': render(args.file, args.out_dir)}
         elif args.command == 'preview':
             result = {'pages': preview(args.file, args.out_dir)}
+        elif args.command == 'audit':
+            result = officecli_backend.audit(args.file)
         elif args.command == 'compare':
             result = review.compare(args.before, args.after)
         elif args.command == 'cells':

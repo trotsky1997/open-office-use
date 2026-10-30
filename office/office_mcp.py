@@ -38,6 +38,12 @@ def apply_batch(output: str, operations: list[dict[str, Any]], source: str | Non
 
 
 @server.tool()
+def audit_file(file: str) -> dict[str, Any]:
+    """Check a saved Office file using OfficeCLI schema validation and its issues view."""
+    return officecli_backend.audit(file)
+
+
+@server.tool()
 def compare_files(before: str, after: str) -> dict[str, Any]:
     """Compare saved Office files: changed package parts and a bounded text-view diff."""
     return review.compare(before, after)

@@ -28,3 +28,7 @@ Added bounded cell reads with formula text, cached values and errors, plus expli
 ## Review
 
 Added saved-file text diffs and OOXML part-change summaries through CLI and MCP. Tested text changes in three formats, identical files and a formatting-only DOCX edit. Text views are bounded and may omit formulas or styling; per-element review, rich diffs, live sessions and visual comparison remain open.
+
+## Artifact checks
+
+Added OfficeCLI schema validation and issue scanning via CLI and MCP, retaining the raw validator result and reporting issue-scan failures. Verified a valid DOCX, invalid OOXML and a formula error; broader Office compatibility and visual evaluation are still required.

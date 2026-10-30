@@ -65,6 +65,14 @@ Operations run on a temporary file. A successful batch is closed before the comp
 
 `preview` creates a new directory containing one PNG per rendered page. It refuses an existing directory. Inspect the images, since a successful render or schema validation alone does not establish visual quality or Office fidelity.
 
+## Inspect for issues
+
+```sh
+office-use audit report.docx
+```
+
+This uses a saved disk snapshot with OfficeCLI's Open XML schema validator and issues view. The result includes the validator's exit code and original JSON envelope, plus up to 200 issue entries. A nonzero validator exit code or `success: false` requires inspecting its result; an `issues_error` means the issue scan did not finish. The issues list can be truncated, and its reported count describes OfficeCLI's returned results. These checks cover only what OfficeCLI detects. Inspect rendered pages, formulas and the destination application's behavior separately. Save and close external editor sessions before auditing.
+
 ## Review edits
 
 ```sh
@@ -100,13 +108,14 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, and `compare_files`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, and `audit_file`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 
 ```sh
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
+python3 office/audit_smoke.py       # requires OfficeCLI
 python3 office/review_smoke.py      # requires OfficeCLI
 python3 office/spreadsheet_smoke.py # requires LibreOffice
 python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI

@@ -306,3 +306,5 @@ The optional OfficeCLI integration exposes structured outline/get/query and batc
 The spreadsheet module provides bounded formula/cache inspection and explicit LibreOffice recalculation into a new XLSX. Cached values carry no freshness guarantee. The source remains unchanged; LibreOffice conversion can alter unsupported features.
 
 `compare` and MCP `compare_files` take disk snapshots, compare OOXML part hashes and provide bounded OfficeCLI text-view diffs. The text view is not a complete semantic comparison.
+
+CLI `audit` and MCP `audit_file` run OfficeCLI schema validation and a bounded issue scan against a disk snapshot. They preserve validator exit status and report issue-scan errors. Visual and application compatibility review remain separate.

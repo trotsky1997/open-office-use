@@ -17,7 +17,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file'}
                 output = root / 'report.docx'
                 operations = [{'command': 'add', 'parent': '/body', 'type': 'paragraph', 'props': {'text': 'MCP works'}}]
                 created = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
@@ -29,6 +29,8 @@ async def main():
                 assert not edit.isError, edit
                 compared = await session.call_tool('compare_files', {'before': str(output), 'after': str(revised)})
                 assert not compared.isError and 'Revised' in str(compared.structuredContent['text_diff']), compared
+                audited = await session.call_tool('audit_file', {'file': str(revised)})
+                assert not audited.isError and audited.structuredContent['validation']['result']['success'] is True, audited
                 invalid = await session.call_tool('apply_batch', {'output': str(output), 'operations': operations})
                 assert invalid.isError and 'already exists' in str(invalid), invalid
                 images = await session.call_tool('preview_pages', {'file': str(output), 'output_dir': str(root / 'pages')})

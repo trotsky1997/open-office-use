@@ -11,3 +11,5 @@ Added optional MCP stdio access to the office workbench with image delivery for 
 Added bounded spreadsheet formula/cache inspection and explicit LibreOffice recalculation through CLI and MCP. Verified basic formulas, errors, empty ranges and source protection with a real local calculation engine.
 
 Added bounded saved-file comparison through CLI and MCP, reporting textual excerpts and changed OOXML parts. Verified three formats and formatting-only change detection.
+
+Added audit commands for OfficeCLI schema validation and issue checks with a saved snapshot. Validated real schema errors, formula issues and MCP access.

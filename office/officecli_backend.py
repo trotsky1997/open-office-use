@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 
-def call(*args, data=None):
+def invoke(*args, data=None):
     executable = shutil.which('officecli')
     if not executable:
         raise RuntimeError('OfficeCLI is required: install it and add officecli to PATH')
@@ -18,9 +18,36 @@ def call(*args, data=None):
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f'OfficeCLI returned invalid JSON: {result.stderr or result.stdout}') from exc
-    if result.returncode or not isinstance(payload, dict) or payload.get('success') is not True:
-        raise RuntimeError(f'OfficeCLI failed: {json.dumps(payload, ensure_ascii=False)} {result.stderr}'.strip())
+    if not isinstance(payload, dict) or not isinstance(payload.get('success'), bool):
+        raise RuntimeError('OfficeCLI returned an invalid result envelope')
+    return result.returncode, payload, result.stderr
+
+
+def call(*args, data=None):
+    code, payload, stderr = invoke(*args, data=data)
+    if code or payload['success'] is not True:
+        raise RuntimeError(f'OfficeCLI failed: {json.dumps(payload, ensure_ascii=False)} {stderr}'.strip())
     return payload.get('data')
+
+
+def audit(source):
+    source = Path(source).resolve(strict=True)
+    if source.suffix.lower() not in ('.docx', '.xlsx', '.pptx'):
+        raise ValueError('Supported formats: .docx, .xlsx, .pptx')
+    with tempfile.TemporaryDirectory(prefix='office-audit-') as tmp:
+        snapshot = Path(tmp) / ('document' + source.suffix.lower())
+        shutil.copyfile(source, snapshot)
+        code, validation, stderr = invoke('validate', snapshot)
+        if code == 0 and validation['success'] is not True:
+            raise RuntimeError('OfficeCLI validation returned inconsistent success status')
+        try:
+            issues = call('view', snapshot, 'issues', '--limit', '200')
+            issues_error = None
+        except RuntimeError as exc:
+            issues, issues_error = None, str(exc)
+    return {'validation': {'exit_code': code, 'result': validation, 'stderr': stderr},
+            'issues': issues, 'issues_error': issues_error, 'issues_limit': 200,
+            'issues_may_be_truncated': True}
 
 
 def read(source, mode, target=None):
