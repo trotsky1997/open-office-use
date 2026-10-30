@@ -77,7 +77,7 @@ function testIdSelector(testId: string): string {
 }
 type CssMatcher = string | {source:string; flags:string};
 type CssTextFilter = {hasText?:CssMatcher; hasNotText?:CssMatcher; has?:readonly CssStep[]; hasNot?:readonly CssStep[]; and?:readonly CssStep[]; visible?:boolean};
-type CssStep = {selector:string; position?:number; before?:readonly CssTextFilter[]; after?:readonly CssTextFilter[]};
+type CssStep = {selector:string; position?:number; before?:readonly CssTextFilter[]; after?:readonly CssTextFilter[]; union?:readonly [readonly CssStep[],readonly CssStep[]]};
 type CssSnapshot = { step:CssStep; scopes:readonly CssStep[]; scopeIds:number[][]; framePath?:readonly string[]; frame:FrameInfo | null; frames:FrameInfo[]; documentId:number; ids:number[] };
 type CssGuard = {snapshot:CssSnapshot; scopeId:number};
 type LocatorMatch = {node:InteractiveNode; path:number[]; filters:FilterGuard[]; css?:CssGuard};
@@ -804,7 +804,7 @@ export class OpenBrowserUseTab {
     }
     const frame = frames.find(item=>item.id === frameId);
     if (!frame) throw new RetryablePreflightError("Frame tree changed; observe again");
-    const needsVisibility=(steps:readonly CssStep[]):boolean=>steps.some(step=>[...(step.before ?? []),...(step.after ?? [])].some(filter=>filter.visible !== undefined || (filter.has ? needsVisibility(filter.has) : false) || (filter.hasNot ? needsVisibility(filter.hasNot) : false) || (filter.and ? needsVisibility(filter.and) : false)));
+    const needsVisibility=(steps:readonly CssStep[]):boolean=>steps.some(step=>(step.union ? step.union.some(needsVisibility) : false) || [...(step.before ?? []),...(step.after ?? [])].some(filter=>filter.visible !== undefined || (filter.has ? needsVisibility(filter.has) : false) || (filter.hasNot ? needsVisibility(filter.hasNot) : false) || (filter.and ? needsVisibility(filter.and) : false)));
     const checkVisibility=needsVisibility([...scopes,step]);
     const frameVisible=checkVisibility ? await this.cssFrameVisible(frame,frames) : true;
     const sessionId = frame.sessionId;
@@ -813,7 +813,7 @@ export class OpenBrowserUseTab {
     if (typeof contextId !== "number" || !Number.isSafeInteger(contextId)) throw new RetryablePreflightError("Selector context is unavailable; observe again");
     const expression = `(() => {
       const steps=${JSON.stringify([...scopes,step])}, output=[], frameVisible=${JSON.stringify(frameVisible)}; let total=0, visited=0;
-      const guarded=steps.some(step=>[...(step.before || []),...(step.after || [])].some(filter=>filter.has || filter.hasNot || filter.and));
+      const guarded=steps.some(step=>step.union || [...(step.before || []),...(step.after || [])].some(filter=>filter.has || filter.hasNot || filter.and));
       const normalize=text=>text.replace(/\\s+/g,' ').trim();
       const textOf=element=>{let text='',stack=[element];while(stack.length){const node=stack.pop();if(node.nodeType===Node.TEXT_NODE){text+=node.nodeValue || '';if(text.length>30000)throw new Error('Filter text exceeds the 30000 character limit');continue;}if(node.nodeType===Node.ELEMENT_NODE && ['SCRIPT','STYLE','NOSCRIPT'].includes(node.tagName))continue;if(node.shadowRoot)stack.push(node.shadowRoot);const children=node.childNodes;for(let j=children.length-1;j>=0;j--)stack.push(children[j]);}return normalize(text);};
       const apply=(items,filters,initial)=>{if(!filters?.length)return items;const intersections=new Map();return items.filter(element=>filters.every(filter=>{
@@ -824,11 +824,12 @@ export class OpenBrowserUseTab {
         if(filter.and){if(!intersections.has(filter))intersections.set(filter,new Set(resolve(initial,filter.and,false)));if(!intersections.get(filter).has(element))return false;}
         return true;
       }));};
-      const validate=selectors=>{for(const step of selectors){document.createDocumentFragment().querySelector(step.selector);for(const filter of [...(step.before || []),...(step.after || [])]){if(filter.has)validate(filter.has);if(filter.hasNot)validate(filter.hasNot);if(filter.and)validate(filter.and);}}};
+      const validate=selectors=>{for(const step of selectors){document.createDocumentFragment().querySelector(step.selector);if(step.union){validate(step.union[0]);validate(step.union[1]);}for(const filter of [...(step.before || []),...(step.after || [])]){if(filter.has)validate(filter.has);if(filter.hasNot)validate(filter.hasNot);if(filter.and)validate(filter.and);}}};
       validate(steps);
       const resolve=(initial,selectors,record)=>{let roots=initial;for(let i=0;i<selectors.length;i++) {
-        const {selector,position,before,after}=selectors[i], found=[], seen=new Set();
-        const walk=root=>{const matched=new Set(root.querySelectorAll(selector));for(const element of root.querySelectorAll('*')) {if(guarded && ++visited>100000)throw new Error('Locator filter search exceeds the 100000 element limit');if(matched.has(element) && !seen.has(element)){seen.add(element);found.push(element);if(found.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);}};
+        const {selector,position,before,after,union}=selectors[i], found=[], seen=new Set();
+        const merged=union ? new Set([...resolve(initial,union[0],false),...resolve(initial,union[1],false)]) : null;
+        const walk=root=>{const matched=merged || new Set(root.querySelectorAll(selector));for(const element of root.querySelectorAll('*')) {if(guarded && ++visited>100000)throw new Error('Locator filter search exceeds the 100000 element limit');if(matched.has(element) && !seen.has(element)){seen.add(element);found.push(element);if(found.length>1000)throw new Error('Selector matched more than 1000 elements');}if(element.shadowRoot)walk(element.shadowRoot);}};
         for(const root of roots) {walk(root);if(root instanceof Element && root.shadowRoot)walk(root.shadowRoot);}
         const filtered=apply(found,before,initial),selected=apply(position===undefined ? filtered : position===-1 ? filtered.slice(-1) : filtered.slice(position,position+1),after,initial);
         if(record){total+=selected.length;if(total>1000)throw new Error('Selector matched more than 1000 elements');output.push(i,...selected);}
@@ -2167,15 +2168,15 @@ export class OpenBrowserUseFrameLocator {
 }
 
 export class OpenBrowserUseCssLocator {
-  constructor(private tab: OpenBrowserUseTab, private selector: string, private framePath?: readonly string[], private position?: number, private scopes: readonly CssStep[] = [], private before: readonly CssTextFilter[] = [], private after: readonly CssTextFilter[] = []) {
+  constructor(private tab: OpenBrowserUseTab, private selector: string, private framePath?: readonly string[], private position?: number, private scopes: readonly CssStep[] = [], private before: readonly CssTextFilter[] = [], private after: readonly CssTextFilter[] = [], private union?: readonly [readonly CssStep[],readonly CssStep[]]) {
     if (typeof selector !== "string" || !selector.trim() || selector.length > 4096) throw new Error("Invalid CSS selector");
   }
   nth(index: number): OpenBrowserUseCssLocator {
     if (!Number.isSafeInteger(index) || index < 0) throw new Error("Locator index must be a non-negative integer");
-    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER,this.scopes,this.before,this.after);
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position === undefined ? index : index === 0 ? this.position : Number.MAX_SAFE_INTEGER,this.scopes,this.before,this.after,this.union);
   }
   first(): OpenBrowserUseCssLocator { return this.nth(0); }
-  last(): OpenBrowserUseCssLocator { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,-1,this.scopes,this.before,this.after) : this; }
+  last(): OpenBrowserUseCssLocator { return this.position === undefined ? new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,-1,this.scopes,this.before,this.after,this.union) : this; }
   locator(selector: string): OpenBrowserUseCssLocator {
     if (this.scopes.length >= 31) throw new Error("CSS locator nesting exceeds 32 levels");
     return new OpenBrowserUseCssLocator(this.tab,selector,this.framePath,undefined,[...this.scopes,this.step()]);
@@ -2188,27 +2189,30 @@ export class OpenBrowserUseCssLocator {
   getByPlaceholder(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByPlaceholder(text,options).withinCss(this); }
   /** @internal */
   snapshot(): Promise<CssSnapshot> { return this.tab.queryCss(this.step(),this.framePath,this.scopes); }
-  private step(): CssStep { return {selector:this.selector,...(this.position !== undefined ? {position:this.position} : {}),before:this.before,after:this.after}; }
+  private step(): CssStep { return {selector:this.selector,...(this.position !== undefined ? {position:this.position} : {}),before:this.before,after:this.after,...(this.union ? {union:this.union} : {})}; }
   private innerSteps(value:OpenBrowserUseCssLocator):CssStep[] {
     if (!(value instanceof OpenBrowserUseCssLocator) || (value.tab.browser!==this.tab.browser || value.tab.id!==this.tab.id) || JSON.stringify(value.framePath ?? null)!==JSON.stringify(this.framePath ?? null)) throw new Error("Filter locator must belong to the same tab and frame");
     const steps=[...value.scopes,value.step()];
     const depth=(items:readonly CssStep[],level:number):void=>{
       if(level>8)throw new Error("Locator filter nesting exceeds 8 levels");
-      for(const step of items)for(const filter of [...(step.before ?? []),...(step.after ?? [])]) {if(filter.has)depth(filter.has,level+1);if(filter.hasNot)depth(filter.hasNot,level+1);if(filter.and)depth(filter.and,level+1);}
+      for(const step of items) {if(step.union) {depth(step.union[0],level+1);depth(step.union[1],level+1);}for(const filter of [...(step.before ?? []),...(step.after ?? [])]) {if(filter.has)depth(filter.has,level+1);if(filter.hasNot)depth(filter.hasNot,level+1);if(filter.and)depth(filter.and,level+1);}}
     };
     depth(steps,2);
     return steps;
   }
   and(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator {
     const filter:CssTextFilter={and:this.innerSteps(locator)};
-    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter]);
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter],this.union);
+  }
+  or(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator {
+    return new OpenBrowserUseCssLocator(this.tab,"*",this.framePath,undefined,[],[],[],[this.innerSteps(this),this.innerSteps(locator)]);
   }
   filter(options: {hasText?: TextMatcher; hasNotText?: TextMatcher; has?: OpenBrowserUseCssLocator; hasNot?: OpenBrowserUseCssLocator; visible?: boolean}): OpenBrowserUseCssLocator {
     if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key=>!["hasText","hasNotText","has","hasNot","visible"].includes(key)) ||
         (options.hasText === undefined && options.hasNotText === undefined && options.has === undefined && options.hasNot === undefined && options.visible === undefined) || (options.visible !== undefined && typeof options.visible !== "boolean") || [options.hasText,options.hasNotText].some(value=>value !== undefined && (typeof value === "string" ? value.length>30_000 : !types.isRegExp(value)))) throw new Error("Invalid locator filter");
     const encode=(value:TextMatcher):CssMatcher=>typeof value === "string" ? value : {source:value.source,flags:value.flags};
     const filter:CssTextFilter={...(options.hasText !== undefined ? {hasText:encode(options.hasText)} : {}),...(options.hasNotText !== undefined ? {hasNotText:encode(options.hasNotText)} : {}),...(options.has !== undefined ? {has:this.innerSteps(options.has)} : {}),...(options.hasNot !== undefined ? {hasNot:this.innerSteps(options.hasNot)} : {}),...(options.visible !== undefined ? {visible:options.visible} : {})};
-    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter]);
+    return new OpenBrowserUseCssLocator(this.tab,this.selector,this.framePath,this.position,this.scopes,this.position === undefined ? [...this.before,filter] : this.before,this.position === undefined ? this.after : [...this.after,filter],this.union);
   }
   async count(): Promise<number> { return (await this.tab.queryCss(this.step(),this.framePath,this.scopes)).ids.length; }
   async all(): Promise<OpenBrowserUseCssLocator[]> { return Array.from({length:await this.count()},(_,i)=>this.nth(i)); }

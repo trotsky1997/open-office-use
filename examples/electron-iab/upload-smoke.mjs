@@ -97,6 +97,7 @@ app.whenReady().then(async()=>{
     assert.equal(await crossFrame.locator('body').filter({hasText:/child heading/i}).locator('h3').textContent(),'Child heading');
     assert.equal(await crossFrame.locator('body').filter({has:crossFrame.locator('h3')}).count(),1);assert.equal(await crossFrame.locator('body').filter({hasNot:crossFrame.locator('h4')}).count(),1);
     assert.equal(await crossFrame.locator('h3').and(crossFrame.locator('body h3')).textContent(),'Child heading');
+    assert.equal(await crossFrame.locator('h3').or(crossFrame.locator('h3')).textContent(),'Child heading');
     assert.equal(await crossFrame.locator('body').locator('h3').textContent(),'Child heading');
     assert.equal(await crossFrame.locator('h3').textContent(),'Child heading');assert.equal(await crossFrame.frameLocator('iframe#nested').locator('button').innerText(),'Nested target');
     await sdk.evaluate(`(()=>{Element.prototype.matches=window.savedMatches})()`);

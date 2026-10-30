@@ -117,6 +117,7 @@ type CssStep = {
     position?: number;
     before?: readonly CssTextFilter[];
     after?: readonly CssTextFilter[];
+    union?: readonly [readonly CssStep[], readonly CssStep[]];
 };
 type TextFilter = {
     hasText?: TextMatcher;
@@ -451,7 +452,8 @@ export declare class OpenBrowserUseCssLocator {
     private scopes;
     private before;
     private after;
-    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined, scopes?: readonly CssStep[], before?: readonly CssTextFilter[], after?: readonly CssTextFilter[]);
+    private union?;
+    constructor(tab: OpenBrowserUseTab, selector: string, framePath?: readonly string[] | undefined, position?: number | undefined, scopes?: readonly CssStep[], before?: readonly CssTextFilter[], after?: readonly CssTextFilter[], union?: readonly [readonly CssStep[], readonly CssStep[]] | undefined);
     nth(index: number): OpenBrowserUseCssLocator;
     first(): OpenBrowserUseCssLocator;
     last(): OpenBrowserUseCssLocator;
@@ -473,6 +475,7 @@ export declare class OpenBrowserUseCssLocator {
     private step;
     private innerSteps;
     and(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator;
+    or(locator: OpenBrowserUseCssLocator): OpenBrowserUseCssLocator;
     filter(options: {
         hasText?: TextMatcher;
         hasNotText?: TextMatcher;

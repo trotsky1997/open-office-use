@@ -300,7 +300,10 @@ and `filter({hasNot: inner})` accept CSS locators from the same browser tab and
 frame, evaluated relative to each candidate, including open shadow roots.
 Nested locator filters are limited to eight levels and 100,000 element visits. `and(other)` intersects two CSS locators
 from the same browser tab and frame. It preserves the order of position and
-filter operations and can be used inside `has` and `hasNot` filters.
+filter operations and can be used inside `has` and `hasNot` filters. `or(other)`
+combines CSS locator matches in document and open-shadow traversal order,
+removes duplicates, and supports subsequent position selection and chaining.
+Both operands must refer to the same browser tab and frame.
 Semantic locators are not yet supported as inner filters. CSS locators can scope
 `getByRole`, `getByLabel`, `getByText`, `getByAltText` and `getByPlaceholder`;
 the first semantic target is resolved in the CSS locator's selected frame.
