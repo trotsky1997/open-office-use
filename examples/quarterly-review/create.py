@@ -40,7 +40,7 @@ slides = {'slide_size': {'width': 13.333, 'height': 7.5}, 'slides': [
         box('Quarterly revenue and priorities', 0.8, 1.6, 11, 0.6, 20, colors['muted']),
         box(trend, 0.8, 2.8, 3.5, 1, 48, colors['accent'], True),
         box('Q1 to Q4 revenue growth', 0.8, 3.9, 5, 0.6, 19, colors['ink']),
-        {'type': 'chart', 'chart_type': 'line', 'x': 6, 'y': 2.2, 'width': 6, 'height': 4, 'title': 'Revenue ($m)', 'categories': [q for q, _ in quarters], 'series': [{'name': 'Revenue', 'values': [v for _, v in quarters], 'color': colors['accent']}], 'legend': False}]},
+        {'type': 'chart', 'chart_type': 'line', 'x': 6, 'y': 2.2, 'width': 6, 'height': 4, 'title': 'Revenue ($m)', 'categories': [q for q, _ in quarters], 'series': [{'name': 'Revenue', 'values': [v for _, v in quarters], 'color': colors['accent']}], 'legend': False, 'value_axis_min': 0, 'value_axis_max': 140}]},
     {'layout': 'blank', 'background': 'FFFFFF', 'notes': 'Discuss the causes of growth and align on the next-quarter plan.', 'elements': [
         box('Next steps', 0.8, 0.7, 11, 0.8, 32, colors['ink'], True),
         box('1. Review the drivers behind the second-half trend.', 1, 2, 11, 0.8, 22, colors['ink']),

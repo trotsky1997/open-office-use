@@ -433,3 +433,5 @@ Added internal slide navigation to authored rich text runs, including table cell
 Extended snapshot-bound slide navigation editing to regular text runs in shapes and table cells.
 
 Added a runnable quarterly review example that generates a report, workbook, presentation and PDF previews from a shared dataset. Visually reviewed the LibreOffice pages and checked output schemas and consistent values.
+
+Added validated numeric-axis bounds for authored PowerPoint column, bar and line charts, and applied them in the cross-format example.

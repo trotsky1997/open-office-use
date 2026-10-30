@@ -447,7 +447,7 @@ def append_slides(presentation, slides):
             allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
                        'rectangle': geometry | {'fill'}, 'shape': geometry | {'id', 'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'connector': {'type', 'start', 'end', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
-                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values', 'show_percent', 'point_colors'}}
+                       'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title', 'show_values', 'show_percent', 'point_colors', 'value_axis_min', 'value_axis_max'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - (allowed[kind] | {'description', 'target_slide'}): raise ValueError('Unsupported slide element or property')
             if 'description' in element and (not isinstance(element['description'], str) or len(element['description']) > 1000): raise ValueError('Slide description must be text of at most 1,000 characters')
             if 'target_slide' in element and (isinstance(element['target_slide'], bool) or not isinstance(element['target_slide'], int) or not 1 <= element['target_slide'] <= final_slide_count): raise ValueError('Target slide must be a valid one-based slide number in the final deck')
@@ -639,7 +639,7 @@ def append_slides(presentation, slides):
                 chart_points += len(series_specs) * len(categories)
                 if chart_points > 10000: raise ValueError('Slide chart data exceeds 10,000 points per request')
                 title = element.get('title'); legend = element.get('legend', chart_type == 'pie' or len(series_specs) > 1)
-                if chart_type == 'pie' and (len(series_specs) != 1 or 'x_axis_title' in element or 'y_axis_title' in element): raise ValueError('Pie charts require one series and have no axes')
+                if chart_type == 'pie' and (len(series_specs) != 1 or any(key in element for key in ('x_axis_title', 'y_axis_title', 'value_axis_min', 'value_axis_max'))): raise ValueError('Pie charts require one series and have no axes')
                 if chart_type != 'pie' and ('show_percent' in element or 'point_colors' in element): raise ValueError('Percent labels and point colors require a pie chart')
                 if 'show_percent' in element and not isinstance(element['show_percent'], bool): raise ValueError('Chart show_percent must be a boolean')
                 point_colors = element.get('point_colors')
@@ -649,6 +649,11 @@ def append_slides(presentation, slides):
                 if title is not None and (not isinstance(title, str) or len(title) > 255): raise ValueError('Chart title must be text of at most 255 characters')
                 for key in ('x_axis_title', 'y_axis_title'):
                     if key in element and (not isinstance(element[key], str) or len(element[key]) > 255): raise ValueError('Chart axis titles must be text of at most 255 characters')
+                for key in ('value_axis_min', 'value_axis_max'):
+                    if key in element:
+                        value = element[key]
+                        if isinstance(value, bool) or not isinstance(value, (int, float)) or not -1e100 <= value <= 1e100 or not math.isfinite(value): raise ValueError(f'Chart {key} must be a finite number within ±1e100')
+                if 'value_axis_min' in element and 'value_axis_max' in element and element['value_axis_min'] >= element['value_axis_max']: raise ValueError('Chart value_axis_min must be less than value_axis_max')
                 if not isinstance(legend, bool): raise ValueError('Chart legend must be a boolean')
                 if 'show_values' in element and not isinstance(element['show_values'], bool): raise ValueError('Chart show_values must be a boolean')
                 data = CategoryChartData(); data.categories = categories
@@ -691,6 +696,8 @@ def append_slides(presentation, slides):
                     labels.show_category_name = False; labels.show_series_name = False; labels.show_legend_key = False; labels.show_percentage = element.get('show_percent', False)
                 if title is not None: chart.has_title = True; chart.chart_title.text_frame.text = title
                 if chart_type != 'pie':
+                    if 'value_axis_min' in element: chart.value_axis.minimum_scale = element['value_axis_min']
+                    if 'value_axis_max' in element: chart.value_axis.maximum_scale = element['value_axis_max']
                     for key, axis in (('x_axis_title', chart.value_axis), ('y_axis_title', chart.category_axis)) if chart_type == 'bar' else (('x_axis_title', chart.category_axis), ('y_axis_title', chart.value_axis)):
                         if key in element: axis.has_title = True; axis.axis_title.text_frame.text = element[key]
                 if point_colors is not None:
