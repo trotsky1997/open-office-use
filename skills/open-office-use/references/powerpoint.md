@@ -27,3 +27,5 @@ When authoring new slides, set `notes` on each slide to create editable speaker 
 Slide table cells accept strings or `{"paragraphs":[...]}` with the same rich runs, links and paragraph settings as textboxes. Inspect wrapping and use a paragraph-specific path for targeted edits.
 
 Rendered-text candidates can include `paragraph_candidates` for multi-paragraph shapes and table cells. Check truncation and rendered output; table paragraph targets open for supported text replacement, including matches within one hyperlink region; complex structures are read-only and matches cannot cross link boundaries.
+
+Speaker-note paragraph replacement also supports text within one hyperlink region and preserves its relationship; matches crossing hyperlink boundaries are rejected.

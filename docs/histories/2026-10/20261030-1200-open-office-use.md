@@ -339,3 +339,5 @@ Fixed ISO date edits to preserve existing date formatting while verifying the ca
 Rendered slide-text candidates now identify potentially missing paragraphs and can open supported PowerPoint table paragraphs for targeted edits, with complex or hyperlinked runs read-only. Verified rendered overflow and revision editing.
 
 Enabled PowerPoint paragraph replacement inside a single hyperlink region, retaining relationship data and run formatting. Matches spanning different hyperlink regions are rejected.
+
+Speaker-note targeted replacement now shares the slide hyperlink boundary checks, retaining linked text formatting and package relationships.

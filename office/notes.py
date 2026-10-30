@@ -89,14 +89,7 @@ def replace_text(source, output, number, paragraph, find, replacement):
         paragraphs = body.findall(slides.A + 'p')
         if paragraph > len(paragraphs): raise ValueError('Notes paragraph does not exist')
         selected = paragraphs[paragraph - 1]
-        if any(child.tag not in (slides.A + 'pPr', slides.A + 'r', slides.A + 'endParaRPr') for child in selected):
-            raise ValueError('Notes paragraph contains unsupported content such as fields or line breaks')
-        nodes = []
-        for run in selected.findall(slides.A + 'r'):
-            if any(child.tag not in (slides.A + 'rPr', slides.A + 't') for child in run) or run.find('.//' + slides.A + 'hlinkClick') is not None or run.find('.//' + slides.A + 'hlinkMouseOver') is not None:
-                raise ValueError('Notes paragraph contains unsupported run content or hyperlinks')
-            nodes.extend(run.findall(slides.A + 't'))
-        ooxml.replace_nodes(nodes, find, replacement, preserve_space=True)
+        slides.replace_paragraph(selected, find, replacement, preserve_space=True)
     return ooxml.edit_xml(source, output, part, edit)
 
 

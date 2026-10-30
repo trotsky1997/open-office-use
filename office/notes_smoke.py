@@ -54,10 +54,21 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([sys.executable, str(cli), 'session', 'replace-notes-text', str(formatted_draft), '--base', '1', '--slide', '1', '--paragraph', '2', '--find', 'Second', '--replace', 'Next'], capture_output=True, text=True, check=True)
     assert session.read_notes(formatted_draft, 2, 1)['text'].endswith('Next paragraph')
     hyperlink = root / 'hyperlink.pptx'; link_deck = Presentation(); link_slide = link_deck.slides.add_slide(link_deck.slide_layouts[1])
-    link_run = link_slide.notes_slide.notes_text_frame.paragraphs[0].add_run(); link_run.text = 'Linked'; link_run.hyperlink.address = 'https://example.com'; link_deck.save(hyperlink)
-    rejected = root / 'rejected.pptx'
-    try: notes.replace_text(hyperlink, rejected, 1, 1, 'Linked', 'Other')
-    except ValueError as exc: assert 'hyperlink' in str(exc)
-    else: raise AssertionError('Hyperlink edit succeeded')
+    link_paragraph=link_slide.notes_slide.notes_text_frame.paragraphs[0];link_paragraph.add_run().text='See '
+    link_run=link_paragraph.add_run();link_run.text='Linked';link_run.hyperlink.address='https://example.com';link_run.font.bold=True
+    next_run=link_paragraph.add_run();next_run.text=' notes';next_run.hyperlink.address='https://example.com';next_run.font.italic=True
+    link_paragraph.add_run().text=' today';link_deck.save(hyperlink)
+    rejected=root/'rejected.pptx'
+    try: notes.replace_text(hyperlink,rejected,1,1,'See Linked','Other')
+    except ValueError as exc: assert 'boundary' in str(exc)
+    else: raise AssertionError('Cross-boundary hyperlink edit succeeded')
     assert not rejected.exists()
+    link_draft=root/'notes-link-draft';session.start(link_draft,source=hyperlink)
+    linked_result=session.replace_notes_text(link_draft,0,1,1,'ked notes','k references')
+    linked_frame=Presentation(linked_result['file']).slides[0].notes_slide.notes_text_frame;linked_runs=linked_frame.paragraphs[0].runs
+    assert linked_frame.text=='See Link references today' and linked_runs[1].font.bold and linked_runs[2].font.italic
+    assert linked_runs[1].hyperlink.address=='https://example.com' and linked_runs[2].hyperlink.address=='https://example.com'
+    with zipfile.ZipFile(hyperlink) as before,zipfile.ZipFile(linked_result['file']) as after:
+        changed={name for name in before.namelist() if before.read(name)!=after.read(name)}
+        assert len(changed)==1 and next(iter(changed)).startswith('ppt/notesSlides/'),changed
 print('Speaker notes smoke passed: create, replace, CLI and revision safety')

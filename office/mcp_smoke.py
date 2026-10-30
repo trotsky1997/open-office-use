@@ -83,6 +83,13 @@ async def main():
                 link_edit = await session.call_tool('session_replace_text', {'directory':str(link_draft),'base_revision':0,'path':link_path,'find':'source','replacement':'reference'})
                 link_run = Presentation(link_edit.structuredContent['file']).slides[0].shapes[1].table.cell(1,1).text_frame.paragraphs[0].runs[1]
                 assert not link_edit.isError and link_run.text==' reference' and link_run.hyperlink.address=='https://example.com/chart', link_edit
+                notes_link_file=root/'mcp-notes-link.pptx'; notes_link_deck=Presentation(); notes_slide=notes_link_deck.slides.add_slide(notes_link_deck.slide_layouts[1])
+                notes_run=notes_slide.notes_slide.notes_text_frame.paragraphs[0].add_run(); notes_run.text='Linked'; notes_run.hyperlink.address='https://example.com/notes'; notes_link_deck.save(notes_link_file)
+                notes_link_draft=root/'mcp-notes-link-draft'; assert not (await session.call_tool('start_session',{'directory':str(notes_link_draft),'source':str(notes_link_file)})).isError
+                notes_link_edit=await session.call_tool('session_replace_slide_notes_text',{'directory':str(notes_link_draft),'base_revision':0,'slide':1,'paragraph':1,'find':'Linked','replacement':'Reference'})
+                assert not notes_link_edit.isError, notes_link_edit
+                notes_after=Presentation(notes_link_edit.structuredContent['file']).slides[0].notes_slide.notes_text_frame.paragraphs[0].runs[0]
+                assert notes_after.text=='Reference' and notes_after.hyperlink.address=='https://example.com/notes'
                 session_inventory = await session.call_tool('session_inspect_slide_charts', {'directory':str(chart_draft),'revision':0})
                 assert not session_inventory.isError and session_inventory.structuredContent['snapshot_sha256'] == chart_inventory.structuredContent['snapshot_sha256'], session_inventory
                 mismatched = root/'mismatched.pptx'

@@ -209,6 +209,23 @@ def paragraph_nodes(paragraph):
     return nodes
 
 
+def replace_paragraph(paragraph, find, replacement, preserve_space=False):
+    nodes = paragraph_nodes(paragraph)
+    text = ''.join(node.text or '' for node in nodes); start = ooxml.match_index(text, find, replacement); end = start + len(find)
+    offset = 0; links = set()
+    for node in nodes:
+        next_offset = offset + len(node.text or '')
+        if offset < end and next_offset > start:
+            run = node.getparent(); link_nodes = [link for link in run.iter() if link.tag in (A+'hlinkClick', A+'hlinkMouseOver')]
+            if len(link_nodes) > 2: raise ValueError('Run contains ambiguous hyperlink metadata')
+            signature = tuple(etree.tostring(link, method='c14n') for link in link_nodes)
+            if sum(map(len, signature)) > 32768: raise ValueError('Hyperlink metadata exceeds inspection limit')
+            links.add(signature)
+        offset = next_offset
+    if len(links) > 1: raise ValueError('Match crosses a hyperlink boundary')
+    ooxml.replace_nodes(nodes, find, replacement, preserve_space=preserve_space)
+
+
 def replace_text(source, output, path, find, replacement):
     match = PATH.fullmatch(path) if paragraph_path(path) else None
     if not match:
@@ -218,20 +235,7 @@ def replace_text(source, output, path, find, replacement):
     slide_index = int(match.group(1)) - 1
 
     def edit(tree, archive):
-        paragraph = find_paragraph(tree, path); nodes = paragraph_nodes(paragraph)
-        text = ''.join(node.text or '' for node in nodes); start = ooxml.match_index(text, find, replacement); end = start + len(find)
-        offset = 0; links = set()
-        for node in nodes:
-            next_offset = offset + len(node.text or '')
-            if offset < end and next_offset > start:
-                run = node.getparent(); link_nodes = [link for link in run.iter() if link.tag in (A+'hlinkClick', A+'hlinkMouseOver')]
-                if len(link_nodes) > 2: raise ValueError('Run contains ambiguous hyperlink metadata')
-                signature = tuple(etree.tostring(link, method='c14n') for link in link_nodes)
-                if sum(map(len, signature)) > 32768: raise ValueError('Hyperlink metadata exceeds inspection limit')
-                links.add(signature)
-            offset = next_offset
-        if len(links) > 1: raise ValueError('Match crosses a hyperlink boundary')
-        ooxml.replace_nodes(nodes, find, replacement)
+        replace_paragraph(find_paragraph(tree, path), find, replacement)
 
     return ooxml.edit_xml(source, output, lambda file: slide_part(file, slide_index), edit)
 

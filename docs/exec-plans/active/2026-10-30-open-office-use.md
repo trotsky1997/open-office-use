@@ -236,3 +236,5 @@ Date-formatted grid cells support verified ISO date/date-time updates without re
 Rendered-text checks offer bounded paragraph-level candidates and table paragraph inspection/targeted replacement; paragraph matching shares container bounds and remains a visual-review heuristic.
 
 PowerPoint targeted paragraph replacement supports linked text within a single hyperlink region and rejects boundary-crossing replacements.
+
+Speaker-note paragraph edits can update text within one hyperlink region while preserving link metadata; cross-boundary edits are rejected.
