@@ -38,3 +38,5 @@ For header and footer text, use `search_word_stories` or `session_search_word_st
 For PowerPoint deliverables, use `inspect_slide_text` or `session_inspect_slide_text` to locate candidate text-box and table-cell rendering problems, including supported nested groups, review coverage and inspect the rendered slides.
 
 For worksheet presentation, `session_format_grid` applies font, color, alignment, wrap, fill and number formatting to a supported loaded range; inspect the resulting revision and rendered workbook.
+
+To size worksheet rows or columns, inspect the grid dimension metadata and use `session_resize_grid`; changes affect complete rows or columns, including cells outside the selected range.

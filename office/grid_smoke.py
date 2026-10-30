@@ -117,6 +117,9 @@ with tempfile.TemporaryDirectory() as tmp:
             raise AssertionError('Cross-origin edit was accepted')
         except urllib.error.HTTPError as error:
             assert error.code == 403
+        sizing = {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'target_range': 'B1', 'column_width': 20, 'row_height': 28}
+        try: post('grid-resize', sizing, 'http://evil.test'); raise AssertionError('Cross-origin sizing accepted')
+        except urllib.error.HTTPError as error: assert error.code == 403
         assert post('grid-format', {'base_revision': 1, 'sheet': 'Sales Data', 'cell_range': 'A1:C2', 'style_range': 'B1', 'properties': {'bold': True}})['revision'] == 2
         payload['base_revision'] = 2
         assert post('grid-edit', payload)['revision'] == 3

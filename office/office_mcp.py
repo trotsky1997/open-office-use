@@ -157,7 +157,7 @@ def session_sheets(directory: str, base_revision: int) -> dict[str, Any]:
 
 @server.tool()
 def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Read up to 200 cells, including read-only reasons and text completeness; unverified text is read-only."""
+    """Read up to 200 cells with direct styles, stored row/column dimensions, protection and text completeness."""
     return session.read_grid(directory, base_revision, sheet, cell_range)
 
 
@@ -171,6 +171,12 @@ def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range
 def session_format_grid(directory: str, base_revision: int, sheet: str, cell_range: str, style_range: str, properties: dict[str, Any]) -> dict[str, Any]:
     """Apply supported font, alignment, RGB fill and number formatting; protected sheets and merged placeholders are rejected."""
     return session.format_grid(directory, base_revision, sheet, cell_range, style_range, properties)
+
+
+@server.tool()
+def session_resize_grid(directory: str, base_revision: int, sheet: str, cell_range: str, target_range: str, column_width: float | None = None, row_height: float | None = None) -> dict[str, Any]:
+    """Set entire column widths and/or row heights for a subrange of the loaded grid, in a new revision."""
+    return session.resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width, row_height)
 
 
 @server.tool()

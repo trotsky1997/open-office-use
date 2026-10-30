@@ -557,14 +557,14 @@ def grid_bounds(cell_range):
 def read_grid(directory, base_revision, sheet, cell_range):
     if not isinstance(sheet, str) or not sheet or '/' in sheet or '\x00' in sheet:
         raise ValueError('Invalid sheet name')
-    min_col, min_row, _, _ = grid_bounds(cell_range)
+    min_col, min_row, max_col, max_row = grid_bounds(cell_range)
     state = info(directory)
     source = revision_file(state, base_revision)
     if state['format'] != 'xlsx':
         raise ValueError('Grid editing requires an XLSX session')
     if base_revision != state['latest_revision']:
         raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
-    constraints = spreadsheet.worksheet_constraints(source, sheet)
+    constraints = spreadsheet.worksheet_constraints(source, sheet, (min_col, min_row, max_col, max_row), True, True)
     result = spreadsheet.read_range(source, sheet, cell_range, include_style=True)
     rows = []
     for row_index, row in enumerate(result['rows']):
@@ -583,7 +583,7 @@ def read_grid(directory, base_revision, sheet, cell_range):
     latest = info(directory)['latest_revision']
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
-    return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'],
+    return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'], 'dimensions': constraints['dimensions'],
             'rows': rows, 'cache_freshness': 'unknown'}
 
 
@@ -667,6 +667,29 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
                 operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': props})
     return apply(directory, base_revision, operations)
 
+
+
+def resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width=None, row_height=None):
+    for name, value, limit in (('column_width', column_width, 255), ('row_height', row_height, 409.5)):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= limit or not math.isfinite(value)):
+            raise ValueError(f'{name} must be greater than zero and at most {limit}')
+    if column_width is None and row_height is None: raise ValueError('Provide a column width or row height')
+    grid = read_grid(directory, base_revision, sheet, cell_range)
+    if grid['sheet_protected']: raise ValueError('Grid sizing is unavailable for protected worksheets')
+    c1, r1, c2, r2 = grid_bounds(cell_range); sc1, sr1, sc2, sr2 = grid_bounds(target_range)
+    if not (c1 <= sc1 <= sc2 <= c2 and r1 <= sr1 <= sr2 <= r2): raise ValueError('Sizing range must be within the loaded range')
+    state = info(directory); source = revision_file(state, base_revision)
+    with zipfile.ZipFile(source) as archive:
+        if any(name.startswith('_xmlsignatures/') for name in archive.namelist()): raise ValueError('Digitally signed workbooks are not supported for sizing')
+    constraints = spreadsheet.worksheet_constraints(source, sheet, (sc1, sr1, sc2, sr2), column_width is not None, row_height is not None)
+    if constraints['dimension_issues']: raise ValueError('Ambiguous worksheet dimensions: ' + ', '.join(constraints['dimension_issues']))
+    operations = []
+    if column_width is not None:
+        operations.extend({'command': 'set', 'path': f'/{sheet}/col[{get_column_letter(col)}]', 'props': {'width': str(column_width)}} for col in range(sc1, sc2 + 1))
+    if row_height is not None:
+        operations.extend({'command': 'set', 'path': f'/{sheet}/row[{row}]', 'props': {'@height': str(row_height)}} for row in range(sr1, sr2 + 1))
+    result = apply(directory, base_revision, operations)
+    return {**result, 'sheet': sheet, 'target_range': target_range, 'column_width': column_width, 'row_height': row_height}
 
 def sheet_names(directory, base_revision):
     state = info(directory)

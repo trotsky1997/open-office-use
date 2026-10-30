@@ -12,7 +12,7 @@ from pathlib import Path
 from xml.etree.ElementTree import tostring
 
 from openpyxl import load_workbook
-from openpyxl.utils.cell import range_boundaries
+from openpyxl.utils.cell import get_column_letter, range_boundaries
 
 
 def inspect_workbook(file):
@@ -492,7 +492,7 @@ def recalculate(source, output):
     return str(output)
 
 
-def worksheet_constraints(file, sheet):
+def worksheet_constraints(file, sheet, dimension_bounds=None, check_columns=False, check_rows=False):
     """Inspect multi-cell formulas, merged ranges and sheet protection without rewriting."""
     import xml.etree.ElementTree as ET
     import zipfile
@@ -516,8 +516,43 @@ def worksheet_constraints(file, sheet):
         workbook.close()
     ranges = []; merges = []; sheet_protected = False; protection_seen = False
     shared_ranges, shared_uses = {}, set()
+    seen_columns, seen_rows, dimension_issues = set(), set(), set()
+    dimensions = {'columns': {}, 'rows': {}, 'defaults': {}}; defaults_seen = False
+    def dimension_attrs(element, names):
+        attrs = {}
+        for key in names:
+            value = element.get(key)
+            if value is not None:
+                if len(value) > 64: dimension_issues.add('oversized_dimension_attribute')
+                else: attrs[key] = value
+        return attrs
     with zipfile.ZipFile(file) as archive, archive.open(path) as stream:
         for _, element in ET.iterparse(stream, events=('end',)):
+            tag = element.tag.rsplit('}', 1)[-1]
+            if dimension_bounds is not None and tag == 'sheetFormatPr':
+                if defaults_seen: dimension_issues.add('duplicate_sheet_defaults')
+                defaults_seen = True
+                dimensions['defaults'] = dimension_attrs(element, ('defaultColWidth', 'baseColWidth', 'defaultRowHeight', 'zeroHeight'))
+            if dimension_bounds is not None and tag == 'col' and check_columns:
+                try:
+                    first, last = int(element.get('min')), int(element.get('max'))
+                    if not 1 <= first <= last <= 16384: raise ValueError
+                    c1, _, c2, _ = dimension_bounds
+                    for col in range(max(first, c1), min(last, c2) + 1):
+                        if col in seen_columns: dimension_issues.add('overlapping_column_ranges')
+                        seen_columns.add(col)
+                        dimensions['columns'][get_column_letter(col)] = dimension_attrs(element, ('min', 'max', 'width', 'customWidth', 'hidden', 'bestFit', 'outlineLevel', 'collapsed'))
+                except (ValueError, TypeError): dimension_issues.add('invalid_column_range')
+            if dimension_bounds is not None and tag == 'row' and check_rows:
+                try:
+                    number = int(element.get('r'))
+                    if not 1 <= number <= 1048576: raise ValueError
+                    _, r1, _, r2 = dimension_bounds
+                    if r1 <= number <= r2:
+                        if number in seen_rows: dimension_issues.add('duplicate_row')
+                        seen_rows.add(number)
+                        dimensions['rows'][str(number)] = dimension_attrs(element, ('ht', 'customHeight', 'hidden', 'outlineLevel', 'collapsed'))
+                except (ValueError, TypeError): dimension_issues.add('invalid_row_index')
             if element.tag == '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}mergeCell':
                 try:
                     bounds = range_boundaries(element.get('ref'))
@@ -554,7 +589,8 @@ def worksheet_constraints(file, sheet):
             element.clear()
     if shared_uses - shared_ranges.keys():
         raise ValueError('Shared formula has no protected range')
-    return {'formula_ranges': ranges, 'merged_ranges': merges, 'sheet_protected': sheet_protected}
+    dimensions['issues'] = sorted(dimension_issues)
+    return {'formula_ranges': ranges, 'merged_ranges': merges, 'sheet_protected': sheet_protected, 'dimension_issues': dimensions['issues'], 'dimensions': dimensions}
 
 
 def cell_constraint(constraints, col, row, locked, complex_formula=False):

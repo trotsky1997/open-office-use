@@ -81,3 +81,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 幻灯片渲染文字检查支持平移和缩放的嵌套组合，返回组合内文本框及表格单元格的定位路径。
 
 - 版本化工作表网格增加字体、颜色、字号、下划线、对齐和换行设置，支持 CLI、MCP 和预览，并回读直接样式。
+
+- 工作表网格支持读取保存的行列尺寸，并通过 CLI、MCP 与预览修改列宽和行高；验证分组列、保护和有歧义的范围。
