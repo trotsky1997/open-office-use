@@ -17,7 +17,7 @@ with TemporaryDirectory() as tmp:
     rules = {rule['cells'][0]: rule for rule in grid['data_validation']['rules']}
     assert rules['A1']['list_resolution'] == 'resolved' and rules['A1']['list_values'] == ['001', '=text']
     assert rules['A1']['list_source'] == {'sheet': "Team's options", 'range': '$A$1:$A$2'}
-    assert [rules[cell]['list_resolution'] for cell in ['B1','C1','D1','E1','F1']] == ['unverified_values', 'unverified_values', 'unsupported_reference', 'range_limit', 'missing_sheet']
+    assert [rules[cell]['list_resolution'] for cell in ['B1','C1','D1','E1','F1']] == ['unverified_values', 'unverified_values', 'missing_name', 'range_limit', 'missing_sheet']
     saved = session.edit_grid(draft, 0, 'Input', 'A1:F1', [{'cell':'A1', 'value':'=text', 'type':'text'}])
     edited = load_workbook(saved['file']); assert edited['Input']['A1'].value == '=text' and edited['Input']['A1'].data_type == 's'
     assert edited['Input'].data_validations.dataValidation[0].formula1 == "'Team''s options'!$A$1:$A$2"

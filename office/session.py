@@ -666,12 +666,40 @@ def resolve_grid_lists(source, sheet, validation):
     try:
         with zipfile.ZipFile(source) as archive:
             spreadsheet.prepare_shared_strings(workbook, archive=archive)
+            try:
+                workbook_root = ooxml.parse_xml(archive.read('xl/workbook.xml')).getroot()
+                containers = workbook_root.findall(grid_styles.X + 'definedNames')
+                names = list(containers[0]) if len(containers) == 1 else []
+                sheets = workbook_root.findall(grid_styles.X + 'sheets')
+                names_complete = (workbook_root.tag == grid_styles.X + 'workbook' and len(containers) <= 1 and len(names) <= 10000
+                                  and all(item.tag == grid_styles.X + 'definedName' for item in names)
+                                  and len(sheets) == 1 and [item.get('name') for item in sheets[0]] == workbook.sheetnames)
+            except (KeyError, ooxml.etree.XMLSyntaxError):
+                names, names_complete = [], False
         cache = {}
         for rule in candidates:
             formula = rule['formula1']
-            # shortcut: only absolute one-dimensional ranges of verified text; add formula and name evaluation when supported.
+            name_match = re.fullmatch(r'=?([A-Za-z_][A-Za-z0-9_.]*)', formula)
+            if name_match:
+                if not names_complete:
+                    rule['list_resolution'] = 'incomplete_names'; continue
+                name = name_match.group(1)
+                matching = [item for item in names if item.get('name', '').casefold() == name.casefold()]
+                index = str(workbook.sheetnames.index(sheet))
+                if any(item.get('localSheetId') is not None and (not item.get('localSheetId').isdigit() or len(item.get('localSheetId')) > 6 or int(item.get('localSheetId')) >= len(workbook.sheetnames)) for item in matching):
+                    rule['list_resolution'] = 'ambiguous_name'; continue
+                local = [item for item in matching if item.get('localSheetId') is not None and int(item.get('localSheetId')) == int(index)]
+                selected = local or [item for item in matching if item.get('localSheetId') is None]
+                if len(selected) != 1:
+                    rule['list_resolution'] = 'ambiguous_name' if selected else 'missing_name'; continue
+                item = selected[0]
+                if any(item.get(flag) not in (None, '0', 'false') for flag in ('function', 'vbProcedure', 'xlm')):
+                    rule['list_resolution'] = 'unsupported_name'; continue
+                formula = item.text or ''
+                rule['list_name'] = {'name': item.get('name'), 'scope': sheet if local else 'workbook'}
+            # shortcut: names must resolve to absolute one-dimensional ranges of verified text; add formula evaluation when supported.
             match = re.fullmatch(r"=?(?:(?:'((?:[^']|'')+)'|([A-Za-z0-9_.]+))!)?(\$[A-Za-z]{1,3}\$[1-9][0-9]{0,6})(?::(\$[A-Za-z]{1,3}\$[1-9][0-9]{0,6}))?", formula)
-            if not match:
+            if not match or name_match and not (match.group(1) or match.group(2)):
                 rule['list_resolution'] = 'unsupported_reference'; continue
             target = (match.group(1).replace("''", "'") if match.group(1) else match.group(2)) or sheet
             ref = match.group(3) + (':' + match.group(4) if match.group(4) else '')

@@ -163,3 +163,7 @@ Added viewer choices for unambiguous fixed Excel validation lists; selected valu
 ### Referenced validation list choices
 
 Resolved bounded absolute one-dimensional list references containing verified plain text, including cross-sheet references with quoted names. Exposed choices and resolution status in grid reads and the viewer. Tested a real workbook and browser rendering, unsupported source values, and grid and control smoke suites. Relative references, names, formula and numeric source cells remain unresolved.
+
+### Named validation lists
+
+Added workbook- and sheet-scoped defined names that resolve directly to supported absolute text ranges, with case-insensitive matching, sheet-scope precedence, duplicate-name detection and explicit scope reporting. Checked real workbooks including colliding names and dynamic expressions, plus grid, control and paste regression smoke tests. Dynamic expressions, multi-range names and relative references remain unresolved.
