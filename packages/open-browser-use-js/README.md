@@ -819,7 +819,9 @@ timeout cancels pending setup where possible. `timeoutMs: 0` performs setup and 
 handle permits one decision; a disconnect invalidates it. If a decision fails
 with an unknown outcome, inspect the page before trying another action. Chrome
 supports prompt dialogs; Electron does not implement `window.prompt()`.
-Electron may show a hidden host window when a native dialog opens.
+Electron may show a hidden host window when a native dialog opens. If the browser reports that the dialog’s originating frame detached,
+`currentDialog().info.frameDetached` is true and decisions are rejected; inspect the browser
+before attempting recovery.
 
 ## Persistent JavaScript MCP
 

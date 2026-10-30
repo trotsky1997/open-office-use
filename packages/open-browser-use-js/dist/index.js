@@ -4878,12 +4878,17 @@ export class OpenBrowserUseCdp {
             }
             if (method === "Page.javascriptDialogOpening" && typeof params.type === "string" && ["alert", "confirm", "prompt", "beforeunload"].includes(params.type) && typeof params.message === "string" && typeof params.url === "string") {
                 const info = { id: randomUUID(), type: params.type, message: params.message, url: params.url, ...(typeof params.defaultPrompt === "string" ? { defaultPrompt: params.defaultPrompt } : {}) };
-                this.#dialogs.set(source.tabId, { info, generation: this.client.connectionGeneration, ...(typeof source.sessionId === "string" ? { sessionId: source.sessionId } : {}), issued: false });
+                this.#dialogs.set(source.tabId, { info, generation: this.client.connectionGeneration, ...(typeof source.sessionId === "string" ? { sessionId: source.sessionId } : {}), ...(typeof params.frameId === "string" ? { frameId: params.frameId } : {}), issued: false });
             }
             else if (method === "Page.javascriptDialogClosed") {
                 const dialog = this.#dialogs.get(source.tabId);
                 if (dialog && (dialog.sessionId === source.sessionId || typeof source.sessionId !== "string"))
                     this.#dialogs.delete(source.tabId);
+            }
+            if (method === "Page.frameDetached" && typeof params.frameId === "string") {
+                const dialog = this.#dialogs.get(source.tabId);
+                if (dialog?.frameId === params.frameId)
+                    dialog.info.frameDetached = true;
             }
             const detachedTabId = source.tabId, frames = this.#frames.get(detachedTabId);
             if (method === "Target.detachedFromTarget" && typeof params.sessionId === "string") {
@@ -4995,6 +5000,8 @@ export class OpenBrowserUseCdp {
         const dialog = this.#dialogs.get(tabId);
         if (!dialog || dialog.info.id !== id || dialog.generation !== this.client.connectionGeneration)
             throw new Error("Dialog is no longer open");
+        if (dialog.info.frameDetached)
+            throw new Error("Dialog frame detached; inspect the browser before continuing");
         if (dialog.issued)
             throw new Error("Dialog decision has already been issued; observe again");
         if (promptText !== undefined && (!accept || dialog.info.type !== "prompt"))

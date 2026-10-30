@@ -109,7 +109,7 @@ export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | { clien
 
 export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; level?: number; checked?: boolean | "mixed"; disabled?: boolean; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
 export type SelectOption = string | {value?: string; label?: string; index?:number};
-export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; url: string; defaultPrompt?: string };
+export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; url: string; defaultPrompt?: string; frameDetached?: boolean };
 export type OpenBrowserUseLogEntry = {level: "debug" | "info" | "log" | "warn" | "error"; message: string; timestamp: string; url?: string};
 export type OpenBrowserUseClipboardEntry = {mimeType: string; text?: string; base64?: string};
 export type OpenBrowserUseClipboardItem = {entries: OpenBrowserUseClipboardEntry[]; presentationStyle?: "unspecified" | "inline" | "attachment"};
@@ -3797,7 +3797,7 @@ export class OpenBrowserUseCdp {
   #pending = new Map<number, Set<Promise<void>>>();
   #failure = new Map<number, Error>();
   #generations = new Map<number, number>();
-  #dialogs = new Map<number, {info: OpenBrowserUseDialogInfo; generation:number; sessionId?:string; issued:boolean}>();
+  #dialogs = new Map<number, {info: OpenBrowserUseDialogInfo; generation:number; sessionId?:string; frameId?:string; issued:boolean}>();
   #dialogEnabled = new Map<number,number>();
   #dialogRevisions = new Map<number,number>();
   #dialogDisconnectRevision = 0;
@@ -3830,10 +3830,14 @@ export class OpenBrowserUseCdp {
       }
       if (method === "Page.javascriptDialogOpening" && typeof params.type === "string" && ["alert","confirm","prompt","beforeunload"].includes(params.type) && typeof params.message === "string" && typeof params.url === "string") {
         const info: OpenBrowserUseDialogInfo = {id:randomUUID(),type:params.type as OpenBrowserUseDialogInfo["type"],message:params.message,url:params.url,...(typeof params.defaultPrompt === "string" ? {defaultPrompt:params.defaultPrompt} : {})};
-        this.#dialogs.set(source.tabId,{info,generation:this.client.connectionGeneration,...(typeof source.sessionId === "string" ? {sessionId:source.sessionId} : {}),issued:false});
+        this.#dialogs.set(source.tabId,{info,generation:this.client.connectionGeneration,...(typeof source.sessionId === "string" ? {sessionId:source.sessionId} : {}),...(typeof params.frameId === "string" ? {frameId:params.frameId} : {}),issued:false});
       } else if (method === "Page.javascriptDialogClosed") {
         const dialog = this.#dialogs.get(source.tabId);
         if (dialog && (dialog.sessionId === source.sessionId || typeof source.sessionId !== "string")) this.#dialogs.delete(source.tabId);
+      }
+      if (method === "Page.frameDetached" && typeof params.frameId === "string") {
+        const dialog=this.#dialogs.get(source.tabId);
+        if (dialog?.frameId === params.frameId) dialog.info.frameDetached=true;
       }
 
       const detachedTabId = source.tabId, frames = this.#frames.get(detachedTabId);
@@ -3926,6 +3930,7 @@ export class OpenBrowserUseCdp {
     if (promptText !== undefined && typeof promptText !== "string") throw new Error("Prompt text must be a string");
     const dialog = this.#dialogs.get(tabId);
     if (!dialog || dialog.info.id !== id || dialog.generation !== this.client.connectionGeneration) throw new Error("Dialog is no longer open");
+    if (dialog.info.frameDetached) throw new Error("Dialog frame detached; inspect the browser before continuing");
     if (dialog.issued) throw new Error("Dialog decision has already been issued; observe again");
     if (promptText !== undefined && (!accept || dialog.info.type !== "prompt")) throw new Error("Prompt text requires an accepted prompt dialog");
     dialog.issued = true;

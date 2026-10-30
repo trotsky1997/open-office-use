@@ -157,3 +157,4 @@
 - [x] JavaScript 对话框等待的正数超时覆盖监听准备及事件等待，超时取消尚未派发的准备；Linux ARM64 Chromium 原生消息验证超时后继续处理 confirm。
 - [x] JavaScript 对话框监听准备绑定标签生命周期及连接代际；移组、关闭、调试器断开或 Page.disable 后，迟到准备无法恢复旧状态。Linux ARM64 Chromium 原生消息双会话验证移组后新会话可处理 confirm。
 - [x] 弹窗绑定的子调试会话或其祖先会话脱离时失效；合成 CDP 事件覆盖不同会话的隔离，真实 frame 弹窗事件归属仍需更多平台验证。
+- [x] 对话框事件带有来源 frame 时，frame 脱离后保留 frameDetached 状态并拒绝发送决定；Linux ARM64 Chromium 153 跨进程 frame 实测阻止决定派发，恢复过程仍待研究。

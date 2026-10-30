@@ -576,3 +576,5 @@ JavaScript 对话框等待使用统一期限覆盖 Page.enable 准备和事件�
 JavaScript 对话框监听在附着前记录标签生命周期，Page.enable 前后核对生命周期和连接代际；断线清理缓存，Page.disable 使旧准备失效。SDK 115 项检查通过，覆盖移组及重连期间的准备竞态；Linux ARM64 Chromium 原生消息双会话注入延迟后移组，旧准备拒绝，新会话成功处理真实 confirm。Windows 未测。
 
 子调试会话脱离时，清理绑定该会话或被递归移除的后代会话的弹窗句柄；其他会话句柄保留。SDK 116 项检查通过，事件覆盖使用合成通知。隔离 Linux ARM64 Chromium 153 跨站子 frame confirm 实验中，弹窗事件由主标签会话报告；通过 CDP 移除仍有弹窗的 frame 后，浏览器进程在处理弹窗期间崩溃，未能完成实页句柄验收。该场景需要更多浏览器和平台复现；Windows 未测。
+
+记录 JavaScript 对话框事件中的 frameId；来源 frame 脱离后暴露 frameDetached，并拒绝 SDK 发送 accept/dismiss。SDK 117 项检查通过；隔离 Linux ARM64 Chromium 153 跨进程 frame 实测标记及决定拒绝，随后关闭该标签时浏览器进程仍崩溃，完整恢复路径尚未验证。Windows 未测。

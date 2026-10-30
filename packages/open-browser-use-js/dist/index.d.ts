@@ -60,6 +60,7 @@ export type OpenBrowserUseDialogInfo = {
     message: string;
     url: string;
     defaultPrompt?: string;
+    frameDetached?: boolean;
 };
 export type OpenBrowserUseLogEntry = {
     level: "debug" | "info" | "log" | "warn" | "error";

@@ -655,6 +655,16 @@ test('detaching a dialog frame invalidates only that frame dialog',async()=>{
   emit('Target.detachedFromTarget',{sessionId:'frame'},{tabId:1});assert.equal(tab.currentDialog(),null);await assert.rejects(dialog.dismiss(),/no longer open/);
 });
 
+test('dialog reported by the main session retains detached frame status',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set();let decisions=0;client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};client.request=async(method,params)=>{if(params?.method==='Page.handleJavaScriptDialog')decisions++;return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);await tab.watchDialogs();
+  const emit=(method,params)=>{for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method,params}});};
+  emit('Page.javascriptDialogOpening',{type:'confirm',message:'Frame',url:'https://example.test',frameId:'child'});const dialog=tab.currentDialog();
+  emit('Page.frameDetached',{frameId:'other',reason:'remove'});assert.equal(tab.currentDialog().info.frameDetached,undefined);
+  emit('Page.frameDetached',{frameId:'child',reason:'remove'});assert.equal(tab.currentDialog().info.frameDetached,true);await assert.rejects(dialog.dismiss(),/frame detached/);assert.equal(decisions,0);
+  emit('Page.javascriptDialogClosed',{});assert.equal(tab.currentDialog(),null);
+});
+
 test('dialog wait includes listener preparation in its timeout',async()=>{
   const tab=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}).tab(1);
   let release,signal;tab.watchDialogs=value=>{signal=value;return new Promise(resolve=>{release=resolve;});};
