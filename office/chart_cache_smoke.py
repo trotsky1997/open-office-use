@@ -1,5 +1,6 @@
 """Exercise chart cache comparisons against a real workbook and revisions."""
 import json
+import copy
 import subprocess
 import sys
 import tempfile
@@ -125,6 +126,35 @@ with tempfile.TemporaryDirectory() as tmp:
     def no_render(_source,_out): raise RuntimeError('Rendering intentionally unavailable')
     static_review=review_bundle.create(static_source,root/'static-review',no_render)
     assert 'chart_literal_data_present' in static_review['flags']
+    def literal_categories(tree):
+        ser=tree.find('.//'+C+'ser'); parent=ser.find(C+'cat'); ref=parent.find(C+'strRef'); cache=ref.find(C+'strCache')
+        ref.remove(cache); cache.tag=C+'strLit'; parent.replace(ref,cache)
+        duplicate=copy.deepcopy(ser); duplicate.find(C+'idx').set('val','1'); duplicate.find(C+'order').set('val','1'); ser.addnext(duplicate)
+    category_source=rewrite('literal-categories.xlsx',literal_categories); category_report=chart_cache.scan(category_source)
+    category_ref=next(item for item in category_report['charts'][0]['references'] if item['kind']=='strLit')
+    category_draft=root/'category-draft';session.start(category_draft,source=category_source)
+    for text in ('','x'*256,'bad\x01'):
+        try: session.set_chart_literal_category(category_draft,0,category_report['charts'][0]['part'],category_ref['index'],1,text)
+        except ValueError: pass
+        else: raise AssertionError('Invalid category accepted')
+    try: session.set_chart_literal_category(category_draft,0,category_report['charts'][0]['part'],category_ref['index'],1,'North','0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale category snapshot accepted')
+    changed_category=session.set_chart_literal_category(category_draft,0,category_report['charts'][0]['part'],category_ref['index'],1,'North & East',category_report['snapshot_sha256'])
+    assert changed_category['series_updated']==2 and changed_category['old_text']=='Jan'
+    with zipfile.ZipFile(category_source) as before,zipfile.ZipFile(changed_category['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=category_report['charts'][0]['part'])
+        tree=etree.fromstring(after.read(category_report['charts'][0]['part'])); labels=tree.findall('.//'+C+'cat/'+C+'strLit/'+C+'pt[@idx="0"]/'+C+'v'); assert len(labels)==2 and all(node.text=='North & East' for node in labels)
+    code,validation,_=officecli_backend.invoke('validate',changed_category['output']);assert code==0 and validation['success'],validation
+    command=[sys.executable,str(cli),'session','set-chart-literal-category',str(category_draft),'--base','1','--part',category_report['charts'][0]['part'],'--reference',str(category_ref['index']),'--point','2','--text','South']
+    assert json.loads(subprocess.run(command,capture_output=True,text=True,check=True).stdout)['revision']==2
+    def different_categories(tree):
+        literal_categories(tree); labels=tree.findall('.//'+C+'cat/'+C+'strLit/'+C+'pt[@idx="0"]/'+C+'v'); labels[-1].text='Different'
+    conflict_source=rewrite('different-categories.xlsx',different_categories); conflict_draft=root/'category-conflict-draft';session.start(conflict_draft,source=conflict_source)
+    try: session.set_chart_literal_category(conflict_draft,0,category_report['charts'][0]['part'],category_ref['index'],1,'North')
+    except ValueError: pass
+    else: raise AssertionError('Mismatched category arrays accepted')
+    assert session.info(conflict_draft)['latest_revision']==0
     def missing(tree):
         ref=tree.find('.//'+C+'cat/'+C+'strRef'); ref.remove(ref.find(C+'strCache'))
     missing_result=chart_cache.scan(rewrite('missing.xlsx',missing)); assert missing_result['missing_caches']==1 and not missing_result['complete']

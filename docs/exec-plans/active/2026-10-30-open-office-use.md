@@ -354,3 +354,5 @@ Slide charts support explicit text color during authoring and snapshot-bound ses
 Workbook chart scans distinguish valid literal data from unverified references and flag fixed chart sources in review bundles. The OfficeCLI sales-dashboard reference contains ten literal sources; a cell edit leaves them unchanged.
 
 Existing fixed numeric workbook chart data supports snapshot-bound one-point CLI/MCP edits, with bounded scan examples. The OfficeCLI sales-dashboard reference changed only its chart part, passed OfficeCLI validation and showed the updated bar in LibreOffice. Native Excel remains unverified.
+
+Workbook fixed chart categories can be updated across matching series in snapshot-bound CLI/MCP revisions. The OfficeCLI sales-dashboard reference updated all four series, changed only the chart part and rendered the new label. Native Excel remains unverified.

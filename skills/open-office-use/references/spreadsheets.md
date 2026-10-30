@@ -52,3 +52,5 @@ For workbook navigation, author a hyperlink with `location: {"sheet":"Details","
 Chart-cache scans report `literal_sources` and `status: literal` for bounded fixed chart data with no worksheet source reference. Cell edits do not update that data; inspect the chart before delivery. Invalid or oversized literal data remains unverified.
 
 Use `session_set_chart_literal_value` with an inspected chart part, literal reference index, one-based point and snapshot to edit an existing fixed numeric chart value. Worksheet cells stay unchanged, and all chart placements sharing that part are affected. Render and review.
+
+Use `session_set_chart_literal_category` with a scanned literal category reference to update a one-based category point across matching series of a workbook chart. Mismatched or referenced categories are rejected; worksheet cells remain unchanged.

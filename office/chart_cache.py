@@ -225,6 +225,53 @@ def scan(file):
             raise ValueError(f'Invalid workbook package: {exc}') from exc
 
 
+def set_literal_category(source, output, part, reference, point, text, expected_sha256=None):
+    """Edit a matching literal category across the series of one plot."""
+    if Path(source).suffix.lower() != '.xlsx' or Path(output).suffix.lower() != '.xlsx': raise ValueError('Chart category editing requires XLSX input and output')
+    if not isinstance(part, str) or any(isinstance(item, bool) or not isinstance(item, int) or item < 1 for item in (reference, point)): raise ValueError('Provide a chart part and positive one-based reference and point')
+    if not isinstance(text, str) or not 1 <= len(text) <= 255 or any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF or (ord(char) & 0xFFFF) in (0xFFFE, 0xFFFF) for char in text): raise ValueError('Category must contain 1 to 255 valid single-line characters')
+    selected = {}
+    def select(file):
+        result = scan(file); charts = [item for item in result['charts'] if item['part'] == part]
+        if len(charts) != 1 or charts[0]['status'] != 'scanned' or charts[0]['external_data'] or charts[0]['extensions_present']: raise ValueError('Chart is unavailable or contains unsupported extensions')
+        refs = charts[0]['references']; selected['references'] = {item['index']: item for item in refs}
+        matches = [item for item in refs if item['index'] == reference]
+        if len(matches) != 1 or matches[0]['status'] != 'literal' or matches[0]['kind'] != 'strLit' or matches[0]['role'] != 'cat' or point > matches[0]['points']: raise ValueError('Target must be a literal category from chart inspection')
+        return part
+    def edit(tree, _archive):
+        nodes = [node for node in tree.getroot().iter() if node.tag in REF_TYPES]
+        if reference > len(nodes): raise ValueError('Chart reference changed')
+        target = nodes[reference - 1]
+        if target.tag != C+'strLit' or target.getparent().tag != C+'cat': raise ValueError('Chart category source changed')
+        ser = target.getparent().getparent(); plot = ser.getparent() if ser is not None else None
+        if ser is None or ser.tag != C+'ser' or plot is None or plot.tag not in (C+'barChart', C+'lineChart', C+'pieChart', C+'doughnutChart'): raise ValueError('Unsupported chart series or plot')
+        areas = tree.getroot().findall(C+'chart/'+C+'plotArea')
+        if len(areas) != 1 or len([item for item in areas[0] if isinstance(item.tag, str) and item.tag.startswith(C) and item.tag.endswith('Chart')]) != 1: raise ValueError('Chart must contain one plot')
+        series = plot.findall(C+'ser')
+        if not series or len(series) > 30: raise ValueError('Chart series exceed limits')
+        baseline = None; targets = []
+        for item in series:
+            categories = item.findall(C+'cat/'+C+'strLit')
+            if len(categories) != 1: raise ValueError('Every series must contain literal string categories')
+            category = categories[0]; index = nodes.index(category) + 1; checked = selected['references'].get(index)
+            if not checked or checked['status'] != 'literal' or checked['kind'] != 'strLit': raise ValueError('Category inspection is incomplete')
+            counts = category.findall(C+'ptCount'); values = {}
+            for entry in category.findall(C+'pt'):
+                raw = entry.get('idx'); values_node = entry.findall(C+'v')
+                if not raw or not raw.isdecimal() or len(raw) > 8 or int(raw) in values or len(values_node) != 1 or len(values_node[0]) or values_node[0].attrib: raise ValueError('Category points are ambiguous')
+                values[int(raw)] = values_node[0].text or ''
+                if int(raw) == point - 1: targets.append(values_node[0])
+            current = (counts[0].get('val') if len(counts) == 1 else None, values)
+            if baseline is not None and current != baseline: raise ValueError('Series categories do not match')
+            baseline = current
+        if len(targets) != len(series): raise ValueError('Category point is missing')
+        selected['old_text'] = targets[0].text or ''
+        for node in targets: node.text = text
+        selected['series_updated'] = len(series)
+    ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+    return {'output': str(output), 'chart_part': part, 'reference': reference, 'point': point, 'old_text': selected['old_text'], 'text': text, 'series_updated': selected['series_updated']}
+
+
 def set_literal_value(source, output, part, reference, point, value, expected_sha256=None):
     """Edit one existing numeric literal chart value without rewriting worksheets."""
     if Path(source).suffix.lower() != '.xlsx' or Path(output).suffix.lower() != '.xlsx': raise ValueError('Chart literal editing requires XLSX input and output')

@@ -455,3 +455,5 @@ Added simple slide-chart text color authoring and targeted revision edits after 
 Distinguished fixed workbook chart data from worksheet-linked caches, with bounded literal validation and review warnings.
 
 Added bounded literal chart point samples and targeted numeric literal edits for workbook charts.
+
+Added synchronized workbook literal-category editing across matching chart series with validation and snapshot protection.
