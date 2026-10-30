@@ -1194,8 +1194,10 @@ handler to the waiting promise if the triggering action may fail.
 result is the next Chrome download started after registration; the extension's
 download event currently has no reliable tab association, so another tab's
 concurrent download may satisfy the wait. Verify the download identity before
-using its path. Electron matches the originating tab and requires the host to
-configure a directory and grant `files.download` with `page.control`.
+using its path. Chrome permits path lookup only in the session that received
+the download handle; handles are held in extension memory. Electron matches
+the originating tab and requires the host to configure a directory and grant
+`files.download` with `page.control`.
 
 ## Notifications
 

@@ -29,14 +29,14 @@ test('download wait observes the next start while paths retain completed results
   backend.requireSessionTab=async()=>({});backend.requireSession=async()=>({});
   backend.emitDownloadChange({id:'old',status:'complete',filename:'/tmp/old'});
   let settled=false;
-  const pending=backend.waitForDownload({tabId:1,timeoutMs:1000}).then(value=>{settled=true;return value;});
+  const pending=backend.waitForDownload({session_id:'owner',tabId:1,timeoutMs:1000}).then(value=>{settled=true;return value;});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
   backend.emitDownloadChange({id:'old',status:'in_progress',filename:'/tmp/old'});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
   backend.emitDownloadChange({id:'new',status:'started',filename:'/tmp/new',url:'https://example.test/file'});
   const download=await pending;assert.equal(download.downloadId,'new');assert.equal(download.url,'https://example.test/file');
   backend.emitDownloadChange({id:'new',status:'complete',filename:'/tmp/new'});
-  assert.equal((await backend.downloadPath({downloadId:'new'})).path,'/tmp/new');
+  assert.equal((await backend.downloadPath({session_id:'owner',downloadId:'new'})).path,'/tmp/new');
   await assert.rejects(backend.waitForDownload({tabId:1,timeoutMs:10}),/Timed out/);
   assert.equal(backend.downloadWaiters.size,0);
 });
@@ -189,7 +189,7 @@ test('cancelled waits release download slots and file chooser interception',asyn
 
 test('cancelled download path releases its completion listener',async()=>{
   const backend=new Backend();await backend.store.ready;backend.requireSession=async()=>({});
-  const controller=new AbortController();const pending=backend.downloadPath({downloadId:'pending',timeoutMs:5000},controller.signal);
+  backend.downloadOwnersById.set('pending','owner');const controller=new AbortController();const pending=backend.downloadPath({session_id:'owner',downloadId:'pending',timeoutMs:5000},controller.signal);
   await new Promise(resolve=>setImmediate(resolve));assert.equal(backend.downloadWaiters.size,1);controller.abort();
   await assert.rejects(pending,/canceled/);assert.equal(backend.downloadWaiters.size,0);
 });
@@ -200,4 +200,14 @@ test('debugger attachment records the owning session and clears it on detach',as
   chrome.debugger.attach=async()=>{};chrome.debugger.detach=async()=>{};
   try{await backend.attach({session_id:'owner',tabId:7});assert.equal(backend.debuggerSessionByTabId.get(7),'owner');await backend.detach({session_id:'owner',tabId:7});assert.equal(backend.debuggerSessionByTabId.has(7),false);}
   finally{chrome.debugger.attach=previousAttach;chrome.debugger.detach=previousDetach;}
+});
+
+test('download paths are restricted to the waiting session',async()=>{
+  const backend=new Backend();await backend.store.ready;backend.requireSessionTab=async()=>({});backend.requireSession=async params=>({sessionId:params.session_id});
+  const pending=backend.waitForDownload({session_id:'owner',tabId:1,timeoutMs:1000});await new Promise(resolve=>setImmediate(resolve));
+  backend.emitDownloadChange({id:'owned',status:'started',url:'https://example.test/file'});await pending;
+  await assert.rejects(backend.downloadPath({session_id:'other',downloadId:'owned'}),/unavailable/);
+  await assert.rejects(backend.downloadPath({session_id:'other',downloadId:'unknown'}),/unavailable/);
+  backend.emitDownloadChange({id:'owned',status:'complete',filename:'/private/file'});
+  assert.equal((await backend.downloadPath({session_id:'owner',downloadId:'owned'})).path,'/private/file');
 });
