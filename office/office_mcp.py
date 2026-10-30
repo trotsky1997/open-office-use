@@ -17,7 +17,7 @@ import review_bundle
 import session
 import selection_text
 import selection_candidates
-from open_office_use import inspect, preview, render
+from open_office_use import doctor, inspect, preview, render
 
 server = FastMCP(
     'open-office-use',
@@ -25,6 +25,12 @@ server = FastMCP(
                  'Save and close external OfficeCLI sessions before using a source. '
                  'Render and inspect page images before delivering an artifact.',
 )
+
+
+@server.tool()
+def office_doctor() -> dict[str, Any]:
+    """Probe local authoring and preview dependencies; results do not verify fidelity."""
+    return doctor()
 
 
 @server.tool()

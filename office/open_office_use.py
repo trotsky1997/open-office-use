@@ -1,5 +1,7 @@
 """Small local file-oriented office harness."""
 import argparse
+import importlib
+import importlib.metadata
 import json
 import os
 import shutil
@@ -24,6 +26,42 @@ import review_bundle
 import session
 import selection_text
 import selection_candidates
+
+
+def doctor():
+    """Probe local dependencies without modifying documents or configuration."""
+    tools = {}
+    for name, candidates, flag in (
+        ('officecli', ('officecli',), '--version'),
+        ('libreoffice', ('soffice', 'libreoffice'), '--version'),
+        ('pdftoppm', ('pdftoppm',), '-v'),
+        ('pdfinfo', ('pdfinfo',), '-v'),
+        ('pdftotext', ('pdftotext',), '-v'),
+    ):
+        executable = next((path for candidate in candidates if (path := shutil.which(candidate))), None)
+        if not executable:
+            tools[name] = {'status': 'missing', 'path': None, 'version': None}
+            continue
+        try:
+            result = subprocess.run([executable, flag], capture_output=True, text=True, timeout=5, check=False)
+            output = (result.stdout or result.stderr).strip()
+            tools[name] = {'status': 'available' if result.returncode == 0 else 'error', 'path': executable,
+                           'version': output.splitlines()[0][:200] if output else None}
+        except (OSError, subprocess.SubprocessError) as exc:
+            tools[name] = {'status': 'error', 'path': executable, 'version': None, 'error': str(exc)[:200]}
+    try:
+        importlib.import_module('mcp.server.fastmcp')
+        try: version = importlib.metadata.version('mcp')
+        except importlib.metadata.PackageNotFoundError: version = None
+        tools['mcp'] = {'status': 'available', 'version': version}
+    except ImportError as exc:
+        tools['mcp'] = {'status': 'missing' if exc.name == 'mcp' else 'error', 'version': None, 'error': str(exc)[:200]}
+    available = lambda *names: all(tools[name]['status'] == 'available' for name in names)
+    return {'dependencies': tools, 'capabilities': {
+        'structured_authoring': available('officecli'), 'pdf_rendering': available('libreoffice'),
+        'page_images': available('libreoffice', 'pdftoppm', 'pdfinfo'),
+        'selected_text': available('libreoffice', 'pdftotext'), 'mcp_server': available('mcp')},
+        'notes': ['Version probes check startup only; test actual document rendering and fidelity separately.']}
 
 
 def kind(path):
@@ -144,6 +182,7 @@ def preview(source, output_dir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
+    commands.add_parser('doctor', help='Probe local authoring and preview dependencies')
     read = commands.add_parser('inspect'); read.add_argument('file')
     comments = commands.add_parser('comments'); comments.add_argument('file')
     stories = commands.add_parser('stories'); stories.add_argument('file')
@@ -276,6 +315,8 @@ def main():
                 result = session.apply(args.directory, args.base, operations)
             else:
                 result = session.export(args.directory, args.revision, args.out)
+        elif args.command == 'doctor':
+            result = doctor()
         elif args.command == 'inspect':
             result = inspect(args.file)
         elif args.command == 'comments':
