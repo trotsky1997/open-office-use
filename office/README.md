@@ -10,6 +10,14 @@ Python 3.10+. PDF rendering requires LibreOffice on PATH; page PNG previews addi
 python3 -m pip install ./office
 ```
 
+The Codex skill is discoverable from the repository root and can be installed separately:
+
+```sh
+npx skills add trotsky1997/open-office-use -g -a codex --skill open-office-use -y
+```
+
+The skill supplies agent guidance; install the CLI and, for MCP, the optional dependency as described below. OfficeCLI, LibreOffice and Poppler are separate system tools.
+
 ## Use
 
 ```sh

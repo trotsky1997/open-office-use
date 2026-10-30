@@ -93,6 +93,10 @@ code imports it as `open_browser_use`; Go code imports the SDK package as
 
 #### Skill
 
+For Office files, see the [Open Office Use guide](./office/README.md) and its
+[agent skill](./skills/open-office-use). Install the Office CLI and MCP extra
+separately as described in the guide.
+
 Install the skill directly:
 
 ```bash
