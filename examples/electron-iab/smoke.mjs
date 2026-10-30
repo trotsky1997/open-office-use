@@ -57,6 +57,11 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#bulk-text-test button').title='Updated title'");
   assert.equal(await changingTitle.count(),0);
   assert.equal(await sdkTab.playwright.getByTitle('Updated title',{exact:true}).count(),1);
+  await evaluate(a.id,`document.querySelector('#bulk-text-test').insertAdjacentHTML('beforeend','<svg id="svg-title" viewBox="0 0 10 10"><title>Helpful Icon</title><rect width="10" height="10"><title>Inner Shape</title></rect></svg>')`);
+  await evaluate(a.id,"document.querySelector('#svg-title').insertAdjacentHTML('beforeend','<path></path>'.repeat(1100))");
+  assert.equal(await sdkTab.playwright.getByTitle('Helpful Icon',{exact:true}).count(),1);
+  assert.equal(await sdkTab.playwright.locator('#bulk-text-test').getByTitle(/inner shape/i).count(),1);
+  assert.equal(await sdkTab.playwright.getByTitle('Helpful Icon',{exact:true}).getAttribute('id'),'svg-title');
   const cssFirst=cssBulk.first(),roleFirst=roleBulk.first();
   for (const locator of [cssFirst,roleFirst]) { await locator.waitFor({state:'visible',timeoutMs:1000});assert.equal(await locator.isHidden(),false);assert.equal(await locator.isDisabled(),false); }
   await evaluate(a.id,"document.querySelector('#bulk-text-test button').disabled=true");

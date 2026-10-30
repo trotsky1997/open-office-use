@@ -1070,7 +1070,7 @@ export class OpenBrowserUseTab {
       const textOf=element=>{let text='',stack=[element];while(stack.length){const node=stack.pop();if(node.nodeType===Node.TEXT_NODE){text+=node.nodeValue || '';if(text.length>30000)throw new Error('Filter text exceeds the 30000 character limit');continue;}if(node.nodeType===Node.ELEMENT_NODE && ['SCRIPT','STYLE','NOSCRIPT'].includes(node.tagName))continue;if(node.shadowRoot)stack.push(node.shadowRoot);const children=node.childNodes;for(let j=children.length-1;j>=0;j--)stack.push(children[j]);}return normalize(text);};
       const apply=(items,filters,initial)=>{if(!filters?.length)return items;const intersections=new Map();return items.filter(element=>filters.every(filter=>{
         if(filter.visible!==undefined){const r=element.getBoundingClientRect(),visible=frameVisible && getComputedStyle(element).visibility==='visible' && r.width>0 && r.height>0;if(visible!==filter.visible)return false;}
-        if(filter.title){const raw=element.getAttribute('title');if(raw===null)return false;if(raw.length>30000)throw new Error('Title exceeds the 30000 character limit');const text=normalize(raw),pattern=filter.title.matcher;if(typeof pattern==='string'){const value=normalize(pattern);if(filter.title.exact ? text!==value : !text.toLowerCase().includes(value.toLowerCase()))return false;}else if(!new RegExp(pattern.source,pattern.flags).test(text))return false;}
+        if(filter.title){const values=[];const attr=element.getAttribute('title');if(attr!==null)values.push(attr);if(element.namespaceURI==='http://www.w3.org/2000/svg')for(const child of element.children)if(child.localName==='title' && child.namespaceURI===element.namespaceURI)values.push(child.textContent || '');const pattern=filter.title.matcher,match=raw=>{if(raw.length>30000)throw new Error('Title exceeds the 30000 character limit');const text=normalize(raw);if(typeof pattern!=='string')return new RegExp(pattern.source,pattern.flags).test(text);const value=normalize(pattern);return filter.title.exact ? text===value : text.toLowerCase().includes(value.toLowerCase());};if(!values.some(match))return false;}
         if(filter.hasText!==undefined || filter.hasNotText!==undefined){const text=textOf(element),match=pattern=>typeof pattern==='string' ? text.toLowerCase().includes(normalize(pattern).toLowerCase()) : new RegExp(pattern.source,pattern.flags).test(text);if(filter.hasText!==undefined && !match(filter.hasText))return false;if(filter.hasNotText!==undefined && match(filter.hasNotText))return false;}
         if(filter.has && !resolve([element],filter.has,false).length)return false;
         if(filter.hasNot && resolve([element],filter.hasNot,false).length)return false;
@@ -2758,7 +2758,7 @@ export class OpenBrowserUseTabPlaywright {
 
   locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab,selector),options); }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
-  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title]").matchTitle(title,options); }
+  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title], :is(svg, svg *):has(> title)").matchTitle(title,options); }
 
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator {
     if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
@@ -2798,7 +2798,7 @@ export class OpenBrowserUseFrameLocator {
   }
   locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab,selector,this.path),options); }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
-  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title]").matchTitle(title,options); }
+  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title], :is(svg, svg *):has(> title)").matchTitle(title,options); }
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByRole(role,options).withinFrame(this.path); }
   getByLabel(name: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByLabel(name,options).withinFrame(this.path); }
   getByText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByText(text,options).withinFrame(this.path); }
@@ -2841,7 +2841,7 @@ export class OpenBrowserUseCssLocator {
     return this.tab.queryCss(this.step(),this.framePath,this.scopes,undefined,{observation,index});
   }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
-  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title]").matchTitle(title,options); }
+  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title], :is(svg, svg *):has(> title)").matchTitle(title,options); }
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByRole(role,options).withinCss(this); }
   getByLabel(name: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByLabel(name,options).withinCss(this); }
   getByText(text: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseRoleLocator { return this.tab.playwright.getByText(text,options).withinCss(this); }
@@ -3021,7 +3021,7 @@ export class OpenBrowserUseRoleLocator {
 
   locator(selector: string, options?: LocatorLocatorOptions): OpenBrowserUseCssLocator { return applyLocatorOptions(new OpenBrowserUseCssLocator(this.tab,selector,this.framePath,undefined,[],[],[],undefined,this),options); }
   getByTestId(testId: string): OpenBrowserUseCssLocator { return this.locator(testIdSelector(testId)); }
-  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title]").matchTitle(title,options); }
+  getByTitle(title: TextMatcher, options: {exact?: boolean} = {}): OpenBrowserUseCssLocator { return this.locator("[title], :is(svg, svg *):has(> title)").matchTitle(title,options); }
 
   private child(locator: OpenBrowserUseRoleLocator): OpenBrowserUseRoleLocator {
     return new OpenBrowserUseRoleLocator(this.tab,locator.roles,locator.options,locator.position,locator.textMatch,locator.field,this,locator.filtersBefore,locator.filtersAfter,this.framePath);

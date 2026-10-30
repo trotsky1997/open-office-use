@@ -234,7 +234,8 @@ Heading locators can filter by positive integer `level`; observations expose
 the browser-reported level when available.
 `textContent()` reads the raw DOM text, including hidden descendants, with the
 same match and length checks.
-`getByTitle()` finds elements with a matching `title` attribute from the page,
+`getByTitle()` finds elements with a matching `title` attribute or direct SVG
+`<title>` child from the page,
 frame, CSS or semantic scope. String matching normalizes whitespace and ignores
 case for substring matching; `{exact: true}` uses case-sensitive equality.
 Regular expressions match normalized titles and retain their flags.

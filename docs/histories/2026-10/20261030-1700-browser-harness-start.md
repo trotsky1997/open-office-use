@@ -433,3 +433,5 @@ CSS 与语义定位器的单目标文本、属性、状态、输入值及边界�
 隔离 Linux ARM64 Chromium 150.0.7871.181 通过原生扩展与宿主实测：页面和跨站跨进程 frame 的 getByTitle、精确/正则匹配、属性变化后的重新查询，以及 CSS/语义 allInnerTexts 和隐藏子节点文本对照。使用独立 profile；Windows 本轮未测。
 
 隔离 Linux ARM64 Chromium 150 原生扩展实测跨站跨进程 iframe 导航：旧观察点击被拒绝，新页面没有收到迟到点击；重新定位后可信点击成功。其他平台和 frame 动态替换等场景尚未覆盖。
+
+getByTitle 支持匹配 SVG 元素的直接 title 子元素，返回该 SVG 元素；普通 title 属性与正则继续支持。SDK 92 项测试、macOS Electron 44.7 完整 smoke 和 Linux ARM64 Chromium 150 原生扩展实测通过，Electron 覆盖含 1100 个无标题图形元素的页面。Windows 未测。
