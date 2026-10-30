@@ -30,7 +30,8 @@ persistent `js` tool. Connect to the selected socket with
 `const browser = await connectBrowser({socketPath, sessionId})`, list existing
 tabs via `browser.getUserTabs()`, and claim the matching tab with
 `await browser.claimTab(id)`. `tab.playwright.domSnapshot()` returns bounded
-roles, names, states and readable frame content; heed truncation and unavailable
+roles, names, states and readable frame content, indented by accessibility
+parent-child relationships; heed truncation and unavailable
 frame markers. It replaces any previous observation. Call `await tab.observe()` after page changes;
 use its snapshot id and index with `tab.click` or `tab.typeText`. Use `tab.fill`
 to replace a text field's contents. For semantic selection, use

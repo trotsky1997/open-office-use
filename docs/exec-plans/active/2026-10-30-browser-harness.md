@@ -46,6 +46,7 @@
 - [ ] 跨进程 iframe 的其他平台与动态 frame 场景验收。
 - [x] 同一文档支持有序文本差异；导航和截断后回到完整基线。
 - [x] domSnapshot 使用有界的可访问性状态与 frame 内容，标出截断或不可读取的 frame；输出不直接暴露可操作索引。
+- [x] 可访问性观察和 domSnapshot 按父子关系排列并缩进；Linux 隔离 Chromium 与 Electron 44 验证容器和后代关系。
 - [x] 语义定位器支持批量读取匹配节点的原始文本，保留作用域与 frame 校验；Linux 隔离 Chromium 原生消息和 Electron 44 socket 验证，Electron 覆盖跨进程 frame。
 - [x] 按 CSS viewport 坐标点击和滚动；本机隔离 Chrome 验证真实鼠标和滚轮行为。
 - [x] 语义定位器与 CSS viewport 坐标悬停；macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证可信 mouseenter，Electron 验证坐标悬停。

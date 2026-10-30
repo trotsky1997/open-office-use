@@ -77,6 +77,23 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test("observation renders accessible parents before descendants", async () => {
+  const client = new OpenBrowserUseClient({socketPath:"unused"});
+  client.request = async (method,params) => {
+    if (method === "attach") return {};
+    if (params.method === "DOM.getDocument") return {root:{backendNodeId:1}};
+    if (params.method === "Accessibility.getFullAXTree") return {nodes:[
+      {nodeId:"child",parentId:"group",backendDOMNodeId:3,role:{value:"button"},name:{value:"Save"}},
+      {nodeId:"group",backendDOMNodeId:2,role:{value:"group"},name:{value:"Account"}},
+      {nodeId:"heading",backendDOMNodeId:4,role:{value:"heading"},name:{value:"Other"}}
+    ]};
+    return {};
+  };
+  const tab = new OpenBrowserUseBrowser({client}).tab(1);
+  const state = await tab.observe({includeText:true});
+  assert.equal(state.text,'[2] group "Account"\n  [1] button "Save"\n[3] heading "Other"');
+});
+
 test('double click stops after the first click if the target moves',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let move=false;
   client.request=async(method,params)=>{

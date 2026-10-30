@@ -76,6 +76,7 @@ try {
  await waitFixture.waitFor({state:'hidden',timeoutMs:5000});await tab.evaluate(`document.querySelector('#wait-fixture').remove()`);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
  await tab.evaluate(`(()=>{const g=document.createElement('div');g.setAttribute('role','group');g.setAttribute('aria-label','Batch fixture');g.innerHTML='<button>Batch one<span hidden> hidden</span></button><button>Batch two</button>';document.body.append(g)})()`);
+ assert.match(await tab.playwright.domSnapshot(),/group "Batch fixture"\n\s+button "Batch one"/);
  assert.deepEqual(await tab.playwright.getByRole('group',{name:'Batch fixture',exact:true}).getByRole('button').allTextContents(),['Batch one hidden','Batch two']);
  await tab.evaluate(`document.querySelector('[aria-label="Batch fixture"]').remove()`);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isEnabled(),true);

@@ -33,6 +33,7 @@ app.whenReady().then(async()=>{
     assert.ok((await sdk.dev.logs({levels:['error'],filter:'404'})).some(entry=>entry.url?.endsWith('/missing-log')));
     assert.equal(await sdk.playwright.getByRole('heading',{name:/welcome/i,level:1}).count(),1);
     await sdk.evaluate(`(()=>{const g=document.createElement('div');g.setAttribute('role','group');g.setAttribute('aria-label','Batch fixture');g.innerHTML='<button>Batch one<span hidden> hidden</span></button><button>Batch two</button>';document.body.append(g)})()`);
+    const groupSnapshot=await sdk.playwright.domSnapshot();assert.match(groupSnapshot,/group "Batch fixture"\n\s+button "Batch one"/);
     assert.deepEqual(await sdk.playwright.getByRole('group',{name:'Batch fixture',exact:true}).getByRole('button').allTextContents(),['Batch one hidden','Batch two']);
     await sdk.evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.id='double-fixture';b.textContent='Socket double';b.setAttribute('data-fixture','yes');b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'double',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
     const double=sdk.playwright.getByRole('button',{name:/^socket double$/i});

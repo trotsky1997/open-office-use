@@ -601,7 +601,7 @@ export class OpenBrowserUseTab {
 
   async domSnapshot(): Promise<string> {
     const state = await this.observe({includeFrames:true,includeText:true});
-    const text = state.text.replace(/^\[\d+\] /gm, "");
+    const text = state.text.replace(/^([ \t]*)\[\d+\] /gm, "$1");
     return [text, ...(state.truncated ? ["[Snapshot truncated]"] : []), ...(state.unavailableFrames?.length ? [`[${state.unavailableFrames.length} frame(s) unavailable]`] : [])].filter(Boolean).join("\n");
   }
 
@@ -2194,13 +2194,33 @@ function axProperties(node: { [key: string]: JsonValue }): string[] {
 function renderAXState(tree: JsonValue, targets: Array<InteractiveNode & { backendNodeId: number }>): { text: string; truncated: boolean } {
   if (!isObject(tree) || !Array.isArray(tree.nodes)) throw new Error("Invalid accessibility tree");
   const indexed = new Map(targets.map(node => [node.backendNodeId, node]));
+  const nodes = tree.nodes.filter(isObject);
+  const byId = new Map(nodes.flatMap((node,index) => typeof node.nodeId === "string" ? [[node.nodeId,index] as const] : []));
+  const children = new Map<number,number[]>();
+  const roots: number[] = [];
+  for (let i=0; i<nodes.length; i++) {
+    const parent = typeof nodes[i].parentId === "string" ? byId.get(nodes[i].parentId as string) : undefined;
+    if (parent === undefined || parent === i) roots.push(i);
+    else { const list = children.get(parent) ?? []; list.push(i); children.set(parent,list); }
+  }
   const lines: string[] = [];
+  const visited = new Set<number>();
   let length = 0;
-  for (const node of tree.nodes) {
-    if (!isObject(node) || node.ignored === true || !isObject(node.role)) continue;
+  const pending: Array<{index:number; depth:number}> = roots.reverse().map(index=>({index,depth:0}));
+  let next = 0;
+  while (pending.length || next < nodes.length) {
+    if (!pending.length) { while (next < nodes.length && visited.has(next)) next++; if (next < nodes.length) pending.push({index:next,depth:0}); }
+    const current = pending.pop();
+    if (!current || visited.has(current.index)) continue;
+    visited.add(current.index);
+    const node = nodes[current.index];
+    const target = typeof node.backendDOMNodeId === "number" ? indexed.get(node.backendDOMNodeId) : undefined;
+    const show = node.ignored !== true && isObject(node.role) && typeof node.role.value === "string" && ((isObject(node.name) && typeof node.name.value === "string" && !!node.name.value) || target !== undefined);
+    const descendants = children.get(current.index) ?? [];
+    for (let i=descendants.length-1; i>=0; i--) pending.push({index:descendants[i],depth:current.depth+(show ? 1 : 0)});
+    if (!show || !isObject(node.role)) continue;
     const role = node.role.value;
     const name = isObject(node.name) && typeof node.name.value === "string" ? node.name.value : "";
-    const target = typeof node.backendDOMNodeId === "number" ? indexed.get(node.backendDOMNodeId) : undefined;
     const index = target?.index;
     if (typeof role !== "string" || (!name && index === undefined)) continue;
     const properties = axProperties(node);
@@ -2210,7 +2230,7 @@ function renderAXState(tree: JsonValue, targets: Array<InteractiveNode & { backe
     else if (target?.valueUnavailable) properties.push("value=[unavailable]");
     else if (target?.value !== undefined) properties.push(`value=${JSON.stringify(target.value)}${target.valueTruncated ? "…" : ""}`);
     else if (target?.valueTruncated) properties.push("value=[truncated]");
-    const line = `${index === undefined ? "" : `[${index}] `}${role}${name ? ` ${JSON.stringify(name)}` : ""}${properties.length ? ` ${properties.join(" ")}` : ""}`;
+    const line = `${"  ".repeat(Math.min(current.depth,80))}${index === undefined ? "" : `[${index}] `}${role}${name ? ` ${JSON.stringify(name)}` : ""}${properties.length ? ` ${properties.join(" ")}` : ""}`;
     if (length + line.length + 1 > 30_000) {
       const available = 30_000 - length - 1;
       if (available > 1) lines.push(`${line.slice(0, available - 1)}…`);

@@ -205,3 +205,5 @@ Electron 44 新增系统剪贴板访问，客户端需持有 page.control 及独
 语义定位器新增 allTextContents()，按一次观察中的匹配顺序逐项读取原始文本，沿用作用域、frame 和变化校验；空匹配返回空数组，并限制单项及总长度。SDK 59 项通过；Linux ARM64 隔离 Chromium 原生消息和 Electron 44/Xvfb socket 验证容器中多个元素及隐藏后代文本，Electron 还验证同一结果中的跨进程 frame。读取期间页面可能变化，结果没有原子快照保证。
 
 domSnapshot 从页面正文文本改为有界可访问性快照，包含角色、名称、状态和可读取 frame；截断或读取失败明确标注，并刷新已有观察。SDK 60 项通过；Linux ARM64 隔离 Chromium 原生消息及 Electron 44/Xvfb socket 验证跨进程 frame 控件，Chromium 验证密码样本未出现在输出。快照不主动读取字段值，页面提供的可访问名称和文本可能包含敏感内容。
+
+可访问性观察改为按 AX parentId 深度优先排列并缩进，忽略节点的可见后代仍保留，缩进上限为 80 层；domSnapshot 去除操作索引时保留层级。SDK 61 项通过；Linux ARM64 隔离 Chromium 原生消息和 Electron 44/Xvfb socket 实测容器与按钮层级、跨 frame 和原有交互。frame 文档仍分节显示。
