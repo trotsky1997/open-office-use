@@ -40,6 +40,29 @@ with tempfile.TemporaryDirectory() as tmp:
     assert [item.tag.rsplit('}', 1)[-1] for item in body] == ['p','p','p','p','tbl','p','p','sectPr']
     assert body[5].find('.//' + qn('w:br')).get(qn('w:type')) == 'page'
     pdf = open_office_use.render(output, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    paged=root/'paged.docx'
+    page_spec={'page_setup':{'size':'a4','orientation':'landscape','margins':{'top':0.7,'bottom':0.7,'left':0.8,'right':0.8},'header':{'text':'Quarterly report','align':'left'},'footer':{'text':'Page','align':'right','page_number':True}},'blocks':[{'type':'paragraph','text':'First page'},{'type':'page_break'},{'type':'paragraph','text':'Second page'}]}
+    page_path=root/'page-spec.json';page_path.write_text(json.dumps(page_spec),encoding='utf-8')
+    page_call=subprocess.run([sys.executable,str(cli),'author','--spec',str(page_path),'--out',str(paged)],capture_output=True,text=True,check=True)
+    assert json.loads(page_call.stdout)['output']==str(paged.resolve())
+    paged_doc=Document(paged); section=paged_doc.sections[0]
+    assert section.page_width > section.page_height and abs(section.page_width.inches-11.69)<0.02 and abs(section.left_margin.inches-0.8)<0.01
+    assert section.header.paragraphs[0].text=='Quarterly report' and section.footer.paragraphs[0].text=='Page '
+    assert section.footer.paragraphs[0]._p.find(qn('w:fldSimple')).get(qn('w:instr')).strip()=='PAGE'
+    code, validation, _=officecli_backend.invoke('validate',paged); assert code==0 and validation['success'],validation
+    paged_pdf=open_office_use.render(paged,root/'paged-render')
+    text=subprocess.run(['pdftotext','-layout',paged_pdf,'-'],capture_output=True,text=True,check=True).stdout
+    pages=[page for page in text.split('\f') if page.strip()]
+    assert len(pages)==2 and 'Quarterly report' in pages[0] and 'Quarterly report' in pages[1] and 'Page 1' in pages[0] and 'Page 2' in pages[1],pages
+    for index, setup in enumerate([{'size':'bad'}, {'margins':{'left':True}}, {'margins':{'left':5,'right':5}}, {'footer':{'page_number':'yes'}}, {'header':{'page_number':True}}]):
+        target=root/f'bad-page-{index}.docx'
+        try: open_office_use.author({'page_setup':setup},target)
+        except ValueError: pass
+        else: raise AssertionError(f'Invalid page setup accepted: {setup}')
+        assert not target.exists()
+    try: open_office_use.author({'page_setup':{}},root/'bad-source.docx',output)
+    except ValueError: pass
+    else: raise AssertionError('Page setup accepted on existing document')
     picture = root/'image.png'; Image.new('RGB',(80,40),'#348087').save(picture,dpi=(72,144))
     linked = root/'linked.docx'; link_spec = {'blocks':[{'type':'paragraph','runs':[{'text':'See '},{'text':'source','url':'https://example.com/report','bold':True,'font':'Arial','font_size':14,'color':'BA5A32'}]},{'type':'image','path':str(picture),'width':4,'align':'center','description':'Teal diagram'}]}
     open_office_use.author(link_spec, linked); linked_doc = Document(linked)

@@ -271,3 +271,7 @@ Added literal blank-cell comparison and cache point removal to spreadsheet and P
 ### Word typography and paragraph layout
 
 Added font, size, RGB color, alignment, spacing and pagination properties to structured Word blocks, including hyperlink runs and East Asian font slots. Fixed generated repeating-table-header markup and checked schema plus a four-page LibreOffice render.
+
+### Word page setup and running text
+
+Added page size, orientation, margins, header and footer text and a PAGE field to new Word authoring. Validated two rendered pages and page numbers, schema, input rejection and MCP exposure. Source-based page setup and native Word rendering remain unverified.

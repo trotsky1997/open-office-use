@@ -70,6 +70,14 @@ Specifications:
 {"slides": [{"title": "Overview", "body": "Details"}], "replace_text": [{"slide": 0, "shape": 0, "text": "New title"}]}
 ```
 
+For new Word documents, optional `page_setup` configures page size, margins and running text:
+
+```json
+{"page_setup":{"size":"a4","orientation":"portrait","margins":{"top":0.8,"bottom":0.8,"left":0.9,"right":0.9},"header":{"text":"Quarterly report","align":"left"},"footer":{"text":"Page","align":"right","page_number":true}},"blocks":[{"type":"heading","text":"Overview"}]}
+```
+
+Sizes are `a4` and `letter`; orientation is `portrait` or `landscape`. Omitted size and margins retain document defaults. Margins are in inches (0–5), and must leave at least half an inch of content area in each dimension. Header and footer take single-line text of at most 1,000 characters and `left`, `center` or `right` alignment. `page_number` adds a Word PAGE field after footer text; the field holds a placeholder until a compatible application updates it. The setting applies to new single-section documents; source-based authoring rejects `page_setup`. Rendering and printer margins can affect placement.
+
 For ordered Word content, `author` and MCP `author_file` accept `blocks`:
 
 ```json

@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.opc.constants import RELATIONSHIP_TYPE
 from docx.shared import Inches as DocxInches, Pt as DocxPt, RGBColor as DocxRGBColor
@@ -111,6 +112,46 @@ def inspect(path):
         return spreadsheet.inspect_workbook(path)
     prs = Presentation(path)
     return {'type': 'pptx', 'slides': [[{'shape': i, 'text': shape.text} for i, shape in enumerate(slide.shapes) if shape.has_text_frame] for slide in prs.slides]}
+
+
+def configure_word_page(doc, setup):
+    """Configure the page and running text of a newly created document."""
+    if not isinstance(setup, dict) or set(setup) - {'size', 'orientation', 'margins', 'header', 'footer'}: raise ValueError('Invalid Word page setup')
+    section = doc.sections[0]
+    size = setup.get('size')
+    if size is not None:
+        if not isinstance(size, str) or size not in ('a4', 'letter'): raise ValueError('Word page size must be a4 or letter')
+        width, height = {'a4': (8.2677165354, 11.6929133858), 'letter': (8.5, 11)}[size]
+        section.page_width, section.page_height = DocxInches(width), DocxInches(height)
+    orientation = setup.get('orientation', 'portrait')
+    if not isinstance(orientation, str) or orientation not in ('portrait', 'landscape'): raise ValueError('Invalid Word page orientation')
+    section.orientation = WD_ORIENT.PORTRAIT if orientation == 'portrait' else WD_ORIENT.LANDSCAPE
+    if (section.page_width > section.page_height) != (orientation == 'landscape'):
+        section.page_width, section.page_height = section.page_height, section.page_width
+    margins = setup.get('margins', {})
+    if not isinstance(margins, dict) or set(margins) - {'top', 'bottom', 'left', 'right'}: raise ValueError('Invalid Word page margins')
+    for name, value in margins.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 5: raise ValueError('Word page margins must be 0 to 5 inches')
+        setattr(section, name + '_margin', DocxInches(value))
+    if section.page_width - section.left_margin - section.right_margin < DocxInches(0.5) or section.page_height - section.top_margin - section.bottom_margin < DocxInches(0.5):
+        raise ValueError('Word page margins leave insufficient content area')
+    for name in ('header', 'footer'):
+        if name not in setup: continue
+        value = setup[name]
+        allowed = {'text', 'align'} | ({'page_number'} if name == 'footer' else set())
+        if not isinstance(value, dict) or set(value) - allowed: raise ValueError(f'Invalid Word {name}')
+        text = value.get('text', ''); alignment = value.get('align', 'right' if name == 'footer' else 'left')
+        if not isinstance(text, str) or len(text) > 1000 or any(ord(char) < 32 for char in text): raise ValueError(f'Invalid Word {name} text')
+        alignments = {'left': WD_ALIGN_PARAGRAPH.LEFT, 'center': WD_ALIGN_PARAGRAPH.CENTER, 'right': WD_ALIGN_PARAGRAPH.RIGHT}
+        if not isinstance(alignment, str) or alignment not in alignments: raise ValueError(f'Invalid Word {name} alignment')
+        page_number = value.get('page_number', False)
+        if not isinstance(page_number, bool): raise ValueError('page_number must be a boolean')
+        paragraph = getattr(section, name).paragraphs[0]; paragraph.alignment = alignments[alignment]
+        if text: paragraph.add_run(text)
+        if page_number:
+            if text: paragraph.add_run(' ')
+            field = OxmlElement('w:fldSimple'); field.set(qn('w:instr'), ' PAGE ')
+            run = OxmlElement('w:r'); text_node = OxmlElement('w:t'); text_node.text = '1'; run.append(text_node); field.append(run); paragraph._p.append(field)
 
 
 def append_word_blocks(doc, blocks):
@@ -576,6 +617,7 @@ def format_workbook(workbook, options):
 def author(spec, output, source=None):
     if not isinstance(spec, dict): raise ValueError('Author specification must be a JSON object')
     suffix = kind(output)
+    if 'page_setup' in spec and suffix != '.docx': raise ValueError('Word page setup requires DOCX output')
     if 'blocks' in spec and suffix != '.docx': raise ValueError('Word blocks require DOCX output')
     if 'slide_size' in spec and suffix != '.pptx': raise ValueError('Slide size requires PPTX output')
     if 'sheet_options' in spec and suffix != '.xlsx': raise ValueError('Sheet options require XLSX output')
@@ -591,6 +633,9 @@ def author(spec, output, source=None):
             source, _ = snapshots.copy(source, tmp)
         if suffix == '.docx':
             doc = Document(source) if source else Document()
+            if 'page_setup' in spec:
+                if source: raise ValueError('Word page setup requires a new document')
+                configure_word_page(doc, spec['page_setup'])
             for index, text in spec.get('replace_paragraphs', {}).items():
                 # Setting paragraph text discards run-level formatting in that paragraph.
                 doc.paragraphs[int(index)].text = text

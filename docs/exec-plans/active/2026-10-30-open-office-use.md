@@ -192,3 +192,5 @@ New PowerPoint chart authoring normalizes axis IDs to positive values, preservin
 Chart cache checks and sync handle verified literal blank cells, including filling and clearing points during atomic PowerPoint grid edits. Formula cells with no stored result and blank cells in merged or multi-cell formula ranges stay unverified.
 
 Word block authoring supports run font, size and color plus paragraph alignment, spacing and pagination controls. Generated table header flags use schema-valid markup; OfficeCLI validation and multipage LibreOffice rendering were checked.
+
+New Word documents support page size, orientation, margins, running header/footer text and a PAGE field through CLI/MCP authoring. Two-page LibreOffice rendering and schema validation were verified; native Word and complex multi-section layouts remain open.
