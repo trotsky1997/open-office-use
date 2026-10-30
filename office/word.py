@@ -1,9 +1,8 @@
 """Conservative, targeted text replacement in a saved Word document."""
 import re
-import hashlib
 import posixpath
-import shutil
 import tempfile
+import snapshot as snapshots
 import zipfile
 from pathlib import Path
 from lxml import etree
@@ -36,11 +35,7 @@ def tracked_changes(source):
     if source.suffix.lower() != '.docx': raise ValueError('Tracked-change inspection requires a DOCX file')
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
     with tempfile.TemporaryDirectory(prefix='office-word-changes-') as tmp:
-        snapshot = Path(tmp) / 'document.docx'; shutil.copyfile(source, snapshot)
-        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
-        digest = hashlib.sha256()
-        with snapshot.open('rb') as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
+        snapshot, digest = snapshots.copy(source, tmp)
         try:
             with zipfile.ZipFile(snapshot) as archive:
                 entries = archive.infolist(); names = [entry.filename for entry in entries]
@@ -116,7 +111,7 @@ def tracked_changes(source):
                     scanned_parts.append({'part': part, **info, 'complete': complete})
                     if not complete: break
                 if len(parts) > 200: issues.add('part_limit')
-                return {'snapshot_sha256': digest.hexdigest(), 'tracking_enabled': tracking_enabled, 'records': records,
+                return {'snapshot_sha256': digest, 'tracking_enabled': tracking_enabled, 'records': records,
                         'counts': counts, 'records_scanned': scanned, 'records_truncated': scanned > len(records),
                         'parts': scanned_parts, 'total_parts': len(parts), 'issues': sorted(issues),
                         'scan_complete': complete and not issues,
@@ -149,12 +144,7 @@ def search_paragraphs(source, query, offset, snapshot_sha256, scope):
     if source.suffix.lower() != '.docx': raise ValueError('Word search requires a DOCX file')
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
     with tempfile.TemporaryDirectory(prefix='office-word-search-') as tmp:
-        snapshot = Path(tmp) / 'document.docx'; shutil.copyfile(source, snapshot)
-        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Document exceeds the 128 MiB size limit')
-        digest = hashlib.sha256()
-        with snapshot.open('rb') as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
-        digest = digest.hexdigest()
+        snapshot, digest = snapshots.copy(source, tmp)
         if snapshot_sha256 is not None and digest != snapshot_sha256: raise ValueError('Document snapshot changed; restart the search')
         try:
             with zipfile.ZipFile(snapshot) as archive:

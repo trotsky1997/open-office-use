@@ -1,8 +1,7 @@
 """Conservative text replacement in a PowerPoint slide paragraph."""
 import re
-import hashlib
-import shutil
 import tempfile
+import snapshot as snapshots
 import zipfile
 from pathlib import Path
 
@@ -38,12 +37,7 @@ def search_text(source, query, slide=None, offset=0, snapshot_sha256=None):
     if source.suffix.lower() != '.pptx': raise ValueError('Slide search requires a PPTX file')
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Presentation exceeds the 128 MiB size limit')
     with tempfile.TemporaryDirectory(prefix='office-slide-search-') as tmp:
-        snapshot = Path(tmp) / 'presentation.pptx'; shutil.copyfile(source, snapshot)
-        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Presentation exceeds the 128 MiB size limit')
-        digest = hashlib.sha256()
-        with snapshot.open('rb') as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
-        digest = digest.hexdigest()
+        snapshot, digest = snapshots.copy(source, tmp)
         if snapshot_sha256 is not None and digest != snapshot_sha256: raise ValueError('Presentation snapshot changed; restart the search')
         try:
             with zipfile.ZipFile(snapshot) as archive:

@@ -1,9 +1,8 @@
 """Create a review bundle from one immutable local Office snapshot."""
-import hashlib
 import json
 import os
-import shutil
 import tempfile
+import snapshot as snapshots
 from pathlib import Path
 
 import layout
@@ -25,14 +24,8 @@ def create(source, destination, render, revision=None):
         raise FileExistsError(f'Output already exists: {destination}')
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.office-review-') as tmp:
-        root = Path(tmp); snapshot = root / ('snapshot' + source.suffix.lower())
-        shutil.copyfile(source, snapshot)
-        if snapshot.stat().st_size > 128 * 1024 * 1024:
-            raise ValueError('Document exceeds the 128 MiB size limit')
-        digest = hashlib.sha256()
-        with snapshot.open('rb') as file:
-            for chunk in iter(lambda: file.read(1024 * 1024), b''): digest.update(chunk)
-        report = {'format': source.suffix.lower()[1:], 'source_name': source.name, 'snapshot_sha256': digest.hexdigest(),
+        root = Path(tmp); snapshot, digest = snapshots.copy(source, root)
+        report = {'format': source.suffix.lower()[1:], 'source_name': source.name, 'snapshot_sha256': digest,
                   'snapshot_size': snapshot.stat().st_size, 'revision': revision, 'checks': {},
                   'notes': ['Checks describe their covered scope and are not a substitute for visual review.',
                             'Rendering uses LibreOffice and may differ from Microsoft Office.']}

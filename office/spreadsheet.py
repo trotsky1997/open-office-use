@@ -1,13 +1,13 @@
 """Bounded worksheet inspection and explicit LibreOffice recalculation."""
 import os
 import posixpath
-import hashlib
 import re
 import json
 import math
 import shutil
 import subprocess
 import tempfile
+import snapshot as snapshots
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -296,12 +296,7 @@ def search_cells(file, query, sheet=None, offset=0, snapshot_sha256=None):
     if source.suffix.lower() != '.xlsx': raise ValueError('Cell search requires an XLSX file')
     if source.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
     with tempfile.TemporaryDirectory(prefix='office-cell-search-') as tmp:
-        snapshot = Path(tmp) / 'workbook.xlsx'; shutil.copyfile(source, snapshot)
-        if snapshot.stat().st_size > 128 * 1024 * 1024: raise ValueError('Workbook exceeds the 128 MiB size limit')
-        digest = hashlib.sha256()
-        with snapshot.open('rb') as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
-        digest = digest.hexdigest()
+        snapshot, digest = snapshots.copy(source, tmp)
         if snapshot_sha256 is not None and digest != snapshot_sha256: raise ValueError('Workbook snapshot changed; restart the search')
         try:
             with zipfile.ZipFile(snapshot) as archive:

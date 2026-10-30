@@ -127,3 +127,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Include the snapshot module in the installed distribution and verify an isolated installation through document creation, inspection, and an MCP handshake.
 
 - Detect file replacement and ordinary concurrent writes during shared render and selection snapshot copying, remove incomplete copies, and verify both failure paths.
+
+- Apply checked snapshots to Word, slide and cell search, tracked-change inventory and review bundles; verify concurrent-write rejection at each entry point.
