@@ -506,3 +506,5 @@ CSS 和语义定位器的勾选、取消勾选正数期限覆盖准备和点击�
 CSS 和语义定位器的 press 正数期限覆盖准备、聚焦和按键；聚焦或按键派发后超时报结果未知，后续按键停止，已按下按键仍尝试释放。SDK 103 项检查通过；macOS Electron 实页验证聚焦响应延迟后不发送迟到按键，恢复后可正常输入。Linux 和 Windows 本轮未验证。
 
 CSS 与语义 locator 的 fill、clear 和 type 正数期限覆盖准备、聚焦、全选、文本写入与日期字段派发；超时停止后续输入并尝试释放已按下的键。SDK 104 项检查通过；macOS Electron 实页验证全选响应延迟后无迟到写入及恢复。Linux 和 Windows 本轮未验证。
+
+CSS 与语义 locator 的 selectOption 正数期限覆盖选项检查和提交；超时停止迟到提交，已开始提交时报结果未知，并保留正常返回值。SDK 105 项检查通过，macOS Electron 实页验证取消后不改变选项及恢复后正常选择。Linux 和 Windows 本轮未验证。

@@ -292,6 +292,17 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#fill-deadline').remove()");
   check('SDK fill deadline: no late text after delayed select all');
 
+  await evaluate(a.id,`(()=>{const el=document.createElement('select');el.id='select-deadline';el.setAttribute('aria-label','Select deadline');el.innerHTML='<option value="a">Alpha</option><option value="b">Beta</option>';document.body.append(el)})()`);
+  for(const locator of [sdkTab.playwright.locator('#select-deadline'),sdkTab.playwright.getByRole('combobox',{name:'Select deadline',exact:true})]) {
+    await evaluate(a.id,"document.querySelector('#select-deadline').value='a'");let unblockSelect;
+    sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='Runtime.callFunctionOn' && args[2].functionDeclaration?.includes('function(chosen,specs)'))await new Promise(resolve=>{unblockSelect=resolve});return originalCdpCall(...args);};
+    try {await assert.rejects(locator.selectOption('b',{timeoutMs:800}),/outcome is unknown/i);assert.ok(unblockSelect);unblockSelect();await new Promise(resolve=>setTimeout(resolve,200));assert.equal(await evaluate(a.id,"document.querySelector('#select-deadline').value"),'a');}
+    finally {unblockSelect?.();sdkTab.browser.cdp.call=originalCdpCall;}
+    assert.deepEqual(await locator.selectOption('b'),['b']);assert.equal(await evaluate(a.id,"document.querySelector('#select-deadline').value"),'b');
+  }
+  await evaluate(a.id,"document.querySelector('#select-deadline').remove()");
+  check('SDK select deadline: no late mutation and successful result');
+
   await evaluate(a.id,`(()=>{window.doubleDeadlineClicks=0;const el=document.createElement('button');el.id='double-deadline';el.textContent='Double deadline';el.onclick=()=>window.doubleDeadlineClicks++;document.body.append(el)})()`);
   for (const locator of [sdkTab.playwright.locator('#double-deadline'),sdkTab.playwright.getByRole('button',{name:'Double deadline',exact:true})]) {
     let unblockFirstRelease,pressed=0;

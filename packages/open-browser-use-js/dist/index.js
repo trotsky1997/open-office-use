@@ -43,9 +43,10 @@ async function actionBeforeDeadline(action, timeoutMs, deadline, name) {
     } };
     const mark = () => { check(); issued = true; return controller.signal; };
     try {
-        await Promise.race([action(mark, controller.signal, check), new Promise((_, reject) => { timer = setTimeout(() => { expired = true; controller.abort(); reject(timeout()); }, Math.max(0, deadline - performance.now())); })]);
+        const result = await Promise.race([action(mark, controller.signal, check), new Promise((_, reject) => { timer = setTimeout(() => { expired = true; controller.abort(); reject(timeout()); }, Math.max(0, deadline - performance.now())); })]);
         if (performance.now() >= deadline)
             throw timeout();
+        return result;
     }
     finally {
         if (timer)
@@ -1770,6 +1771,7 @@ export class OpenBrowserUseTab {
                     throw new RetryablePreflightError("Selector target changed; observe again");
                 this.#observation = undefined;
                 inputIssued = true;
+                const mutationSignal = markClick();
                 const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, arguments: [{ value: found.chosen }, { value: selection }], functionDeclaration: `function(chosen,specs) {
           if (!(this instanceof HTMLSelectElement) || !this.isConnected || this.matches(':disabled') || this.getAttribute('aria-disabled')==='true' || (!this.multiple && chosen.length>1)) return null;
           for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return null;
@@ -1780,7 +1782,7 @@ export class OpenBrowserUseTab {
           else {const indices=new Set(chosen.map(item=>item.index));for(let i=0;i<options.length;i++)options[i].selected=indices.has(i);}
           this.dispatchEvent(new Event('input',{bubbles:true,composed:true}));this.dispatchEvent(new Event('change',{bubbles:true}));
           return this.isConnected ? Array.from(this.selectedOptions,option=>option.value) : null;
-        }` }, { sessionId });
+        }` }, { sessionId, signal: mutationSignal });
                 const selected = isObject(applied) && isObject(applied.result) ? applied.result.value : null;
                 const expected = found.chosen.map(item => isObject(item) ? item.value : null);
                 if (!Array.isArray(selected) || selected.some(value => typeof value !== "string") || JSON.stringify([...selected].sort()) !== JSON.stringify([...expected].sort()))
@@ -2831,9 +2833,9 @@ export class OpenBrowserUseTab {
             throw new Error("Checked state must be boolean");
         await this.act(index, snapshotId, undefined, false, checked, undefined, false, undefined, false, { button: "left", buttons: 1, modifiers: 0, ...(force ? { force: true } : {}) }, false, undefined, mark, signal, check);
     }
-    async selectOption(index, snapshotId, values) {
+    async selectOption(index, snapshotId, values, mark = () => undefined, signal, check) {
         const specs = selectSpecs(values);
-        const result = await this.act(index, snapshotId, undefined, false, undefined, specs);
+        const result = await this.act(index, snapshotId, undefined, false, undefined, specs, false, undefined, false, undefined, false, undefined, mark, signal, check);
         if (!Array.isArray(result) || result.some(value => typeof value !== "string"))
             throw new Error("Invalid selected options result");
         return result;
@@ -3089,6 +3091,7 @@ export class OpenBrowserUseTab {
                     await this.validateFrames(node.frameChain);
                 await this.verifyLocatorScope(observation, node);
                 inputIssued = true;
+                const mutationSignal = markClick();
                 const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                     objectId, returnByValue: true, arguments: [{ value: found.chosen }, { value: selection }],
                     functionDeclaration: `function(chosen,specs) {
@@ -3103,7 +3106,7 @@ export class OpenBrowserUseTab {
             this.dispatchEvent(new Event('change',{bubbles:true}));
             return this.isConnected ? Array.from(this.selectedOptions, option=>option.value) : null;
           }`
-                }, { sessionId: targetSession });
+                }, { sessionId: targetSession, signal: mutationSignal });
                 const selected = isObject(applied) && isObject(applied.result) ? applied.result.value : null;
                 const expected = found.chosen.map(item => isObject(item) ? item.value : null);
                 if (!Array.isArray(selected) || JSON.stringify([...selected].sort()) !== JSON.stringify([...expected].sort()))
@@ -4121,7 +4124,7 @@ export class OpenBrowserUseCssLocator {
     }
     async selectOption(values, options = {}) {
         const specs = selectSpecs(values);
-        const result = await this.perform((snapshot, id) => this.tab.actCss(snapshot, id, false, undefined, undefined, false, undefined, specs), options.timeoutMs);
+        const result = await this.perform((snapshot, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.actCss(snapshot, id, false, undefined, undefined, false, undefined, specs, false, undefined, undefined, undefined, false, undefined, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Select"), options.timeoutMs);
         if (!Array.isArray(result))
             throw new Error("Invalid selected options result");
         return result;
@@ -4614,7 +4617,7 @@ export class OpenBrowserUseRoleLocator {
             throw new Error("Checked state must be a boolean");
         await this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.setChecked(node.index, id, checked, options.force, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Check"), options.timeoutMs);
     }
-    async selectOption(values, options = {}) { return this.perform((node, id) => this.tab.selectOption(node.index, id, values), options.timeoutMs); }
+    async selectOption(values, options = {}) { return this.perform((node, id, deadline) => actionBeforeDeadline((mark, signal, check) => this.tab.selectOption(node.index, id, values, mark, signal, check), options.timeoutMs ?? 5000, deadline, "Select"), options.timeoutMs); }
 }
 export class OpenBrowserUseCdp {
     client;

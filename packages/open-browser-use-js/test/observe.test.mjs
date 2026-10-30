@@ -1786,3 +1786,16 @@ test('fill and type deadlines stop late input',async()=>{
   let release,signal;tab.typeText=async(_index,_snapshot,_text,mark,_signal,check)=>{signal=mark();await new Promise(resolve=>{release=resolve});check();inputs++;};
   await assert.rejects(role.type('text',{timeoutMs:20}),/Type timed out; outcome is unknown/);assert.equal(signal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(inputs,0);
 });
+
+test('select deadline prevents late changes and returns successful values',async()=>{
+  const browser=new OpenBrowserUseBrowser({client:new OpenBrowserUseClient({socketPath:'unused'})}),tab=browser.tab(1);
+  const frame={id:'root',loaderId:'v1',url:'https://example.test'},snapshot={frame,frames:[frame],ids:[7],documentId:1,scopeIds:[]};
+  tab.queryCss=async()=>snapshot;let releaseWorld,changes=0;
+  browser.cdp.call=async(_id,method)=>{if(method==='Page.createIsolatedWorld')return await new Promise(resolve=>{releaseWorld=resolve});if(method==='DOM.resolveNode')return {object:{objectId:'target'}};if(method==='Runtime.callFunctionOn')changes++;return {};};
+  await assert.rejects(tab.playwright.locator('select').selectOption('b',{timeoutMs:20}),/Select preparation timed out/);
+  releaseWorld({executionContextId:1});await new Promise(resolve=>setImmediate(resolve));assert.equal(changes,0);
+  const role=tab.playwright.getByRole('combobox');role.find=async()=>({state:{snapshotId:'s'},matches:[{node:{index:1}}]});role.guard=()=>({});tab.bindLocatorScope=()=>{};
+  let release,signal;tab.selectOption=async(_index,_snapshot,_values,mark,_signal,check)=>{signal=mark();await new Promise(resolve=>{release=resolve});check();changes++;return ['b'];};
+  await assert.rejects(role.selectOption('b',{timeoutMs:20}),/Select timed out; outcome is unknown/);assert.equal(signal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(changes,0);
+  tab.selectOption=async()=>['b'];assert.deepEqual(await role.selectOption('b',{timeoutMs:100}),['b']);
+});

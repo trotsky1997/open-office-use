@@ -451,7 +451,7 @@ export declare class OpenBrowserUseTab {
     typeText(index: number, snapshotId: string, text: string, mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     fill(index: number, snapshotId: string, text: string, mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
     setChecked(index: number, snapshotId: string, checked: boolean, force?: boolean, mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<void>;
-    selectOption(index: number, snapshotId: string, values: SelectOption | SelectOption[]): Promise<string[]>;
+    selectOption(index: number, snapshotId: string, values: SelectOption | SelectOption[], mark?: () => AbortSignal | undefined, signal?: AbortSignal, check?: () => void): Promise<string[]>;
     private act;
     private documentId;
     private frameTree;
