@@ -95,11 +95,15 @@ async def main():
                 modern_source = thread_fixture(root, 'modern_both'); modern_draft = root / 'modern-mcp-draft'
                 modern_started = await session.call_tool('start_session', {'directory': str(modern_draft), 'source': str(modern_source)})
                 assert not modern_started.isError, modern_started
-                modern_opened = await session.call_tool('session_resolve_comment', {'directory': str(modern_draft), 'base_revision': 0, 'comment_id': '0', 'resolved': False})
+                modern_root = await session.call_tool('session_add_comment', {'directory': str(modern_draft), 'base_revision': 0, 'path': '/body/p[4]', 'text': 'New root', 'author': 'Editor'})
+                assert not modern_root.isError and modern_root.structuredContent['revision'] == 1, modern_root
+                modern_root_list = await session.call_tool('session_list_comments', {'directory': str(modern_draft), 'revision': 1})
+                assert not modern_root_list.isError and modern_root_list.structuredContent['comments'][-1]['resolved'] is False, modern_root_list
+                modern_opened = await session.call_tool('session_resolve_comment', {'directory': str(modern_draft), 'base_revision': 1, 'comment_id': '0', 'resolved': False})
                 assert not modern_opened.isError, modern_opened
-                modern_reply = await session.call_tool('session_reply_comment', {'directory': str(modern_draft), 'base_revision': 1, 'parent_id': '0', 'text': 'Modern reply', 'author': 'Editor'})
+                modern_reply = await session.call_tool('session_reply_comment', {'directory': str(modern_draft), 'base_revision': 2, 'parent_id': '0', 'text': 'Modern reply', 'author': 'Editor'})
                 assert not modern_reply.isError, modern_reply
-                modern_list = await session.call_tool('session_list_comments', {'directory': str(modern_draft), 'revision': 2})
+                modern_list = await session.call_tool('session_list_comments', {'directory': str(modern_draft), 'revision': 3})
                 assert not modern_list.isError and modern_list.structuredContent['comments'][-1]['reply_to_comment_id'] == '0', modern_list
                 historic_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 0})
                 assert not historic_comments.isError and historic_comments.structuredContent['total_comments'] == 0, historic_comments

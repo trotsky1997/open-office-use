@@ -94,6 +94,7 @@ def replace_text(source, output, path, find, replacement):
 def add_comment(source, output, path, text, author):
     """Attach a plain-text comment to all runs of a simple body paragraph."""
     import posixpath
+    import secrets
     import uuid
     from datetime import datetime, timezone
     from lxml import etree
@@ -159,6 +160,35 @@ def add_comment(source, output, path, text, author):
             additional['[Content_Types].xml'] = ooxml.serialize_xml(types, type_bytes)
         if comments.getroot().tag != W + 'comments':
             raise ValueError('Invalid comments XML')
+        w15 = '{http://schemas.microsoft.com/office/word/2012/wordml}'
+        mc = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+        ext_type = 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended'
+        ext_links = [item for item in relationships if item.get('Type') == ext_type]
+        if not links and (ext_links or any(item.get('Type', '').endswith(('/commentsIds', '/commentsExtensible')) for item in relationships)):
+            raise ValueError('Modern comment metadata has no comments relationship')
+        if len(ext_links) > 1: raise ValueError('Multiple extended comments relationships are unsupported')
+        ext_part = None; ext = None; ext_bytes = None
+        if ext_links:
+            link = ext_links[0]; target = link.get('Target')
+            if link.get('TargetMode') == 'External' or not target: raise ValueError('Invalid extended comments relationship')
+            ext_part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+            if not ext_part.startswith('word/') or ext_part not in names or ext_part in (comments_part, 'word/document.xml'):
+                raise ValueError('Invalid extended comments part')
+            ext_bytes = archive.read(ext_part); ext = ooxml.parse_xml(ext_bytes)
+            if ext.getroot().tag != w15 + 'commentsEx' or any(isinstance(node.tag, str) and node.tag != w15 + 'commentEx' for node in ext.getroot()):
+                raise ValueError('Invalid extended comment metadata')
+            records = ext.getroot().findall(w15 + 'commentEx')
+            ext_ids = [(node.get(w15 + 'paraId') or '').upper() for node in records]
+            if any(not re.fullmatch(r'[0-9A-F]{8}', value) or not 0 < int(value, 16) < 0x80000000 for value in ext_ids) or len(ext_ids) != len(set(ext_ids)):
+                raise ValueError('Extended comment identifiers are invalid or ambiguous')
+        elif 'word/commentsExtended.xml' in names:
+            raise ValueError('Unreferenced extended comments part')
+        modern = modern_comment_parts(archive, relationships, comments_part, ext_part)
+        if modern['ids_tree'] is not None and ext is None:
+            raise ValueError('Modern comments require an extended comments part')
+        existing_ids = [node.get(W + 'id') for node in comments.getroot().findall(W + 'comment')]
+        if any(value is None or not re.fullmatch(r'[0-9]{1,10}', value) for value in existing_ids) or len({int(value) for value in existing_ids}) != len(existing_ids):
+            raise ValueError('Invalid or duplicate comment identifiers')
         used = []
         for item in list(comments.getroot().findall(W + 'comment')) + list(tree.getroot().iter(W + 'commentRangeStart')) + list(tree.getroot().iter(W + 'commentRangeEnd')) + list(tree.getroot().iter(W + 'commentReference')):
             value = item.get(W + 'id')
@@ -166,12 +196,30 @@ def add_comment(source, output, path, text, author):
                 raise ValueError('Unsupported comment identifier')
             used.append(int(value))
         comment_id = str(max(used, default=-1) + 1); created_id = int(comment_id)
-        comment = etree.SubElement(comments.getroot(), W + 'comment', {W + 'id': comment_id, W + 'author': author, W + 'date': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')})
-        for line in text.split('\n'):
-            p = etree.SubElement(comment, W + 'p'); r = etree.SubElement(p, W + 'r'); t = etree.SubElement(r, W + 't')
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        comment = etree.SubElement(comments.getroot(), W + 'comment', {W + 'id': comment_id, W + 'author': author, W + 'date': timestamp})
+        para_id = None
+        if ext is not None:
+            reserved = {(node.get(W14_PARAGRAPH_ID) or '').upper() for node in comments.getroot().iter(W + 'p')}
+            reserved.update((node.get(attribute) or '').upper() for node in ext.getroot().findall(w15 + 'commentEx') for attribute in (w15 + 'paraId', w15 + 'paraIdParent'))
+            reserved.update(modern['para_ids'])
+            para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
+            while para_id in reserved: para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
+        lines = text.split('\n')
+        for index, line in enumerate(lines):
+            if para_id and index == len(lines) - 1:
+                p = etree.SubElement(comment, W + 'p', nsmap={'w14': W14_PARAGRAPH_ID[1:].split('}', 1)[0], 'mc': mc[1:-1]})
+                p.set(W14_PARAGRAPH_ID, para_id); p.set(mc + 'Ignorable', 'w14')
+            else:
+                p = etree.SubElement(comment, W + 'p')
+            r = etree.SubElement(p, W + 'r'); t = etree.SubElement(r, W + 't')
             if line.startswith(' ') or line.endswith(' '):
                 t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
             t.text = line
+        if ext is not None:
+            etree.SubElement(ext.getroot(), w15 + 'commentEx', {w15 + 'paraId': para_id, w15 + 'done': '0'})
+            additional[ext_part] = ooxml.serialize_xml(ext, ext_bytes)
+            additional.update(append_modern_comment(modern, para_id, timestamp))
         start = etree.Element(W + 'commentRangeStart', {W + 'id': comment_id})
         end = etree.Element(W + 'commentRangeEnd', {W + 'id': comment_id})
         first, last = runs[0], runs[-1]
@@ -491,6 +539,93 @@ def set_comment_resolved(source, output, comment_id, resolved):
     return ooxml.edit_xml(source, output, select_part, edit, allow_new=True)
 
 
+def modern_comment_parts(archive, relationships, comments_part, ext_part, parent_para=None):
+    """Validate existing modern comment parts and reserve their identifiers."""
+    import posixpath
+    def part_for(kind):
+        links = [item for item in relationships if item.get('Type') == kind]
+        if len(links) != 1 or links[0].get('TargetMode') == 'External' or not links[0].get('Target'):
+            raise ValueError('Invalid comment relationship')
+        target = links[0].get('Target')
+        name = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+        if not name.startswith('word/') or name not in archive.namelist(): raise ValueError('Invalid comment part')
+        return name
+    cid = '{http://schemas.microsoft.com/office/word/2016/wordml/cid}'
+    cex = '{http://schemas.microsoft.com/office/word/2018/wordml/cex}'
+    ids_type = 'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds'
+    cex_type = 'http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible'
+    ids_links = [item for item in relationships if item.get('Type') == ids_type]
+    cex_links = [item for item in relationships if item.get('Type') == cex_type]
+    if any(item.get('Type', '').endswith(('/commentsIds', '/commentsExtensible')) and item.get('Type') not in (ids_type, cex_type) for item in relationships):
+        raise ValueError('Unsupported modern comment metadata relationship')
+    if len(ids_links) > 1 or len(cex_links) > 1 or (cex_links and not ids_links):
+        raise ValueError('Modern comment metadata relationships are incomplete or ambiguous')
+    if (not ids_links and 'word/commentsIds.xml' in archive.namelist()) or (not cex_links and 'word/commentsExtensible.xml' in archive.namelist()):
+        raise ValueError('Unreferenced modern comment metadata part')
+    ids_tree = None; cex_tree = None; modern_para_ids = set(); durable_ids = set()
+    if ids_links:
+        ids_part = part_for(ids_type); ids_bytes = archive.read(ids_part); ids_tree = ooxml.parse_xml(ids_bytes)
+        if ids_tree.getroot().tag != cid + 'commentsIds' or any(isinstance(node.tag, str) and node.tag != cid + 'commentId' for node in ids_tree.getroot()):
+            raise ValueError('Invalid comment-ID metadata')
+        mapping = {}
+        for record in ids_tree.getroot().findall(cid + 'commentId'):
+            pid = (record.get(cid + 'paraId') or '').upper(); durable = (record.get(cid + 'durableId') or '').upper()
+            if not re.fullmatch(r'[0-9A-F]{8}', pid) or not 0 < int(pid, 16) < 0x80000000 or not re.fullmatch(r'[0-9A-F]{8}', durable) or not 0 < int(durable, 16) < 0x7fffffff:
+                raise ValueError('Invalid modern comment identifier')
+            if pid in mapping or durable in durable_ids: raise ValueError('Duplicate modern comment identifier')
+            mapping[pid] = durable; durable_ids.add(durable)
+        modern_para_ids = set(mapping)
+        parent_durable = mapping.get(parent_para.upper()) if parent_para else None
+        if parent_para and not parent_durable: raise ValueError('Parent has no unique durable comment ID')
+        if ids_part in (comments_part, ext_part, 'word/document.xml'):
+            raise ValueError('Comment metadata parts overlap')
+        if cex_links:
+            cex_part = part_for(cex_type); cex_bytes = archive.read(cex_part); cex_tree = ooxml.parse_xml(cex_bytes)
+            if cex_part in (ids_part, comments_part, ext_part, 'word/document.xml') or cex_tree.getroot().tag != cex + 'commentsExtensible':
+                raise ValueError('Invalid extensible comment metadata')
+            cex_ids = set(); parent_records = []; seen_extension = False
+            for record in cex_tree.getroot():
+                if not isinstance(record.tag, str): continue
+                if record.tag == cex + 'extLst':
+                    if seen_extension: raise ValueError('Duplicate extensible comment extension list')
+                    seen_extension = True; continue
+                if record.tag != cex + 'commentExtensible' or seen_extension: raise ValueError('Unsupported extensible comment metadata')
+                durable = (record.get(cex + 'durableId') or '').upper()
+                if not re.fullmatch(r'[0-9A-F]{8}', durable) or not 0 < int(durable, 16) < 0x7fffffff or durable in cex_ids:
+                    raise ValueError('Invalid or duplicate extensible comment ID')
+                cex_ids.add(durable)
+                if durable == parent_durable: parent_records.append(record)
+            if parent_para and (len(parent_records) != 1 or parent_records[0].get(cex + 'intelligentPlaceholder', '0') not in ('0', 'false', 'off')):
+                raise ValueError('Parent extensible comment metadata is missing or unsupported')
+            durable_ids.update(cex_ids)
+    return {'ids_tree': ids_tree, 'ids_part': ids_part if ids_tree is not None else None,
+            'ids_bytes': ids_bytes if ids_tree is not None else None,
+            'cex_tree': cex_tree, 'cex_part': cex_part if cex_tree is not None else None,
+            'cex_bytes': cex_bytes if cex_tree is not None else None,
+            'para_ids': modern_para_ids, 'durable_ids': durable_ids}
+
+
+def append_modern_comment(parts, para_id, timestamp):
+    """Add the new comment to modern parts that already exist."""
+    import secrets
+    from lxml import etree
+    cid = '{http://schemas.microsoft.com/office/word/2016/wordml/cid}'
+    cex = '{http://schemas.microsoft.com/office/word/2018/wordml/cex}'
+    ids_tree = parts['ids_tree']; cex_tree = parts['cex_tree']; additional = {}
+    if ids_tree is not None:
+        durable_id = f'{secrets.randbelow(0x7ffffffe) + 1:08X}'
+        while durable_id in parts['durable_ids']: durable_id = f'{secrets.randbelow(0x7ffffffe) + 1:08X}'
+        etree.SubElement(ids_tree.getroot(), cid + 'commentId', {cid + 'paraId': para_id, cid + 'durableId': durable_id})
+        additional[parts['ids_part']] = ooxml.serialize_xml(ids_tree, parts['ids_bytes'])
+        if cex_tree is not None:
+            record = etree.Element(cex + 'commentExtensible', {cex + 'durableId': durable_id, cex + 'dateUtc': timestamp})
+            extension = cex_tree.getroot().find(cex + 'extLst')
+            if extension is None: cex_tree.getroot().append(record)
+            else: extension.addprevious(record)
+            additional[parts['cex_part']] = ooxml.serialize_xml(cex_tree, parts['cex_bytes'])
+    return additional
+
+
 def reply_comment(source, output, parent_id, text, author):
     """Add a plain-text reply to a root comment using its existing body range."""
     import posixpath
@@ -556,54 +691,7 @@ def reply_comment(source, output, parent_id, text, author):
         parent_paragraphs = list(parents[0].iter(W + 'p')); parent_para = parent_paragraphs[-1].get(W14_PARAGRAPH_ID) if parent_paragraphs else None
         if not parent_para or not re.fullmatch(r'[0-9A-Fa-f]{8}', parent_para) or not 0 < int(parent_para, 16) < 0x80000000 or sum((node.get(W14_PARAGRAPH_ID) or '').upper() == parent_para.upper() for node in comments.getroot().iter(W + 'p')) != 1:
             raise ValueError('Parent paragraph ID is ambiguous')
-        cid = '{http://schemas.microsoft.com/office/word/2016/wordml/cid}'
-        cex = '{http://schemas.microsoft.com/office/word/2018/wordml/cex}'
-        ids_type = 'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds'
-        cex_type = 'http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible'
-        ids_links = [item for item in relationships if item.get('Type') == ids_type]
-        cex_links = [item for item in relationships if item.get('Type') == cex_type]
-        if any(item.get('Type', '').endswith(('/commentsIds', '/commentsExtensible')) and item.get('Type') not in (ids_type, cex_type) for item in relationships):
-            raise ValueError('Unsupported modern comment metadata relationship')
-        if len(ids_links) > 1 or len(cex_links) > 1 or (cex_links and not ids_links):
-            raise ValueError('Modern comment metadata relationships are incomplete or ambiguous')
-        if (not ids_links and 'word/commentsIds.xml' in archive.namelist()) or (not cex_links and 'word/commentsExtensible.xml' in archive.namelist()):
-            raise ValueError('Unreferenced modern comment metadata part')
-        ids_tree = None; cex_tree = None; modern_para_ids = set(); durable_ids = set(); modern_additional = {}
-        if ids_links:
-            ids_part = part_for(ids_type); ids_bytes = archive.read(ids_part); ids_tree = ooxml.parse_xml(ids_bytes)
-            if ids_tree.getroot().tag != cid + 'commentsIds' or any(isinstance(node.tag, str) and node.tag != cid + 'commentId' for node in ids_tree.getroot()):
-                raise ValueError('Invalid comment-ID metadata')
-            mapping = {}
-            for record in ids_tree.getroot().findall(cid + 'commentId'):
-                pid = (record.get(cid + 'paraId') or '').upper(); durable = (record.get(cid + 'durableId') or '').upper()
-                if not re.fullmatch(r'[0-9A-F]{8}', pid) or not 0 < int(pid, 16) < 0x80000000 or not re.fullmatch(r'[0-9A-F]{8}', durable) or not 0 < int(durable, 16) < 0x7fffffff:
-                    raise ValueError('Invalid modern comment identifier')
-                if pid in mapping or durable in durable_ids: raise ValueError('Duplicate modern comment identifier')
-                mapping[pid] = durable; durable_ids.add(durable)
-            modern_para_ids = set(mapping)
-            parent_durable = mapping.get(parent_para.upper())
-            if not parent_durable: raise ValueError('Parent has no unique durable comment ID')
-            if ids_part in (comments_part, ext_part, 'word/document.xml'):
-                raise ValueError('Comment metadata parts overlap')
-            if cex_links:
-                cex_part = part_for(cex_type); cex_bytes = archive.read(cex_part); cex_tree = ooxml.parse_xml(cex_bytes)
-                if cex_part in (ids_part, comments_part, ext_part, 'word/document.xml') or cex_tree.getroot().tag != cex + 'commentsExtensible':
-                    raise ValueError('Invalid extensible comment metadata')
-                cex_ids = set(); parent_records = []; seen_extension = False
-                for record in cex_tree.getroot():
-                    if not isinstance(record.tag, str): continue
-                    if record.tag == cex + 'extLst':
-                        if seen_extension: raise ValueError('Duplicate extensible comment extension list')
-                        seen_extension = True; continue
-                    if record.tag != cex + 'commentExtensible' or seen_extension: raise ValueError('Unsupported extensible comment metadata')
-                    durable = (record.get(cex + 'durableId') or '').upper()
-                    if not re.fullmatch(r'[0-9A-F]{8}', durable) or not 0 < int(durable, 16) < 0x7fffffff or durable in cex_ids:
-                        raise ValueError('Invalid or duplicate extensible comment ID')
-                    cex_ids.add(durable)
-                    if durable == parent_durable: parent_records.append(record)
-                if len(parent_records) != 1 or parent_records[0].get(cex + 'intelligentPlaceholder', '0') not in ('0', 'false', 'off'):
-                    raise ValueError('Parent extensible comment metadata is missing or unsupported')
-                durable_ids.update(cex_ids)
+        modern = modern_comment_parts(archive, relationships, comments_part, ext_part, parent_para)
         markers = [node for node in tree.getroot().iter() if node.tag in (W + 'commentRangeStart', W + 'commentRangeEnd', W + 'commentReference') and node.get(W + 'id') == parent_id]
         if [node.tag for node in markers] != [W + 'commentRangeStart', W + 'commentRangeEnd', W + 'commentReference']:
             raise ValueError('Parent comment must have one ordered main-body anchor')
@@ -622,7 +710,7 @@ def reply_comment(source, output, parent_id, text, author):
         para_ids = {(node.get(W14_PARAGRAPH_ID) or '').upper() for node in comments.getroot().iter(W + 'p')}
         ext_ids = {(node.get(attribute) or '').upper() for node in ext.getroot().findall(w15 + 'commentEx') for attribute in (w15 + 'paraId', w15 + 'paraIdParent')}
         para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
-        while para_id in para_ids or para_id in ext_ids or para_id in modern_para_ids: para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
+        while para_id in para_ids or para_id in ext_ids or para_id in modern['para_ids']: para_id = f'{secrets.randbelow(0x7fffffff) + 1:08X}'
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         comment = etree.SubElement(comments.getroot(), W + 'comment', {W + 'id': str(created_id), W + 'author': author, W + 'date': timestamp})
         lines = text.split('\n')
@@ -633,17 +721,7 @@ def reply_comment(source, output, parent_id, text, author):
             r = etree.SubElement(p, W + 'r'); t = etree.SubElement(r, W + 't'); t.text = line
             if line.startswith(' ') or line.endswith(' '): t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
         etree.SubElement(ext.getroot(), w15 + 'commentEx', {w15 + 'paraId': para_id, w15 + 'paraIdParent': parent_para.upper(), w15 + 'done': '0'})
-        if ids_tree is not None:
-            durable_id = f'{secrets.randbelow(0x7ffffffe) + 1:08X}'
-            while durable_id in durable_ids: durable_id = f'{secrets.randbelow(0x7ffffffe) + 1:08X}'
-            etree.SubElement(ids_tree.getroot(), cid + 'commentId', {cid + 'paraId': para_id, cid + 'durableId': durable_id})
-            modern_additional[ids_part] = ooxml.serialize_xml(ids_tree, ids_bytes)
-            if cex_tree is not None:
-                record = etree.Element(cex + 'commentExtensible', {cex + 'durableId': durable_id, cex + 'dateUtc': timestamp})
-                extension = cex_tree.getroot().find(cex + 'extLst')
-                if extension is None: cex_tree.getroot().append(record)
-                else: extension.addprevious(record)
-                modern_additional[cex_part] = ooxml.serialize_xml(cex_tree, cex_bytes)
+        modern_additional = append_modern_comment(modern, para_id, timestamp)
         start = etree.Element(W + 'commentRangeStart', {W + 'id': str(created_id)})
         end = etree.Element(W + 'commentRangeEnd', {W + 'id': str(created_id)})
         markers[0].addprevious(start); markers[1].addnext(end)

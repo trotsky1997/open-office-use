@@ -23,7 +23,7 @@ def fixture(root, variant='normal'):
     doc = Document()
     for title in ('Original', 'Reply', 'Third'):
         paragraph = doc.add_paragraph(title); doc.add_comment(paragraph.runs[0], text=title + ' comment', author='Reviewer')
-    doc.save(original)
+    doc.add_paragraph('Fresh paragraph'); doc.save(original)
     with zipfile.ZipFile(original) as src:
         comments = etree.fromstring(src.read('word/comments.xml'))
         for index, comment in enumerate(comments.findall(W + 'comment')):
@@ -123,6 +123,33 @@ if __name__ == '__main__':
             except ValueError: pass
             else: raise AssertionError(f'{variant} metadata was accepted')
             assert session.info(bad_draft)['latest_revision'] == 1
+        for variant in ('normal', 'modern_both', 'modern_ids_only'):
+            new_source = fixture(tmp, variant); new_draft = Path(tmp) / (variant + '-root-draft'); session.start(new_draft, source=new_source)
+            added = session.add_comment(new_draft, 0, '/body/p[4]', 'New root\nSecond line', 'Editor')
+            added_listing = session.list_comments(new_draft, 1); item = added_listing['comments'][-1]
+            assert item['resolved'] is False and item['reply_parent_status'] == 'root' and item['anchor_text'] == 'Fresh paragraph', added_listing
+            with zipfile.ZipFile(new_source) as before, zipfile.ZipFile(added['file']) as after:
+                old_parts = {name: before.read(name) for name in before.namelist()}
+                comment_nodes = etree.fromstring(after.read('word/comments.xml')).findall(W + 'comment')
+                new_para = comment_nodes[-1].findall(W + 'p')[-1].get(W14 + 'paraId')
+                ex = etree.fromstring(after.read('word/commentsExtended.xml'))
+                assert ex[-1].get(W15 + 'paraId') == new_para and ex[-1].get(W15 + 'paraIdParent') is None
+                changed = {'word/document.xml', 'word/comments.xml', 'word/commentsExtended.xml'}
+                if variant != 'normal':
+                    changed.add('word/commentsIds.xml'); ids = etree.fromstring(after.read('word/commentsIds.xml'))
+                    assert ids[-1].get(CID + 'paraId') == new_para
+                    if variant == 'modern_both':
+                        changed.add('word/commentsExtensible.xml'); cex = etree.fromstring(after.read('word/commentsExtensible.xml'))
+                        assert cex[-2].get(CEX + 'durableId') == ids[-1].get(CID + 'durableId')
+                assert all(after.read(name) == data for name, data in old_parts.items() if name not in changed)
+            if variant == 'modern_both':
+                validation = officecli_backend.audit(added['file'])['validation']; assert validation['exit_code'] == 0, validation
+        for variant in ('modern_duplicate', 'modern_ext_only', 'modern_malformed', 'modern_cex_duplicate', 'modern_invalid_durable', 'modern_unlinked'):
+            bad_source = fixture(tmp, variant); bad_root = Path(tmp) / (variant + '-root-draft'); session.start(bad_root, source=bad_source)
+            try: session.add_comment(bad_root, 0, '/body/p[4]', 'Rejected', 'Editor')
+            except ValueError: pass
+            else: raise AssertionError(f'{variant} root comment metadata was accepted')
+            assert session.info(bad_root)['latest_revision'] == 0
         for bad_id in (b['id'], c['id'], '999'):
             try: session.resolve_comment(draft, 1, bad_id, True)
             except ValueError: pass
