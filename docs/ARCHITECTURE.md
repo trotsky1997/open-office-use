@@ -267,6 +267,10 @@ PID/UID/启动时间，随后完成 lease 握手；不以同 UID 或解释器路
 细节见
 [IAB 本地连接鉴权设计](design-docs/iab-transport-auth.md)。
 
+frame 选择器在命名隔离 world 中匹配。Electron 只接受指定 world 名称，
+通过目标 debugger session 的 frame tree 校验 frame，拒绝通用跨域访问和
+额外 world 配置；准备超时会释放队列。
+
 `obu iab` 通过继承 FD 3 得到私有 bootstrap，支持私有 duplex RPC，或先
 验证服务端身份后连接 socket。命令不扫描 Chrome registry，不接受 argv/env
 中的秘密。支持 info、ping、tabs、open-tab、navigate、close-tab、cdp、call

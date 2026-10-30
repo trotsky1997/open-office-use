@@ -52,6 +52,7 @@
 - [x] 按 CSS viewport 坐标点击和滚动；本机隔离 Chrome 验证真实鼠标和滚轮行为。
 - [x] 语义定位器与 CSS viewport 坐标悬停；macOS/Linux Chromium 与 macOS Electron 跨进程 frame 验证可信 mouseenter，Electron 验证坐标悬停。
 - [x] `frameLocator` 按 iframe 元素的原生 CSS 选择器限定语义定位，支持逐层嵌套；重核 frame 树和选择器，歧义时报错。Linux Chromium 与 Electron 44 跨进程实测。
+- [x] frame 选择器在命名隔离 world 执行；Electron 限制所属 frame、world 配置与准备超时。Linux 实测页面篡改 matches 后选择仍正确。
 - [x] CSS viewport 拖拽；隔离 Chromium 和 macOS Electron 页面验证可信滑块输入。
 - [x] US 键盘数字和常见标点，包括 Shift 和快捷键组合；真实输入产生可信事件。
 - [x] 定位器按键先聚焦并校验目标，在跨进程 frame 中路由可信按键；输入失败后尝试释放按键。

@@ -9,7 +9,7 @@ import { FramedChannel, type Message } from './wire.js';
 import { processIdentity, peerIdentity, sameIdentity, type ProcessIdentity } from './peer.js';
 
 const publicErrors = new Set([
-  'IAB_INPUT_PREPARATION_TIMEOUT', 'IAB_INPUT_OUTCOME_UNKNOWN', 'IAB_BACKGROUND_SCROLL_TIMEOUT', 'IAB_SCREENSHOT_TIMEOUT',
+  'IAB_INPUT_PREPARATION_TIMEOUT', 'IAB_INPUT_OUTCOME_UNKNOWN', 'IAB_BACKGROUND_SCROLL_TIMEOUT', 'IAB_SCREENSHOT_TIMEOUT', 'IAB_SELECTOR_CONTEXT_TIMEOUT',
   'IAB_SCROLL_REQUIRES_PRESENTED_SURFACE', 'IAB_BACKGROUND_SCROLL_UNSUPPORTED_GESTURE',
   'IAB_SCREENSHOT_TOO_LARGE', 'IAB_OPERATION_DENIED', 'IAB_AUTH_REVOKED', 'IAB_SCOPE_CLOSED',
   'Frame tree changed while waiting for file chooser', 'File chooser debugger detached',

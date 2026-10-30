@@ -722,6 +722,7 @@ test("cross-process frame input uses its session and rejects detached targets", 
     }
     if (command === "DOM.getDocument") return {root:{backendNodeId:1}};
     if (command === "Page.getFrameTree") return session ? {frameTree:{frame:{id:"cross",loaderId:"cross-v1",url:"https://cross.test"},childFrames:[{frame:{id:"nested",loaderId:"nested-v1",url:"https://cross.test/nested"}}]}} : {frameTree:{frame:{id:"root",loaderId:++rootReads>=changeTreeAfter?"root-v2":"root-v1",url:"https://root.test"},...(extraFrame?{childFrames:[{frame:{id:"other",loaderId:"other-v1",url:"https://other.test"}}]}:{})}};
+    if (command === "Page.createIsolatedWorld") return {executionContextId:123};
     if (command === "Accessibility.getFullAXTree") return {nodes:args.frameId === "nested" ? [{backendDOMNodeId:7,role:{value:"button"},name:{value:"Nested"}}] : []};
     if (command === "DOM.getFrameOwner") return {backendNodeId:args.frameId === "nested" ? 8 : 9};
     if (command === "DOM.resolveNode") return {object:{objectId:String(args.backendNodeId)}};

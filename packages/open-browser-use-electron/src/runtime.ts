@@ -33,7 +33,7 @@ type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds:
 const pageCommands = new Set([
   'Page.enable', 'Page.disable', 'Page.navigate', 'Page.reload', 'Page.stopLoading', 'Page.handleJavaScriptDialog',
   'Page.getNavigationHistory', 'Page.navigateToHistoryEntry', 'Page.captureScreenshot', 'Page.getFrameTree',
-  'Page.getLayoutMetrics', 'Page.close',
+  'Page.getLayoutMetrics', 'Page.close', 'Page.createIsolatedWorld',
   'Runtime.enable', 'Runtime.disable', 'Runtime.evaluate', 'Runtime.callFunctionOn',
   'Runtime.getProperties', 'Runtime.releaseObject', 'Runtime.releaseObjectGroup',
   'Log.enable', 'Log.disable',
@@ -242,6 +242,7 @@ export class IabRuntime implements Backend {
       if (!params.autoAttach && !sessionId) tab.frameSessions.clear();
     } else if (!pageCommands.has(method) && !(internalFileCommand && ['Page.setInterceptFileChooserDialog','DOM.setFileInputFiles'].includes(method))) throw new Error('IAB CDP command is outside page permissions');
     if (params.includeCommandLineAPI) throw new Error('DevTools command-line helpers are not exposed to page grants');
+    if (method === 'Page.createIsolatedWorld' && (typeof params.frameId !== 'string' || !params.frameId || params.worldName !== 'open-browser-use-selector' || Object.keys(params).some(key=>!['frameId','worldName'].includes(key)))) throw new Error('Invalid isolated world request');
     if (method === 'Page.navigate') assertUrl(params.url);
     if (method === 'Page.handleJavaScriptDialog' && (typeof params.accept !== 'boolean' || (params.promptText !== undefined && typeof params.promptText !== 'string') || Object.keys(params).some(key => !['accept','promptText'].includes(key)))) throw new Error('Invalid dialog decision');
     if (method === 'Page.close') { await this.closeTab(tab.scopeId, tab.id); return {}; }
@@ -261,14 +262,22 @@ export class IabRuntime implements Backend {
     }
     const previousThrottling = backgroundInput ? tab.contents.backgroundThrottling : undefined;
     if (backgroundInput) tab.contents.setBackgroundThrottling(false);
-    const bounded = backgroundInput || preparingMouse || command === 'Page.captureScreenshot';
+    const bounded = backgroundInput || preparingMouse || command === 'Page.captureScreenshot' || command === 'Page.createIsolatedWorld';
     let expired = false, inputIssued = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutError = () => preparingMouse && !inputIssued ? 'IAB_INPUT_PREPARATION_TIMEOUT' : scroll ? 'IAB_BACKGROUND_SCROLL_TIMEOUT' : inputIssued ? 'IAB_INPUT_OUTCOME_UNKNOWN' : 'IAB_SCREENSHOT_TIMEOUT';
+    const timeoutError = () => command === 'Page.createIsolatedWorld' ? 'IAB_SELECTOR_CONTEXT_TIMEOUT' : preparingMouse && !inputIssued ? 'IAB_INPUT_PREPARATION_TIMEOUT' : scroll ? 'IAB_BACKGROUND_SCROLL_TIMEOUT' : inputIssued ? 'IAB_INPUT_OUTCOME_UNKNOWN' : 'IAB_SCREENSHOT_TIMEOUT';
     const check = () => { if (expired) throw new Error(timeoutError()); if (!authorized()) throw new Error('IAB_AUTH_REVOKED'); };
     const run = async () => {
       if (!tab.contents.debugger.isAttached()) tab.contents.debugger.attach('1.3');
       tab.attached = true;
+      if (command === 'Page.createIsolatedWorld') {
+        const tree = await tab.contents.debugger.sendCommand('Page.getFrameTree',{},sessionId);
+        check();
+        if (this.tabsById.get(tab.id) !== tab || tab.contents.isDestroyed() || (sessionId && !tab.frameSessions.has(sessionId))) throw new Error('Invalid CDP frame session');
+        const pending = [tree?.frameTree];let found = false;
+        while (pending.length) { const item=pending.pop(); if (!item || typeof item !== 'object') continue; if (item.frame?.id === params.frameId) {found=true;break;} if (Array.isArray(item.childFrames)) pending.push(...item.childFrames); }
+        if (!found) throw new Error('Invalid CDP frame');
+      }
       if (preparingMouse) {
         await tab.contents.debugger.sendCommand('Page.captureScreenshot', { format: 'png' });
         check();

@@ -429,6 +429,12 @@ test('frame debugger sessions stay inside their owning tab and permit iframe aut
   await assert.rejects(call({tabId:tab.id,sessionId:'unowned'},'Runtime.evaluate'), /Invalid CDP frame session/);
   await call({tabId:tab.id},'Target.setAutoAttach',config);
   debuggerApi.emit('message',{},'Target.attachedToTarget',{sessionId:'child',targetInfo:{type:'iframe',targetId:'frame',parentFrameId:'root'}},undefined);
+  const send=debuggerApi.sendCommand.bind(debuggerApi);
+  debuggerApi.sendCommand=async(method,params,sessionId)=>method==='Page.getFrameTree' ? {frameTree:{frame:{id:sessionId?'frame':'root'}}} : send(method,params,sessionId);
+  await assert.rejects(call({tabId:tab.id},'Page.createIsolatedWorld',{frameId:'foreign',worldName:'open-browser-use-selector'}),/Invalid CDP frame/);
+  await assert.rejects(call({tabId:tab.id},'Page.createIsolatedWorld',{frameId:'root',worldName:'open-browser-use-selector',grantUniveralAccess:true}),/Invalid isolated world/);
+  await call({tabId:tab.id,sessionId:'child'},'Page.createIsolatedWorld',{frameId:'frame',worldName:'open-browser-use-selector'});
+  assert.equal(debuggerApi.commands.at(-1).method,'Page.createIsolatedWorld');
   assert.equal(events.at(-1).params.source.tabId,tab.id);
   await call({tabId:tab.id,sessionId:'child'},'Runtime.evaluate',{expression:'1'});
   assert.equal(debuggerApi.commands.at(-1).sessionId,'child');
@@ -455,6 +461,25 @@ test('stalled chooser setup times out and does not issue late interception', asy
   await a.call('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});
   release();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(commands,['Page.enable','Runtime.evaluate']);
+});
+
+test('stalled selector context validation releases the queue without issuing a late command', async t => {
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create(),debuggerApi=adapter.views[0].webContents.debugger;
+  let release;const commands=[];
+  debuggerApi.sendCommand=async method=>{commands.push(method);if(method==='Page.getFrameTree')return await new Promise(resolve=>{release=resolve;});return {};};
+  await assert.rejects(a.call('executeCdp',{target:{tabId:tab.id},method:'Page.createIsolatedWorld',commandParams:{frameId:'root',worldName:'open-browser-use-selector'}}),/IAB_SELECTOR_CONTEXT_TIMEOUT/);
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Runtime.evaluate'});
+  release({frameTree:{frame:{id:'root'}}});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(commands.includes('Page.createIsolatedWorld'),false);
+});
+
+test('revoking a selector context request prevents world creation', async t => {
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create(),debuggerApi=adapter.views[0].webContents.debugger;
+  let release,allowed=true;const commands=[];
+  debuggerApi.sendCommand=async method=>{commands.push(method);if(method==='Page.getFrameTree')return await new Promise(resolve=>{release=resolve;});return {};};
+  const pending=runtime.dispatch('a','executeCdp',{target:{tabId:tab.id},method:'Page.createIsolatedWorld',commandParams:{frameId:'root',worldName:'open-browser-use-selector'}},['page.control'],()=>allowed);
+  await new Promise(resolve=>setImmediate(resolve));allowed=false;release({frameTree:{frame:{id:'root'}}});
+  await assert.rejects(pending,/IAB_AUTH_REVOKED/);assert.equal(commands.includes('Page.createIsolatedWorld'),false);
 });
 
 test('socket distinguishes input already issued from preparation timeout', {skip:!['darwin','linux'].includes(process.platform)}, async t => {

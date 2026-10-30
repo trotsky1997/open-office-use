@@ -247,7 +247,9 @@ await nested.getByRole("button", {name: "Continue", exact: true}).click();
 ```
 
 Each selector is native CSS matched against direct child frame elements of its
-parent document with `Element.matches`; a selector must match the iframe itself.
+parent document with `Element.matches` in a named isolated world; a selector
+must match the iframe itself. Page scripts can change the DOM but cannot replace
+the selector implementation used in that world.
 Nested calls select one frame level at a time. Missing frames yield no matches;
 multiple matching frames produce an error. Frame identity and selector matching
 are rechecked before reads and input, and inaccessible observed frames cause

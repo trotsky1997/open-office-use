@@ -417,6 +417,10 @@ enables/disables both effects during manual steps or automatic playback.
   uploads and downloads require explicit scope authorization and their respective
   grants. Clipboard access requires explicit read or write grants. Browser
   permission requests are denied by default.
+- Frame selector matching uses one named isolated world. The host validates the
+  target frame against the owned debugger session and rejects universal access
+  and additional world options. A stalled context request returns
+  `IAB_SELECTOR_CONTEXT_TIMEOUT` and releases the tab queue.
 - `tab.getPresentation()` requires `page.control` and reports whether an owned
   tab is selected in a host surface, whether its window reports visible and
   non-minimized, and the window focus state when available. It is a momentary

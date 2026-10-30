@@ -77,7 +77,11 @@ app.whenReady().then(async()=>{
     assert.ok((await sdk.dev.logs({levels:['warning'],filter:'socket-cross-log'})).length);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Child heading';document.body.append(h);document.querySelector('button').ondblclick=e=>window.childDouble={trusted:e.isTrusted,detail:e.detail}})()`},{sessionId:session});
     assert.equal(await sdk.playwright.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
+    await sdk.evaluate(`(()=>{window.savedMatches=Element.prototype.matches;Element.prototype.matches=()=>false})()`);
     const crossFrame=sdk.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
+    await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(async()=>{const f=document.createElement('iframe');f.id='nested';f.srcdoc='<button>Nested target</button>';document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`,awaitPromise:true},{sessionId:session});
+    assert.equal(await crossFrame.frameLocator('iframe#nested').getByRole('button',{name:'Nested target',exact:true}).count(),1);
+    await sdk.evaluate(`(()=>{Element.prototype.matches=window.savedMatches})()`);
     window.hide();
     assert.deepEqual((({backend,selected,visible})=>({backend,selected,visible}))(await sdk.getPresentation()),{backend:'electron',selected:true,visible:false});
     const crossButton=crossFrame.getByRole('button',{name:/^cross-frame action$/i});

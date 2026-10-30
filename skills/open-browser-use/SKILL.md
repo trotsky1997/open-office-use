@@ -44,6 +44,8 @@ unique match. Text matchers and text filters also accept regular expressions. Us
 Use `tab.playwright.frameLocator('iframe#payment').getByLabel(...)` to restrict
 semantic queries to a direct child frame; chain `.frameLocator(...)` for nested
 frames. Each selector must match the frame element, and ambiguous frames fail.
+Frame selector matching runs in an isolated world; page scripts can still change
+frame elements between observations.
 `fill` handles native number and date/time inputs; date/time events are
 DOM-dispatched with `isTrusted === false`.
 `tab.pressKey("Enter")` targets the current focus, including a focused frame;

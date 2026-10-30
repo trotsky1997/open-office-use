@@ -739,8 +739,12 @@ export class OpenBrowserUseTab {
         for (const selector of path) {
             const matched = [];
             const children = frames.filter(item => item.parentId === parent.id);
+            const world = await this.browser.cdp.call(this.id, "Page.createIsolatedWorld", { frameId: parent.id, worldName: "open-browser-use-selector" }, { sessionId: parent.sessionId });
+            const contextId = isObject(world) ? world.executionContextId : undefined;
+            if (typeof contextId !== "number" || !Number.isSafeInteger(contextId))
+                throw new RetryablePreflightError("Frame selector context is unavailable; observe again");
             if (!children.length) {
-                const result = await this.browser.cdp.call(this.id, "Runtime.evaluate", { returnByValue: true, expression: `(() => { try { document.createElement('iframe').matches(${JSON.stringify(selector)}); return true; } catch { return false; } })()` });
+                const result = await this.browser.cdp.call(this.id, "Runtime.evaluate", { contextId, returnByValue: true, expression: `(() => { try { document.createElement('iframe').matches(${JSON.stringify(selector)}); return true; } catch { return false; } })()` }, { sessionId: parent.sessionId });
                 const valid = isObject(result) && isObject(result.result) ? result.result.value : undefined;
                 if (valid === false)
                     throw new Error("Invalid frame selector");
@@ -751,7 +755,7 @@ export class OpenBrowserUseTab {
                 const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: frame.id }, { sessionId: parent.sessionId });
                 if (!isObject(owner) || typeof owner.backendNodeId !== "number")
                     throw new RetryablePreflightError("Frame owner is unavailable; observe again");
-                const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId }, { sessionId: parent.sessionId });
+                const resolved = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId, executionContextId: contextId }, { sessionId: parent.sessionId });
                 const objectId = isObject(resolved) && isObject(resolved.object) ? resolved.object.objectId : undefined;
                 if (typeof objectId !== "string")
                     throw new RetryablePreflightError("Frame owner is unavailable; observe again");
