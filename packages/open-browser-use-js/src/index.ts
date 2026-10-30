@@ -843,7 +843,8 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async actCss(snapshot: CssSnapshot, id: number, hover: boolean): Promise<void> {
+  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string): Promise<void> {
+    if (key !== undefined) this.parseKey(key);
     const frame = snapshot.frame;
     if (!frame || !snapshot.ids.includes(id)) throw new RetryablePreflightError("Selector target changed; observe again");
     const sessionId = frame.sessionId;
@@ -889,6 +890,16 @@ export class OpenBrowserUseTab {
       this.#observation=undefined;
       const options={sessionId,...(sessionId ? {visualPoint:second.point} : {})};
       inputIssued=true;
+      if (key !== undefined) {
+        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId});
+        const afterFocus = await this.queryCss(snapshot.selector,snapshot.framePath);
+        if (afterFocus.documentId!==snapshot.documentId || JSON.stringify(afterFocus.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after focus; observe again");
+        if ((await this.focusedInputFrame()).id !== frame.id) throw new Error("Target frame lost focus; observe again");
+        const focused = await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function() { if (!this.isConnected) return false; for (let el=this; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return false; let element=this; while (true) { const root=element.getRootNode(); if (root.activeElement!==element) return false; if (!(root instanceof ShadowRoot)) return true; element=root.host; } }`},{sessionId});
+        if (!isObject(focused) || !isObject(focused.result) || focused.result.value!==true) throw new Error("Target lost focus; observe again");
+        await this.sendKey(key,sessionId);
+        return;
+      }
       if (hover) await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mouseMoved",...second.inputPoint,button:"none",buttons:0},options);
       else {
         await this.browser.cdp.call(this.id,"Input.dispatchMouseEvent",{type:"mousePressed",...second.inputPoint,button:"left",buttons:1,clickCount:1},options);
@@ -1293,17 +1304,17 @@ export class OpenBrowserUseTab {
   async pressKey(key: string): Promise<void> {
     this.parseKey(key);
     this.#observation = undefined;
-    await this.sendKey(key,await this.focusedInputSession());
+    await this.sendKey(key,(await this.focusedInputFrame()).sessionId);
   }
 
   async typeAtFocus(text: string): Promise<void> {
     if (typeof text !== "string") throw new Error("Text must be a string");
     this.#observation = undefined;
-    const sessionId = await this.focusedInputSession();
+    const sessionId = (await this.focusedInputFrame()).sessionId;
     if (text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId});
   }
 
-  private async focusedInputSession(): Promise<string | undefined> {
+  private async focusedInputFrame(): Promise<FrameInfo> {
     const documentId = await this.documentId();
     const crossProcess = await this.browser.cdp.enableFrameSessions(this.id);
     const frames = await this.frameTree();
@@ -1331,7 +1342,7 @@ export class OpenBrowserUseTab {
     };
     const target = await focusedFrame();
     if ((await focusedFrame()).id !== target.id || JSON.stringify(await this.frameTree()) !== JSON.stringify(frames) || await this.documentId() !== documentId) throw new RetryablePreflightError("Frame focus changed; observe again");
-    return target.sessionId;
+    return target;
   }
 
   private async sendKey(key: string, sessionId?: string): Promise<void> {
@@ -1960,6 +1971,10 @@ export class OpenBrowserUseCssLocator {
   }
   click(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform((snapshot,id)=>this.tab.actCss(snapshot,id,false),options.timeoutMs); }
   hover(options: {timeoutMs?: number} = {}): Promise<void> { return this.perform((snapshot,id)=>this.tab.actCss(snapshot,id,true),options.timeoutMs); }
+  press(key: string, options: {timeoutMs?: number} = {}): Promise<void> {
+    if (typeof key !== "string") throw new Error("Invalid key");
+    return this.perform((snapshot,id)=>this.tab.actCss(snapshot,id,false,key),options.timeoutMs);
+  }
   async innerText(options: {timeoutMs?: number} = {}): Promise<string> {
     const value = await this.read("innerText","",options.timeoutMs);
     if (value === null) throw new Error("Target text is unavailable");

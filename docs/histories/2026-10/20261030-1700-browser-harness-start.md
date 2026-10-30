@@ -227,3 +227,5 @@ frameLocator 的选择器验证与匹配改在命名隔离 world 中执行，降
 新增只读 CSS locator：在隔离 world 查询当前文档和开放 shadow root，支持 frame 作用域、数量、位置及文本/属性读取，读取后重新校验文档、frame 与匹配集合。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证隐藏元素、开放 shadow root、跨进程与嵌套 frame、选择器错误和页面篡改原型，Electron 44/Xvfb socket 验证跨进程及嵌套 frame 读取。CSS locator 的交互和链式作用域仍待实现；macOS/Windows 本轮未测。
 
 CSS locator 增加可信点击和悬停：隔离 world 内检查可交互状态、遮挡和稳定几何，发送前重新检查 frame 树及完整匹配集合；输入发出后不自动重试。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证开放 shadow root 可信点击与悬停、禁用拒绝、选择器在准备期间变化时不点击以及跨进程 frame 点击；Electron 44/Xvfb socket 验证跨进程 frame 可信点击。CSS 填写、键盘操作和链式作用域仍待实现；macOS/Windows 本轮未测。
+
+CSS locator 增加 press，聚焦后复核匹配集合、实际焦点 frame、shadow 焦点链与禁用状态；焦点操作已发出后遇到变化直接报错，不重复执行。SDK 63 项通过；Linux ARM64 Chromium 原生消息验证开放 shadow root 可信按键、聚焦回调改变选择器时停止按键、跨进程 frame 按键，Electron 44/Xvfb socket 验证跨进程可信 Enter。CSS 填写与链式作用域仍待实现；macOS/Windows 本轮未测。

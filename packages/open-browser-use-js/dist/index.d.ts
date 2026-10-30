@@ -263,7 +263,7 @@ export declare class OpenBrowserUseTab {
     private parseKey;
     pressKey(key: string): Promise<void>;
     typeAtFocus(text: string): Promise<void>;
-    private focusedInputSession;
+    private focusedInputFrame;
     private sendKey;
     private checkPoint;
     getViewport(): Promise<{
@@ -423,6 +423,9 @@ export declare class OpenBrowserUseCssLocator {
         timeoutMs?: number;
     }): Promise<void>;
     hover(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    press(key: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
     innerText(options?: {

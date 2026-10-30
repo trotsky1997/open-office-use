@@ -265,14 +265,15 @@ console.log(await payment.locator("input[name=card]").getAttribute("name"));
 ```
 
 CSS locators support `count`, `all`, `first`, `last`, `nth`, `innerText`,
-`textContent`, `getAttribute`, `click` and `hover`. They search the selected document and its open
+`textContent`, `getAttribute`, `click`, `hover` and `press`. They search the selected document and its open
 shadow roots, including hidden elements; they do not cross frames unless a
 `frameLocator` is selected. Matches are limited to 1,000 elements and single
 reads require a unique match. Selector evaluation uses an isolated world, and
 reads recheck document, frame and match identity. Click and hover also check
 visibility, hit testing and stable geometry before issuing trusted mouse input.
-CSS locator fill, keyboard actions and chaining are not yet implemented; use
-semantic locators for those operations.
+`press` checks the selected frame, target identity and focus again after focusing.
+CSS locator fill and chaining are not yet implemented; use semantic locators
+for those operations.
 
 `filter({hasText: "..."})` and `filter({hasNotText: "..."})` narrow a
 locator by its accessible static-text descendants. Matching is a case-insensitive

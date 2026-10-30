@@ -213,6 +213,11 @@ try {
  await assert.rejects(css.textContent({timeoutMs:0}),/matched 2 elements/);await assert.rejects(tab.playwright.locator('[').count(),/Invalid CSS selector/);
  await tab.evaluate(`(()=>{Document.prototype.querySelectorAll=window.savedQuery;const h=document.querySelector('#css-host');h.shadowRoot.innerHTML+='<button id="css-action">Act</button>';const b=h.shadowRoot.querySelector('button');b.onmouseenter=e=>window.cssHover=e.isTrusted;b.onclick=e=>window.cssClick=e.isTrusted})()`);
  await tab.playwright.locator('#css-action').hover();await tab.playwright.locator('#css-action').click();assert.equal(await tab.evaluate('window.cssHover'),true);assert.equal(await tab.evaluate('window.cssClick'),true);
+ await tab.evaluate(`(()=>{const r=document.querySelector('#css-host').shadowRoot;const input=document.createElement('input');input.id='css-input';input.onkeydown=e=>window.cssKey={key:e.key,trusted:e.isTrusted};r.append(input)})()`);
+ assert.throws(()=>tab.playwright.locator('#css-input').press(undefined),/Invalid key/);
+ await tab.playwright.locator('#css-input').press('Enter');assert.deepEqual(await tab.evaluate('window.cssKey'),{key:'Enter',trusted:true});
+ await tab.evaluate(`(()=>{window.cssKey=null;const input=document.querySelector('#css-host').shadowRoot.querySelector('#css-input');input.blur();input.onfocus=()=>input.id='css-renamed'})()`);
+ await assert.rejects(tab.playwright.locator('#css-input').press('Enter',{timeoutMs:0}),/changed after focus/i);assert.equal(await tab.evaluate('window.cssKey'),null);
  await tab.evaluate(`(()=>{window.cssClick=false;document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=true})()`);
  await assert.rejects(tab.playwright.locator('#css-action').click({timeoutMs:0}),/target unavailable/i);assert.equal(await tab.evaluate('window.cssClick'),false);
  await tab.evaluate(`document.querySelector('#css-host').shadowRoot.querySelector('button').disabled=false`);
@@ -230,7 +235,7 @@ try {
  await new Promise(r=>setTimeout(r,500));
  const crossState=await tab.observe({includeFrames:true});const cross=crossState.nodes.find(node=>node.name==='Cross-process action');assert.ok(cross?.frameId,JSON.stringify(crossState));assert.equal(crossState.frameCoverage,'cross-process');
  await tab.evaluate(`(()=>{window.savedMatches=Element.prototype.matches;Element.prototype.matches=()=>true})()`);
- const crossFrame=tab.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.locator('button').first().textContent(),'Cross-process action');await crossFrame.locator('button').first().click();await new Promise(r=>setTimeout(r,50));assert.ok((await tab.evaluate('window.frameMessages')).some(e=>e.kind==='cross-click'&&e.trusted));await tab.evaluate('window.frameMessages=[]');assert.equal(await crossFrame.frameLocator('iframe').locator('button').count(),1);assert.equal(await crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
+ const crossFrame=tab.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.locator('button').first().textContent(),'Cross-process action');await crossFrame.locator('input[placeholder]').first().press('Enter');await new Promise(r=>setTimeout(r,50));assert.ok((await tab.evaluate('window.frameMessages')).some(e=>e.kind==='cross-key'&&e.trusted));await crossFrame.locator('button').first().click();await new Promise(r=>setTimeout(r,50));assert.ok((await tab.evaluate('window.frameMessages')).some(e=>e.kind==='cross-click'&&e.trusted));await tab.evaluate('window.frameMessages=[]');assert.equal(await crossFrame.frameLocator('iframe').locator('button').count(),1);assert.equal(await crossFrame.getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
  assert.equal(await crossFrame.frameLocator('iframe').getByRole('button',{name:'Nested action',exact:true}).count(),1);
  assert.equal(await tab.playwright.frameLocator('iframe.missing').getByRole('button').count(),0);
  await assert.rejects(tab.playwright.frameLocator('[').getByRole('button').count(),/Invalid frame selector/);

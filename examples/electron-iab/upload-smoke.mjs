@@ -75,12 +75,13 @@ app.whenReady().then(async()=>{
     const session=(await sdk.browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===node.frameId)?.sessionId;assert.ok(session);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`console.warn('socket-cross-log')`},{sessionId:session});await new Promise(resolve=>setTimeout(resolve,50));
     assert.ok((await sdk.dev.logs({levels:['warning'],filter:'socket-cross-log'})).length);
-    await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Child heading';document.body.append(h);document.querySelector('button').ondblclick=e=>window.childDouble={trusted:e.isTrusted,detail:e.detail};document.querySelector('button').addEventListener('click',e=>window.crossTrusted=e.isTrusted)})()`},{sessionId:session});
+    await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Child heading';document.body.append(h);document.querySelector('button').ondblclick=e=>window.childDouble={trusted:e.isTrusted,detail:e.detail};document.querySelector('button').addEventListener('click',e=>window.crossTrusted=e.isTrusted);document.querySelector('input[placeholder]').addEventListener('keydown',e=>window.cssKey={key:e.key,trusted:e.isTrusted})})()`},{sessionId:session});
     assert.equal(await sdk.playwright.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
     await sdk.evaluate(`(()=>{window.savedMatches=Element.prototype.matches;Element.prototype.matches=()=>false})()`);
     const crossFrame=sdk.playwright.frameLocator('iframe#cross');assert.equal(await crossFrame.getByRole('heading',{name:/child heading/i,level:3}).count(),1);
     await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(async()=>{const f=document.createElement('iframe');f.id='nested';f.srcdoc='<button>Nested target</button>';document.body.append(f);await new Promise(resolve=>f.onload=resolve)})()`,awaitPromise:true},{sessionId:session});
     assert.equal(await crossFrame.frameLocator('iframe#nested').getByRole('button',{name:'Nested target',exact:true}).count(),1);
+    await crossFrame.locator('input[placeholder]').first().press('Enter');assert.deepEqual(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.cssKey',returnByValue:true},{sessionId:session}).then(r=>r.result.value),{key:'Enter',trusted:true});
     await crossFrame.locator('button').first().click();assert.equal(await sdk.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.crossTrusted',returnByValue:true},{sessionId:session}).then(r=>r.result.value),true);
     assert.equal(await crossFrame.locator('h3').textContent(),'Child heading');assert.equal(await crossFrame.frameLocator('iframe#nested').locator('button').innerText(),'Nested target');
     await sdk.evaluate(`(()=>{Element.prototype.matches=window.savedMatches})()`);
