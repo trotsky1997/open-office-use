@@ -145,6 +145,7 @@ const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
 console.log(await save.innerText());
 console.log(await save.getAttribute("type")); // null if the attribute is absent
 console.log(await save.isEnabled());
+console.log(await save.isVisible());
 await save.hover(); // move the pointer over the matched control
 await save.click();
 await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
@@ -168,6 +169,10 @@ await tab.playwright.getByRole("listitem").filter({ hasText: "Apples" })
 requires one match and rejects text longer than 30,000 characters.
 `textContent()` reads the raw DOM text, including hidden descendants, with the
 same match and length checks.
+`isVisible()` checks CSS visibility and nonzero bounds for the matched node and
+its frame owners; an absent accessible match returns `false`. Offscreen or
+covered elements can still be visible. Locator matching uses the accessibility
+tree, so elements omitted from that tree cannot be detected by this method.
 `getAttribute(name)` reads the raw attribute from one match and returns `null`
 when absent; it applies the same size limit. Text-node matches do not have
 attributes; select their containing element to read its attributes.

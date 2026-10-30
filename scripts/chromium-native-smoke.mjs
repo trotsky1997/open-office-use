@@ -42,6 +42,8 @@ try {
  await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:1500});
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isEnabled(),true);
+ assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isVisible(),true);
+ assert.equal(await tab.playwright.getByRole('button',{name:'Missing',exact:true}).isVisible(),false);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).getAttribute('missing'),null);
  await tab.evaluate(`(()=>{const hidden=document.createElement('span');hidden.hidden=true;hidden.textContent=' concealed';document.querySelector('button').append(hidden)})()`);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
@@ -164,6 +166,10 @@ try {
  await new Promise(r=>setTimeout(r,500));
  const crossState=await tab.observe({includeFrames:true});const cross=crossState.nodes.find(node=>node.name==='Cross-process action');assert.ok(cross?.frameId,JSON.stringify(crossState));assert.equal(crossState.frameCoverage,'cross-process');
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).innerText(),'Cross-process action');
+ assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).isVisible(),true);
+ await tab.evaluate(`Object.assign(document.querySelector('#cross').style,{width:'0px',border:'0'})`);
+ assert.equal(await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).isVisible(),false);
+ await tab.evaluate(`Object.assign(document.querySelector('#cross').style,{width:'',border:''})`);
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).textContent(),'Cross-process action');
  assert.equal(await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).getAttribute('onclick'),"parent.postMessage({kind:'cross-click',trusted:event.isTrusted},'*')");
  await tab.playwright.getByRole('dialog',{name:'Cross container',exact:true}).getByRole('button',{name:'Cross-process action',exact:true}).hover();

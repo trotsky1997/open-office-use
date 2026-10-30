@@ -42,6 +42,7 @@ app.whenReady().then(async () => {
     const downloadReady=await sdkTab.prepareDownload({timeoutMs:20000});const downloading=downloadReady.wait();void downloading.catch(()=>{});
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).innerText(),'Download fixture');
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).isEnabled(),true);
+    assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).isVisible(),true);
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).textContent(),'Download fixture');
     assert.equal(await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).getAttribute('href'),'/download-fixture');
     await sdkTab.playwright.getByRole('link',{name:'Download fixture',exact:true}).click({timeoutMs:20000});
@@ -129,6 +130,7 @@ app.whenReady().then(async () => {
     await evaluate(`(async()=>{window.crossMessages=[];window.addEventListener('message',e=>crossMessages.push(e.data));const container=document.createElement('section');container.setAttribute('role','dialog');container.setAttribute('aria-label','Frame container');Object.assign(container.style,{position:'fixed',left:'20px',top:'150px'});const inner=document.createElement('section');inner.setAttribute('role','dialog');inner.setAttribute('aria-label','Inner container');container.append(inner);const f=document.createElement('iframe');f.id='cross-frame';f.src=${JSON.stringify(crossUrl)};Object.assign(f.style,{width:'500px',height:'300px'});inner.append(f);document.body.append(container);await new Promise(resolve=>f.onload=resolve)})()`);
     assert.equal((await sdkTab.observe({includeFrames:true})).frameCoverage,'cross-process');
     assert.equal(await sdkTab.playwright.getByRole('dialog',{name:'Frame container',exact:true}).getByRole('button',{name:'Cross-frame action',exact:true}).innerText(),'Cross-frame action');
+    assert.equal(await sdkTab.playwright.getByRole('dialog',{name:'Frame container',exact:true}).getByRole('button',{name:'Cross-frame action',exact:true}).isVisible(),true);
     await sdkTab.playwright.getByRole('dialog',{name:'Frame container',exact:true}).filter({hasText:'Cross-frame action'}).getByRole('dialog',{name:'Inner container',exact:true}).getByRole('button',{name:'Cross-frame action',exact:true}).hover();
     await new Promise(resolve=>setTimeout(resolve,100));
     assert.deepEqual(await evaluate('window.crossMessages.at(-1)'),{kind:'cross-hover',trusted:true});

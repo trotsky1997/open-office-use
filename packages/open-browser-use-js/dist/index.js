@@ -649,10 +649,10 @@ export class OpenBrowserUseTab {
         try {
             const result = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                 objectId, returnByValue: true, arguments: [{ value: mode }, { value: attribute }],
-                functionDeclaration: `function(mode, name) { if (!this.isConnected) return null; if (mode === 'enabled') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
+                functionDeclaration: `function(mode, name) { if (!this.isConnected) return null; if (mode === 'enabled' || mode === 'visible') { const element = this.nodeType === 3 ? this.parentElement : this; if (!(element instanceof Element)) return null; if (mode === 'visible') { const r = this.nodeType === 3 ? (() => {const range=document.createRange();range.selectNode(this);return range.getBoundingClientRect();})() : element.getBoundingClientRect(); return {value:getComputedStyle(element).visibility === 'visible' && r.width > 0 && r.height > 0}; } for (let el=element; el; el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if (el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true') return {value:false}; return {value:true}; } const value = mode === 'attribute' ? (this.nodeType === 1 ? this.getAttribute(name) : null) : mode === 'textContent' || this.nodeType === 3 ? this.textContent : this.innerText; return {value: typeof value === 'string' ? value.slice(0, 30001) : null}; }`
             }, { sessionId });
             const payload = isObject(result) && isObject(result.result) ? result.result.value : undefined;
-            if (!isObject(payload) || (mode === "enabled" ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
+            if (!isObject(payload) || (["enabled", "visible"].includes(mode) ? typeof payload.value !== "boolean" : typeof payload.value !== "string" && payload.value !== null))
                 throw new RetryablePreflightError("Target value is unavailable; observe again");
             const value = payload.value;
             if (value === null && mode === "innerText")
@@ -663,6 +663,37 @@ export class OpenBrowserUseTab {
                 throw new RetryablePreflightError("Page changed; observe again");
             if (target.frameChain)
                 await this.validateFrames(target.frameChain);
+            if (mode === "visible" && value === true) {
+                let frameVisible = true;
+                for (let i = 0; i < (target.frameChain?.length ?? 0); i++) {
+                    const frame = target.frameChain[i], ownerSession = target.frameChain[i + 1]?.sessionId;
+                    const owner = await this.browser.cdp.call(this.id, "DOM.getFrameOwner", { frameId: frame.id }, { sessionId: ownerSession });
+                    if (!isObject(owner) || typeof owner.backendNodeId !== "number")
+                        throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+                    const result = await this.browser.cdp.call(this.id, "DOM.resolveNode", { backendNodeId: owner.backendNodeId }, { sessionId: ownerSession });
+                    const ownerId = isObject(result) && isObject(result.object) ? result.object.objectId : undefined;
+                    if (typeof ownerId !== "string")
+                        throw new RetryablePreflightError("Frame owner is unavailable; observe again");
+                    try {
+                        const visibility = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId: ownerId, returnByValue: true, functionDeclaration: `function() { if (!this.isConnected) return null; const r=this.getBoundingClientRect(); return getComputedStyle(this).visibility === 'visible' && r.width > 0 && r.height > 0; }` }, { sessionId: ownerSession });
+                        const visible = isObject(visibility) && isObject(visibility.result) ? visibility.result.value : undefined;
+                        if (typeof visible !== "boolean")
+                            throw new RetryablePreflightError("Frame owner changed; observe again");
+                        if (!visible) {
+                            frameVisible = false;
+                            break;
+                        }
+                    }
+                    finally {
+                        await this.browser.cdp.call(this.id, "Runtime.releaseObject", { objectId: ownerId }, { sessionId: ownerSession }).catch(() => { });
+                    }
+                }
+                if (await this.documentId() !== observation.documentId)
+                    throw new RetryablePreflightError("Page changed; observe again");
+                if (target.frameChain)
+                    await this.validateFrames(target.frameChain);
+                return frameVisible;
+            }
             return mode === "enabled" ? value === true && !fresh.disabled : value;
         }
         finally {
@@ -1668,6 +1699,17 @@ export class OpenBrowserUseRoleLocator {
     async innerText(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "innerText")), options.timeoutMs); }
     async textContent(options = {}) { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "textContent")), options.timeoutMs); }
     async isEnabled() { return this.perform(async (node, id) => (await this.tab.locatorRead(id, node.index, "enabled"))); }
+    async isVisible() {
+        const { state, matches } = await this.find();
+        if (!matches.length)
+            return false;
+        if (matches.length > 1)
+            throw new Error(`Locator matched ${matches.length} elements; expected exactly one`);
+        const match = matches[0];
+        if (match.path.length || match.filters.length)
+            this.tab.bindLocatorScope(state.snapshotId, match.node.index, match.path, match.filters);
+        return await this.tab.locatorRead(state.snapshotId, match.node.index, "visible");
+    }
     async getAttribute(name, options = {}) {
         if (typeof name !== "string" || !name || name.length > 256)
             throw new Error("Invalid attribute name");
