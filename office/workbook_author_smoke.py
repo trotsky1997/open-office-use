@@ -98,6 +98,23 @@ with tempfile.TemporaryDirectory() as tmp:
         except (ValueError, OSError): pass
         else: raise AssertionError('Invalid worksheet image accepted')
         assert not invalid.exists()
+    lists=root/'validation-lists.xlsx'
+    list_spec={'sheets':{'Data':{'A1':'Low','A2':'High'}},'sheet_options':{'Data':{'list_validations':[{'range':'B1:B3','values':['Low','001','=text']},{'range':'C1:C3','source':'A1:A2','allow_blank':True}]}}}
+    list_json=root/'list-spec.json';list_json.write_text(json.dumps(list_spec))
+    subprocess.run([sys.executable,str(cli),'author','--spec',str(list_json),'--out',str(lists)],capture_output=True,text=True,check=True)
+    rules=load_workbook(lists)['Data'].data_validations.dataValidation
+    assert len(rules)==2 and rules[0].formula1=='"Low,001,=text"' and rules[0].showErrorMessage and not rules[0].allow_blank
+    assert rules[1].formula1=='$A$1:$A$2' and rules[1].allow_blank and not rules[1].showDropDown
+    list_draft=root/'validation-lists-draft';session.start(list_draft,source=lists)
+    grid=session.read_grid(list_draft,0,'Data','B1:C1')
+    assert grid['data_validation']['complete'] and grid['data_validation']['rules'][1]['list_values']==['Low','High']
+    for idx, rule in enumerate([{'range':'A1','values':['bad,entry']},{'range':'A1','source':'A1:B2'},{'range':'A1','values':['a']},{'range':'B2','values':['x']} ]):
+        invalid=root/f'invalid-list-{idx}.xlsx'
+        spec={'sheets':{'Data':{}},'sheet_options':{'Data':{'list_validations':[rule,rule] if idx==2 else [rule]}}}
+        try: open_office_use.author(spec,invalid,lists if idx==3 else None)
+        except ValueError: pass
+        else: raise AssertionError('Invalid or overlapping list validation accepted')
+        assert not invalid.exists()
     table_file=root/'table.xlsx'
     table_spec={'sheets':{'Sales':{'A1':'Quarter','B1':'Revenue','A2':'Q1','B2':120,'A3':'Q2','B3':140}},'sheet_options':{'Sales':{'tables':[{'name':'SalesTable','range':'A1:B3','style':'TableStyleMedium2','row_stripes':True}]}}}
     table_json=root/'table-spec.json';table_json.write_text(json.dumps(table_spec))

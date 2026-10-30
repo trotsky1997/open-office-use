@@ -20,3 +20,5 @@ Use `author_file` with `sheet_options.images` to embed a local PNG or JPEG as a 
 `author_file` can create native styled/filterable Excel tables using `sheet_options.tables`. Table headers and totals are read-only in the targeted grid and text replacement workflows; use a table-aware operation and review table metadata for changes there.
 
 Use `session_rename_table_column` to update a supported table header and column metadata together. Explicit simple and nested structured references are rewritten, along with implicit references in uniquely identified table cells and calculated-column or totals-row formula metadata, preserving references to other tables. Ambiguous implicit references, unsupported table-column metadata, indirect references and opaque dependencies cause a refusal. Recalculate and inspect formula and chart caches afterward.
+
+For new workbook dropdowns, `author_file` accepts `sheet_options.list_validations` with a target `range` and either literal `values` or a one-dimensional same-sheet `source`. The local grid displays supported suggestions; spreadsheet applications enforce the saved validation rule.

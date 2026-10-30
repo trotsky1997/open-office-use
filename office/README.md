@@ -105,6 +105,14 @@ For basic Excel authoring, `sheet_options` can format a workbook in the same req
 
 Options apply to existing worksheets after values are written. Freeze panes accepts a single cell or `null`; auto-filter accepts a range of at most 10,000,000 cells or `null` and rejects replacement when existing filter criteria or sort state are present. Column widths use Excel character units (greater than 0 and at most 255); row heights use points (greater than 0 and at most 409.5). Format entries accept `bold`, `italic`, `font_size`, six-digit RGB `font_color` and `fill`, `number_format`, `horizontal` (`general`, `left`, `center`, `right`) and boolean `wrap`. Omitted properties retain their existing direct settings. Each format covers up to 10,000 cells; all formats together cover up to 20,000 cells, with at most 100 format entries per sheet and 200 dimension entries of each kind. Merged-cell placeholders are rejected. Formulas are stored without calculation; formula caches may be missing and LibreOffice previews may recalculate them. When modifying an existing workbook, library round-tripping can change unsupported features and formula caches; use the targeted session grid when preserving those matters.
 
+Create spreadsheet dropdowns using `list_validations` in `sheet_options`:
+
+```json
+{"sheets":{"Data":{"A1":"Low","A2":"High"}},"sheet_options":{"Data":{"list_validations":[{"range":"B1:B100","values":["Low","Medium","High"]},{"range":"C1:C100","source":"A1:A2","allow_blank":true}]}}}
+```
+
+Each entry specifies one target range and either a literal `values` list or a one-dimensional `source` range on the same worksheet. Literal lists are limited to 255 UTF-16 units including separators and quotes; commas, double quotes, control characters and Excel escape sequences are rejected. Source ranges contain at most 100 cells. Each target covers at most 1,000,000 cells; up to 100 rules per worksheet are accepted. Overlap with existing validation rules is rejected. The dropdown is visible and Excel is instructed to reject invalid entries; `allow_blank` defaults to false. The local grid exposes suggestions for supported lists but does not enforce validation when editing. Source-based authoring uses an openpyxl round trip and can change unsupported features or caches.
+
 Create a native Excel table with `tables` in `sheet_options`:
 
 ```json

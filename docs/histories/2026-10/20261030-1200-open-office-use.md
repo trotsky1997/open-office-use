@@ -313,3 +313,5 @@ Extended table column rename to handle explicit nested selectors and implicit re
 Extended table renaming to update calculated-column and totals-row formula metadata and target-table totals cells. Verified with an XlsxWriter workbook containing a calculated column and totals; native Excel validation remains pending.
 
 Resolved implicit references using unique worksheet and table ownership across sheets, preserving references to other tables while rewriting explicit references to the renamed table. Ambiguous ownership remains a refusal.
+
+Added authoring of fixed-list and same-sheet range-based spreadsheet dropdown validation, with bounded inputs and overlap rejection. The local grid can display supported choices; its edits do not enforce validation.

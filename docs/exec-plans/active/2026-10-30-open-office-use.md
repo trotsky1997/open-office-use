@@ -209,4 +209,6 @@ Workbook authoring supports named, styled native tables with verified headers an
 
 A revision-bound table column rename updates the header and column metadata together after conservative dependency inspection; structured/indirect references, opaque features and shared parts are rejected. Formula and chart caches remain potentially stale.
 
-Table column rename rewrites supported explicit Table[Column] references in worksheet, chart, validation, conditional-format and defined-name formulas, clears changed cell caches and removes calculation chains. Nested, implicit, shared and indirect references remain unsupported.
+Table column rename rewrites supported explicit Table[Column] references in worksheet, chart, validation, conditional-format and defined-name formulas, clears changed cell caches and removes calculation chains. Later revisions also support nested references and implicit references in uniquely identified table contexts, including calculated-column and totals-row metadata. Shared and indirect references remain unsupported.
+
+Workbook authoring now creates bounded literal or same-sheet range dropdown validations; the grid exposes supported options while validation enforcement remains application-dependent.

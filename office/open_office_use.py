@@ -35,6 +35,7 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.cell import column_index_from_string, get_column_letter, range_boundaries
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
@@ -598,7 +599,7 @@ def format_workbook(workbook, options):
         return 'FF' + value.upper()
     for name, setting in options.items():
         if name not in workbook.sheetnames: raise ValueError(f'Worksheet not found: {name}')
-        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options', 'images', 'tables'}: raise ValueError('Invalid worksheet options')
+        if not isinstance(setting, dict) or set(setting) - {'freeze_panes', 'auto_filter', 'column_widths', 'row_heights', 'formats', 'charts', 'fit_to_page', 'print_options', 'images', 'tables', 'list_validations'}: raise ValueError('Invalid worksheet options')
         sheet = workbook[name]
         if not isinstance(sheet, Worksheet): raise ValueError('Sheet options require a worksheet')
         if 'freeze_panes' in setting:
@@ -702,6 +703,29 @@ def format_workbook(workbook, options):
                         if 'wrap' in style: alignment.wrap_text = style['wrap']
                         cell.alignment = alignment
                     if 'number_format' in style: cell.number_format = style['number_format']
+        list_validations = setting.get('list_validations', [])
+        if not isinstance(list_validations, list) or len(list_validations) > 100: raise ValueError('List validations must be a list of at most 100 entries')
+        for rule in list_validations:
+            if not isinstance(rule, dict) or set(rule) - {'range', 'values', 'source', 'allow_blank'} or ('values' in rule) == ('source' in rule): raise ValueError('List validation requires a range and exactly one of values or source')
+            a, b, c, d = bounds(rule.get('range'), 1000000)
+            if 'allow_blank' in rule and not isinstance(rule['allow_blank'], bool): raise ValueError('allow_blank must be a boolean')
+            if 'values' in rule:
+                values = rule['values']
+                if not isinstance(values, list) or not values or len(values) > 255 or any(not isinstance(value, str) or not value or re.search(r'[,"\x00-\x1f\ud800-\udfff\ufffe\uffff]|_x[0-9a-fA-F]{4}_', value) for value in values): raise ValueError('Invalid literal list validation values')
+                formula = '"' + ','.join(values) + '"'
+                if len(formula.encode('utf-16-le')) // 2 > 255: raise ValueError('Literal list validation exceeds 255 UTF-16 units')
+            else:
+                source = rule['source']
+                if not isinstance(source, str) or not re.fullmatch(r'\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?::\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?', source): raise ValueError('List validation source must be a local cell range')
+                x, y, z, w = bounds(source, 100)
+                if x != z and y != w: raise ValueError('List validation source must be one-dimensional')
+                formula = f'${get_column_letter(x)}${y}:${get_column_letter(z)}${w}'
+            for existing in sheet.data_validations.dataValidation:
+                for ref in existing.sqref.ranges:
+                    if a <= ref.max_col and ref.min_col <= c and b <= ref.max_row and ref.min_row <= d: raise ValueError('List validation overlaps an existing validation')
+            validation = DataValidation(type='list', formula1=formula, allow_blank=rule.get('allow_blank', False), showErrorMessage=True, showDropDown=False, errorStyle='stop')
+            validation.add(f'{get_column_letter(a)}{b}:{get_column_letter(c)}{d}')
+            sheet.add_data_validation(validation)
         tables = setting.get('tables', [])
         if not isinstance(tables, list) or len(tables) > 20: raise ValueError('Tables must be a list of at most 20 entries per sheet')
         for spec in tables:
