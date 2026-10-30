@@ -128,7 +128,7 @@ def session_replace_text(directory: str, base_revision: int, path: str, find: st
 
 @server.tool()
 def list_word_comments(file: str) -> dict[str, Any]:
-    """List Word comments and bounded main-body anchor hints; resolved state is unavailable."""
+    """List Word comments, bounded body anchor hints and available Word 2013 thread metadata."""
     return word.list_comments(file)
 
 

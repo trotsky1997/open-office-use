@@ -64,7 +64,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
 <details id="comments-panel" hidden><summary>Word comments</summary>
-<p>Read comments from the displayed revision. Anchor text and paths are bounded body hints; replies and resolved status require another review workflow.</p>
+<p>Read comments from the displayed revision. Anchor text and paths are bounded body hints. Word 2013 thread metadata is shown when available; review unknown or ambiguous states in Word.</p>
 <button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
@@ -561,10 +561,12 @@ document.getElementById('comments-load').addEventListener('click', async () => {
   if (epoch!==commentListEpoch || displayed!==revision || commentListRevision!==revision) return;
   for (const comment of result.comments) {
    const row=document.createElement('li'); const location=comment.paragraph_paths.length ? comment.paragraph_paths.join(', ') : 'No body path found';
-   row.textContent=`#${comment.id} · ${comment.author || 'Unknown author'} · ${comment.date || 'No date'} · ${comment.text}${comment.text_truncated ? '…' : ''}${comment.text_approximate ? ' (text may be incomplete)' : ''} | Anchor (${comment.anchor_status}): ${comment.anchor_text || '(no text)'}${comment.anchor_text_truncated ? '…' : ''}${comment.anchor_text_approximate ? ' (text may be incomplete)' : ''} | ${location}${comment.path_unavailable || comment.paths_truncated ? ' (some paths unavailable)' : ''}`;
+   const state=comment.resolved===true ? 'Resolved' : comment.resolved===false ? 'Open' : 'Status unknown';
+   const parent=comment.reply_parent_status==='matched' ? ` · Reply to #${comment.reply_to_comment_id}` : comment.reply_to_paragraph_id ? ` · Reply parent ${comment.reply_to_paragraph_id} (${comment.reply_parent_status})` : '';
+   row.textContent=`#${comment.id} · ${state}${parent} · ${comment.author || 'Unknown author'} · ${comment.date || 'No date'} · ${comment.text}${comment.text_truncated ? '…' : ''}${comment.text_approximate ? ' (text may be incomplete)' : ''} | Anchor (${comment.anchor_status}): ${comment.anchor_text || '(no text)'}${comment.anchor_text_truncated ? '…' : ''}${comment.anchor_text_approximate ? ' (text may be incomplete)' : ''} | ${location}${comment.path_unavailable || comment.paths_truncated ? ' (some paths unavailable)' : ''}`;
    list.appendChild(row);
   }
-  status.textContent=`Revision ${revision}: ${result.total_comments} comment(s). ${result.truncated ? 'First 200 shown. ' : ''}${result.anchor_scan_complete ? '' : 'Anchor scan incomplete. ' }Resolved status is unavailable.`;
+  status.textContent=`Revision ${revision}: ${result.total_comments} comment(s). ${result.truncated ? 'First 200 shown. ' : ''}${result.anchor_scan_complete ? '' : 'Anchor scan incomplete. ' }${result.thread_metadata_status==='available' ? 'Thread metadata loaded; unmatched states remain unknown.' : 'Resolved status is unavailable.'}`;
  } catch(error) { if (epoch===commentListEpoch && displayed===revision) status.textContent=`Comments error: ${error.message}`; }
  finally { commentsBusy=false; button.disabled=false; }
 });

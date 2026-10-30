@@ -14,6 +14,7 @@ from pptx import Presentation
 from PIL import Image as PILImage
 from pptx.util import Inches
 from session import set_selection
+from thread_comment_smoke import fixture as thread_fixture
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -88,6 +89,9 @@ async def main():
                 assert not listed_comments.isError and listed_comments.structuredContent['comments'][0]['anchor_text'] == 'Needs review', listed_comments
                 empty_comments = await session.call_tool('list_word_comments', {'file': str(comment_source)})
                 assert not empty_comments.isError and empty_comments.structuredContent['total_comments'] == 0, empty_comments
+                threaded = await session.call_tool('list_word_comments', {'file': str(thread_fixture(root))})
+                assert not threaded.isError and threaded.structuredContent['comments'][0]['resolved'] is True
+                assert threaded.structuredContent['comments'][1]['reply_to_comment_id'] == threaded.structuredContent['comments'][0]['id'], threaded
                 historic_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 0})
                 assert not historic_comments.isError and historic_comments.structuredContent['total_comments'] == 0, historic_comments
                 stale_comment = await session.call_tool('session_add_comment', {'directory': str(comment_draft), 'base_revision': 0, 'path': '/body/p[1]', 'text': 'Stale', 'author': 'Reviewer'})

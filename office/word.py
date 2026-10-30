@@ -186,6 +186,62 @@ def add_comment(source, output, path, text, author):
     return {'file': file, 'comment_id': created_id}
 
 
+def comment_thread_metadata(archive, relationships, nodes):
+    """Associate Word 2013 comment metadata by each comment's final paragraph ID."""
+    import posixpath
+    from collections import defaultdict
+    from lxml import etree
+
+    w15 = '{http://schemas.microsoft.com/office/word/2012/wordml}'
+    rel_type = 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended'
+    links = [item for item in relationships if item.get('Type') == rel_type]
+    if not links:
+        return {}, 'unreferenced' if 'word/commentsExtended.xml' in archive.namelist() else 'absent'
+    if len(links) != 1 or links[0].get('TargetMode') == 'External' or not links[0].get('Target'):
+        return {}, 'invalid'
+    target = links[0].get('Target')
+    part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+    if not part.startswith('word/') or part not in archive.namelist():
+        return {}, 'invalid'
+    try:
+        extended = ooxml.parse_xml(archive.read(part))
+    except (KeyError, ValueError, etree.XMLSyntaxError):
+        return {}, 'invalid'
+    if extended.getroot().tag != w15 + 'commentsEx':
+        return {}, 'invalid'
+    para_ids = defaultdict(list); record_ids = defaultdict(list)
+    for node in nodes:
+        paragraphs = list(node.iter(W + 'p'))
+        para_id = paragraphs[-1].get(W14_PARAGRAPH_ID) if paragraphs else None
+        if para_id and re.fullmatch(r'[0-9A-Fa-f]{8}', para_id):
+            para_ids[para_id.upper()].append(node.get(W + 'id'))
+    for item in extended.getroot().findall(w15 + 'commentEx'):
+        para_id = item.get(w15 + 'paraId')
+        if para_id and re.fullmatch(r'[0-9A-Fa-f]{8}', para_id):
+            record_ids[para_id.upper()].append(item)
+    result = {}
+    for para_id, comment_ids in para_ids.items():
+        records = record_ids.get(para_id, [])
+        if len(comment_ids) != 1 or len(records) != 1:
+            for comment_id in comment_ids:
+                result[comment_id] = {'thread_metadata': 'ambiguous' if len(comment_ids) > 1 or len(records) > 1 else 'missing'}
+            continue
+        record = records[0]; done = record.get(w15 + 'done', '0')
+        parent = record.get(w15 + 'paraIdParent')
+        values = {'0': False, 'false': False, 'off': False, '1': True, 'true': True, 'on': True}
+        if done not in values or (parent is not None and not re.fullmatch(r'[0-9A-Fa-f]{8}', parent)):
+            result[comment_ids[0]] = {'thread_metadata': 'invalid'}; continue
+        parent = parent.upper() if parent else None
+        parent_ids = para_ids.get(parent, []) if parent else []
+        if parent == para_id:
+            result[comment_ids[0]] = {'thread_metadata': 'invalid', 'reply_to_paragraph_id': parent, 'reply_parent_status': 'invalid'}; continue
+        result[comment_ids[0]] = {'thread_metadata': 'matched', 'resolved': values[done],
+                                  'reply_to_paragraph_id': parent,
+                                  'reply_to_comment_id': parent_ids[0] if len(parent_ids) == 1 else None,
+                                  'reply_parent_status': ('root' if parent is None else 'matched' if len(parent_ids) == 1 else 'unresolved' if not parent_ids else 'ambiguous')}
+    return result, 'available'
+
+
 def list_comments(source):
     """Read Word comments and bounded main-body anchor hints without modifying the file."""
     import posixpath
@@ -209,13 +265,13 @@ def list_comments(source):
             rel_path = 'word/_rels/document.xml.rels'
             if rel_path not in names:
                 if 'word/comments.xml' in names: raise ValueError('Unreferenced comments part')
-                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True}
+                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True, 'thread_metadata_status': 'absent'}
             rels = ooxml.parse_xml(archive.read(rel_path))
             if rels.getroot().tag != rel_ns + 'Relationships': raise ValueError('Invalid document relationships')
             links = [item for item in rels.getroot().findall(rel_ns + 'Relationship') if item.get('Type') == comments_type]
             if not links:
                 if 'word/comments.xml' in names: raise ValueError('Unreferenced comments part')
-                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True}
+                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True, 'thread_metadata_status': 'absent'}
             if len(links) != 1 or links[0].get('TargetMode') == 'External' or not links[0].get('Target'):
                 raise ValueError('Invalid comments relationship')
             target = links[0].get('Target')
@@ -226,6 +282,7 @@ def list_comments(source):
             nodes = comments.getroot().findall(W + 'comment'); ids = [node.get(W + 'id') for node in nodes]
             if any(not value or not re.fullmatch(r'[0-9]{1,10}', value) for value in ids) or len(ids) != len(set(ids)):
                 raise ValueError('Invalid or duplicate comment identifiers')
+            metadata, metadata_status = comment_thread_metadata(archive, rels.getroot().findall(rel_ns + 'Relationship'), nodes)
             result = []
             for node in nodes[:200]:
                 paragraphs = []
@@ -237,9 +294,11 @@ def list_comments(source):
                                'text_approximate': any(child.tag != W + 'p' for child in node) or any(child.tag in (W + 'delText', W + 'instrText', W + 'drawing', W + 'object', W + 'sym', W + 'fldChar') for child in node.iter()),
                                'anchor_text': '', 'anchor_text_truncated': False, 'anchor_text_approximate': False,
                                'paragraph_paths': [], 'paths_truncated': False, 'path_unavailable': False,
-                               'anchor_status': 'not_found_in_body', 'resolved': None, '_starts': 0, '_ends': 0, '_refs': 0})
+                               'anchor_status': 'not_found_in_body', 'resolved': None, 'thread_metadata': 'unavailable',
+                               'reply_to_comment_id': None, 'reply_to_paragraph_id': None, 'reply_parent_status': 'unknown',
+                               **metadata.get(node.get(W + 'id'), {}), '_starts': 0, '_ends': 0, '_refs': 0})
             if not result:
-                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True}
+                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True, 'thread_metadata_status': metadata_status}
             by_id = {item['id']: item for item in result}; active = set(); paths = []; visited = 0; work = 0; complete = True
             sibling_indexes = {}
             def paragraph_path_for(node):
@@ -299,6 +358,6 @@ def list_comments(source):
                 if starts == 1 and ends == 1 and item['id'] not in active and complete: item['anchor_status'] = 'range'
                 elif starts or ends: item['anchor_status'] = 'incomplete_range'
                 elif refs: item['anchor_status'] = 'reference_only'
-            return {'total_comments': len(nodes), 'comments': result, 'truncated': len(nodes) > 200, 'anchor_scan_complete': complete}
+            return {'total_comments': len(nodes), 'comments': result, 'truncated': len(nodes) > 200, 'anchor_scan_complete': complete, 'thread_metadata_status': metadata_status}
     except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
         raise ValueError(f'Invalid Word document: {exc}') from exc
