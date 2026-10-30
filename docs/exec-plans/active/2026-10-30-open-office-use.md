@@ -200,3 +200,5 @@ Word table authoring supports fixed proportional columns, header fill and ink, a
 Workbook authoring supports print paper, orientation, area, repeat rows/columns, margins and default/odd-page header/footer text and page numbers. A four-page LibreOffice render verified repeating headings and page numbers with default margins; small margins can suppress running text.
 
 Workbook authoring supports bounded local PNG/JPEG drawings with pixel-preserving aspect ratio, cell anchors and alternative text. Validated source snapshots, existing images and charts, OOXML schema, CLI/MCP and LibreOffice PDF image output; native Excel fidelity remains open.
+
+Positioned slide textboxes support rich runs, links, multiple paragraphs, bullet levels and paragraph spacing. Validated OOXML, targeted paragraph editing, CLI/MCP and LibreOffice rendering; native PowerPoint and complex text formatting remain open.

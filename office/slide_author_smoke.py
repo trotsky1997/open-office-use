@@ -1,10 +1,14 @@
 """Create a positioned slide with editable text, shape and image."""
 import tempfile
+import json
+import sys
+import subprocess
 from pathlib import Path
 from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
 import open_office_use
+import officecli_backend
 import session
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -21,6 +25,21 @@ with tempfile.TemporaryDirectory() as tmp:
     assert slide.shapes[1].text_frame.paragraphs[0].runs[0].font.size.pt == 32
     assert slide.shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Teal illustration'
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    rich_spec={'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':7,'height':3,'font':'Arial','font_size':24,'color':'14283F','paragraphs':[{'runs':[{'text':'Revenue '},{'text':'+18%','bold':True,'color':'236B8E','url':'https://example.com/report'}]},{'text':'Retention 92%','bullet':True,'level':0,'space_after':8},{'text':'Renewals improved','bullet':True,'level':1}]}]}]}
+    rich=root/'rich.pptx'; rich_spec_path=root/'rich.json'; rich_spec_path.write_text(json.dumps(rich_spec))
+    cli=Path(__file__).with_name('open_office_use.py'); call=subprocess.run([sys.executable,str(cli),'author','--spec',str(rich_spec_path),'--out',str(rich)],capture_output=True,text=True,check=True)
+    assert json.loads(call.stdout)['output']==str(rich.resolve())
+    rich_shape=Presentation(rich).slides[0].shapes[0]; paragraphs=rich_shape.text_frame.paragraphs
+    assert [paragraph.text for paragraph in paragraphs]==['Revenue +18%','Retention 92%','Renewals improved']
+    assert paragraphs[0].runs[1].font.bold and paragraphs[0].runs[1].font.size.pt==24 and str(paragraphs[0].runs[1].font.color.rgb)=='236B8E'
+    assert paragraphs[0].runs[1].hyperlink.address=='https://example.com/report' and paragraphs[2].level==1
+    assert paragraphs[1]._p.pPr.find('{http://schemas.openxmlformats.org/drawingml/2006/main}buChar').get('char')=='•'
+    code, validation, _=officecli_backend.invoke('validate',rich); assert code==0 and validation['success'],validation
+    rich_pdf=open_office_use.render(rich,root/'rich-render'); rich_text=subprocess.run(['pdftotext',rich_pdf,'-'],capture_output=True,text=True,check=True).stdout
+    assert 'Retention 92%' in rich_text and 'Renewals improved' in rich_text
+    rich_draft=root/'rich-draft';session.start(rich_draft,source=rich)
+    changed=session.replace_text(rich_draft,0,f'/slide[1]/shape[@id={rich_shape.shape_id}]/paragraph[2]','Retention','Customer retention')
+    assert Presentation(changed['file']).slides[0].shapes[0].text_frame.paragraphs[1].text=='Customer retention 92%'
     fit_spec = {'slides':[{'layout':'blank','elements':[
         {'type':'image','path':str(image),'x':1,'y':1,'width':2,'height':2,'fit':'contain'},
         {'type':'image','path':str(image),'x':4,'y':1,'width':2,'height':2,'fit':'cover'}]}]}
@@ -67,6 +86,13 @@ with tempfile.TemporaryDirectory() as tmp:
     try: open_office_use.author({'slide_size':{'width':10,'height':7.5}}, root/'resize.pptx', out)
     except ValueError: pass
     else: raise AssertionError('Existing presentation was resized')
+    invalid_paragraphs=[{'paragraphs':[{'text':'x','runs':[]}]}, {'paragraphs':[{'text':'x','bullet':'yes'}]}, {'paragraphs':[{'text':'x','level':9}]}, {'paragraphs':[{'runs':[{'text':'x','url':'javascript:alert(1)'}]}]}, {'paragraphs':[{'runs':[{'text':'bad\nline'}]}]}, {'text':'x','paragraphs':[{'text':'x'}]}]
+    for index, content in enumerate(invalid_paragraphs):
+        path=root/f'bad-rich-{index}.pptx'
+        try: open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'textbox','x':0,'y':0,'width':3,'height':2,**content}]}]},path)
+        except ValueError: pass
+        else: raise AssertionError('Invalid rich slide text accepted')
+        assert not path.exists()
     for i, bad in enumerate([
         {'slides':[{'layout':'blank','elements':[{'type':'textbox','x':0,'y':0,'width':0,'height':1,'text':'x'}]}]},
         {'slides':[{'layout':'blank','elements':[{'type':'rectangle','x':0,'y':0,'width':1,'height':1,'fill':'INVALID'}]}]},

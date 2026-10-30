@@ -287,3 +287,7 @@ Added worksheet print area, repeating rows and columns, paper, orientation, marg
 ### Spreadsheet image authoring
 
 Added cell-anchored PNG/JPEG workbook drawings with bounded dimensions, snapshots and alternative descriptions. Checked existing drawing IDs, schema, CLI/MCP and LibreOffice PDF image output; openpyxl source round-tripping and native Excel rendering remain fidelity risks.
+
+### Rich PowerPoint textbox authoring
+
+Added multiple formatted paragraphs, bullet levels and hyperlinks to positioned textboxes. Verified schema, paragraph replacement, invalid inputs, MCP, and a rendered slide; native PowerPoint fidelity remains unverified.

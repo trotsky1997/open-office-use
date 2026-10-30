@@ -17,3 +17,5 @@ Use `session_read_slide_chart_grid` and `session_edit_slide_chart_grid` to inspe
 Set `sync_caches: true` on `session_edit_slide_chart_grid` to synchronize fully comparable affected chart references in the same atomic revision. All charts sharing the workbook must be inspected and initially match; unsupported or stale caches cause the edit to fail. Formula freshness remains unknown.
 
 Verified blank cells can be filled or cleared with atomic cache synchronization. Blanks in merged or multi-cell formula ranges and formulas without saved results remain unverified; chart blank display depends on rendering settings.
+
+Positioned textboxes support rich paragraphs and runs with bullets, levels, fonts, colors and links. Use paragraph-level search and targeted replacement for later edits, and inspect rendered slides for wrapping.
