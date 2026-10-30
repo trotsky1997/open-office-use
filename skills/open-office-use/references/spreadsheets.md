@@ -60,3 +60,5 @@ Chart-cache scans expose bounded plot and series indices and direct literal seri
 The viewer’s Chart cache checks panel can select inspected fixed-data samples or literal series names and save a revision. It shows up to 200 candidates and rejects large integers outside JavaScript’s exact range. CLI/MCP reject integer values that cannot be represented exactly as binary64; client and Excel precision can be more limited.
 
 Use `session_set_chart_literal_values` to update up to 100 fixed numeric points in one atomic chart revision. Inspect static category text separately, especially labels that contain percentages.
+
+For a simple workbook pie or doughnut chart, `session_set_chart_pie_point_colors` sets one explicit RGB fill per inspected point in a snapshot-bound revision. The change affects shared placements and replaces theme fills; render and review.

@@ -405,6 +405,17 @@ def scan_chart_caches(directory, revision):
     return {'revision': revision, **chart_cache.scan(source)}
 
 
+def set_chart_pie_point_colors(directory, base_revision, part, colors, expected_sha256=None):
+    state = info(directory); source = revision_file(state, base_revision)
+    if state['format'] != 'xlsx': raise ValueError('Chart color editing requires an XLSX session')
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
+    try: result = chart_cache.set_pie_point_colors(source, output, part, colors, expected_sha256)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, **result}
+
+
 def set_chart_literal_series_name(directory, base_revision, part, series, text, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'xlsx': raise ValueError('Chart series editing requires an XLSX session')

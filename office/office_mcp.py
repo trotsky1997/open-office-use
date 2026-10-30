@@ -111,6 +111,12 @@ def session_scan_chart_caches(directory: str, revision: int) -> dict[str, Any]:
 
 
 @server.tool()
+def session_set_chart_pie_point_colors(directory: str, base_revision: int, part: str, colors: list[str], expected_sha256: str | None = None) -> dict[str, Any]:
+    """Set one RGB color per point in an inspected simple workbook pie or doughnut chart."""
+    return session.set_chart_pie_point_colors(directory, base_revision, part, colors, expected_sha256)
+
+
+@server.tool()
 def session_set_chart_literal_series_name(directory: str, base_revision: int, part: str, series: StrictInt, text: str, expected_sha256: str | None = None) -> dict[str, Any]:
     """Change a direct literal series name in a single-plot XLSX chart using its inspected one-based series index."""
     return session.set_chart_literal_series_name(directory, base_revision, part, series, text, expected_sha256)

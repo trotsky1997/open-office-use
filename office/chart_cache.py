@@ -240,6 +240,54 @@ def scan(file):
             raise ValueError(f'Invalid workbook package: {exc}') from exc
 
 
+def set_pie_point_colors(source, output, part, colors, expected_sha256=None):
+    """Set explicit solid fills for every point in a simple pie or doughnut chart."""
+    if Path(source).suffix.lower() != '.xlsx' or Path(output).suffix.lower() != '.xlsx': raise ValueError('Chart color editing requires XLSX input and output')
+    if not isinstance(part, str) or not isinstance(colors, list) or not 1 <= len(colors) <= 200 or any(not isinstance(color, str) or not re.fullmatch(r'[0-9a-fA-F]{6}', color) for color in colors): raise ValueError('Provide a chart part and 1 to 200 six-digit RGB colors')
+    def select(file):
+        result = scan(file); charts = [item for item in result['charts'] if item['part'] == part]
+        if len(charts) != 1 or charts[0]['status'] != 'scanned' or charts[0]['external_data'] or charts[0]['extensions_present'] or charts[0]['plot_count'] != 1: raise ValueError('Chart is unavailable or contains unsupported extensions or plots')
+        refs = [item for item in charts[0]['references'] if item['role'] == 'val' and item['kind'] in ('numLit','numRef')]
+        if len(refs) != 1 or refs[0]['status'] not in ('literal','match','mismatch') or refs[0].get('unverified_points', 0) or refs[0]['points'] != len(colors): raise ValueError('Chart values must be fully inspected with one color per point')
+        return part
+    def edit(tree, _archive):
+        areas = tree.getroot().findall(C+'chart/'+C+'plotArea')
+        plots = [node for node in areas[0] if isinstance(node.tag, str) and node.tag.startswith(C) and node.tag.endswith('Chart')] if len(areas) == 1 else []
+        if len(plots) != 1 or plots[0].tag not in (C+'pieChart', C+'doughnutChart'): raise ValueError('Chart must contain one pie or doughnut plot')
+        series = plots[0].findall(C+'ser')
+        if len(series) != 1: raise ValueError('Chart must have exactly one series')
+        series = series[0]; existing = {}
+        for point in series.findall(C+'dPt'):
+            ids = point.findall(C+'idx'); raw = ids[0].get('val') if len(ids) == 1 else None
+            if raw is None or not raw.isdecimal() or len(raw) > 8 or int(raw) >= len(colors) or int(raw) in existing: raise ValueError('Chart point formatting is ambiguous')
+            existing[int(raw)] = point
+        A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+        fills = {A+name for name in ('noFill','solidFill','gradFill','blipFill','pattFill','grpFill')}
+        for index, color in enumerate(colors):
+            point = existing.get(index)
+            if point is None:
+                point = etree.Element(C+'dPt'); etree.SubElement(point,C+'idx',val=str(index))
+                following = next((child for child in series if child.tag in (C+'dLbls',C+'trendline',C+'errBars',C+'cat',C+'val',C+'extLst')),None)
+                if following is None: series.append(point)
+                else: series.insert(series.index(following),point)
+            properties = point.findall(C+'spPr')
+            if len(properties) > 1: raise ValueError('Point shape properties are ambiguous')
+            if properties: shape = properties[0]
+            else:
+                shape = etree.Element(C+'spPr'); following = next((child for child in point if child.tag in (C+'pictureOptions',C+'extLst')),None)
+                if following is None: point.append(shape)
+                else: point.insert(point.index(following),shape)
+            old = [child for child in shape if child.tag in fills]
+            if len(old) > 1: raise ValueError('Point fill is ambiguous')
+            for child in old: shape.remove(child)
+            fill = etree.Element(A+'solidFill'); etree.SubElement(fill,A+'srgbClr',val=color.upper())
+            following = next((child for child in shape if child.tag not in (A+'xfrm',A+'prstGeom',A+'custGeom')),None)
+            if following is None: shape.append(fill)
+            else: shape.insert(shape.index(following),fill)
+    ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
+    return {'output': str(output), 'chart_part': part, 'colors': [color.upper() for color in colors], 'point_count': len(colors)}
+
+
 def set_literal_series_name(source, output, part, series, text, expected_sha256=None):
     """Edit a direct literal series name in one supported plot."""
     if Path(source).suffix.lower() != '.xlsx' or Path(output).suffix.lower() != '.xlsx': raise ValueError('Chart name editing requires XLSX input and output')

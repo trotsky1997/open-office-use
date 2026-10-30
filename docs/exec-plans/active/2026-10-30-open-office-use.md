@@ -364,3 +364,5 @@ The workbook viewer can select and edit fixed chart numeric points, shared categ
 Workbook and slide literal chart edits preserve integral CLI/MCP input until validation and reject integers not exactly representable as binary64. Verified adjacent values around 2^53 and scientific notation; client and native Office precision can impose further limits.
 
 Workbook literal chart points support atomic multi-point edits in a single revision, including final pie-value validation. A reference bar chart rendered updated values; LibreOffice failed to draw the source reference pie slices both before and after editing, and its percentage-bearing category labels stayed static. Native Excel remains unverified.
+
+The reference workbook pie omitted visible slices in LibreOffice until explicit point fills were applied. Added snapshot-bound CLI/MCP pie and doughnut point-color edits; the repaired reference rendered visible slices, changed only its chart part and passed OfficeCLI validation. Native Excel remains unverified.

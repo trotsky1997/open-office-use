@@ -1476,6 +1476,7 @@ def main():
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True); session_calc.add_argument('--allow-dynamic-arrays', action='store_true')
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
     session_chart_scan = sub.add_parser('scan-chart-caches'); session_chart_scan.add_argument('directory'); session_chart_scan.add_argument('--revision', type=int, required=True)
+    pie_colors = sub.add_parser('set-chart-pie-point-colors'); pie_colors.add_argument('directory'); pie_colors.add_argument('--base', type=int, required=True); pie_colors.add_argument('--part', required=True); pie_colors.add_argument('--colors', required=True, help='JSON array of six-digit RGB colors'); pie_colors.add_argument('--expected-sha256')
     chart_name = sub.add_parser('set-chart-literal-series-name'); chart_name.add_argument('directory'); chart_name.add_argument('--base', type=int, required=True); chart_name.add_argument('--part', required=True); chart_name.add_argument('--series', type=int, required=True); chart_name.add_argument('--text', required=True); chart_name.add_argument('--expected-sha256')
     chart_category = sub.add_parser('set-chart-literal-category'); chart_category.add_argument('directory'); chart_category.add_argument('--base', type=int, required=True); chart_category.add_argument('--part', required=True); chart_category.add_argument('--reference', type=int, required=True); chart_category.add_argument('--point', type=int, required=True); chart_category.add_argument('--text', required=True); chart_category.add_argument('--expected-sha256')
     chart_values = sub.add_parser('set-chart-literal-values'); chart_values.add_argument('directory'); chart_values.add_argument('--base', type=int, required=True); chart_values.add_argument('--part', required=True); chart_values.add_argument('--changes', required=True, help='JSON array of reference, point, value objects'); chart_values.add_argument('--expected-sha256')
@@ -1614,6 +1615,8 @@ def main():
                 result = session.scan_formulas(args.directory, args.base)
             elif args.action == 'scan-chart-caches':
                 result = session.scan_chart_caches(args.directory, args.revision)
+            elif args.action == 'set-chart-pie-point-colors':
+                result = session.set_chart_pie_point_colors(args.directory, args.base, args.part, json.loads(args.colors), args.expected_sha256)
             elif args.action == 'set-chart-literal-series-name':
                 result = session.set_chart_literal_series_name(args.directory, args.base, args.part, args.series, args.text, args.expected_sha256)
             elif args.action == 'set-chart-literal-category':

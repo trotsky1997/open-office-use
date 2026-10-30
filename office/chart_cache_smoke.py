@@ -24,6 +24,32 @@ with tempfile.TemporaryDirectory() as tmp:
     sheet.write_column('A1',['Month','Jan','Feb']); sheet.write_column('B1',['Revenue',10,20])
     chart=book.add_chart({'type':'column'}); chart.set_title({'name':'Revenue'}); chart.add_series({'name':"='Sales Data'!$B$1",'categories':"='Sales Data'!$A$2:$A$3",'values':"='Sales Data'!$B$2:$B$3"}); sheet.insert_chart('D2',chart); book.close()
     baseline=chart_cache.scan(source); assert baseline['chart_parts_total']==1 and baseline['complete'] and baseline['mismatch_references']==0,baseline
+    pie_source=root/'pie-colors.xlsx'; pie_book=xlsxwriter.Workbook(str(pie_source)); pie_sheet=pie_book.add_worksheet('Data')
+    pie_sheet.write_column('A1',['A','B','C']);pie_sheet.write_column('B1',[45,30,25]);pie=pie_book.add_chart({'type':'pie'});pie.add_series({'categories':'=Data!$A$1:$A$3','values':'=Data!$B$1:$B$3','points':[{'border':{'color':'black'}},{},{}]});pie_sheet.insert_chart('D2',pie);pie_book.close()
+    pie_report=chart_cache.scan(pie_source);pie_part=pie_report['charts'][0]['part'];pie_draft=root/'pie-colors-draft';session.start(pie_draft,source=pie_source)
+    for colors in ([],['FFFFFF'],['GGGGGG','FFFFFF','FFFFFF']):
+        try: session.set_chart_pie_point_colors(pie_draft,0,pie_part,colors)
+        except ValueError: pass
+        else: raise AssertionError('Invalid pie colors accepted')
+    try: session.set_chart_pie_point_colors(pie_draft,0,pie_part,['FF0000','00FF00','0000FF'],'0'*64)
+    except ValueError: pass
+    else: raise AssertionError('Stale pie color snapshot accepted')
+    pie_colors=session.set_chart_pie_point_colors(pie_draft,0,pie_part,['FF0000','00FF00','0000FF'],pie_report['snapshot_sha256'])
+    with zipfile.ZipFile(pie_source) as before,zipfile.ZipFile(pie_colors['output']) as after:
+        assert all(before.read(name)==after.read(name) for name in before.namelist() if name!=pie_part)
+        tree=etree.fromstring(after.read(pie_part)); colors=tree.findall('.//'+C+'dPt/'+C+'spPr/{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill/{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr'); assert [node.get('val') for node in colors]==['FF0000','00FF00','0000FF']
+        assert tree.find('.//'+C+'dPt/'+C+'spPr/{http://schemas.openxmlformats.org/drawingml/2006/main}ln') is not None
+    code,validation,_=officecli_backend.invoke('validate',pie_colors['output']);assert code==0 and validation['success'],validation
+    cli=Path(__file__).with_name('open_office_use.py');cmd=[sys.executable,str(cli),'session','set-chart-pie-point-colors',str(pie_draft),'--base','1','--part',pie_part,'--colors',json.dumps(['112233','445566','778899'])]
+    assert json.loads(subprocess.run(cmd,capture_output=True,text=True,check=True).stdout)['revision']==2
+    with zipfile.ZipFile(pie_draft/'revision-000002.xlsx') as archive:
+        tree=etree.fromstring(archive.read(pie_part)); fills=tree.findall('.//'+C+'dPt/'+C+'spPr/{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill/{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr')
+        assert [node.get('val') for node in fills]==['112233','445566','778899']
+    code,validation,_=officecli_backend.invoke('validate',pie_draft/'revision-000002.xlsx');assert code==0 and validation['success'],validation
+    wrong_draft=root/'not-pie-draft';session.start(wrong_draft,source=source)
+    try: session.set_chart_pie_point_colors(wrong_draft,0,baseline['charts'][0]['part'],['FF0000','00FF00'])
+    except ValueError: pass
+    else: raise AssertionError('Non-pie color edit accepted')
     shared_source=root/'shared-text-chart.xlsx'; shared_book=xlsxwriter.Workbook(str(shared_source)); shared_sheet=shared_book.add_worksheet('Data')
     shared_sheet.write('A1','prefix x005F_text'); shared_sheet.write('B1',10)
     shared_chart=shared_book.add_chart({'type':'column'}); shared_chart.add_series({'categories':'=Data!$A$1','values':'=Data!$B$1'}); shared_sheet.insert_chart('D1',shared_chart); shared_book.close()
