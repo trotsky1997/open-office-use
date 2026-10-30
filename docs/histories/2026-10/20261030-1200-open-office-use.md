@@ -75,3 +75,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 增加页眉和页脚的分页文字搜索，覆盖表格、CLI、MCP 与预览；长清单后方的目标可按路径加载并检查共享节。
 
 - 增加幻灯片渲染文字候选检查，贯通 CLI、MCP、审阅包和本地预览，报告映射与覆盖限制。
+
+- 幻灯片渲染文字检查覆盖普通表格和合并单元格，按物理单元格返回可定位路径，并标记不支持的表格结构。

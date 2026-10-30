@@ -391,7 +391,7 @@ def audit_file(file: str) -> dict[str, Any]:
 
 @server.tool()
 def inspect_slide_text(file: str) -> dict[str, Any]:
-    """Find slide text box candidates needing review against a LibreOffice PDF rendering."""
+    """Find slide text box or table cell candidates needing review against a LibreOffice PDF rendering."""
     return slide_text_check.scan(file, render)
 
 

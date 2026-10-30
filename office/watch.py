@@ -94,7 +94,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 </form></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
-<button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details><p>Compare text boxes with extracted text from the rendered PDF; review candidates visually.</p><button type="button" id="slide-text-scan">Check rendered text</button><p id="slide-text-status" role="status"></p><pre id="slide-text-output"></pre></details>
+<button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details><p>Compare text boxes and table cells with extracted text from the rendered PDF; review candidates visually.</p><button type="button" id="slide-text-scan">Check rendered text</button><p id="slide-text-status" role="status"></p><ul id="slide-text-results"></ul><details><summary>Full rendered text report</summary><pre id="slide-text-output"></pre></details></details>
 <details id="formula-panel" hidden><summary>Workbook calculation and checks</summary>
 <p>Scan the latest saved revision for cached errors and missing results. Recalculation creates a new revision using LibreOffice, which can change workbook features; compare and review the result.</p>
 <button type="button" id="formula-scan">Scan formulas</button> <button type="button" id="formula-recalculate">Recalculate and save revision</button>
@@ -590,7 +590,7 @@ function clearHighlight() {
 }
 document.getElementById('layout-clear').addEventListener('click', clearHighlight);
 function clearLayoutFor(revision) {
- if (slideTextRevision !== null && slideTextRevision !== revision) { slideTextEpoch++; slideTextRevision=null; document.getElementById('slide-text-status').textContent=''; document.getElementById('slide-text-output').textContent=''; }
+ if (slideTextRevision !== null && slideTextRevision !== revision) { slideTextEpoch++; slideTextRevision=null; document.getElementById('slide-text-status').textContent=''; document.getElementById('slide-text-results').replaceChildren(); document.getElementById('slide-text-output').textContent=''; }
  if (layoutRevision !== null && layoutRevision !== revision) {
   clearHighlight(); layoutReport=null; layoutRevision=null; document.getElementById('layout-status').textContent=''; document.getElementById('layout-results').replaceChildren(); document.getElementById('layout-scan-output').textContent='';
  }
@@ -627,12 +627,22 @@ async function showLayoutHighlight(highlight, scroll) {
 document.getElementById('slide-text-scan').addEventListener('click', async () => {
  if (displayed<0) return;
  const revision=displayed, epoch=++slideTextEpoch, button=document.getElementById('slide-text-scan'); slideTextRevision=revision; button.disabled=true;
- document.getElementById('slide-text-status').textContent=`Checking revision ${revision}…`; document.getElementById('slide-text-output').textContent='';
+ document.getElementById('slide-text-status').textContent=`Checking revision ${revision}…`; document.getElementById('slide-text-results').replaceChildren(); document.getElementById('slide-text-output').textContent='';
  try {
   const response=await fetch('slide-text-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Text check failed');
   if (epoch!==slideTextEpoch || displayed!==revision) return;
   document.getElementById('slide-text-status').textContent=`Revision ${revision}: ${result.candidate_count} candidate(s); ${result.complete ? 'eligible checks complete' : 'scan incomplete'}. Inspect the rendered slides.`;
+  for (const candidate of result.candidates) {
+   const row=document.createElement('li'), use=document.createElement('button');
+   row.append(document.createTextNode(`${candidate.path_hint}: ${candidate.source_text} `));
+   use.type='button'; use.textContent='Load target'; use.disabled=pinned!==null || current!==revision;
+   use.addEventListener('click', async () => {
+    if (pinned!==null || current!==revision || displayed!==revision || slideTextRevision!==revision) return;
+    document.getElementById('edit-panel').open=true; await loadElement(candidate.path_hint);
+   });
+   row.appendChild(use); document.getElementById('slide-text-results').appendChild(row);
+  }
   document.getElementById('slide-text-output').textContent=JSON.stringify(result,null,2);
  } catch(error) { if (epoch===slideTextEpoch && displayed===revision) document.getElementById('slide-text-status').textContent=`Text check error: ${error.message}`; }
  finally {button.disabled=false;}
@@ -934,6 +944,7 @@ function display(state, live) {
  document.getElementById('tracked-accept').disabled=trackedBusy || !live || trackedRevision!==state.revision; document.getElementById('tracked-reject').disabled=trackedBusy || !live || trackedRevision!==state.revision;
  if (textSearchState && textSearchState.revision!==state.revision) clearTextSearch();
  document.querySelectorAll('#text-search-results button').forEach(button=>button.disabled=!live);
+ document.querySelectorAll('#slide-text-results button').forEach(button=>button.disabled=!live);
  clearChartCacheFor(state.revision);
  if (!live) document.querySelectorAll('#chart-cache-actions button').forEach(button=>button.disabled=true);
  clearWorkbookFor(state.revision);

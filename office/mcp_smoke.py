@@ -141,7 +141,7 @@ async def main():
                 layout_revision = await session.call_tool('session_inspect_slide_layout', {'directory': str(slide_draft), 'revision': 0})
                 assert not layout_revision.isError and layout_revision.structuredContent['revision'] == 0, layout_revision
                 slide_text = await session.call_tool('inspect_slide_text', {'file': str(slide_source)})
-                assert not slide_text.isError and slide_text.structuredContent['mapping_valid'] and slide_text.structuredContent['text_shapes_checked'] == 1, slide_text
+                assert not slide_text.isError and slide_text.structuredContent['mapping_valid'] and slide_text.structuredContent['text_shapes_checked'] == 1 and slide_text.structuredContent['table_cells_checked'] == 1, slide_text
                 slide_text_revision = await session.call_tool('session_inspect_slide_text', {'directory': str(slide_draft), 'revision': 0})
                 assert not slide_text_revision.isError and slide_text_revision.structuredContent['revision'] == 0, slide_text_revision
                 slide_edit = await session.call_tool('session_replace_text', {'directory': str(slide_draft), 'base_revision': 0, 'path': '/slide[1]/shape[1]/paragraph[1]', 'find': 'content', 'replacement': 'result'})
