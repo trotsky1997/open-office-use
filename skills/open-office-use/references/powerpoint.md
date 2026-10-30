@@ -55,3 +55,5 @@ Slide chart inspection returns `axis_inventory` with saved standard-axis bounds,
 Use `session_set_slide_chart_axis_bounds` with an inspected chart part, value-axis ID and snapshot hash to set both explicit bounds in an existing revision; pass null for an automatic bound. Check `affected_paths` and `affected_paths_complete` for shared chart parts, then re-inspect and render. The viewer’s Slide chart axes panel also edits a selected value axis against its displayed snapshot.
 
 Inspect `axis_range_candidates` for saved cache points outside explicit value-axis bounds. It covers one unstacked bar/column or line plot; unsupported structures report their reason. Cache freshness and rendered clipping require separate review.
+
+Chart inspection also reads directly embedded literal category and numeric series data. Check workbook status: literal-only charts may have no embedded worksheet to reconcile or edit.

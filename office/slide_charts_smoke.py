@@ -28,6 +28,27 @@ with tempfile.TemporaryDirectory() as tmp:
     assert chart['series'][0]['references']['val']['formula']=='Sheet1!$B$2:$B$3' and chart['workbook']['status']=='embedded'
     assert chart['reconciliation']['status']=='match' and chart['reconciliation']['complete']
     assert chart['reconciliation']['formula_freshness']=='unknown'
+    literal = root/'literal-chart.pptx'
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(literal,'w') as dst:
+        for entry in src.infolist():
+            data=src.read(entry.filename)
+            if entry.filename == chart['chart_part'].lstrip('/'):
+                tree=etree.fromstring(data); ser=tree.find('.//'+slide_charts.C+'ser')
+                tx=ser.find(slide_charts.C+'tx'); tx.clear(); etree.SubElement(tx,slide_charts.C+'v').text='Revenue'
+                for role, ref_tag, cache_tag, literal_tag in [('cat','strRef','strCache','strLit'),('val','numRef','numCache','numLit')]:
+                    parent=ser.find(slide_charts.C+role); reference=parent.find(slide_charts.C+ref_tag); cache=reference.find(slide_charts.C+cache_tag)
+                    reference.remove(cache); cache.tag=slide_charts.C+literal_tag; parent.replace(reference,cache)
+                external=tree.find(slide_charts.C+'externalData')
+                if external is not None: tree.remove(external)
+                data=etree.tostring(tree)
+            dst.writestr(entry,data)
+    literal_report=slide_charts.inspect(literal); literal_chart=literal_report['charts'][0]
+    assert literal_report['complete'] and literal_chart['workbook']['status']=='absent' and literal_chart['series'][0]['values']==[100,120]
+    assert literal_chart['categories']==['Q1','Q2'] and all(literal_chart['series'][0]['references'][role]['status']=='literal' for role in ('tx','cat','val'))
+    literal_draft=root/'literal-draft'; session.start(literal_draft,source=literal)
+    axis_id=next(item['id'] for item in literal_chart['axis_inventory']['axes'] if item['type']=='valAx')
+    session.set_slide_chart_axis_bounds(literal_draft,0,literal_chart['chart_part'],axis_id,0,110,literal_report['snapshot_sha256'])
+    assert session.inspect_slide_charts(literal_draft,1)['charts'][0]['axis_range_candidates']['count']==1
     grid_draft=root/'grid-draft';session.start(grid_draft,source=source)
     grid=session.read_slide_chart_grid(grid_draft,0,chart['chart_part'],'Sheet1','B2:B3')
     assert grid['rows'][0][0]['value']==100 and grid['rows'][0][0]['editable']

@@ -443,3 +443,5 @@ Added targeted session edits for PowerPoint value-axis bounds, including automat
 Added a revision-bound viewer panel for inspecting and editing slide chart axes, with shared-placement warnings and pending-edit protection.
 
 Added bounded slide-chart axis range candidates and review flags based on saved chart caches, with explicit unsupported coverage.
+
+Probed OfficeCLI reference artifacts and added PowerPoint literal chart category, name and numeric value inspection, including axis range checks. Source DOCX and PPTX schema diagnostics were present before edits.

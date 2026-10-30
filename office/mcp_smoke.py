@@ -150,6 +150,21 @@ async def main():
                 chart_inventory = await session.call_tool('inspect_slide_charts', {'file':str(positioned)})
                 assert not chart_inventory.isError and chart_inventory.structuredContent['charts'][0]['series'][0]['values'] == [100,120], chart_inventory
                 assert chart_inventory.structuredContent['charts'][0]['reconciliation']['status'] == 'match' and chart_inventory.structuredContent['charts'][0]['description'] == 'Quarterly revenue chart', chart_inventory
+                literal_slide = root/'literal-slide.pptx'; chart_part = chart_inventory.structuredContent['charts'][0]['chart_part'].lstrip('/')
+                chart_ns = '{http://schemas.openxmlformats.org/drawingml/2006/chart}'
+                with zipfile.ZipFile(positioned) as original, zipfile.ZipFile(literal_slide,'w') as changed:
+                    for entry in original.infolist():
+                        data=original.read(entry.filename)
+                        if entry.filename == chart_part:
+                            tree=etree.fromstring(data); ser=tree.find('.//'+chart_ns+'ser'); title=ser.find(chart_ns+'tx'); title.clear(); etree.SubElement(title,chart_ns+'v').text='Revenue'
+                            for role,ref,cache,literal in [('cat','strRef','strCache','strLit'),('val','numRef','numCache','numLit')]:
+                                parent=ser.find(chart_ns+role); old=parent.find(chart_ns+ref); data_node=old.find(chart_ns+cache); old.remove(data_node); data_node.tag=chart_ns+literal; parent.replace(old,data_node)
+                            external=tree.find(chart_ns+'externalData')
+                            if external is not None: tree.remove(external)
+                            data=etree.tostring(tree)
+                        changed.writestr(entry,data)
+                literal_result=await session.call_tool('inspect_slide_charts', {'file':str(literal_slide)})
+                assert not literal_result.isError and literal_result.structuredContent['complete'] and literal_result.structuredContent['charts'][0]['series'][0]['references']['val']['status']=='literal' and literal_result.structuredContent['charts'][0]['series'][0]['values']==[100,120], literal_result
                 axis_inventory = chart_inventory.structuredContent['charts'][0]['axis_inventory']; axis = next(item for item in axis_inventory['axes'] if item['type'] == 'valAx')
                 assert axis_inventory['complete'] and axis['minimum'] == 0 and axis['maximum'] == 150, axis_inventory
                 axis_draft = root/'chart-axis-draft'; assert not (await session.call_tool('start_session', {'directory':str(axis_draft),'source':str(positioned)})).isError

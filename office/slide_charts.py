@@ -129,7 +129,7 @@ def axis_inventory(chart):
 
 def axis_range_candidates(chart, record):
     """Compare saved cache points to explicit bounds for simple, unstacked plots."""
-    result = {'status': 'unsupported', 'reason': None, 'count': 0, 'examples': [], 'source': 'saved_chart_cache'}
+    result = {'status': 'unsupported', 'reason': None, 'count': 0, 'examples': [], 'source': 'saved_chart_values'}
     axes = record['axis_inventory']
     if not axes['complete']: result['reason'] = 'incomplete_axis_inventory'; return result
     if not axes['axes']: result.update(status='not_applicable', reason='no_axes'); return result
@@ -144,7 +144,7 @@ def axis_range_candidates(chart, record):
     if len(matching) != 1: result['reason'] = 'ambiguous_value_axis'; return result
     axis = matching[0]; result['axis_id'] = axis['id']; result['minimum'] = axis['minimum']; result['maximum'] = axis['maximum']
     if axis['minimum'] is None and axis['maximum'] is None: result.update(status='not_applicable', reason='automatic_bounds'); return result
-    if len(record['series']) != record['series_total'] or any(item['references']['val']['status'] != 'present' or item['values_truncated'] or item['unverified_values'] or len(item['values']) != item['values_total'] for item in record['series']):
+    if len(record['series']) != record['series_total'] or any(item['references']['val']['status'] not in ('present', 'literal') or item['values_truncated'] or item['unverified_values'] or len(item['values']) != item['values_total'] for item in record['series']):
         result['reason'] = 'incomplete_cached_values'; return result
     result['status'] = 'checked'; result['blank_points'] = 0
     for series in record['series']:
@@ -179,13 +179,18 @@ def inspect(file):
         def reference(series, role):
             parent = series._element.find(C + role)
             if parent is None: return {'status': 'absent', 'formula': None}
-            nodes = [child for child in parent if child.tag in (C + 'numRef', C + 'strRef')]
+            nodes = [child for child in parent if child.tag in (C + 'numRef', C + 'strRef', C + 'numLit', C + 'strLit', C + 'v')]
             if len(nodes) != 1: return {'status': 'unsupported', 'formula': None}
-            node = nodes[0]; formulas = node.findall(C + 'f'); caches = node.findall(C + ('numCache' if node.tag == C + 'numRef' else 'strCache'))
+            node = nodes[0]
+            if node.tag == C + 'v':
+                return {'status': 'literal' if role == 'tx' and node.text is not None and not len(node) else 'unsupported', 'formula': None, 'count': 1}
+            literal = node.tag in (C + 'numLit', C + 'strLit')
+            formulas = node.findall(C + 'f') if not literal else []
+            caches = [node] if literal else node.findall(C + ('numCache' if node.tag == C + 'numRef' else 'strCache'))
             formula = formulas[0].text if len(formulas) == 1 else None
-            status = 'present' if len(formulas) == 1 and bool(formula) and len(caches) == 1 else 'missing_or_ambiguous'
+            status = 'literal' if literal else 'present' if len(formulas) == 1 and bool(formula) and len(caches) == 1 else 'missing_or_ambiguous'
             count = None
-            if status == 'present':
+            if status in ('present', 'literal'):
                 counts = caches[0].findall(C + 'ptCount'); raw = counts[0].get('val') if len(counts) == 1 else None
                 if raw is None or not raw.isdecimal() or len(raw) > 8: status = 'invalid_cache'
                 else:
@@ -258,7 +263,7 @@ def inspect(file):
                         points += cache_points
                         value_count = refs['val'].get('count')
                         category_count = refs['cat'].get('count')
-                        if refs['val']['status'] != 'present' or refs['cat']['status'] not in ('present', 'absent') or refs['tx']['status'] not in ('present', 'absent'):
+                        if refs['val']['status'] not in ('present', 'literal') or refs['cat']['status'] not in ('present', 'literal', 'absent') or refs['tx']['status'] not in ('present', 'literal', 'absent'):
                             issue(slide_no, path, 'unsupported_or_missing_cache'); category_safe = False
                         if category_count is not None and category_count > 200: issue(slide_no, path, 'category_limit'); category_safe = False
                         if value_count is None or value_count > 200:
