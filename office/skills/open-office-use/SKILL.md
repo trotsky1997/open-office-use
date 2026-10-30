@@ -22,3 +22,5 @@ Range reads use one saved snapshot and have a response size limit; narrow a rang
 After editing XLSX chart source cells, use `scan_chart_caches` or `session_scan_chart_caches` and inspect mismatches, missing caches and coverage. Formula caches may be stale and chart rendering still needs review.
 
 For a supported chart-cache mismatch, `session_sync_chart_cache` updates one reference from saved source values in a new revision. Check formula cache freshness before explicitly opting in to formula sources; rescan and inspect the chart after syncing.
+
+Use `office_schema` to discover the installed OfficeCLI elements and property definitions before constructing unfamiliar structured operations. Filter by format, operation and query; verify the resulting document and rendering.

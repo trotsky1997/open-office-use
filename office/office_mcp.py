@@ -21,10 +21,16 @@ from open_office_use import inspect, preview, render
 
 server = FastMCP(
     'open-office-use',
-    instructions='Use structured_read to find element paths, then apply_batch to create a new file. '
+    instructions='Use office_schema to discover operations and properties, structured_read to find element paths, then apply_batch to create a new file. '
                  'Save and close external OfficeCLI sessions before using a source. '
                  'Render and inspect page images before delivering an artifact.',
 )
+
+
+@server.tool()
+def office_schema(format: Literal['docx', 'xlsx', 'pptx'], element: str | None = None, operation: Literal['add', 'set', 'get', 'query', 'remove'] | None = None, query: str | None = None) -> dict[str, Any]:
+    """Discover installed OfficeCLI elements or inspect an element's properties and examples."""
+    return officecli_backend.schema(format, element, operation, query)
 
 
 @server.tool()

@@ -1,6 +1,7 @@
 """OfficeCLI structured authoring on isolated copies."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -55,6 +56,49 @@ def read(source, mode, target=None):
     if mode == 'outline':
         return call('view', source, 'outline')
     return call(mode, source, target)
+
+
+def schema(format, element=None, operation=None, query=None):
+    """Discover installed OfficeCLI element and property schemas."""
+    if format not in ('docx', 'xlsx', 'pptx'): raise ValueError('Format must be docx, xlsx or pptx')
+    if operation not in (None, 'add', 'set', 'get', 'query', 'remove'): raise ValueError('Unsupported schema operation')
+    if element is not None and (not isinstance(element, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,63}', element)):
+        raise ValueError('Invalid schema element name')
+    if query is not None and (not isinstance(query, str) or len(query) > 100 or any(ord(c) < 32 for c in query)):
+        raise ValueError('Schema query must be text of at most 100 characters')
+    executable = shutil.which('officecli')
+    if not executable: raise RuntimeError('OfficeCLI is required: install it and add officecli to PATH')
+    version_result = subprocess.run([executable, '--version'], text=True, capture_output=True, timeout=10, check=False)
+    version = version_result.stdout.strip()[:100] if version_result.returncode == 0 else None
+    term = (query or '').casefold()
+    if element is None:
+        rows = call('help', 'all')
+        if not isinstance(rows, list): raise RuntimeError('OfficeCLI returned an invalid schema catalog')
+        letter = {'add': 'a', 'set': 's', 'get': 'g', 'query': 'q', 'remove': 'r'}.get(operation)
+        elements = [row for row in rows if isinstance(row, dict) and row.get('kind') == 'ELEM' and row.get('format') == format
+                    and isinstance(row.get('element'), str) and isinstance(row.get('ops'), str) and (not letter or letter in row['ops'])
+                    and (not term or term in row['element'].casefold() or any(term in str(path).casefold() for path in (row.get('paths') or [])))]
+        return {'officecli_version': version, 'format': format, 'operation': operation, 'query': query, 'elements': elements}
+    result = subprocess.run([executable, 'help', format, element, '--json'], text=True, capture_output=True, timeout=30, check=False)
+    if len(result.stdout) > 1000000: raise RuntimeError('OfficeCLI schema exceeds the 1,000,000-character limit')
+    try: data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc: raise RuntimeError('OfficeCLI did not return a JSON element schema') from exc
+    if result.returncode or not isinstance(data, dict) or data.get('success') is False:
+        raise ValueError(f'OfficeCLI schema lookup failed: {str(data)[:2000]}')
+    properties = data.get('properties'); operations = data.get('operations')
+    if not isinstance(properties, dict) or not isinstance(operations, dict): raise RuntimeError('OfficeCLI returned an invalid element schema')
+    if operation is not None and operations.get(operation) is not True: raise ValueError(f'{element} does not support {operation}')
+    selected = {}
+    for name, prop in properties.items():
+        if not isinstance(name, str) or not isinstance(prop, dict): raise RuntimeError('OfficeCLI returned an invalid property schema')
+        if operation in ('add', 'set', 'get') and prop.get(operation) is not True: continue
+        aliases = prop.get('aliases') or []
+        if not isinstance(aliases, list): raise RuntimeError('OfficeCLI returned invalid property aliases')
+        if term and not any(term in str(value).casefold() for value in (name, *aliases, prop.get('description', ''))): continue
+        selected[name] = prop
+    return {'officecli_version': version, 'format': format, 'operation': operation, 'query': query,
+            'total_properties': len(properties), 'returned_properties': len(selected),
+            'property_operation_filter_applied': operation in ('add', 'set', 'get'), 'schema': {**data, 'properties': selected}}
 
 
 def batch(operations, output, source=None):
