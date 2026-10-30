@@ -63,6 +63,9 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <p>For simple nonempty Word paragraphs. The comment covers the paragraph; existing anchors, links and tracked changes require another workflow.</p></fieldset>
 <p>Replacing text can change run formatting. A cell value replaces its formula; numeric values may be converted by OfficeCLI. Use formula mode for expressions beginning with =.</p>
 <p id="edit-status" role="status"></p></form></details>
+<details id="comments-panel" hidden><summary>Word comments</summary>
+<p>Read comments from the displayed revision. Anchor text and paths are bounded body hints; replies and resolved status require another review workflow.</p>
+<button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul></details>
 <details id="layout-panel" hidden><summary>Slide layout checks</summary>
 <p>Check the displayed revision for off-slide objects and overlaps involving text. Results are geometric candidates; intentional layers and text overflow need visual review. Master and layout content are not scanned.</p>
 <button type="button" id="layout-scan">Check displayed revision</button><p id="layout-status" role="status"></p><p id="layout-highlight-status" role="status"></p><button type="button" id="layout-clear" hidden>Clear highlight</button><ul id="layout-results"></ul><details><summary>Full geometry report</summary><pre id="layout-scan-output"></pre></details></details>
@@ -108,7 +111,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <main id="pages" aria-label="Document pages"></main>
 <script nonce="NONCE">
 let current = -1, displayed = -1, pinned = null, viewKey = "", busy = false, loaded = null, comparing = false, comparedLatest = -1;
-let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null;
+let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false;
 function clearCandidates() {
  savedSelection=null; selectionEpoch++; pictureTarget=null; document.getElementById('picture-panel').hidden=true; document.getElementById('candidate-search').disabled=true;
  document.getElementById('candidate-list').replaceChildren(); document.getElementById('candidate-status').textContent='';
@@ -543,7 +546,30 @@ document.getElementById('visual-diff-form').addEventListener('submit', async eve
  } catch(error) { if (epoch===visualEpoch && comparing && pinned===before && comparedLatest===after) status.textContent=`Visual comparison error: ${error.message}`; }
  finally { button.disabled=false; }
 });
+function clearCommentsFor(revision) {
+ if (commentListRevision !== null && commentListRevision !== revision) {
+  commentListEpoch++; commentListRevision=null; document.getElementById('comments-status').textContent=''; document.getElementById('comments-list').replaceChildren();
+ }
+}
+document.getElementById('comments-load').addEventListener('click', async () => {
+ if (commentsBusy || displayed<0) return;
+ const revision=displayed, epoch=++commentListEpoch, button=document.getElementById('comments-load'); commentsBusy=true; commentListRevision=revision; button.disabled=true;
+ const status=document.getElementById('comments-status'), list=document.getElementById('comments-list'); list.replaceChildren(); status.textContent=`Loading revision ${revision} comments…`;
+ try {
+  const response=await fetch('comments-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not read comments');
+  if (epoch!==commentListEpoch || displayed!==revision || commentListRevision!==revision) return;
+  for (const comment of result.comments) {
+   const row=document.createElement('li'); const location=comment.paragraph_paths.length ? comment.paragraph_paths.join(', ') : 'No body path found';
+   row.textContent=`#${comment.id} · ${comment.author || 'Unknown author'} · ${comment.date || 'No date'} · ${comment.text}${comment.text_truncated ? '…' : ''}${comment.text_approximate ? ' (text may be incomplete)' : ''} | Anchor (${comment.anchor_status}): ${comment.anchor_text || '(no text)'}${comment.anchor_text_truncated ? '…' : ''}${comment.anchor_text_approximate ? ' (text may be incomplete)' : ''} | ${location}${comment.path_unavailable || comment.paths_truncated ? ' (some paths unavailable)' : ''}`;
+   list.appendChild(row);
+  }
+  status.textContent=`Revision ${revision}: ${result.total_comments} comment(s). ${result.truncated ? 'First 200 shown. ' : ''}${result.anchor_scan_complete ? '' : 'Anchor scan incomplete. ' }Resolved status is unavailable.`;
+ } catch(error) { if (epoch===commentListEpoch && displayed===revision) status.textContent=`Comments error: ${error.message}`; }
+ finally { commentsBusy=false; button.disabled=false; }
+});
 function display(state, live) {
+ clearCommentsFor(state.revision);
  if (!document.getElementById('comparison-details').hidden) clearVisualDiff();
  clearLayoutFor(state.revision);
  document.getElementById('comparison-details').hidden=true;
@@ -564,6 +590,7 @@ function display(state, live) {
  if (!live) invalidateEdit('Return to the latest revision to edit.');
 }
 function displayComparison(state) {
+ clearCommentsFor(state.revision);
  clearLayoutFor(state.revision);
  const key=`compare:${state.revision}:${state.latest_revision}`;
  if (key === viewKey) return;
@@ -659,6 +686,7 @@ async function refresh() {
   const response = await fetch('state', {cache:'no-store'});
   const state = await response.json();
   if (!response.ok) throw new Error(state.error || 'Preview unavailable');
+  document.getElementById('comments-panel').hidden=state.format !== 'docx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
   document.getElementById('formula-panel').hidden=state.format !== 'xlsx';
   document.getElementById('grid-panel').hidden=state.format !== 'xlsx'; document.getElementById('cell-comparison').hidden=state.format !== 'xlsx';
@@ -727,7 +755,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/add-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/comments-read'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 20000
@@ -735,6 +763,11 @@ def serve(directory, preview, port=0, render=None):
                     self.send(400, b'Invalid request', 'text/plain; charset=utf-8'); return
                 try:
                     payload = json.loads(self.rfile.read(int(length)))
+                    if route.endswith('/comments-read'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}:
+                            raise ValueError('Comments require a revision')
+                        saved = session.list_comments(directory, payload['revision'])
+                        self.send(200, json.dumps(saved, default=str).encode(), 'application/json'); return
                     if route.endswith('/layout-scan'):
                         if not isinstance(payload, dict) or set(payload) != {'revision'}:
                             raise ValueError('Layout inspection requires revision')

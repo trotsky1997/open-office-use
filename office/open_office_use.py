@@ -14,6 +14,7 @@ from pptx import Presentation
 
 import layout
 import visual
+import word
 import officecli_backend
 import spreadsheet
 import review
@@ -142,6 +143,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     read = commands.add_parser('inspect'); read.add_argument('file')
+    comments = commands.add_parser('comments'); comments.add_argument('file')
     layout_read = commands.add_parser('inspect-layout'); layout_read.add_argument('file')
     edit = commands.add_parser('author'); edit.add_argument('--spec', required=True); edit.add_argument('--out', required=True); edit.add_argument('--source')
     render_command = commands.add_parser('render'); render_command.add_argument('file'); render_command.add_argument('--out-dir', required=True)
@@ -167,6 +169,7 @@ def main():
     replace = sub.add_parser('replace-text'); replace.add_argument('directory'); replace.add_argument('--base', type=int, required=True); replace.add_argument('--path', required=True); replace.add_argument('--find', required=True); replace.add_argument('--replace', required=True, dest='replacement')
     comment = sub.add_parser('add-comment'); comment.add_argument('directory'); comment.add_argument('--base', type=int, required=True); comment.add_argument('--path', required=True); comment.add_argument('--text', required=True); comment.add_argument('--author', required=True)
     picture = sub.add_parser('replace-picture'); picture.add_argument('directory'); picture.add_argument('--base', type=int, required=True); picture.add_argument('--path', required=True); picture.add_argument('--image', required=True)
+    session_comments = sub.add_parser('comments'); session_comments.add_argument('directory'); session_comments.add_argument('--revision', type=int, required=True)
     session_layout = sub.add_parser('inspect-layout'); session_layout.add_argument('directory'); session_layout.add_argument('--revision', type=int, required=True)
     session_calc = sub.add_parser('recalculate'); session_calc.add_argument('directory'); session_calc.add_argument('--base', type=int, required=True)
     session_scan = sub.add_parser('scan-formulas'); session_scan.add_argument('directory'); session_scan.add_argument('--base', type=int, required=True)
@@ -209,6 +212,8 @@ def main():
                 if image.stat().st_size > 10 * 1024 * 1024:
                     raise ValueError('Image must be at most 10 MiB')
                 result = session.replace_picture(args.directory, args.base, args.path, image.read_bytes())
+            elif args.action == 'comments':
+                result = session.list_comments(args.directory, args.revision)
             elif args.action == 'inspect-layout':
                 result = session.inspect_layout(args.directory, args.revision)
             elif args.action == 'recalculate':
@@ -225,6 +230,8 @@ def main():
                 result = session.export(args.directory, args.revision, args.out)
         elif args.command == 'inspect':
             result = inspect(args.file)
+        elif args.command == 'comments':
+            result = word.list_comments(args.file)
         elif args.command == 'inspect-layout':
             result = layout.inspect(args.file)
         elif args.command == 'author':

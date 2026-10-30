@@ -184,3 +184,121 @@ def add_comment(source, output, path, text, author):
 
     file = ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit, allow_new=True)
     return {'file': file, 'comment_id': created_id}
+
+
+def list_comments(source):
+    """Read Word comments and bounded main-body anchor hints without modifying the file."""
+    import posixpath
+    import zipfile
+    from lxml import etree
+
+    source = Path(source).resolve(strict=True)
+    if source.suffix.lower() != '.docx' or source.stat().st_size > 128 * 1024 * 1024:
+        raise ValueError('Comment inspection requires a DOCX up to 128 MiB')
+    rel_ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+    comments_type = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
+    try:
+        with zipfile.ZipFile(source) as archive:
+            entries = archive.infolist(); names = [item.filename for item in entries]
+            if len(entries) > 5000 or len(names) != len(set(names)) or sum(item.file_size for item in entries) > 128 * 1024 * 1024:
+                raise ValueError('Document exceeds package limits or contains duplicate parts')
+            document = ooxml.parse_xml(archive.read('word/document.xml'))
+            if document.getroot().tag != W + 'document': raise ValueError('Invalid Word XML')
+            body = document.getroot().find(W + 'body')
+            if body is None: raise ValueError('Document has no body')
+            rel_path = 'word/_rels/document.xml.rels'
+            if rel_path not in names:
+                if 'word/comments.xml' in names: raise ValueError('Unreferenced comments part')
+                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True}
+            rels = ooxml.parse_xml(archive.read(rel_path))
+            if rels.getroot().tag != rel_ns + 'Relationships': raise ValueError('Invalid document relationships')
+            links = [item for item in rels.getroot().findall(rel_ns + 'Relationship') if item.get('Type') == comments_type]
+            if not links:
+                if 'word/comments.xml' in names: raise ValueError('Unreferenced comments part')
+                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True}
+            if len(links) != 1 or links[0].get('TargetMode') == 'External' or not links[0].get('Target'):
+                raise ValueError('Invalid comments relationship')
+            target = links[0].get('Target')
+            part = posixpath.normpath(target.lstrip('/') if target.startswith('/') else posixpath.join('word', target))
+            if not part.startswith('word/') or part not in names: raise ValueError('Invalid comments part')
+            comments = ooxml.parse_xml(archive.read(part))
+            if comments.getroot().tag != W + 'comments': raise ValueError('Invalid Word XML')
+            nodes = comments.getroot().findall(W + 'comment'); ids = [node.get(W + 'id') for node in nodes]
+            if any(not value or not re.fullmatch(r'[0-9]{1,10}', value) for value in ids) or len(ids) != len(set(ids)):
+                raise ValueError('Invalid or duplicate comment identifiers')
+            result = []
+            for node in nodes[:200]:
+                paragraphs = []
+                for p in node.findall(W + 'p'):
+                    paragraphs.append(''.join(item.text or '' if item.tag == W + 't' else ('\t' if item.tag == W + 'tab' else '\n' if item.tag in (W + 'br', W + 'cr') else '') for item in p.iter()))
+                text = '\n'.join(paragraphs)
+                result.append({'id': node.get(W + 'id'), 'author': (node.get(W + 'author') or '')[:200],
+                               'date': (node.get(W + 'date') or '')[:100], 'text': text[:4000], 'text_truncated': len(text) > 4000,
+                               'text_approximate': any(child.tag != W + 'p' for child in node) or any(child.tag in (W + 'delText', W + 'instrText', W + 'drawing', W + 'object', W + 'sym', W + 'fldChar') for child in node.iter()),
+                               'anchor_text': '', 'anchor_text_truncated': False, 'anchor_text_approximate': False,
+                               'paragraph_paths': [], 'paths_truncated': False, 'path_unavailable': False,
+                               'anchor_status': 'not_found_in_body', 'resolved': None, '_starts': 0, '_ends': 0, '_refs': 0})
+            if not result:
+                return {'total_comments': 0, 'comments': [], 'truncated': False, 'anchor_scan_complete': True}
+            by_id = {item['id']: item for item in result}; active = set(); paths = []; visited = 0; work = 0; complete = True
+            sibling_indexes = {}
+            def paragraph_path_for(node):
+                tags = {W + 'p': ('p', {W + 'body', W + 'tc'}), W + 'tbl': ('tbl', {W + 'body', W + 'tc'}),
+                        W + 'tr': ('tr', {W + 'tbl'}), W + 'tc': ('tc', {W + 'tr'})}
+                parts = []
+                while node is not body:
+                    parent = node.getparent()
+                    if parent is None or node.tag not in tags or parent.tag not in tags[node.tag][1]: return None
+                    if parent not in sibling_indexes:
+                        counts = {}; indexes = {}
+                        for child in parent:
+                            if child.tag in tags:
+                                counts[child.tag] = counts.get(child.tag, 0) + 1; indexes[child] = counts[child.tag]
+                        sibling_indexes[parent] = indexes
+                    parts.append(f'{tags[node.tag][0]}[{sibling_indexes[parent][node]}]'); node = parent
+                path = '/body/' + '/'.join(reversed(parts))
+                return path if paragraph_path(path) else None
+            def location(item, path):
+                if path is None: item['path_unavailable'] = True
+                if path and path not in item['paragraph_paths']:
+                    if len(item['paragraph_paths']) < 20: item['paragraph_paths'].append(path)
+                    else: item['paths_truncated'] = True
+            def append_text(item, text):
+                room = 2000 - len(item['anchor_text'])
+                item['anchor_text'] += text[:max(room, 0)]
+                if len(text) > room: item['anchor_text_truncated'] = True
+            for event, node in etree.iterwalk(body, events=('start', 'end')):
+                visited += 1
+                if visited > 1_000_000 or work > 1_000_000:
+                    complete = False; break
+                tag = node.tag
+                if event == 'start':
+                    if tag == W + 'p':
+                        path = paragraph_path_for(node); paths.append(path)
+                        for cid in active:
+                            item = by_id[cid]; location(item, path)
+                            if item['anchor_text']: append_text(item, '\n')
+                        work += len(active)
+                    elif tag == W + 'commentRangeStart' and node.get(W + 'id') in by_id:
+                        cid = node.get(W + 'id'); item = by_id[cid]; item['_starts'] += 1; active.add(cid); location(item, paths[-1] if paths else None)
+                    elif tag == W + 'commentRangeEnd' and node.get(W + 'id') in by_id:
+                        cid = node.get(W + 'id'); by_id[cid]['_ends'] += 1; active.discard(cid)
+                    elif tag == W + 'commentReference' and node.get(W + 'id') in by_id:
+                        item = by_id[node.get(W + 'id')]; item['_refs'] += 1; location(item, paths[-1] if paths else None)
+                    elif tag in (W + 'delText', W + 'instrText', W + 'drawing', W + 'object', W + 'sym', W + 'fldChar'):
+                        for cid in active: by_id[cid]['anchor_text_approximate'] = True
+                        work += len(active)
+                    elif tag in (W + 't', W + 'tab', W + 'br', W + 'cr'):
+                        value = (node.text or '') if tag == W + 't' else ('\t' if tag == W + 'tab' else '\n')
+                        for cid in active: append_text(by_id[cid], value)
+                        work += len(active)
+                elif tag == W + 'p' and paths:
+                    paths.pop()
+            for item in result:
+                starts, ends, refs = item.pop('_starts'), item.pop('_ends'), item.pop('_refs')
+                if starts == 1 and ends == 1 and item['id'] not in active and complete: item['anchor_status'] = 'range'
+                elif starts or ends: item['anchor_status'] = 'incomplete_range'
+                elif refs: item['anchor_status'] = 'reference_only'
+            return {'total_comments': len(nodes), 'comments': result, 'truncated': len(nodes) > 200, 'anchor_scan_complete': complete}
+    except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError) as exc:
+        raise ValueError(f'Invalid Word document: {exc}') from exc

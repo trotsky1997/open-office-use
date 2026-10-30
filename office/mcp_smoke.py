@@ -26,7 +26,7 @@ async def main():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
-                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_add_comment', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
+                assert {t.name for t in tools.tools} == {'inspect_file', 'inspect_slide_layout', 'session_inspect_slide_layout', 'structured_read', 'apply_batch', 'render_pdf', 'preview_pages', 'view_page', 'view_contact_sheet', 'session_contact_sheet', 'view_document_page', 'session_view_page', 'compare_page_images', 'session_compare_page_images', 'read_cells', 'recalculate_workbook', 'compare_files', 'audit_file', 'start_session', 'session_info', 'session_apply', 'session_export', 'session_selection', 'session_selection_image', 'session_selection_text', 'session_selection_candidates', 'session_restore', 'session_recalculate', 'session_scan_formulas', 'session_edit_target', 'session_edit', 'session_replace_text', 'session_add_comment', 'list_word_comments', 'session_list_comments', 'session_replace_picture', 'compare_cells', 'session_sheets', 'session_read_grid', 'session_edit_grid', 'session_format_grid', 'scan_formulas'}
                 original_image = root / 'mcp-original.png'; replacement_image = root / 'mcp-new.png'
                 PILImage.new('RGB', (20, 20), 'red').save(original_image)
                 PILImage.new('RGB', (20, 20), 'blue').save(replacement_image)
@@ -84,6 +84,12 @@ async def main():
                 assert not comment_started.isError, comment_started
                 comment_result = await session.call_tool('session_add_comment', {'directory': str(comment_draft), 'base_revision': 0, 'path': '/body/p[1]', 'text': 'Review this', 'author': 'Reviewer'})
                 assert not comment_result.isError and next(iter(Document(comment_draft / 'revision-000001.docx').comments)).text == 'Review this', comment_result
+                listed_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 1})
+                assert not listed_comments.isError and listed_comments.structuredContent['comments'][0]['anchor_text'] == 'Needs review', listed_comments
+                empty_comments = await session.call_tool('list_word_comments', {'file': str(comment_source)})
+                assert not empty_comments.isError and empty_comments.structuredContent['total_comments'] == 0, empty_comments
+                historic_comments = await session.call_tool('session_list_comments', {'directory': str(comment_draft), 'revision': 0})
+                assert not historic_comments.isError and historic_comments.structuredContent['total_comments'] == 0, historic_comments
                 stale_comment = await session.call_tool('session_add_comment', {'directory': str(comment_draft), 'base_revision': 0, 'path': '/body/p[1]', 'text': 'Stale', 'author': 'Reviewer'})
                 assert stale_comment.isError, stale_comment
                 link_source = root / 'link.docx'; linked = Document(); paragraph = linked.add_paragraph('Read ')

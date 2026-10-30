@@ -109,6 +109,14 @@ def restore(directory, base_revision, revision):
     return {'revision': base_revision + 1, 'restored_revision': revision, 'file': str(output)}
 
 
+def list_comments(directory, revision):
+    state = info(directory)
+    source = revision_file(state, revision)
+    if state['format'] != 'docx':
+        raise ValueError('Comment inspection requires a DOCX session')
+    return {'revision': revision, **word.list_comments(source)}
+
+
 def inspect_layout(directory, revision):
     state = info(directory)
     source = revision_file(state, revision)

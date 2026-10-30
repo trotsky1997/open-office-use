@@ -9,6 +9,7 @@ import officecli_backend
 import spreadsheet
 import layout
 import visual
+import word
 import review
 import session
 import selection_text
@@ -123,6 +124,18 @@ def session_edit(directory: str, base_revision: int, path: str, mode: Literal['t
 def session_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str) -> dict[str, Any]:
     """Replace one unique text match in supported Word, PowerPoint or Excel text, retaining formatting."""
     return session.replace_text(directory, base_revision, path, find, replacement)
+
+
+@server.tool()
+def list_word_comments(file: str) -> dict[str, Any]:
+    """List Word comments and bounded main-body anchor hints; resolved state is unavailable."""
+    return word.list_comments(file)
+
+
+@server.tool()
+def session_list_comments(directory: str, revision: int) -> dict[str, Any]:
+    """List comments from an exact DOCX session revision and report main-body anchor hints."""
+    return session.list_comments(directory, revision)
 
 
 @server.tool()

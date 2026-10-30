@@ -31,6 +31,14 @@ with tempfile.TemporaryDirectory() as tmp:
         assert b'Office session preview' in get(url)
         first = json.loads(get(url + 'state'))
         assert first['revision'] == 0 and first['pages'] > 0
+        for request_origin, expected in [('http://evil.test', 403), (f'http://{urlsplit(url).netloc}', 200)]:
+            request = urllib.request.Request(url + 'comments-read', data=json.dumps({'revision': 0}).encode(), headers={'Origin': request_origin, 'Content-Type': 'application/json'})
+            try:
+                response = urllib.request.urlopen(request)
+                assert expected == 200 and json.loads(response.read())['total_comments'] == 0
+            except urllib.error.HTTPError as error:
+                assert error.code == expected
+
         assert get(url + 'page/0/0').startswith(b'\x89PNG\r\n\x1a\n')
         origin = f"http://{urlsplit(url).netloc}"
         selection = {'revision': 0, 'page': 1, 'box': [0, 0, 1, 1]}
