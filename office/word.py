@@ -445,14 +445,16 @@ def replace_text(source, output, path, find, replacement):
             offset += length
         raise ValueError('Match crosses a hyperlink or annotation boundary')
 
-    def part(file):
-        story = STORY_PATH.fullmatch(path)
-        if story is None: return 'word/document.xml'
-        with zipfile.ZipFile(file) as archive: relationships = story_relationships(archive)
-        info = relationships.get(story.group(2))
-        if info is None or info['type'] != story.group(1): raise ValueError('Header or footer relationship does not exist')
-        return info['part']
-    return ooxml.edit_xml(source, output, part, edit)
+    return ooxml.edit_xml(source, output, lambda file: paragraph_part(file, path), edit)
+
+
+def paragraph_part(file, path):
+    story = STORY_PATH.fullmatch(path)
+    if story is None: return 'word/document.xml'
+    with zipfile.ZipFile(file) as archive: relationships = story_relationships(archive)
+    info = relationships.get(story.group(2))
+    if info is None or info['type'] != story.group(1): raise ValueError('Header or footer relationship does not exist')
+    return info['part']
 
 
 def validate_tracked_context(tree, targets):
@@ -496,13 +498,13 @@ def validate_tracked_context(tree, targets):
                     raise ValueError('Tracked paragraph, table or row properties are not supported')
 
 
-def tracked_change_elements(tree, archive, author, kinds):
+def tracked_change_elements(tree, archive, part, author, kinds):
     import secrets
     from datetime import datetime, timezone
     used = set()
     for name in archive.namelist():
         if not name.startswith('word/') or not name.endswith('.xml'): continue
-        part_tree = tree if name == 'word/document.xml' else ooxml.parse_xml(archive.read(name))
+        part_tree = tree if name == part else ooxml.parse_xml(archive.read(name))
         for item in part_tree.iter():
             value = item.get(W + 'id')
             if value:
@@ -523,14 +525,20 @@ def tracked_change_elements(tree, archive, author, kinds):
 
 
 def track_replace_text(source, output, path, find, replacement, author):
-    """Replace a unique body text range with Word insertion and deletion records."""
+    """Replace a unique Word story text range with Word insertion and deletion records."""
     import copy
 
-    if not paragraph_path(path) or Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
-        raise ValueError('Target must be a DOCX body or table paragraph path')
+    if not replacement_path(path) or Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
+        raise ValueError('Target must be a DOCX body, header or footer paragraph path')
     if not isinstance(author, str) or not author.strip() or len(author) > 100 or any(ord(c) < 32 for c in author):
         raise ValueError('Author must contain 1 to 100 characters without control characters')
     ooxml.match_index(find, find, replacement)
+
+    selected_part = None
+    def part(file):
+        nonlocal selected_part
+        selected_part = paragraph_part(file, path)
+        return selected_part
 
     def edit(tree, archive):
         paragraph = find_paragraph(tree, path)
@@ -546,7 +554,7 @@ def track_replace_text(source, output, path, find, replacement, author):
             if node is last: break
             node = node.getnext()
         if not selected or selected[-1] is not last: raise ValueError('Tracked replacement range is inconsistent')
-        changes = tracked_change_elements(tree, archive, author, ('del', 'ins') if replacement else ('del',))
+        changes = tracked_change_elements(tree, archive, selected_part, author, ('del', 'ins') if replacement else ('del',))
         deleted = changes[0]; first.addprevious(deleted)
         inserted = changes[1] if replacement else None
         if inserted is not None:
@@ -558,25 +566,31 @@ def track_replace_text(source, output, path, find, replacement, author):
         for run in selected:
             for text in run.findall(W + 't'): text.tag = W + 'delText'
             deleted.append(run)
-    return ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
+    return ooxml.edit_xml(source, output, part, edit)
 
 
 def track_insert_text(source, output, path, anchor, text, position, author):
-    """Insert a tracked run adjacent to a unique body text anchor."""
+    """Insert a tracked run adjacent to a unique Word story text anchor."""
     import copy
-    if not paragraph_path(path) or Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
-        raise ValueError('Target must be a DOCX body or table paragraph path')
+    if not replacement_path(path) or Path(source).suffix.lower() != '.docx' or Path(output).suffix.lower() != '.docx':
+        raise ValueError('Target must be a DOCX body, header or footer paragraph path')
     if not isinstance(author, str) or not author.strip() or len(author) > 100 or any(ord(c) < 32 for c in author):
         raise ValueError('Author must contain 1 to 100 characters without control characters')
     if position not in ('before', 'after'): raise ValueError('Position must be before or after')
     ooxml.match_index(anchor, anchor, text)
     if not text: raise ValueError('Insertion text must not be empty')
     identifier = None
+    selected_part = None
+    def part(file):
+        nonlocal selected_part
+        selected_part = paragraph_part(file, path)
+        return selected_part
+
     def edit(tree, archive):
         nonlocal identifier
         first, last = anchor_runs(find_paragraph(tree, path), anchor)
         validate_tracked_context(tree, (first, last))
-        inserted = tracked_change_elements(tree, archive, author, ('ins',))[0]
+        inserted = tracked_change_elements(tree, archive, selected_part, author, ('ins',))[0]
         identifier = inserted.get(W + 'id')
         reference = first if position == 'before' else last
         run = etree.SubElement(inserted, W + 'r'); properties = reference.find(W + 'rPr')
@@ -585,8 +599,8 @@ def track_insert_text(source, output, path, anchor, text, position, author):
         if text.startswith(' ') or text.endswith(' '): node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
         if position == 'before': first.addprevious(inserted)
         else: last.addnext(inserted)
-    result = ooxml.edit_xml(source, output, lambda _: 'word/document.xml', edit)
-    return {'file': result, 'id': identifier}
+    result = ooxml.edit_xml(source, output, part, edit)
+    return {'file': result, 'id': identifier, 'part': selected_part}
 
 
 def resolve_tracked_runs(source, output, part, ids, accept):

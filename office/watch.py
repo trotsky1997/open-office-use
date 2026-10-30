@@ -461,7 +461,7 @@ async function loadElement(path) {
   editBaseline={value:value.value,mode:mode.value};
   document.getElementById('edit-save').disabled=tableCell;
   document.getElementById('word-replace-panel').hidden=!target.replace_text_path_supported;
-  document.getElementById('word-track-row').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only && target.path.startsWith('/body/'));
+  document.getElementById('word-track-row').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported);
   document.getElementById('comment-panel').hidden=!(target.format==='docx' && target.type==='paragraph' && target.replace_text_path_supported && !target.replace_only); document.getElementById('comment-text').value=''; document.getElementById('comment-anchor').value='';
   document.getElementById('replace-paragraph-label').hidden=target.format!=='pptx' || target.path.includes('/paragraph['); document.getElementById('replace-paragraph').value='';
   if (target.replace_only) {
@@ -523,7 +523,7 @@ document.getElementById('word-replace').addEventListener('click', async () => {
 });
 async function trackedTextEdit(position) {
  if (editBusy) return;
- if (!loaded || loaded.format!=='docx' || !loaded.replace_text_path_supported || !loaded.path.startsWith('/body/') || pinned!==null || loaded.revision!==current) { invalidateEdit('Version changed; load the paragraph again.'); return; }
+ if (!loaded || loaded.format!=='docx' || !loaded.replace_text_path_supported || pinned!==null || loaded.revision!==current) { invalidateEdit('Version changed; load the paragraph again.'); return; }
  if (elementDirty()) { document.getElementById('edit-status').textContent='Save or copy pending element edits before replacing text.'; return; }
  const target=loaded, find=document.getElementById('word-find'), replacement=document.getElementById('word-replacement'), author=document.getElementById('word-track-author'), buttons=['word-track-replace','word-track-insert-before','word-track-insert-after'].map(id => document.getElementById(id)), path=document.getElementById('edit-path'), mode=document.getElementById('edit-mode'), value=document.getElementById('edit-value');
  if (!author.value.trim()) { document.getElementById('edit-status').textContent='Enter a revision author.'; return; }
@@ -535,7 +535,7 @@ async function trackedTextEdit(position) {
   invalidateEdit(`Tracked edit saved as revision ${result.revision}. Review the changes in Word.`); await refresh();
  } catch(error) {
   document.getElementById('edit-status').textContent=`Tracked edit error: ${error.message}`;
-  if (loaded===target && current===target.revision && pinned===null) {mode.disabled=false; value.readOnly=false; document.getElementById('edit-save').disabled=false;}
+  if (loaded===target && current===target.revision && pinned===null) {const readOnly=Boolean(target.replace_only || target.read_only_reason); mode.disabled=readOnly; value.readOnly=readOnly; document.getElementById('edit-save').disabled=readOnly;}
  } finally {editBusy=false; buttons.forEach(button => button.disabled=false); find.disabled=false; replacement.disabled=false; author.disabled=false; path.disabled=pinned!==null; document.getElementById('edit-load').disabled=pinned!==null;}
 }
 document.getElementById('word-track-replace').addEventListener('click', () => trackedTextEdit(null));

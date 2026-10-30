@@ -49,6 +49,15 @@ async def main():
                 assert not inserted.isError and inserted.structuredContent['revision'] == 1, inserted
                 inserted_view = await session.call_tool('session_list_word_tracked_changes', {'directory': str(insert_draft), 'revision': 1})
                 assert inserted_view.structuredContent['records'][0]['id'] == inserted.structuredContent['id']
+                header_source = root / 'tracked-header.docx'; header_doc = Document(); header_doc.sections[0].header.paragraphs[0].text = 'header anchor'; header_doc.save(header_source)
+                header_draft = root / 'tracked-header-draft'
+                assert not (await session.call_tool('start_session', {'directory': str(header_draft), 'source': str(header_source)})).isError
+                stories = await session.call_tool('session_list_word_stories', {'directory': str(header_draft), 'revision': 0})
+                story = stories.structuredContent['stories'][0]
+                header_edit = await session.call_tool('session_track_insert_text', {'directory': str(header_draft), 'base_revision': 0, 'path': story['paragraphs'][0]['path'], 'anchor': 'anchor', 'text': 'new ', 'position': 'before', 'author': 'Reviewer'})
+                assert not header_edit.isError and header_edit.structuredContent['part'] == story['part'], header_edit
+                header_resolved = await session.call_tool('session_resolve_tracked_runs', {'directory': str(header_draft), 'base_revision': 1, 'part': story['part'], 'ids': [header_edit.structuredContent['id']], 'accept': True})
+                assert not header_resolved.isError and Document(header_draft / 'revision-000002.docx').sections[0].header.paragraphs[0].text == 'header new anchor', header_resolved
                 word_hit = await session.call_tool('search_word_body', {'file': str(word_source), 'query': 'needle'})
                 assert not word_hit.isError and word_hit.structuredContent['matches'][0]['path'] == '/body/p[1]', word_hit
                 schema_catalog = await session.call_tool('office_schema', {'format': 'xlsx', 'operation': 'add', 'query': 'chart'})

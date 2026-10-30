@@ -5,6 +5,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 from docx import Document
 from docx.enum.section import WD_SECTION
 from docx.oxml import OxmlElement
@@ -12,6 +13,7 @@ from docx.shared import Inches
 from lxml import etree
 import session
 import word
+import officecli_backend
 
 with tempfile.TemporaryDirectory() as tmp:
     root=Path(tmp); source=root/'sections.docx'; draft=root/'draft'; doc=Document()
@@ -29,6 +31,46 @@ with tempfile.TemporaryDirectory() as tmp:
     header_path=next(p['path'] for p in header_story['paragraphs'] if p['text']=='Project Alpha')
     table_path=next(p['path'] for p in header_story['paragraphs'] if p['text']=='Header table')
     footer_path=next(p['path'] for s in listing['stories'] for p in s['paragraphs'] if p['text']=='Footer label')
+    for name, path, find, text, is_insert in [('header-insert', header_path, 'Alpha', 'New ', True), ('footer-replace', footer_path, 'label', 'note', False), ('table-insert', table_path, 'table', 'new ', True)]:
+        tracked = root / name; session.start(tracked, source=source)
+        part = session.edit_target(tracked, 0, path)['story_impact']['part']
+        if is_insert:
+            result = session.track_insert_text(tracked, 0, path, find, text, 'before', 'Editor')
+            assert result['part'] == part
+        else: result = session.track_replace_text(tracked, 0, path, find, text, 'Editor')
+        audit = officecli_backend.audit(result['file']); assert audit['validation']['exit_code'] == 0 and audit['validation']['result']['success'], audit
+        records = session.tracked_changes(tracked, 1)['records']
+        assert records and all(record['part'] == part for record in records)
+        if is_insert: assert records[0]['id'] == result['id']
+        with zipfile.ZipFile(source) as before, zipfile.ZipFile(result['file']) as after:
+            assert {name for name in before.namelist() if before.read(name) != after.read(name)} == {part}
+        for accept in (True, False):
+            branch = root / (name + str(accept)); session.start(branch, source=result['file'])
+            resolved = session.resolve_tracked_runs(branch, 0, part, [record['id'] for record in records], accept)
+            outcome = word.list_stories(resolved['file'])
+            content = next(p['text'] for story in outcome['stories'] for p in story['paragraphs'] if p['path'] == path)
+            original = {'header-insert': 'Project Alpha', 'footer-replace': 'Footer label', 'table-insert': 'Header table'}[name]
+            expected = {'header-insert': 'Project New Alpha', 'footer-replace': 'Footer note', 'table-insert': 'Header new table'}[name]
+            assert content == (expected if accept else original), content
+    cli_draft = root / 'story-cli'; session.start(cli_draft, source=source)
+    cli = Path(__file__).with_name('open_office_use.py')
+    command = subprocess.run([sys.executable, str(cli), 'session', 'track-replace-text', str(cli_draft), '--base', '0', '--path', footer_path, '--find', 'label', '--replace', 'note', '--author', 'Editor'], capture_output=True, text=True, check=True)
+    assert json.loads(command.stdout)['revision'] == 1 and session.tracked_changes(cli_draft, 1)['counts'] == {'del': 1, 'ins': 1}
+    collision_source = root / 'story-collision.docx'; collision_doc = Document()
+    collision_doc.sections[0].header.paragraphs[0].text = 'target'; collision_body = collision_doc.add_paragraph('body')
+    prior = OxmlElement('w:ins'); prior.set(word.W + 'id', '7'); collision_body._p.append(prior); collision_doc.save(collision_source)
+    collision_story = word.list_stories(collision_source)['stories'][0]; collision_draft = root / 'story-collision'; session.start(collision_draft, source=collision_source)
+    with patch('secrets.randbelow', side_effect=[7, 8]):
+        collision_edit = session.track_insert_text(collision_draft, 0, collision_story['paragraphs'][0]['path'], 'target', 'new ', 'before', 'Editor')
+    assert collision_edit['id'] == '8'
+    invalid_story = root / 'story-range.docx'; invalid_doc = Document(); para = invalid_doc.sections[0].header.paragraphs[0]; para.text = 'target'
+    marker = OxmlElement('w:moveFromRangeStart'); marker.set(word.W + 'id', '10'); para._p.addprevious(marker)
+    marker = OxmlElement('w:moveFromRangeEnd'); marker.set(word.W + 'id', '10'); para._p.addnext(marker); invalid_doc.save(invalid_story)
+    invalid_path = word.list_stories(invalid_story)['stories'][0]['paragraphs'][0]['path']; invalid_draft = root / 'invalid-story'; session.start(invalid_draft, source=invalid_story)
+    try: session.track_insert_text(invalid_draft, 0, invalid_path, 'target', 'new ', 'before', 'Editor')
+    except ValueError: pass
+    else: raise AssertionError('Insertion in tracked story range accepted')
+    assert session.info(invalid_draft)['latest_revision'] == 0
     session.start(draft, source=source); target=session.edit_target(draft,0,header_path)
     assert target['replace_only'] and target['story_impact']['linked_sections']==[{'relationship_id':header_story['id'],**link} for link in header_story['linked_sections']]
     first=session.replace_text(draft,0,header_path,'ect Al','ECT AL')

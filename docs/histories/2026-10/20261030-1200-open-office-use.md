@@ -69,3 +69,5 @@ Added versioned, run-preserving XLSX text-cell replacement with shared-string is
 Added version-bound XLSX formula scanning and LibreOffice recalculation through session CLI, MCP and the viewer, with atomic publication and concurrent-write protection.
 
 Added bounded PowerPoint off-slide and text-overlap geometric inspection, including group transforms and revision-specific viewer reports.
+
+- Word 修订插入和替换支持已有的页眉、页脚及表格段落路径；插入结果返回修订所在部件，预览继续展示共享节影响。覆盖范围检查、跨部件修订 ID、接受与拒绝和浏览器操作。

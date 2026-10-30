@@ -403,7 +403,7 @@ def track_insert_text(directory, base_revision, path, anchor, text, position, au
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.docx'
     try: result = word.track_insert_text(source, output, path, anchor, text, position, author)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': str(output), 'path': path, 'id': result['id'], 'position': position}
+    return {'revision': base_revision + 1, 'file': str(output), 'path': path, 'id': result['id'], 'part': result['part'], 'position': position}
 
 def resolve_tracked_runs(directory, base_revision, part, ids, accept):
     state = info(directory); source = revision_file(state, base_revision)

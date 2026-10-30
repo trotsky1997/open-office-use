@@ -192,13 +192,13 @@ def session_replace_text(directory: str, base_revision: int, path: str, find: st
 
 @server.tool()
 def session_track_replace_text(directory: str, base_revision: int, path: str, find: str, replacement: str, author: str) -> dict[str, Any]:
-    """Create Word deletion and insertion revisions for one unique body text range; preserve run formatting."""
+    """Create Word deletion and insertion revisions for one unique body, header or footer text range; preserve run formatting."""
     return session.track_replace_text(directory, base_revision, path, find, replacement, author)
 
 
 @server.tool()
 def session_track_insert_text(directory: str, base_revision: int, path: str, anchor: str, text: str, position: Literal['before', 'after'], author: str) -> dict[str, Any]:
-    """Insert a Word tracked run before or after one unique body text anchor, retaining adjacent formatting."""
+    """Insert a Word tracked run before or after one unique body, header or footer text anchor, retaining adjacent formatting."""
     return session.track_insert_text(directory, base_revision, path, anchor, text, position, author)
 
 
