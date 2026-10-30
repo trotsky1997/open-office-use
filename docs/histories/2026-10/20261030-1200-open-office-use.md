@@ -87,3 +87,5 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - 工作表版本比较增加行列及默认尺寸属性，提供会话 CLI/MCP 和预览结果；记录 OfficeCLI 对公式缓存的潜在影响。
 
 - 工作表尺寸调整改为直接更新目标 XML，保留公式缓存和其他部件，并检查行列结构与并发冲突。
+
+- 网格格式使用 OfficeCLI 生成样式，并校验后将新增样式及目标引用合并回原文件，保留公式缓存和其他部件。

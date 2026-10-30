@@ -13,6 +13,7 @@ from openpyxl.utils.cell import column_index_from_string, get_column_letter, ran
 
 import cell_text
 import chart_cache
+import grid_styles
 import layout
 import notes
 import officecli_backend
@@ -671,8 +672,13 @@ def format_grid(directory, base_revision, sheet, cell_range, style_range, proper
                 if not cell['editable']:
                     raise ValueError(f"Cell cannot be formatted in the grid: {cell['cell']} ({cell['read_only_reason']})")
                 operations.append({'command': 'set', 'path': f"/{sheet}/{cell['cell']}", 'props': props})
-    return apply(directory, base_revision, operations)
-
+    state = info(directory); source = revision_file(state, base_revision)
+    if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
+    if base_revision >= 999999: raise ValueError('Session revision limit reached')
+    output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
+    try: result = grid_styles.apply(source, output, sheet, [op['path'].rsplit('/', 1)[1] for op in operations], operations)
+    except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
+    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect']}
 
 
 def resize_grid(directory, base_revision, sheet, cell_range, target_range, column_width=None, row_height=None):
