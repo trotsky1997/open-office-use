@@ -359,6 +359,10 @@ async def main():
                 assert not long_grid.isError and long_grid.structuredContent['rows'][0][0]['read_only_reason'] == 'value_too_long', long_grid
                 oversized = await session.call_tool('read_cells', {'file': str(long_source), 'sheet': 'Sheet', 'cell_range': 'A1:A101'})
                 assert oversized.isError, oversized
+                single_draft = root / 'single-grid-draft'
+                assert not (await session.call_tool('start_session', {'directory': str(single_draft), 'source': str(original)})).isError
+                single = await session.call_tool('session_edit', {'directory': str(single_draft), 'base_revision': 0, 'path': '/Sheet/A1', 'mode': 'value', 'value': '12'})
+                assert not single.isError and single.structuredContent['formula_cache_effect'] == 'may_be_stale' and single.structuredContent['recalculation_requested'], single
                 literal_draft = root / 'literal-grid-draft'
                 assert not (await session.call_tool('start_session', {'directory': str(literal_draft), 'source': str(original)})).isError
                 literal_edit = await session.call_tool('session_edit_grid', {'directory': str(literal_draft), 'base_revision': 0, 'sheet': 'Sheet', 'cell_range': 'A1:A2', 'changes': [{'cell': 'A1', 'value': '00123', 'type': 'text'}, {'cell': 'A2', 'value': '=literal', 'type': 'text'}]})

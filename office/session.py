@@ -380,7 +380,10 @@ def edit(directory, base_revision, path, mode, value):
         raise ValueError('Choose formula mode for a value starting with =')
     if mode == 'formula' and (not value.startswith('=') or len(value) < 2):
         raise ValueError('A formula must start with = and contain an expression')
-    if target['format'] == 'xlsx' and mode == 'value': spreadsheet.validate_cell_value(value)
+    if target['format'] == 'xlsx':
+        match = cell_text.PATH.fullmatch(target['path'])
+        address = match.group(2).upper() + match.group(3)
+        return edit_grid(directory, base_revision, match.group(1), address, [{'cell': address, 'value': value}])
     return apply(directory, base_revision, [{'command': 'set', 'path': target['path'], 'props': {mode: value}}])
 
 

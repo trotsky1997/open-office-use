@@ -533,7 +533,7 @@ document.getElementById('edit-form').addEventListener('submit', async event => {
  try {
   const response=await fetch('edit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_revision:target.revision,path:target.path,mode:snapshot.mode,value:snapshot.value})});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Edit failed');
-  editBaseline=snapshot; invalidateEdit(`Saved as revision ${result.revision}.`); await refresh();
+  editBaseline=snapshot; invalidateEdit(`Saved as revision ${result.revision}.${result.recalculation_requested ? ' Formula caches may be stale; recalculation is requested on open.' : ''}${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}`); await refresh();
  } catch (error) {
   document.getElementById('edit-status').textContent=`Edit error: ${error.message}`;
   if (loaded === target && current === target.revision && pinned === null) { value.readOnly=false; mode.disabled=false; button.disabled=false; }

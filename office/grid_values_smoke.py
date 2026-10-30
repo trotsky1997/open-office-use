@@ -46,6 +46,12 @@ with tempfile.TemporaryDirectory() as tmp:
     recalc = session.recalculate(draft, 1); recalculated = load_workbook(recalc['file'], data_only=True)
     assert recalculated.active['B1'].value == 16 and recalculated.active['C1'].value == 9
     assert source.read_bytes() == original
+    single_draft = root / 'single-draft'; session.start(single_draft, source=source)
+    single = session.edit(single_draft, 0, '/Sheet/A1', 'value', '8')
+    assert single['formula_cache_effect'] == 'may_be_stale' and single['recalculation_requested']
+    assert load_workbook(single['file'], data_only=True).active['B1'].value == 10
+    with zipfile.ZipFile(source) as before, zipfile.ZipFile(single['file']) as after:
+        assert all(before.read(name) == after.read(name) for name in before.namelist() if name not in ('xl/worksheets/sheet1.xml', 'xl/styles.xml'))
     literal_draft = root / 'literal-draft'; session.start(literal_draft, source=source)
     literal = session.edit_grid(literal_draft, 0, 'Sheet', 'A1:D2', [
         {'cell': 'A1', 'value': '00123', 'type': 'text'},
@@ -92,6 +98,10 @@ with tempfile.TemporaryDirectory() as tmp:
                 tree = etree.fromstring(data); etree.SubElement(tree, ct + 'Override', PartName='/xl/calcChain.xml', ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml'); data = etree.tostring(tree)
             after.writestr(entry, data)
         chain = etree.Element(X + 'calcChain'); etree.SubElement(chain, X + 'c', r='C1', i='1'); after.writestr('xl/calcChain.xml', etree.tostring(chain))
+    single_chain = root / 'single-chain'; session.start(single_chain, source=chain_source)
+    result = session.edit(single_chain, 0, '/Sheet/C1', 'formula', '=A1+3')
+    assert result['calculation_chain'] == 'removed' and load_workbook(result['file'], data_only=True).active['B1'].value == 10
+    with zipfile.ZipFile(result['file']) as archive: assert 'xl/calcChain.xml' not in archive.namelist()
     chain_draft = root / 'chain-draft'; session.start(chain_draft, source=chain_source)
     chain_edit = session.edit_grid(chain_draft, 0, 'Sheet', 'C1', [{'cell': 'C1', 'value': '=A1+3'}])
     assert chain_edit['calculation_chain'] == 'removed'
