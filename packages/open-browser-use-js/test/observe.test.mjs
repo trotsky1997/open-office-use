@@ -77,6 +77,28 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test('history navigation stays within the tab and does not repeat a failed action', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'}), calls=[], handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  let currentIndex=1, failure=false;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    calls.push(params);
+    if(params.method==='Page.getNavigationHistory')return {currentIndex,entries:[{id:10},{id:20},{id:30}]};
+    if(params.method==='Page.reload')for(const handler of handlers)handler({method:'onCDPEvent',params:{source:{tabId:1},method:'Page.loadEventFired',params:{}}});
+    if(params.method==='Page.navigateToHistoryEntry' && failure)throw new Error('navigation outcome unknown');
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await tab.back();assert.deepEqual(calls.at(-1).commandParams,{entryId:10});
+  await tab.forward();assert.deepEqual(calls.at(-1).commandParams,{entryId:30});
+  currentIndex=0;const before=calls.length;await tab.back();assert.equal(calls.length,before+1);
+  await tab.reload();assert.equal(calls.at(-1).method,'Page.reload');
+  failure=true;await assert.rejects(tab.forward(),/outcome unknown/);
+  assert.equal(calls.filter(call=>call.method==='Page.navigateToHistoryEntry').length,3);
+  currentIndex=3;await assert.rejects(tab.back(),/history is unavailable/);
+});
+
 test('goto does not treat a loaded previous document as a completed navigation', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'});
   let sameDocument=false, detached=false;const handlers=new Set();

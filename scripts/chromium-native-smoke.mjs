@@ -52,6 +52,11 @@ try {
  await nativeDialog.dismiss();assert.equal(await confirmResult,false);
  await tab.evaluate("setTimeout(()=>history.pushState({},'', '/?route=ready'),75)");
  await tab.playwright.waitForURL(`http://127.0.0.1:${http.address().port}/?route=ready`,{timeoutMs:5000});
+ await tab.back();await tab.waitForURL(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:5000});
+ await tab.forward();await tab.waitForURL(`http://127.0.0.1:${http.address().port}/?route=ready`,{timeoutMs:5000});
+ await tab.evaluate('window.reloadMarker=true');
+ await tab.reload();assert.equal(await tab.evaluate('window.reloadMarker ?? null'),null);
+
  await tab.evaluate("setTimeout(()=>location.assign('/frame?navigation=ready'),75)");
  await tab.waitForURL(/\?navigation=ready$/,{timeoutMs:5000});
  await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});

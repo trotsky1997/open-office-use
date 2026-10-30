@@ -51,6 +51,10 @@ viewport; convert cropped image pixels using the clip dimensions and add its
 x/y origin before clicking.
 Use `locator.press("Enter")` to focus a matched target and send a key, or `tab.pressKey("Enter")` and `tab.pressKey("ControlOrMeta+A")` for already focused
 page keyboard actions. Printable ASCII keys use US keyboard mappings; use `tab.typeText()` for arbitrary text.
+Use `tab.back()`, `tab.forward()` and `tab.reload()` for tab history actions.
+Back and forward return after command dispatch; reload waits for the load event.
+Verify the resulting page before further interaction. If the action fails after
+dispatch, inspect before retrying.
 After navigation or a history API route change, use
 `tab.waitForURL("https://example.com/target")` or a regular expression to wait
 for the main document URL and load state. Sampling can miss transient URLs.

@@ -147,6 +147,10 @@ export declare class OpenBrowserUseTab {
     readonly playwright: OpenBrowserUseTabPlaywright;
     constructor(browser: OpenBrowserUseBrowser, id: number);
     goto(url: string, options?: OpenBrowserUseGotoOptions): Promise<JsonValue>;
+    back(): Promise<void>;
+    forward(): Promise<void>;
+    private moveHistory;
+    reload(): Promise<void>;
     waitForLoadState(options?: OpenBrowserUseWaitForLoadStateOptions): Promise<void>;
     waitForURL(url: string | RegExp, options?: {
         waitUntil?: OpenBrowserUseLoadState;

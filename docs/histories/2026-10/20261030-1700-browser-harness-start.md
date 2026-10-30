@@ -135,3 +135,5 @@ getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察�
 修复加载等待的事件订阅竞态：先订阅主页面事件，再检查文档状态；跨进程 iframe 的事件不会使主页面等待提前结束。导航失败或已满足加载状态后取消等待并释放监听器。回归覆盖状态读取期间完成加载、iframe 事件、导航报错和资源释放；macOS Electron、macOS/Linux Chromium 完成现有真实页面回归。Linux 使用隔离浏览器与 --no-sandbox。
 
 修复 goto 超时后把旧的已加载页面视为成功的问题。CDP 不返回 loaderId 时，只有当前 URL 与目标一致且文档达到加载状态才结束同文档导航；已发生的调试器断开仍会返回错误。测试覆盖旧页面超时、同文档片段跳转和断开竞态；macOS Electron、macOS/Linux Chromium 实页验证片段跳转。Linux 使用隔离浏览器与 --no-sandbox。
+
+SDK 增加标签页 back、forward、reload。历史边界直接返回，导航动作不自动重试；reload 等待主页面 load 事件并在失败时清理监听。后退和前进返回时命令已发送，调用方核验目的地。macOS Electron、macOS/Linux Chromium 实页验证 history API 路由往返与重新加载；Linux 使用隔离浏览器与 --no-sandbox。

@@ -437,7 +437,36 @@ export class OpenBrowserUseTab {
   }
 
   goto(url: string, options: OpenBrowserUseGotoOptions = {}): Promise<JsonValue> {
+    this.#observation = undefined;
     return this.browser.cdp.navigate(this.id, url, options);
+  }
+
+  async back(): Promise<void> { await this.moveHistory(-1); }
+  async forward(): Promise<void> { await this.moveHistory(1); }
+
+  private async moveHistory(direction: -1 | 1): Promise<void> {
+    const history = await this.browser.cdp.call(this.id, "Page.getNavigationHistory");
+    if (!isObject(history) || !Number.isInteger(history.currentIndex) || !Array.isArray(history.entries)) throw new Error("Browser navigation history is unavailable");
+    const current = history.currentIndex as number;
+    if (current < 0 || current >= history.entries.length) throw new Error("Browser navigation history is unavailable");
+    const index = current + direction;
+    if (index < 0 || index >= history.entries.length) return;
+    const entry = history.entries[index];
+    if (!isObject(entry) || !Number.isInteger(entry.id)) throw new Error("Browser navigation history is unavailable");
+    this.#observation = undefined;
+    await this.browser.cdp.call(this.id, "Page.navigateToHistoryEntry", {entryId:entry.id});
+  }
+
+  async reload(): Promise<void> {
+    this.#observation = undefined;
+    await this.browser.cdp.call(this.id, "Page.enable");
+    const controller = new AbortController();
+    const wait = this.browser.cdp.waitForLoadEvent(this.id, "load", defaultNavigationTimeoutMs, controller.signal);
+    void wait.catch(() => {});
+    try {
+      await this.browser.cdp.call(this.id, "Page.reload");
+      await wait;
+    } finally { controller.abort(); }
   }
 
   waitForLoadState(options: OpenBrowserUseWaitForLoadStateOptions = {}): Promise<void> {

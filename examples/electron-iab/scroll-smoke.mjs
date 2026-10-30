@@ -34,6 +34,11 @@ app.whenReady().then(async () => {
 
     await evaluate("setTimeout(()=>history.pushState({},'', '/?route=ready'),75)");
     await sdkTab.playwright.waitForURL(`${fixture.url}/?route=ready`,{timeoutMs:5000});
+    await sdkTab.back();await sdkTab.waitForURL(`${fixture.url}/`,{timeoutMs:5000});
+    await sdkTab.forward();await sdkTab.waitForURL(`${fixture.url}/?route=ready`,{timeoutMs:5000});
+    await evaluate('window.reloadMarker=true');
+    await sdkTab.reload();assert.equal(await evaluate('window.reloadMarker ?? null'),null);
+
     await evaluate("setTimeout(()=>location.assign('/?navigation=ready'),75)");
     await sdkTab.waitForURL(/\?navigation=ready$/,{timeoutMs:5000});
     await sdkTab.goto(fixture.url);
