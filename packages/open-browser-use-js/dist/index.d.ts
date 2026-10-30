@@ -425,6 +425,7 @@ export declare class OpenBrowserUseTab {
     typeAtFocus(text: string): Promise<void>;
     private focusedInputFrame;
     private targetFrameFocused;
+    private sendSequentialText;
     private sendKey;
     private checkPoint;
     getViewport(): Promise<{
@@ -745,6 +746,9 @@ export declare class OpenBrowserUseCssLocator {
     type(text: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
+    pressSequentially(text: string, options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
     selectOption(values: SelectOption | SelectOption[], options?: {
         timeoutMs?: number;
     }): Promise<string[]>;
@@ -886,6 +890,9 @@ export declare class OpenBrowserUseRoleLocator {
         timeoutMs?: number;
     }): Promise<void>;
     type(text: string, options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    pressSequentially(text: string, options?: {
         timeoutMs?: number;
     }): Promise<void>;
     check(options?: LocatorCheckOptions): Promise<void>;

@@ -102,3 +102,4 @@
 - [x] CSS 和语义 locator 的 hover 正数期限覆盖准备和鼠标移动；超时后禁止迟到的移动，已发出时报告结果未知。macOS Electron 实页验证。
 - [x] 观察索引支持编辑框文本选择，含前后文消歧、光标位置和富文本；macOS Electron 验证主文档及跨进程 frame。
 - [x] 文本选择检查只读祖先；macOS Electron 实页验证只读目标、Shadow DOM 富文本及跨进程 frame 选择后可信替换。
+- [x] CSS 与语义 locator 支持 pressSequentially，逐键检查焦点、超时后停止后续输入；macOS Electron 实页覆盖 Unicode、焦点变化及跨进程 frame。

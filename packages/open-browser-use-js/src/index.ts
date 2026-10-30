@@ -83,7 +83,7 @@ async function locatorReadBeforeDeadline<T>(read: Promise<T>, timeoutMs: number,
     return result;
   } finally { if (timer) clearTimeout(timer); }
 }
-async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover"):Promise<void> {
+async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, signal?:AbortSignal, check?:()=>void)=>Promise<void>, timeoutMs:number, deadline:number, name:"Focus" | "Click" | "Double click" | "Hover" | "Sequential typing"):Promise<void> {
   if(timeoutMs===0)return action(()=>undefined);
   const controller=new AbortController();
   let expired=false,issued=false,timer:ReturnType<typeof setTimeout> | undefined;
@@ -94,6 +94,9 @@ async function actionBeforeDeadline(action:(mark:()=>AbortSignal | undefined, si
     await Promise.race([action(mark,controller.signal,check),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{expired=true;controller.abort();reject(timeout());},Math.max(0,deadline-performance.now()));})]);
     if(performance.now()>=deadline)throw timeout();
   } finally {if(timer)clearTimeout(timer);}
+}
+function validateSequentialText(text:string):void {
+  if(typeof text!=="string" || /[\u0000-\u0008\u000b-\u001f\u007f\ud800-\udfff]/u.test(text)) throw new Error("Invalid sequential text");
 }
 function testIdSelector(testId: string): string {
   if (typeof testId !== "string" || testId.length > 500 || /[\u0000\ud800-\udfff]/u.test(testId)) throw new Error("Invalid test id");
@@ -1319,7 +1322,7 @@ export class OpenBrowserUseTab {
   }
 
   /** @internal */
-  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, domIdentity?:DomIdentity, domConnectionGeneration?:number, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}): Promise<void | string[]> {
+  async actCss(snapshot: CssSnapshot, id: number, hover: boolean, key?: string, text?: string, doubleClick = false, checked?: boolean, selection?: SelectSpec[], append = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, domIdentity?:DomIdentity, domConnectionGeneration?:number, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}, sequential = false, sequenceMark:()=>AbortSignal | undefined = ()=>undefined, sequenceCheck:()=>void = ()=>{}, sequenceSignal?:AbortSignal): Promise<void | string[]> {
     if (key !== undefined) this.parseKey(key);
     const frame = snapshot.frame;
     if (!frame || !snapshot.ids.includes(id)) throw new RetryablePreflightError("Selector target changed; observe again");
@@ -1467,7 +1470,7 @@ export class OpenBrowserUseTab {
       const options={sessionId,...(sessionId ? {visualPoint:second.point} : {}),...(domConnectionGeneration !== undefined ? {expectedGeneration:domConnectionGeneration} : {})};
       inputIssued=true;
       if (key !== undefined || text !== undefined) {
-        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId});
+        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId,signal:sequential ? sequenceMark() : undefined});
         const verifyFocus = async () => {
           const afterFocus=await this.queryCss(snapshot.step,snapshot.framePath,snapshot.scopes,snapshot.semantic?.scope,undefined,snapshot.frameId);
           if (afterFocus.documentId!==snapshot.documentId || JSON.stringify(afterFocus.frames)!==JSON.stringify(snapshot.frames) || JSON.stringify(afterFocus.semantic?.roots)!==JSON.stringify(snapshot.semantic?.roots) || JSON.stringify(afterFocus.scopeIds)!==JSON.stringify(snapshot.scopeIds) || JSON.stringify(afterFocus.ids)!==JSON.stringify(snapshot.ids)) throw new Error("Selector target changed after focus; observe again");
@@ -1479,6 +1482,7 @@ export class OpenBrowserUseTab {
         await verifyFocus();
         if (key !== undefined) { await this.sendKey(key,sessionId); return; }
         if (text === undefined) throw new Error("Text is unavailable");
+        if (sequential) { await this.sendSequentialText(text,sessionId,verifyFocus,sequenceCheck,sequenceSignal); return; }
         if (append) { if(text) await this.browser.cdp.call(this.id,"Input.insertText",{text},{sessionId}); return; }
         await this.sendKey(process.platform === "darwin" ? "Meta+A" : "Control+A",sessionId);
         await verifyFocus();
@@ -2131,7 +2135,19 @@ export class OpenBrowserUseTab {
     return isObject(owner) && owner.backendNodeId===backendNodeId;
   }
 
-  private async sendKey(key: string, sessionId?: string): Promise<void> {
+  private async sendSequentialText(text:string,sessionId:string | undefined,verify:()=>Promise<void>,check:()=>void,signal?:AbortSignal):Promise<void> {
+    for(const char of text) {
+      check();await verify();check();
+      if(char==='\n' || char==='\r')await this.sendKey("Enter",sessionId,signal);
+      else if(char==='\t')await this.sendKey("Tab",sessionId,signal);
+      else if(char===' ')await this.sendKey("Space",sessionId,signal);
+      else if(/^[A-Z]$/.test(char))await this.sendKey(`Shift+${char.toLowerCase()}`,sessionId,signal);
+      else if(/^[\x21-\x7e]$/.test(char))await this.sendKey(char,sessionId,signal);
+      else await this.browser.cdp.call(this.id,"Input.insertText",{text:char},{sessionId,signal});
+    }
+  }
+
+  private async sendKey(key: string, sessionId?: string, signal?:AbortSignal): Promise<void> {
     const {name, modifiers, modifierBits, definition, printablePair} = this.parseKey(key);
     const modifierCodes: Record<string, [string, number]> = { Alt: ["AltLeft", 18], Control: ["ControlLeft", 17], Meta: ["MetaLeft", 91], Shift: ["ShiftLeft", 16] };
     let mask = 0;
@@ -2142,14 +2158,14 @@ export class OpenBrowserUseTab {
         mask |= modifierBits[modifier];
         const [code, windowsVirtualKeyCode] = modifierCodes[modifier];
         pressed.push(modifier);
-        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, {sessionId});
+        await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: modifier, code, windowsVirtualKeyCode, modifiers: mask }, {sessionId,signal});
       }
       const actualKey = name === "Space" ? " " : printablePair ? printablePair[mask & 8 ? 1 : 0] : /^[a-zA-Z]$/.test(name) ? (mask & 8 ? name.toUpperCase() : name.toLowerCase()) : name;
       const params = { key: actualKey, code: definition[0], windowsVirtualKeyCode: definition[1], modifiers: mask | (Object.hasOwn(modifierBits,name) ? modifierBits[name] : 0) };
       const selectAll = actualKey === "a" && (mask === 2 || mask === 4);
       const printable = (name === "Space" || !!printablePair || /^[a-zA-Z]$/.test(name)) && !(mask & 7);
       activeKey = params;
-      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? {text:actualKey, unmodifiedText:name === "Space" ? " " : printablePair ? printablePair[0] : name.toLowerCase()} : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, {sessionId});
+      await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, type: printable ? "keyDown" : "rawKeyDown", ...(printable ? {text:actualKey, unmodifiedText:name === "Space" ? " " : printablePair ? printablePair[0] : name.toLowerCase()} : {}), ...(selectAll ? { commands: ["selectAll"] } : {}) }, {sessionId,signal});
       await this.browser.cdp.call(this.id, "Input.dispatchKeyEvent", { ...params, modifiers:mask, type: "keyUp" }, {sessionId});
       activeKey = undefined;
     } finally {
@@ -2180,6 +2196,12 @@ export class OpenBrowserUseTab {
     await this.act(index, snapshotId, text);
   }
 
+  /** @internal */
+  async pressSequentially(index:number,snapshotId:string,text:string,mark:()=>AbortSignal | undefined = ()=>undefined,check:()=>void = ()=>{},signal?:AbortSignal):Promise<void> {
+    validateSequentialText(text);
+    await this.act(index,snapshotId,text,false,undefined,undefined,false,undefined,false,undefined,false,undefined,undefined,undefined,undefined,true,mark,check,signal);
+  }
+
   async fill(index: number, snapshotId: string, text: string): Promise<void> {
     if (typeof text !== "string") throw new Error("Text must be a string");
     await this.act(index, snapshotId, text, true);
@@ -2197,7 +2219,7 @@ export class OpenBrowserUseTab {
     return result as string[];
   }
 
-  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}): Promise<void | string[]> {
+  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false, mouse:MouseClick = {button:"left",buttons:1,modifiers:0}, focusOnly = false, markFocus:()=>AbortSignal | undefined = ()=>undefined, markClick:()=>AbortSignal | undefined = ()=>undefined, clickSignal?:AbortSignal, checkClick:()=>void = ()=>{}, sequential = false, sequenceMark:()=>AbortSignal | undefined = ()=>undefined, sequenceCheck:()=>void = ()=>{}, sequenceSignal?:AbortSignal): Promise<void | string[]> {
     const observation = this.#observation;
     this.#observation = undefined;
     const node = observation?.nodes.find((item) => item.index === index);
@@ -2259,6 +2281,18 @@ export class OpenBrowserUseTab {
         if(!isObject(focused) || !isObject(focused.result) || focused.result.value!==true || await this.documentId()!==observation.documentId || (node.frameId && observation.frames && !await this.targetFrameFocused(node.frameId,node.backendNodeId,observation.frames)))throw new Error("Target lost focus; observe again");
         if(node.frameChain)await this.validateFrames(node.frameChain);
         await this.verifyLocatorScope(observation,node);return;
+      }
+      if (sequential && text!==undefined) {
+        inputIssued=true;
+        await this.browser.cdp.call(this.id,"DOM.focus",{objectId},{sessionId:targetSession,signal:sequenceMark()});
+        const verify=async()=>{
+          const focused=await this.browser.cdp.call(this.id,"Runtime.callFunctionOn",{objectId,returnByValue:true,functionDeclaration:`function(){if(!this.isConnected || this.readOnly || this.getAttribute('aria-readonly')==='true' || !(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type))))return false;for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null))if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true')return false;let el=this;while(true){const root=el.getRootNode();if(root.activeElement!==el)return false;if(!(root instanceof ShadowRoot))return true;el=root.host;}}`},{sessionId:targetSession});
+          if(!isObject(focused) || !isObject(focused.result) || focused.result.value!==true || await this.documentId()!==observation.documentId)throw new Error("Target lost focus or is not editable; observe again");
+          if(node.frameChain)await this.validateFrames(node.frameChain);
+          if(node.frameId && observation.frames && !await this.targetFrameFocused(node.frameId,node.backendNodeId,observation.frames))throw new Error("Target frame lost focus; observe again");
+          await this.verifyLocatorScope(observation,node);
+        };
+        await verify();await this.sendSequentialText(text,targetSession,verify,sequenceCheck,sequenceSignal);return;
       }
       const measure = async () => {
         checkClick();
@@ -3131,6 +3165,10 @@ export class OpenBrowserUseCssLocator {
     if (typeof text !== "string") throw new Error("Text must be a string");
     return this.perform(async (snapshot,id)=>{await this.tab.actCss(snapshot,id,false,undefined,text,false,undefined,undefined,true);},options.timeoutMs);
   }
+  pressSequentially(text:string, options:{timeoutMs?:number} = {}):Promise<void> {
+    validateSequentialText(text);
+    return this.perform((snapshot,id,deadline)=>actionBeforeDeadline(async (mark,signal,check)=>{await this.tab.actCss(snapshot,id,false,undefined,text,false,undefined,undefined,true,undefined,undefined,undefined,false,undefined,undefined,undefined,undefined,true,mark,check,signal);},options.timeoutMs ?? 5000,deadline,"Sequential typing"),options.timeoutMs);
+  }
   async selectOption(values: SelectOption | SelectOption[], options: {timeoutMs?: number} = {}): Promise<string[]> {
     const specs=selectSpecs(values);
     const result=await this.perform((snapshot,id)=>this.tab.actCss(snapshot,id,false,undefined,undefined,false,undefined,specs),options.timeoutMs);
@@ -3450,6 +3488,10 @@ export class OpenBrowserUseRoleLocator {
   clear(options: {timeoutMs?: number} = {}): Promise<void> { return this.fill("",options); }
   async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }
   async type(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.typeText(node.index,id,text), options.timeoutMs); }
+  async pressSequentially(text:string,options:{timeoutMs?:number} = {}):Promise<void> {
+    validateSequentialText(text);
+    await this.perform((node,id,deadline)=>actionBeforeDeadline((mark,signal,check)=>this.tab.pressSequentially(node.index,id,text,mark,check,signal),options.timeoutMs ?? 5000,deadline,"Sequential typing"),options.timeoutMs);
+  }
   async check(options: LocatorCheckOptions = {}): Promise<void> { await this.setChecked(true,options); }
   async uncheck(options: LocatorCheckOptions = {}): Promise<void> { await this.setChecked(false,options); }
   async setChecked(checked: boolean, options: LocatorCheckOptions = {}): Promise<void> {

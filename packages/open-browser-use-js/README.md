@@ -266,6 +266,13 @@ focus checks use an isolated world so page scripts cannot replace those DOM meth
 checks also run in an isolated world; unavailable contexts fail before input.
 `clear()` fills the matched editable control with an empty string, using the
 same focus, validation and timeout behavior as `fill()`.
+`pressSequentially(text)` focuses the editable control and enters characters one
+at a time. US-layout printable characters use trusted key events; characters
+outside that layout use text insertion, which does not emit key events. Newline
+and tab send Enter and Tab. The operation stops if the target loses focus, and a
+positive timeout stops further input; once focus or input is issued, a timeout
+reports an unknown outcome and may leave a partial value. Inspect the page before
+retrying.
 Editable text inputs exposed as `combobox` support `fill()` and `type()`;
 noneditable comboboxes reject text before mouse input.
 `inputValue()` reads the current value of an input, textarea or select (up to
@@ -334,7 +341,7 @@ frame position; this catches movement visible between those samples. Before
 input and scoped reads, a separate accessibility observation re-evaluates the
 locator and its position; changed matches trigger a fresh attempt before input.
 The recheck leaves the active operation's observation intact.
-For `click`, `dblclick`, `hover`, and `focus`, a positive timeout also bounds preparation and reports
+For `click`, `dblclick`, `hover`, `focus`, and `pressSequentially`, a positive timeout also bounds preparation and reports
 when the input outcome is unknown. A timed-out click or double click may still release an already
 pressed mouse button; preparation may have scrolled the page. Other actions can
 finish a slow browser request after the deadline. Multiple matches fail immediately.

@@ -163,6 +163,22 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await evaluate(a.id,"document.querySelector('#selection-shadow-host').remove()");
   await evaluate(a.id,"document.querySelector('#selection-field').remove();document.querySelector('#selection-rich').remove()");
   check('SDK indexed text selection: context, caret, ambiguity and rich text');
+
+  await evaluate(a.id,`(()=>{window.sequentialKeys=[];const input=document.createElement('input');input.id='sequential-test';input.setAttribute('aria-label','Sequential test');input.value='start:';input.addEventListener('keydown',e=>window.sequentialKeys.push([e.key,e.isTrusted]));document.body.append(input)})()`);
+  for (const locator of [sdkTab.playwright.locator('#sequential-test'),sdkTab.playwright.getByRole('textbox',{name:'Sequential test',exact:true})]) {
+    await evaluate(a.id,`(()=>{const e=document.querySelector('#sequential-test');e.value='start:';e.focus();e.setSelectionRange(e.value.length,e.value.length);window.sequentialKeys=[]})()`);
+    await locator.pressSequentially('A+中');assert.equal(await evaluate(a.id,"document.querySelector('#sequential-test').value"),'start:A+中');
+    const keys=await evaluate(a.id,'window.sequentialKeys');assert.ok(keys.some(([key,trusted])=>key==='A' && trusted));assert.ok(keys.some(([key,trusted])=>key==='+' && trusted));
+  }
+  await evaluate(a.id,`(()=>{const e=document.querySelector('#sequential-test');e.addEventListener('keydown',()=>document.querySelector('#increment').focus(),{once:true})})()`);
+  await assert.rejects(sdkTab.playwright.getByRole('textbox',{name:'Sequential test',exact:true}).pressSequentially('ab'),/focus/i);
+  const originalCdpCallForSequence=sdkTab.browser.cdp.call.bind(sdkTab.browser.cdp);
+  let unblockKey,sequenceKeys=[];
+  sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='Input.dispatchKeyEvent' && args[2].type==='keyDown'){sequenceKeys.push(args[2].key);const result=await originalCdpCallForSequence(...args);if(args[2].key==='a')await new Promise(resolve=>{unblockKey=resolve});return result;}return originalCdpCallForSequence(...args);};
+  try {await assert.rejects(sdkTab.playwright.locator('#sequential-test').pressSequentially('ab',{timeoutMs:1000}),/outcome is unknown/i);assert.ok(unblockKey);unblockKey();await new Promise(resolve=>setTimeout(resolve,150));assert.deepEqual(sequenceKeys,['a']);}
+  finally {unblockKey?.();sdkTab.browser.cdp.call=originalCdpCallForSequence;}
+  await evaluate(a.id,"document.querySelector('#sequential-test').remove()");
+  check('SDK sequential typing: trusted keys, Unicode and focus change');
   await evaluate(a.id,"document.querySelector('#increment').focus()");
   const originalCdpCall=sdkTab.browser.cdp.call.bind(sdkTab.browser.cdp);let unblockResolve,focusDispatches=0;
   sdkTab.browser.cdp.call=async (...args)=>{if(args[1]==='DOM.resolveNode' && !unblockResolve)await new Promise(resolve=>{unblockResolve=resolve});if(args[1]==='DOM.focus')focusDispatches++;return originalCdpCall(...args);};
@@ -308,6 +324,7 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await sdkTab.typeAtFocus('XYZ');await new Promise(resolve=>setTimeout(resolve,100));
   assert.deepEqual(await evaluate(a.id,'window.crossMessages.at(-1)'),{kind:'cross-text',value:'hXYZo',trusted:true});
   await frameCss.fill('hello');
+  for(const locator of [frameCss,frameInput]){await locator.pressSequentially('A中');assert.equal(await frameCss.inputValue(),'helloA中');await frameCss.fill('hello');}
   const valueState=await sdkTab.observe({includeFrames:true,includeValues:true});
   assert.equal(valueState.nodes.find(node=>node.name==='Cross-frame text').value,'hello');
   assert.equal(valueState.nodes.find(node=>node.name==='Cross secret').valueRedacted,true);
