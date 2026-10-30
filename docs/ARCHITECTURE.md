@@ -318,3 +318,5 @@ Selected visual regions can be rendered to PDF and queried for word-center text 
 Selection candidate lookup searches bounded text fragments against an OfficeCLI snapshot, returns candidate paths and requires verification. It is text-based and provides no geometric identity guarantee.
 
 The viewer can search a saved visual selection for text-based element candidates and explicitly load a chosen path. Selection identity and latest revision are checked before and after lookup; candidates remain subject to user verification.
+
+XLSX `compare-cells` and MCP `compare_cells` compare bounded saved-cell ranges, returning formula, value and type changes with unknown cache freshness. Styling and workbook-wide structure remain outside this view.

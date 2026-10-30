@@ -149,6 +149,7 @@ def main():
     calc = commands.add_parser('recalculate'); calc.add_argument('file'); calc.add_argument('--out', required=True)
     audit = commands.add_parser('audit'); audit.add_argument('file')
     comparison = commands.add_parser('compare'); comparison.add_argument('before'); comparison.add_argument('after')
+    cell_diff = commands.add_parser('compare-cells'); cell_diff.add_argument('before'); cell_diff.add_argument('after'); cell_diff.add_argument('--sheet', required=True); cell_diff.add_argument('--range', required=True, dest='cell_range')
     draft = commands.add_parser('session'); sub = draft.add_subparsers(dest='action', required=True)
     start = sub.add_parser('start'); start.add_argument('directory'); group = start.add_mutually_exclusive_group(required=True); group.add_argument('--source'); group.add_argument('--format', choices=['docx', 'xlsx', 'pptx'])
     state = sub.add_parser('info'); state.add_argument('directory')
@@ -206,6 +207,8 @@ def main():
             result = {'pages': preview(args.file, args.out_dir)}
         elif args.command == 'audit':
             result = officecli_backend.audit(args.file)
+        elif args.command == 'compare-cells':
+            result = review.compare_cells(args.before, args.after, args.sheet, args.cell_range)
         elif args.command == 'compare':
             result = review.compare(args.before, args.after)
         elif args.command == 'cells':

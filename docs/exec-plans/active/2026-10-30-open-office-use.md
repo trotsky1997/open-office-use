@@ -68,3 +68,7 @@ Added limited element editing through the viewer and MCP: load one target at a s
 ## Viewer candidates
 
 Connected selection-based candidate lookup to the local viewer. The user chooses a candidate and reviews it before committing an edit. The server checks selection identity and version around the lookup. Verified cross-origin, stale and changed-selection rejection and Chrome interaction. Geometric identity and complete canvas editing remain open.
+
+## Spreadsheet change review
+
+Added bounded cell comparison via CLI and MCP, with formula/value/type differences, unknown cache freshness, full change count and 500-item output cap. Verified formula changes, recalculated cache, missing sheets and truncation. Formatting and workbook-wide semantic diff remain open.

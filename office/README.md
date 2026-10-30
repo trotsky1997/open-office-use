@@ -99,9 +99,12 @@ This uses a saved disk snapshot with OfficeCLI's Open XML schema validator and i
 
 ```sh
 office-use compare original.docx revised.docx
+office-use compare-cells original.xlsx revised.xlsx --sheet Forecast --range A1:D20
 ```
 
 The result contains added, removed and modified OOXML package part names, plus a unified diff of OfficeCLI text views. The comparison reads saved disk snapshots; save and close external editing sessions first. Text views are limited to 2,000 lines per file, then 100,000 characters per view and 500 diff lines; truncation flags are returned. The text view can omit formatting, formulas and other content. Part changes indicate underlying file changes but do not describe their visual or semantic effect. Use `cells`, structured reads and page previews to review the relevant details. Files exceeding 5,000 package parts or 128 MiB uncompressed are rejected.
+
+`compare-cells` compares one worksheet rectangle in saved XLSX files. It reports changed formula text, values and types, with before/after details for the first 500 changed cells and a total count. The range is limited to 10,000 cells. For formula cells, `value` is the stored cached result and its freshness is unknown. The comparison does not cover formatting, charts, comments or worksheet structure; use the broader comparison and visual review alongside it.
 
 ## Spreadsheet calculation
 
@@ -130,13 +133,14 @@ command = "office-use"
 args = ["mcp"]
 ```
 
-The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_restore`, `session_export`, `session_edit_target`, `session_edit`, `session_selection`, `session_selection_image`, `session_selection_text`, and `session_selection_candidates`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. Selected text extraction uses `pdftotext` word centers within the rectangle on a freshly rendered PDF and returns text, normalized word boxes, revision and staleness. It is bounded to 5,000 selected words and an 8 MiB page extraction. It can miss partially selected words, reordered text, images, or scanned text; it does not perform OCR. Candidate lookup searches up to three selected text lines against OfficeCLI and returns possible paths with matching text. Results are limited and non-exhaustive: repeated text, wrapped lines, tables, formulas, images and complex layouts can yield ambiguity or missing matches. The paths are not geometrically verified. Check the selected revision and use structured reads and visual context to verify the exact target before editing. Search fragments are passed as OfficeCLI command arguments, which may be visible to other local processes. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
+The server offers `inspect_file`, `structured_read`, `apply_batch`, `render_pdf`, `preview_pages`, `view_page`, `read_cells`, `recalculate_workbook`, `compare_files`, `compare_cells`, `audit_file`, `start_session`, `session_info`, `session_apply`, `session_restore`, `session_export`, `session_edit_target`, `session_edit`, `session_selection`, `session_selection_image`, `session_selection_text`, and `session_selection_candidates`. `view_page` returns a PNG image to a vision-capable client (maximum 10 MiB). `session_selection` returns the selected revision, page and normalized rectangle, with a stale flag if the session advanced. `session_selection_image` renders and crops that exact revision. Selected text extraction uses `pdftotext` word centers within the rectangle on a freshly rendered PDF and returns text, normalized word boxes, revision and staleness. It is bounded to 5,000 selected words and an 8 MiB page extraction. It can miss partially selected words, reordered text, images, or scanned text; it does not perform OCR. Candidate lookup searches up to three selected text lines against OfficeCLI and returns possible paths with matching text. Results are limited and non-exhaustive: repeated text, wrapped lines, tables, formulas, images and complex layouts can yield ambiguity or missing matches. The paths are not geometrically verified. Check the selected revision and use structured reads and visual context to verify the exact target before editing. Search fragments are passed as OfficeCLI command arguments, which may be visible to other local processes. Paths refer to the machine running the server. The server has access to files available to its process; configure it only in a trusted local environment. OfficeCLI, LibreOffice and Poppler are required for their corresponding tools. Existing output protection and the saved-source requirement also apply over MCP.
 
 ## Verification
 
 ```sh
 python3 office/smoke.py
 python3 office/structured_smoke.py  # requires OfficeCLI
+python3 office/cell_compare_smoke.py # requires LibreOffice
 python3 office/candidates_smoke.py  # requires LibreOffice, Poppler and OfficeCLI
 python3 office/selection_smoke.py   # requires LibreOffice, Poppler and OfficeCLI
 python3 office/watch_smoke.py       # requires OfficeCLI, LibreOffice and Poppler

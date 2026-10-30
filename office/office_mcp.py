@@ -141,6 +141,12 @@ def compare_files(before: str, after: str) -> dict[str, Any]:
 
 
 @server.tool()
+def compare_cells(before: str, after: str, sheet: str, cell_range: str) -> dict[str, Any]:
+    """Compare formulas, values and cached value types in a bounded XLSX range."""
+    return review.compare_cells(before, after, sheet, cell_range)
+
+
+@server.tool()
 def read_cells(file: str, sheet: str, cell_range: str) -> dict[str, Any]:
     """Read up to 10,000 cells, including formulas and stored cached values; freshness is unknown."""
     return spreadsheet.read_range(file, sheet, cell_range)

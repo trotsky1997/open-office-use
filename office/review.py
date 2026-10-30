@@ -7,7 +7,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from openpyxl.utils.cell import get_column_letter, range_boundaries
+
 import officecli_backend
+import spreadsheet
 
 
 def part_hashes(file):
@@ -67,3 +70,31 @@ def changes(before, after):
     return {'added': sorted(after.keys() - before.keys()),
             'removed': sorted(before.keys() - after.keys()),
             'modified': sorted(name for name in before.keys() & after.keys() if before[name] != after[name])}
+
+
+def compare_cells(before, after, sheet, cell_range):
+    """Compare formulas, values and cached value types in a bounded XLSX range."""
+    before, after = Path(before).resolve(strict=True), Path(after).resolve(strict=True)
+    if before.suffix.lower() != '.xlsx' or after.suffix.lower() != '.xlsx':
+        raise ValueError('Cell comparison requires two .xlsx files')
+    with tempfile.TemporaryDirectory(prefix='office-cell-review-') as tmp:
+        left, right = Path(tmp) / 'before.xlsx', Path(tmp) / 'after.xlsx'
+        shutil.copyfile(before, left)
+        shutil.copyfile(after, right)
+        left_rows = spreadsheet.read_range(left, sheet, cell_range)['rows']
+        right_rows = spreadsheet.read_range(right, sheet, cell_range)['rows']
+    min_col, min_row, _, _ = range_boundaries(cell_range)
+    if min_col is None or min_row is None:
+        raise ValueError('A bounded cell range is required')
+    result = []
+    total = 0
+    for row_index, (left_row, right_row) in enumerate(zip(left_rows, right_rows)):
+        for col_index, (old, new) in enumerate(zip(left_row, right_row)):
+            fields = [field for field in ('formula', 'value', 'type') if old.get(field) != new.get(field)]
+            if fields:
+                total += 1
+                if len(result) < 500:
+                    address = f'{get_column_letter(min_col + col_index)}{min_row + row_index}'
+                    result.append({'cell': address, 'changed_fields': fields, 'before': old, 'after': new})
+    return {'sheet': sheet, 'range': cell_range, 'changed_count': total, 'changes': result,
+            'truncated': total > len(result), 'cache_freshness': 'unknown'}
