@@ -17,6 +17,7 @@ assert.equal(validationList(data,'B1'),null);
 assert.equal(validationList({...data,complete:false},'A1'),null);
 assert.equal(validationList({...data,rules:[rule,rule]},'A1'),null);
 assert.equal(validationList({...data,rules:[{...rule,formula1:'Sheet1!A1:A3'}]},'A1'),null);
+assert.deepEqual(validationList({...data,rules:[{...rule,list_resolution:'resolved',list_values:['001','=text']}]},'A1'),['001','=text']);
 const controls=[{},{}], input={dataset:{editable:'true'},parentElement:{querySelectorAll(){return controls;}}};
 lockGridInputs([input],true); assert.ok(input.readOnly && controls.every(item=>item.disabled));
 lockGridInputs([input],false); assert.ok(!input.readOnly && controls.every(item=>!item.disabled));

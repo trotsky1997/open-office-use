@@ -655,6 +655,50 @@ def grid_validations(root, bounds):
     return {'rules': rules, 'complete': not issues, 'issues': sorted(issues), 'evaluated': False}
 
 
+def resolve_grid_lists(source, sheet, validation):
+    """Resolve bounded absolute list ranges containing verified plain text."""
+    candidates = [rule for rule in validation['rules'] if rule['attributes'].get('type') == 'list' and rule.get('formula1') and not rule['formula1'].startswith('"')]
+    if not candidates: return
+    if not validation['complete']:
+        for rule in candidates: rule['list_resolution'] = 'incomplete_metadata'
+        return
+    workbook = load_workbook(source, read_only=True, data_only=False)
+    try:
+        with zipfile.ZipFile(source) as archive:
+            spreadsheet.prepare_shared_strings(workbook, archive=archive)
+        cache = {}
+        for rule in candidates:
+            formula = rule['formula1']
+            # shortcut: only absolute one-dimensional ranges of verified text; add formula and name evaluation when supported.
+            match = re.fullmatch(r"=?(?:(?:'((?:[^']|'')+)'|([A-Za-z0-9_.]+))!)?(\$[A-Za-z]{1,3}\$[1-9][0-9]{0,6})(?::(\$[A-Za-z]{1,3}\$[1-9][0-9]{0,6}))?", formula)
+            if not match:
+                rule['list_resolution'] = 'unsupported_reference'; continue
+            target = (match.group(1).replace("''", "'") if match.group(1) else match.group(2)) or sheet
+            ref = match.group(3) + (':' + match.group(4) if match.group(4) else '')
+            key = (target, ref)
+            if key not in cache:
+                if len(cache) >= 20:
+                    rule['list_resolution'] = 'reference_limit'; continue
+                try:
+                    a, b, c, d = range_boundaries(ref)
+                    if target not in workbook.sheetnames: raise ValueError('missing_sheet')
+                    if not (1 <= a <= c <= 16384 and 1 <= b <= d <= 1048576 and (a == c or b == d) and (c - a + 1) * (d - b + 1) <= 100): raise ValueError('range_limit')
+                    cells = [cell for row in workbook[target].iter_rows(min_row=b, max_row=d, min_col=a, max_col=c) for cell in row]
+                    values = [cell.value for cell in cells]
+                    if any(cell.data_type not in ('s', 'inlineStr') or not isinstance(value, str) or isinstance(value, spreadsheet.UnverifiedSharedString) or not value or len(value) > 256 or re.search(r'_x[0-9a-fA-F]{4}_', value) for cell, value in zip(cells, values)):
+                        raise ValueError('unverified_values')
+                    cache[key] = ('resolved', values)
+                except ValueError as exc:
+                    cache[key] = (str(exc), None)
+            status, values = cache[key]
+            rule['list_resolution'] = status
+            if values is not None:
+                rule['list_values'] = values
+                rule['list_source'] = {'sheet': target, 'range': ref}
+    finally:
+        workbook.close()
+
+
 def read_grid(directory, base_revision, sheet, cell_range):
     if not isinstance(sheet, str) or not sheet or '/' in sheet or '\x00' in sheet:
         raise ValueError('Invalid sheet name')
@@ -697,6 +741,7 @@ def read_grid(directory, base_revision, sheet, cell_range):
         else:
             panes = views[0][0].findall(grid_styles.X + 'pane')
             view_info = {'pane': dict(panes[0].attrib) if len(panes) == 1 else None, 'issue': 'ambiguous_panes' if len(panes) > 1 else None}
+    resolve_grid_lists(source, sheet, validations)
     latest = info(directory)['latest_revision']
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')

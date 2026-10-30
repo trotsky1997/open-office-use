@@ -159,3 +159,7 @@ Added bounded standard XLSX data-validation metadata to grid reads and the viewe
 ### Fixed validation list choices
 
 Added viewer choices for unambiguous fixed Excel validation lists; selected values use literal text mode and stale/protected grids disable the control. Checked a real browser save with leading zeros, validation preservation, incomplete coverage, and existing grid/paste smoke tests. Formula and range references remain unresolved.
+
+### Referenced validation list choices
+
+Resolved bounded absolute one-dimensional list references containing verified plain text, including cross-sheet references with quoted names. Exposed choices and resolution status in grid reads and the viewer. Tested a real workbook and browser rendering, unsupported source values, and grid and control smoke suites. Relative references, names, formula and numeric source cells remain unresolved.

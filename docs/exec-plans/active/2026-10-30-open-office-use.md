@@ -117,4 +117,4 @@ Ordinary footnote and endnote paragraphs can be searched with snapshot-bound pag
 
 Grid reads report bounded standard data-validation rules intersecting the loaded cells, with explicit coverage issues for malformed metadata, unsupported extensions and output limits. Grid edits preserve rules and report affected cells without evaluating values. Compatible spreadsheet applications remain necessary to evaluate formula-based and custom rules.
 
-The viewer offers fixed literal list suggestions for unambiguous supported validation rules, preserving values such as `001` and `=text` as text. Reference-based lists remain unresolved.
+The viewer offers fixed literal list suggestions for unambiguous supported validation rules, preserving values such as `001` and `=text` as text. Absolute one-dimensional references containing verified plain text can also be resolved from the loaded revision, within bounded source limits; names, relative references and computed or non-text values remain unresolved.
