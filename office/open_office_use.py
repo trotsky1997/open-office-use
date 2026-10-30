@@ -27,7 +27,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, LineChart, ScatterChart, Series, Reference
-from openpyxl.chart.axis import DateAxis
+from openpyxl.chart.axis import DateAxis, ChartLines
 from openpyxl.drawing.image import Image as WorkbookImage
 from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing, _check_anchor
 from openpyxl.chart.data_source import AxDataSource, StrRef, StrData, StrVal, NumData, NumVal
@@ -876,7 +876,7 @@ def format_workbook(workbook, options):
         charts = setting.get('charts', [])
         if not isinstance(charts, list) or len(charts) > 20: raise ValueError('Charts must be a list of at most 20 entries')
         for chart_spec in charts:
-            allowed = {'type', 'data', 'categories', 'anchor', 'title', 'x_axis_title', 'y_axis_title', 'titles_from_data', 'category_type', 'date_format', 'width', 'height'}
+            allowed = {'type', 'data', 'categories', 'anchor', 'title', 'x_axis_title', 'y_axis_title', 'titles_from_data', 'category_type', 'date_format', 'width', 'height', 'series_colors', 'legend', 'y_min', 'y_max', 'show_gridlines'}
             if not isinstance(chart_spec, dict) or set(chart_spec) - allowed or chart_spec.get('type') not in ('column', 'line', 'scatter'): raise ValueError('Invalid chart specification')
             a, b, c, d = bounds(chart_spec.get('data'), 10000)
             headings = chart_spec.get('titles_from_data', True)
@@ -940,9 +940,25 @@ def format_workbook(workbook, options):
                 if not (date_categories or datetime_categories) or not isinstance(value, str) or not value or re.search(r'[\x00-\x1f\ud800-\udfff\ufffe\uffff]', value) or len(value.encode('utf-16-le')) // 2 > 255: raise ValueError('Date format requires a date axis and valid format code')
             for key in ('title', 'x_axis_title', 'y_axis_title'):
                 if key in chart_spec and (not isinstance(chart_spec[key], str) or len(chart_spec[key]) > 255): raise ValueError('Chart titles must be text of at most 255 characters')
+            colors = chart_spec.get('series_colors')
+            if colors is not None:
+                if not isinstance(colors, list) or len(colors) != c - a + 1: raise ValueError('Chart series_colors must contain one color per series')
+                colors = [rgb(color)[2:] for color in colors]
+            for key in ('legend', 'show_gridlines'):
+                if key in chart_spec and not isinstance(chart_spec[key], bool): raise ValueError(f'Chart {key} must be boolean')
+            for key in ('y_min', 'y_max'):
+                if key in chart_spec:
+                    value = chart_spec[key]
+                    if isinstance(value, bool) or not isinstance(value, (int, float)) or not -1.7976931348623157e308 <= value <= 1.7976931348623157e308 or not math.isfinite(value): raise ValueError(f'Chart {key} must be a finite number')
+            if 'y_min' in chart_spec and 'y_max' in chart_spec and chart_spec['y_min'] >= chart_spec['y_max']: raise ValueError('Chart y_min must be less than y_max')
             scatter = chart_spec['type'] == 'scatter'
             chart = BarChart() if chart_spec['type'] == 'column' else ScatterChart() if scatter else LineChart()
             if chart_spec['type'] == 'column': chart.type = 'col'
+            if chart_spec['type'] == 'line': chart.smooth = False
+            if chart_spec.get('legend') is False: chart.legend = None
+            if 'show_gridlines' in chart_spec: chart.y_axis.majorGridlines = ChartLines() if chart_spec['show_gridlines'] else None
+            if 'y_min' in chart_spec: chart.y_axis.scaling.min = chart_spec['y_min']
+            if 'y_max' in chart_spec: chart.y_axis.scaling.max = chart_spec['y_max']
             if scatter:
                 chart.scatterStyle = 'lineMarker'; chart.x_axis.axPos = 'b'
                 if date_categories or datetime_categories: chart.x_axis.numFmt = chart_spec.get('date_format', 'yyyy-mm-dd hh:mm' if datetime_categories else 'yyyy-mm-dd')
@@ -951,7 +967,6 @@ def format_workbook(workbook, options):
                     series.marker.symbol = 'circle'; series.smooth = False; chart.series.append(series)
             else:
                 if date_categories:
-                    if chart_spec['type'] == 'line': chart.smooth = False
                     chart.x_axis = DateAxis(axId=chart.x_axis.axId, crossAx=chart.y_axis.axId, axPos='b', baseTimeUnit='days', numFmt=chart_spec.get('date_format', 'yyyy-mm-dd'))
                 chart.add_data(Reference(sheet, min_col=a, min_row=b, max_col=c, max_row=d), titles_from_data=headings)
                 if labels is not None:
@@ -959,7 +974,14 @@ def format_workbook(workbook, options):
                         for series in chart.series: series.cat = AxDataSource(strRef=StrRef(f=str(labels)))
                     else: chart.set_categories(labels)
             for index, series in enumerate(chart.series):
-                if date_categories and chart_spec['type'] == 'line': series.smooth = False
+                if chart_spec['type'] == 'line': series.smooth = False
+                if colors is not None:
+                    if chart_spec['type'] == 'column': series.graphicalProperties.solidFill = colors[index]
+                    else:
+                        series.graphicalProperties.line.solidFill = colors[index]
+                        if scatter:
+                            series.marker.graphicalProperties.solidFill = colors[index]
+                            series.marker.graphicalProperties.line.solidFill = colors[index]
                 if headings and series.tx and series.tx.strRef:
                     series.tx.strRef.strCache = chart_cache([sheet.cell(row=b, column=a + index)], True)
                 values = [sheet.cell(row=row, column=a + index) for row in range(b + int(headings), d + 1)]

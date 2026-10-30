@@ -51,3 +51,5 @@ The server accesses local files with its process permissions. Configure it in a 
 Forked from [iFurySt/open-browser-use](https://github.com/iFurySt/open-browser-use). The inherited browser tooling is still in this checkout; see its [English](BROWSER.md) and [Chinese](BROWSER.zh-CN.md) documentation. Office work also draws on [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) and [GenOffice](https://github.com/genspark-ai/genoffice).
 
 [MIT license](LICENSE)
+
+Workbook charts support `series_colors` (one six-digit RGB color per Y series), boolean `legend` and `show_gridlines`, and finite numeric `y_min` / `y_max` axis bounds. Line and scatter charts connect points with straight segments. Review rendering in the target spreadsheet application.
