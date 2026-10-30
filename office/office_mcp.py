@@ -171,13 +171,13 @@ def session_sheets(directory: str, base_revision: int) -> dict[str, Any]:
 
 @server.tool()
 def session_read_grid(directory: str, base_revision: int, sheet: str, cell_range: str) -> dict[str, Any]:
-    """Read up to 200 cells with direct styles, stored row/column dimensions, protection and text completeness."""
+    """Read up to 200 cells with direct styles, stored row/column dimensions, protection, text completeness and bounded data-validation metadata. Rules are not evaluated."""
     return session.read_grid(directory, base_revision, sheet, cell_range)
 
 
 @server.tool()
 def session_edit_grid(directory: str, base_revision: int, sheet: str, cell_range: str, changes: list[dict[str, str]]) -> dict[str, Any]:
-    """Edit grid values; each change may set type to text. Unrelated caches are retained; dynamic formula anchors are returned for spill review and recalculation is requested."""
+    """Edit grid values; each change may set type to text. Unrelated caches are retained; dynamic formula anchors are returned for spill review, validation rules are not evaluated, and recalculation is requested."""
     return session.edit_grid(directory, base_revision, sheet, cell_range, changes)
 
 

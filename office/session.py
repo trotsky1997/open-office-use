@@ -605,6 +605,56 @@ def grid_bounds(cell_range):
         raise ValueError('Specify a valid rectangular range of at most 200 cells') from None
 
 
+def grid_validations(root, bounds):
+    """Describe standard validation rules intersecting the bounded grid."""
+    ns = grid_styles.X
+    # shortcut: bounded standard rules only; add extension support when needed.
+    issues, rules = set(), []
+    containers = root.findall(ns + 'dataValidations')
+    if len(containers) > 1: issues.add('multiple_validation_containers')
+    if any(isinstance(node.tag, str) and node.tag.endswith('}dataValidations') and node.tag != ns + 'dataValidations' for node in root.iter()):
+        issues.add('unsupported_validation_extension')
+    min_col, min_row, max_col, max_row = bounds
+    for container in containers:
+        children = list(container)
+        if len(children) > 1000: issues.add('rule_scan_limit')
+        if container.get('count') is not None and container.get('count') != str(len(children)): issues.add('rule_count_mismatch')
+        for item in children[:1000]:
+            if item.tag != ns + 'dataValidation':
+                issues.add('unsupported_rule'); continue
+            refs = item.get('sqref', '')
+            if len(refs) > 32000 or len(refs.split()) > 500:
+                issues.add('reference_limit'); continue
+            addresses = set()
+            if not refs.strip(): issues.add('invalid_reference')
+            for ref in refs.split():
+                try:
+                    a, b, c, d = range_boundaries(ref)
+                    if not all(isinstance(v, int) for v in (a, b, c, d)) or not (1 <= a <= c <= 16384 and 1 <= b <= d <= 1048576): raise ValueError()
+                except (ValueError, TypeError):
+                    issues.add('invalid_reference'); continue
+                for row in range(max(b, min_row), min(d, max_row) + 1):
+                    for col in range(max(a, min_col), min(c, max_col) + 1): addresses.add(f'{get_column_letter(col)}{row}')
+            if not addresses: continue
+            if len(rules) >= 50:
+                issues.add('rule_output_limit'); continue
+            rule = {'cells': sorted(addresses), 'attributes': {}, 'formula1': None, 'formula2': None}
+            for key, value in item.attrib.items():
+                if key == 'sqref': continue
+                if len(value) > 256: issues.add('field_truncated')
+                rule['attributes'][key] = value[:256]
+            for name in ('formula1', 'formula2'):
+                formulas = item.findall(ns + name)
+                if len(formulas) > 1: issues.add('ambiguous_formula')
+                if formulas:
+                    value = formulas[0].text or ''
+                    if len(value) > 256: issues.add('field_truncated')
+                    rule[name] = value[:256]
+            if any(child.tag not in (ns + 'formula1', ns + 'formula2') for child in item): issues.add('unsupported_rule_content')
+            rules.append(rule)
+    return {'rules': rules, 'complete': not issues, 'issues': sorted(issues), 'evaluated': False}
+
+
 def read_grid(directory, base_revision, sheet, cell_range):
     if not isinstance(sheet, str) or not sheet or '/' in sheet or '\x00' in sheet:
         raise ValueError('Invalid sheet name')
@@ -641,6 +691,7 @@ def read_grid(directory, base_revision, sheet, cell_range):
     part = grid_styles.sheet_part(source, sheet)
     with zipfile.ZipFile(source) as archive:
         root = ooxml.parse_xml(archive.read(part)).getroot(); views = root.findall(grid_styles.X + 'sheetViews')
+        validations = grid_validations(root, (min_col, min_row, max_col, max_row))
         if len(views) != 1 or len(views[0]) != 1 or views[0][0].tag != grid_styles.X + 'sheetView':
             view_info = {'pane': None, 'issue': 'unsupported_worksheet_views'}
         else:
@@ -650,7 +701,7 @@ def read_grid(directory, base_revision, sheet, cell_range):
     if base_revision != latest:
         raise ValueError(f'Revision conflict: latest revision is {latest}')
     return {'revision': base_revision, 'sheet': sheet, 'range': cell_range, 'sheet_protected': constraints['sheet_protected'], 'dimensions': constraints['dimensions'], 'worksheet_view': view_info,
-            'rows': rows, 'cache_freshness': 'unknown'}
+            'rows': rows, 'data_validation': validations, 'cache_freshness': 'unknown'}
 
 
 def edit_grid(directory, base_revision, sheet, cell_range, changes):
@@ -694,7 +745,7 @@ def edit_grid(directory, base_revision, sheet, cell_range, changes):
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.xlsx'
     try: result = grid_values.apply(source, output, sheet, normalized, operations)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
-    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True, 'calculation_chain': result['calculation_chain'], 'dynamic_formula_cells': result['dynamic_formula_cells']}
+    return {'revision': base_revision + 1, 'file': result['output'], 'result': result['result'], 'formula_cache_effect': result['formula_cache_effect'], 'recalculation_requested': True, 'calculation_chain': result['calculation_chain'], 'dynamic_formula_cells': result['dynamic_formula_cells'], 'data_validation': {'evaluated': False, 'coverage_complete': grid['data_validation']['complete'], 'affected_cells': sorted(seen & {address for rule in grid['data_validation']['rules'] for address in rule['cells']})}}
 
 
 def format_grid(directory, base_revision, sheet, cell_range, style_range, properties):

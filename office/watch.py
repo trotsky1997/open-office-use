@@ -110,7 +110,7 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <details id="grid-panel" hidden><summary>Edit worksheet range</summary><form id="grid-form">
 <button type="button" id="grid-sheets">List sheets</button><label for="grid-sheet">Sheet</label> <select id="grid-sheet" required></select>
 <label>Range <input id="grid-range" required value="A1:D10" maxlength="32"></label><button type="button" id="grid-load">Load cells</button>
-<div id="grid-output" class="grid-scroll"></div><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
+<div id="grid-output" class="grid-scroll"></div><details><summary>Data validation rules for this range</summary><pre id="grid-validation"></pre></details><label>Default for changed cells <select id="grid-input-type"><option value="auto">Automatic values and formulas</option><option value="text">Literal text</option></select></label> <button type="submit" id="grid-save" disabled>Save changed cells</button>
 <fieldset id="grid-format-fields"><legend>Format a range</legend>
 <label>Format range <input id="grid-style-range" maxlength="32"></label>
 <label>Bold <select id="grid-bold"><option value="">Keep</option><option value="true">On</option><option value="false">Off</option></select></label>
@@ -418,6 +418,7 @@ async function loadGrid(target=null) {
   const pane=data.worksheet_view.pane;
   document.getElementById('grid-freeze').disabled=false; document.getElementById('grid-unfreeze').disabled=false;
   document.getElementById('grid-freeze-info').textContent=data.worksheet_view.issue ? 'Worksheet view requires review.' : !pane ? 'No frozen panes.' : pane.state==='frozen' && pane.topLeftCell ? `Frozen panes; first scrollable cell: ${pane.topLeftCell}.` : 'Existing pane requires review before editing.';
+  document.getElementById('grid-validation').textContent=JSON.stringify(data.data_validation,null,2);
   document.getElementById('grid-save').disabled=false; document.getElementById('grid-format').disabled=data.sheet_protected; document.getElementById('grid-style-range').value=cell_range; document.getElementById('grid-size-range').value=cell_range; document.getElementById('grid-resize').disabled=data.sheet_protected; document.getElementById('grid-dimensions').textContent=JSON.stringify({revision,sheet,range:cell_range,...data.dimensions},null,2); document.getElementById('grid-status').textContent=`Loaded ${sheet} ${cell_range} at revision ${revision}.${data.sheet_protected ? ' Worksheet protection is enabled; locked cells and grid formatting are read-only.' : ''}`;
  } catch(error) { document.getElementById('grid-status').textContent=`Grid error: ${error.message}`; }
  finally { gridBusy=false; button.disabled=pinned !== null; }
@@ -478,7 +479,7 @@ document.getElementById('grid-form').addEventListener('submit', async event => {
   const response=await fetch('grid-edit', {method:'POST',headers:{'Content-Type':'application/json'},body});
   const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Save failed');
   inputs.forEach(input=>{input.dataset.baseline=input.value; input.parentElement.querySelector('select').value='default';});
-  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Formula caches may be stale; recalculation is requested on open.${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}${result.dynamic_formula_cells?.length ? ' Dynamic formula spill ranges require compatible recalculation and review.' : ''}`); await refresh();
+  invalidateGrid(`Saved ${changes.length} cell(s) as revision ${result.revision}. Formula caches may be stale; recalculation is requested on open.${result.calculation_chain === 'removed' ? ' Calculation chain removed for rebuilding.' : ''}${result.dynamic_formula_cells?.length ? ' Dynamic formula spill ranges require compatible recalculation and review.' : ''}${result.data_validation.affected_cells.length ? ' Data validation was not evaluated for: '+result.data_validation.affected_cells.join(', ')+'.' : ''}${!result.data_validation.coverage_complete ? ' Data validation coverage is incomplete; review the workbook.' : ''}`); await refresh();
  } catch(error) {
   document.getElementById('grid-status').textContent=`Grid error: ${error.message}`;
   if (gridLoaded === loaded && current === loaded.revision && pinned === null) { lockGridInputs(inputs,false); button.disabled=false; document.getElementById('grid-format').disabled=loaded.sheet_protected; document.getElementById('grid-resize').disabled=loaded.sheet_protected; }

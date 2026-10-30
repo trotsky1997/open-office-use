@@ -12,21 +12,35 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.formula import ArrayFormula, DataTableFormula
+from openpyxl.worksheet.datavalidation import DataValidation
 import session
 import review
+
+from lxml import etree
+ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+malformed = etree.fromstring(f'<worksheet xmlns="{ns}"><dataValidations><dataValidation sqref="bad!"/></dataValidations></worksheet>')
+assert not session.grid_validations(malformed, (1, 1, 2, 2))['complete']
+extended = etree.fromstring(f'<worksheet xmlns="{ns}" xmlns:x="urn:extension"><extLst><x:dataValidations/></extLst></worksheet>')
+assert session.grid_validations(extended, (1, 1, 2, 2))['issues'] == ['unsupported_validation_extension']
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); source = root / 'source.xlsx'; draft = root / 'draft'
     workbook = Workbook(); sheet = workbook.active; sheet.title = 'Sales Data'
+    validation = DataValidation(type='list', formula1='"Low,Medium,High"', allow_blank=True)
+    sheet.add_data_validation(validation); validation.add('A2:A3'); validation.add('C2')
     sheet['A1'] = 'Name'; sheet['B1'] = 4; sheet['B2'] = '=B1*2'; sheet['C2'] = 'Remove'
     workbook.save(source); original = source.read_bytes()
     session.start(draft, source=source)
     assert session.sheet_names(draft, 0)['sheets'] == ['Sales Data']
     grid = session.read_grid(draft, 0, 'Sales Data', 'A1:C2')
+    assert grid['data_validation']['complete'] and grid['data_validation']['rules'][0]['cells'] == ['A2', 'C2']
+    assert grid['data_validation']['rules'][0]['formula1'] == '"Low,Medium,High"'
     assert grid['rows'][1][1]['formula'] == '=B1*2' and grid['rows'][1][0]['value'] is None
     result = session.edit_grid(draft, 0, 'Sales Data', 'A1:C2', [
         {'cell': 'B1', 'value': '7'}, {'cell': 'B2', 'value': '=B1*3'}, {'cell': 'C2', 'value': ''}])
+    assert result['data_validation'] == {'evaluated': False, 'coverage_complete': True, 'affected_cells': ['C2']}
     changed = load_workbook(result['file']).active
+    assert str(changed.data_validations.dataValidation[0].sqref) == 'A2:A3 C2'
     assert changed['A1'].value == 'Name' and changed['B1'].value == 7
     assert changed['B2'].value == '=B1*3' and changed['C2'].value is None
     assert source.read_bytes() == original and session.info(draft)['latest_revision'] == 1

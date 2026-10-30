@@ -112,3 +112,7 @@ Slide search supports a notes scope with bounded, snapshot-bound pagination, hid
 ## Word footnotes and endnotes
 
 Ordinary footnote and endnote paragraphs can be searched with snapshot-bound pagination and edited through verified part paths. Targeted replacement preserves note markers and supported run formatting; separator notes and complex structures remain outside the edit scope.
+
+## Grid data validation visibility
+
+Grid reads report bounded standard data-validation rules intersecting the loaded cells, with explicit coverage issues for malformed metadata, unsupported extensions and output limits. Grid edits preserve rules and report affected cells without evaluating values. Compatible spreadsheet applications remain necessary to evaluate formula-based and custom rules.

@@ -151,3 +151,7 @@ Added bounded PowerPoint off-slide and text-overlap geometric inspection, includ
 - Add Word footnote/endnote search and targeted run-preserving text replacement through CLI, MCP and viewer, including note-marker preservation and coverage reporting.
 
 - Reorganize the agent skill into a concise shared entrypoint and format-specific references, including notes search, worksheet merge, freeze and borders, and verify referenced MCP tools.
+
+### Grid data-validation visibility
+
+Added bounded standard XLSX data-validation metadata to grid reads and the viewer, and an unevaluated-rule advisory to grid edit results. Checked non-contiguous ranges, rule preservation and incomplete metadata detection with the grid smoke suite. Extension rules and rule evaluation remain future work.
