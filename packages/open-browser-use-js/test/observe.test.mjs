@@ -1221,6 +1221,8 @@ test('select locator waits for options and never repeats an uncertain mutation',
   assert.deepEqual(await select.selectOption({label:'Blue'},{timeoutMs:500}),['blue']);assert.equal(preflights,2);assert.equal(mutations,1);
   failMutation=true;await assert.rejects(select.selectOption('blue',{timeoutMs:500}),/select result unknown/);assert.equal(mutations,2);
   await assert.rejects(select.selectOption({value:42},{timeoutMs:0}),/Invalid select option/);
+  await assert.rejects(select.selectOption({index:-1},{timeoutMs:0}),/Invalid select option/);
+  await assert.rejects(select.selectOption({index:1.5},{timeoutMs:0}),/Invalid select option/);
 });
 
 test('optional field values are bounded, redact passwords and reset diffs across modes', async () => {

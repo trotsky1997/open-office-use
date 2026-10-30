@@ -459,8 +459,10 @@ characters. A truncated placeholder makes placeholder locator results
 incomplete, so the locator rejects the query. Action support still depends on
 the control type.
 
-`selectOption` accepts a value or label, `{value, label}`, or an array for a
-multiple select, and returns selected values. It waits for available options
+`selectOption` accepts a value or label, a descriptor containing `value`,
+`label`, or a zero-based `index`, or an array for a multiple select. When a
+descriptor supplies multiple fields, all must match the same option. It returns
+selected values, waits for available options
 and rejects ambiguous matches. This operation updates a native `<select>` via
 the DOM and dispatches bubbling `input` and `change` events; those events have
 `isTrusted === false`. Custom ARIA combobox widgets should be operated through

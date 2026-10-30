@@ -50,6 +50,7 @@ export type InteractiveNode = {
 export type SelectOption = string | {
     value?: string;
     label?: string;
+    index?: number;
 };
 export type OpenBrowserUseDialogInfo = {
     id: string;

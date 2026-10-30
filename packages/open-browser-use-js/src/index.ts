@@ -52,7 +52,7 @@ export type OpenBrowserUseWaitForLoadStateOptions = {
 export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | { client: OpenBrowserUseClient };
 
 export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; level?: number; checked?: boolean | "mixed"; disabled?: boolean; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
-export type SelectOption = string | {value?: string; label?: string};
+export type SelectOption = string | {value?: string; label?: string; index?:number};
 export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; url: string; defaultPrompt?: string };
 export type OpenBrowserUseLogEntry = {level: "debug" | "info" | "log" | "warn" | "error"; message: string; timestamp: string; url?: string};
 export type OpenBrowserUseClipboardEntry = {mimeType: string; text?: string; base64?: string};
@@ -63,12 +63,12 @@ export type LocatorLocatorOptions = {hasText?:TextMatcher; hasNotText?:TextMatch
 export type RoleLocatorOptions = {name?: TextMatcher; exact?: boolean; level?: number; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
-type SelectSpec = {value?:string; label?:string; either:boolean};
+type SelectSpec = {value?:string; label?:string; index?:number; either:boolean};
 function selectSpecs(values: SelectOption | SelectOption[]): SelectSpec[] {
   return (Array.isArray(values) ? values : [values]).map(value => {
     if (typeof value === "string") return {value,label:value,either:true};
-    if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key=>!["value","label"].includes(key)) ||
-        (value.value === undefined && value.label === undefined) || (value.value !== undefined && typeof value.value !== "string") || (value.label !== undefined && typeof value.label !== "string")) throw new Error("Invalid select option");
+    if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key=>!["value","label","index"].includes(key)) ||
+        (value.value === undefined && value.label === undefined && value.index === undefined) || (value.value !== undefined && typeof value.value !== "string") || (value.label !== undefined && typeof value.label !== "string") || (value.index !== undefined && (!Number.isSafeInteger(value.index) || value.index<0))) throw new Error("Invalid select option");
     return {...value,either:false};
   });
 }
@@ -1326,7 +1326,7 @@ export class OpenBrowserUseTab {
           if (!this.multiple && specs.length>1) return {status:'multiple'};
           const options=Array.from(this.options),chosen=[];
           for(const spec of specs) {
-            const hits=options.map((option,index)=>({option,index})).filter(({option})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));
+            const hits=options.map((option,index)=>({option,index})).filter(({option,index})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.index===undefined || index===spec.index) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));
             if(!hits.length)return {status:'missing'};
             if(hits.length>1 || chosen.some(item=>item.index===hits[0].index))return {status:'ambiguous'};
             chosen.push({index:hits[0].index,value:hits[0].option.value,label:hits[0].option.label});
@@ -1347,7 +1347,7 @@ export class OpenBrowserUseTab {
           if (!(this instanceof HTMLSelectElement) || !this.isConnected || this.matches(':disabled') || this.getAttribute('aria-disabled')==='true' || (!this.multiple && chosen.length>1)) return null;
           for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return null;
           const options=Array.from(this.options);
-          for(let i=0;i<specs.length;i++) {const spec=specs[i],hits=options.map((option,index)=>({option,index})).filter(({option})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));if(hits.length!==1 || hits[0].index!==chosen[i]?.index)return null;}
+          for(let i=0;i<specs.length;i++) {const spec=specs[i],hits=options.map((option,index)=>({option,index})).filter(({option,index})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.index===undefined || index===spec.index) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));if(hits.length!==1 || hits[0].index!==chosen[i]?.index)return null;}
           if(chosen.some(item=>{const o=options[item.index];return !o || o.value!==item.value || o.label!==item.label || o.disabled || (o.parentElement instanceof HTMLOptGroupElement && o.parentElement.disabled)}))return null;
           if(!this.multiple && !chosen.length)this.selectedIndex=-1;
           else {const indices=new Set(chosen.map(item=>item.index));for(let i=0;i<options.length;i++)options[i].selected=indices.has(i);}
@@ -2196,7 +2196,7 @@ export class OpenBrowserUseTab {
             if (!this.multiple && specs.length > 1) return {status:'multiple'};
             const options=Array.from(this.options), chosen=[];
             for (const spec of specs) {
-              const hits=options.map((option,index)=>({option,index})).filter(({option})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));
+              const hits=options.map((option,index)=>({option,index})).filter(({option,index})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.index===undefined || index===spec.index) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));
               if (!hits.length) return {status:'missing'};
               if (hits.length > 1 || chosen.some(item=>item.index===hits[0].index)) return {status:'ambiguous'};
               chosen.push({index:hits[0].index,value:hits[0].option.value,label:hits[0].option.label});
