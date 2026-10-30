@@ -50,6 +50,10 @@ try {
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isEnabled(),true);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isVisible(),true);
  assert.equal(await tab.playwright.getByRole('button',{name:'Missing',exact:true}).isVisible(),false);
+ await tab.evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.textContent='Double fixture';b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'dblclick',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
+ await tab.playwright.getByRole('button',{name:'Double fixture',exact:true}).dblclick();
+ assert.deepEqual(await tab.evaluate('window.doubleEvents'),[{kind:'click',detail:1,trusted:true},{kind:'click',detail:2,trusted:true},{kind:'dblclick',detail:2,trusted:true}]);
+ await tab.evaluate(`document.querySelectorAll('button')[1].remove()`);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).getAttribute('missing'),null);
  await tab.evaluate(`(()=>{const hidden=document.createElement('span');hidden.hidden=true;hidden.textContent=' concealed';document.querySelector('button').append(hidden)})()`);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).innerText(),'Save');
@@ -215,6 +219,9 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('button').ondblclick=e=>window.crossDouble={trusted:e.isTrusted,detail:e.detail}`},{sessionId:crossSession});
+ await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).dblclick();
+ assert.deepEqual((await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.crossDouble',returnByValue:true},{sessionId:crossSession})).result.value,{trusted:true,detail:2});
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const input=document.createElement('input');input.type='file';input.multiple=true;input.id='cross-chooser';input.setAttribute('aria-label','Cross upload');document.body.prepend(input)})()`},{sessionId:crossSession});
  const crossChooserReady=await tab.prepareFileChooser({timeoutMs:20000});const crossChoosing=crossChooserReady.wait();void crossChoosing.catch(()=>{});
  const crossChooserClick=tab.playwright.getByRole('button',{name:'Cross upload',exact:true}).click({timeoutMs:20000});void crossChooserClick.catch(()=>{});

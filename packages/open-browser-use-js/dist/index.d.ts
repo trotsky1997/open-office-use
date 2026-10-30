@@ -216,6 +216,7 @@ export declare class OpenBrowserUseTab {
         timeoutMs?: number;
     }): Promise<OpenBrowserUseDialog>;
     click(index: number, snapshotId: string): Promise<void>;
+    dblclick(index: number, snapshotId: string): Promise<void>;
     hover(index: number, snapshotId: string): Promise<void>;
     press(index: number, snapshotId: string, key: string): Promise<void>;
     hoverAt(x: number, y: number): Promise<void>;
@@ -331,6 +332,9 @@ export declare class OpenBrowserUseRoleLocator {
     }): Promise<string | null>;
     private perform;
     click(options?: {
+        timeoutMs?: number;
+    }): Promise<void>;
+    dblclick(options?: {
         timeoutMs?: number;
     }): Promise<void>;
     hover(options?: {

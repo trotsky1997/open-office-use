@@ -28,6 +28,10 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    await evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.id='double-fixture';b.textContent='Double fixture';b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'dblclick',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
+    await sdkTab.playwright.getByRole('button',{name:'Double fixture',exact:true}).dblclick();
+    assert.deepEqual(await evaluate('window.doubleEvents'),[{kind:'click',detail:1,trusted:true},{kind:'click',detail:2,trusted:true},{kind:'dblclick',detail:2,trusted:true}]);
+    await evaluate(`document.querySelector('#double-fixture').remove()`);
     await sdkTab.playwright.expectNavigation(()=>evaluate(`history.pushState({},'', '#fixture-nav')`),{url:fixture.url+'/#fixture-nav',timeoutMs:5000});
     await sdkTab.goto(fixture.url,{timeoutMs:5000});
     await evaluate(`(()=>{const a=document.createElement('a');a.href='/?navigation=1';a.textContent='Navigate fixture';document.body.append(a)})()`);
@@ -164,6 +168,9 @@ app.whenReady().then(async () => {
     const crossFrame=frameState.nodes.find(node=>node.name==='Cross-frame text').frameId;
     const frameSession=(await sdkTab.browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===crossFrame)?.sessionId;
     assert.ok(frameSession);
+    await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`document.querySelector('button').ondblclick=e=>window.crossDouble={trusted:e.isTrusted,detail:e.detail}`},{sessionId:frameSession});
+    await sdkTab.playwright.getByRole('button',{name:'Cross-frame action',exact:true}).dblclick();
+    assert.deepEqual((await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:'window.crossDouble',returnByValue:true},{sessionId:frameSession})).result.value,{trusted:true,detail:2});
     await sdkTab.browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const input=document.createElement('input');input.type='file';input.multiple=true;input.id='cross-upload';input.setAttribute('aria-label','Cross upload');document.body.prepend(input)})()`},{sessionId:frameSession});
     const preparedCrossUpload=await sdkTab.prepareFileChooser({timeoutMs:20000});const choosingCross=preparedCrossUpload.wait();void choosingCross.catch(()=>{});
     const crossUploadClick=sdkTab.playwright.getByRole('button',{name:'Cross upload',exact:true}).click({timeoutMs:20000});void crossUploadClick.catch(()=>{});

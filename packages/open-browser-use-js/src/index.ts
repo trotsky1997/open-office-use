@@ -936,6 +936,10 @@ export class OpenBrowserUseTab {
     await this.act(index, snapshotId);
   }
 
+  async dblclick(index: number, snapshotId: string): Promise<void> {
+    await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true);
+  }
+
   async hover(index: number, snapshotId: string): Promise<void> {
     await this.act(index, snapshotId, undefined, false, undefined, undefined, true);
   }
@@ -1092,7 +1096,7 @@ export class OpenBrowserUseTab {
     return result as string[];
   }
 
-  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string): Promise<void | string[]> {
+  private async act(index: number, snapshotId: string, text?: string, replace = false, checked?: boolean, selection?: Array<{value?: string; label?: string; either: boolean}>, hover = false, key?: string, doubleClick = false): Promise<void | string[]> {
     const observation = this.#observation;
     this.#observation = undefined;
     const node = observation?.nodes.find((item) => item.index === index);
@@ -1285,6 +1289,16 @@ export class OpenBrowserUseTab {
       }
       await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 1, clickCount: 1 }, inputOptions);
       await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 0, clickCount: 1 }, inputOptions);
+      if (doubleClick) {
+        const after = await measure();
+        if (moving(second.geometry.x, after.geometry.x) || moving(second.geometry.y, after.geometry.y) || moving(second.geometry.width, after.geometry.width) || moving(second.geometry.height, after.geometry.height) || moving(point.x as number, after.point.x as number) || moving(point.y as number, after.point.y as number)) throw new Error("Target moved after the first click; observe again");
+        const tree = node.frameId ? await this.browser.cdp.call(this.id,"Accessibility.getFullAXTree",{frameId:node.frameId},{sessionId:targetSession}) : await this.getAXState();
+        const latest = interactiveNodes(tree,0,supplementalRoles.includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
+        if (!latest || latest.name !== node.name || latest.stateKey !== node.stateKey) throw new Error("Target changed after the first click; observe again");
+        await this.verifyLocatorScope(observation,node);
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 1, clickCount: 2 }, inputOptions);
+        await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 0, clickCount: 2 }, inputOptions);
+      }
       if (checked !== undefined) {
         if (await this.documentId() !== observation.documentId) throw new Error("Page changed after input; observe again");
         if (node.frameChain) await this.validateFrames(node.frameChain);
@@ -1623,6 +1637,7 @@ export class OpenBrowserUseRoleLocator {
   }
 
   async click(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.click(node.index,id), options.timeoutMs); }
+  async dblclick(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.dblclick(node.index,id), options.timeoutMs); }
   async hover(options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.hover(node.index,id), options.timeoutMs); }
   async press(key: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.press(node.index,id,key), options.timeoutMs); }
   async fill(text: string, options: {timeoutMs?: number} = {}): Promise<void> { await this.perform((node,id)=>this.tab.fill(node.index,id,text), options.timeoutMs); }

@@ -77,6 +77,23 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test('double click stops after the first click if the target moves',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),events=[];let move=false;
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='DOM.getDocument')return {root:{backendNodeId:1}};
+    if(params.method==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
+    if(params.method==='Accessibility.getFullAXTree')return {nodes:[{backendDOMNodeId:7,role:{value:'button'},name:{value:'Double'}}]};
+    if(params.method==='DOM.resolveNode')return {object:{objectId:'node'}};
+    if(params.method==='Runtime.callFunctionOn')return {result:{value:{x:move && events.length ? 40 : 10,y:20,width:10,height:10}}};
+    if(params.method==='Input.dispatchMouseEvent')events.push(params.commandParams);
+    return {};
+  };
+  const locator=new OpenBrowserUseBrowser({client}).tab(1).playwright.getByRole('button',{name:'Double'});
+  await locator.dblclick();assert.deepEqual(events.map(e=>[e.type,e.clickCount]),[['mousePressed',1],['mouseReleased',1],['mousePressed',2],['mouseReleased',2]]);
+  events.length=0;move=true;await assert.rejects(locator.dblclick({timeoutMs:0}),/moved after the first click/);assert.equal(events.length,2);
+});
+
 test('locator innerText requires a unique current target and enforces its size limit',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'});let text='Visible text',count=1,released=0;
   client.request=async(method,params)=>{

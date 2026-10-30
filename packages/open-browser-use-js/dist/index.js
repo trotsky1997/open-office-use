@@ -1001,6 +1001,9 @@ export class OpenBrowserUseTab {
     async click(index, snapshotId) {
         await this.act(index, snapshotId);
     }
+    async dblclick(index, snapshotId) {
+        await this.act(index, snapshotId, undefined, false, undefined, undefined, false, undefined, true);
+    }
     async hover(index, snapshotId) {
         await this.act(index, snapshotId, undefined, false, undefined, undefined, true);
     }
@@ -1161,7 +1164,7 @@ export class OpenBrowserUseTab {
             throw new Error("Invalid selected options result");
         return result;
     }
-    async act(index, snapshotId, text, replace = false, checked, selection, hover = false, key) {
+    async act(index, snapshotId, text, replace = false, checked, selection, hover = false, key, doubleClick = false) {
         const observation = this.#observation;
         this.#observation = undefined;
         const node = observation?.nodes.find((item) => item.index === index);
@@ -1398,6 +1401,18 @@ export class OpenBrowserUseTab {
             }
             await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 1, clickCount: 1 }, inputOptions);
             await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 0, clickCount: 1 }, inputOptions);
+            if (doubleClick) {
+                const after = await measure();
+                if (moving(second.geometry.x, after.geometry.x) || moving(second.geometry.y, after.geometry.y) || moving(second.geometry.width, after.geometry.width) || moving(second.geometry.height, after.geometry.height) || moving(point.x, after.point.x) || moving(point.y, after.point.y))
+                    throw new Error("Target moved after the first click; observe again");
+                const tree = node.frameId ? await this.browser.cdp.call(this.id, "Accessibility.getFullAXTree", { frameId: node.frameId }, { sessionId: targetSession }) : await this.getAXState();
+                const latest = interactiveNodes(tree, 0, supplementalRoles.includes(node.role)).find(item => item.backendNodeId === node.backendNodeId && item.role === node.role);
+                if (!latest || latest.name !== node.name || latest.stateKey !== node.stateKey)
+                    throw new Error("Target changed after the first click; observe again");
+                await this.verifyLocatorScope(observation, node);
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 1, clickCount: 2 }, inputOptions);
+                await this.browser.cdp.call(this.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: inputPoint.x, y: inputPoint.y, button: "left", buttons: 0, clickCount: 2 }, inputOptions);
+            }
             if (checked !== undefined) {
                 if (await this.documentId() !== observation.documentId)
                     throw new Error("Page changed after input; observe again");
@@ -1795,6 +1810,7 @@ export class OpenBrowserUseRoleLocator {
         }
     }
     async click(options = {}) { await this.perform((node, id) => this.tab.click(node.index, id), options.timeoutMs); }
+    async dblclick(options = {}) { await this.perform((node, id) => this.tab.dblclick(node.index, id), options.timeoutMs); }
     async hover(options = {}) { await this.perform((node, id) => this.tab.hover(node.index, id), options.timeoutMs); }
     async press(key, options = {}) { await this.perform((node, id) => this.tab.press(node.index, id, key), options.timeoutMs); }
     async fill(text, options = {}) { await this.perform((node, id) => this.tab.fill(node.index, id, text), options.timeoutMs); }

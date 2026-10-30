@@ -148,6 +148,7 @@ console.log(await save.isEnabled());
 console.log(await save.isVisible());
 await save.hover(); // move the pointer over the matched control
 await save.click();
+// await save.dblclick(); // when the page requires a double click
 await tab.playwright.getByRole("textbox", { name: "Message" }).fill("Hello");
 await tab.playwright.getByRole("textbox", { name: "Message" }).press("Enter");
 await tab.playwright.getByPlaceholder("Email address", { exact: true }).fill("user@example.com");
@@ -179,6 +180,8 @@ attributes; select their containing element to read its attributes.
 `last()` selects the last current match. `all()` returns positional locators
 for the current match count; each locator resolves again when used, so page
 changes can alter which element occupies a position.
+`dblclick()` rechecks the target and its position between clicks. If the first
+click changes the page or a later input fails, inspect the result before retrying.
 
 This locator covers the interactive roles exposed by `observe`, including
 accessible frames, plus headings, accessible text, images, dialogs and
