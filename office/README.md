@@ -64,6 +64,21 @@ Specifications:
 {"slides": [{"title": "Overview", "body": "Details"}], "replace_text": [{"slide": 0, "shape": 0, "text": "New title"}]}
 ```
 
+For ordered Word content, `author` and MCP `author_file` accept `blocks`:
+
+```json
+{"blocks":[
+  {"type":"heading","level":1,"text":"Quarterly review"},
+  {"type":"paragraph","runs":[{"text":"Revenue grew "},{"text":"18%","bold":true}]},
+  {"type":"bullet","text":"Retention remained stable."},
+  {"type":"numbered","text":"Prioritize onboarding."},
+  {"type":"table","header":true,"style":"Light Shading Accent 1","rows":[["Metric","Value"],["Retention","92%"]]},
+  {"type":"page_break"}
+]}
+```
+
+Text blocks accept either `text` or `runs`; runs accept boolean `bold`, `italic` and `underline`. Heading levels range from 1 to 9. A table's optional `header` bolds its first row and marks it as a repeating header; optional `style` must name a table style available in the document. Lists use the document's `List Bullet` and `List Number` styles. Blocks follow any legacy `paragraphs` entries and, with a source, are appended after existing content. Limits are 200 blocks, 200 runs per text block, 100 rows and 20 columns per table, 2,000 cells per table, 10,000 characters per run or cell, and 2,000,000 serialized characters for all blocks. Render and inspect the resulting document in the target application.
+
 The `author` command sets whole paragraphs, cells or text frames. Replacing paragraph or shape text drops its run-level formatting. The libraries may alter or drop unsupported Office features when saving existing files; retain the original and review the output. Formula strings are stored, not recalculated by `author`. LibreOffice rendering may recalculate and can differ visually from Microsoft Office. Inspect is a basic content extraction and is not a full fidelity representation (e.g. charts, text in DOCX tables during paragraph edits, speaker notes, and embedded objects). Rendering produces PDF; use a PDF viewer to inspect pages visually. The `author` command does not support encrypted or macro-enabled files, live editing, collaboration, comments, tracked changes, cloud documents, or rich styling.
 
 Authoring from a source, structured renders, page previews, selection extraction, Word/slide/cell searches, Word tracked-change inspection, review bundles, OfficeCLI batches, session startup, restore and export check the source file identity, size and timestamps while making their snapshot; detected concurrent changes fail with a retry message. The check depends on filesystem metadata and does not lock other writers. Other inspection operations may use separate snapshot copying; use a saved, closed file for reliable results.

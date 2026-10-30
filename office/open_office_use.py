@@ -11,6 +11,9 @@ import tempfile
 from pathlib import Path
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from openpyxl import Workbook
 from pptx import Presentation
 
@@ -86,8 +89,66 @@ def inspect(path):
     return {'type': 'pptx', 'slides': [[{'shape': i, 'text': shape.text} for i, shape in enumerate(slide.shapes) if shape.has_text_frame] for slide in prs.slides]}
 
 
+def append_word_blocks(doc, blocks):
+    """Append ordered semantic Word content from a bounded JSON list."""
+    if not isinstance(blocks, list) or len(blocks) > 200:
+        raise ValueError('Word blocks must be a list of at most 200 items')
+    if len(json.dumps(blocks, ensure_ascii=False)) > 2000000:
+        raise ValueError('Word blocks exceed the 2,000,000-character limit')
+    for block in blocks:
+        if not isinstance(block, dict): raise ValueError('Each Word block must be an object')
+        kind = block.get('type')
+        if kind == 'table':
+            if set(block) - {'type', 'rows', 'header', 'style'}: raise ValueError('Unsupported Word table property')
+            rows = block.get('rows'); header = block.get('header', False); style = block.get('style')
+            if not isinstance(rows, list) or not 1 <= len(rows) <= 100 or not all(isinstance(row, list) for row in rows): raise ValueError('A table requires 1 to 100 rows')
+            width = len(rows[0])
+            if not 1 <= width <= 20 or len(rows) * width > 2000 or any(len(row) != width for row in rows): raise ValueError('A table requires a rectangular grid of at most 2,000 cells and 20 columns')
+            if any(not isinstance(value, str) or len(value) > 10000 for row in rows for value in row): raise ValueError('Table cells must be text of at most 10,000 characters')
+            if not isinstance(header, bool): raise ValueError('Table header must be a boolean')
+            if style is not None:
+                if not isinstance(style, str): raise ValueError('Table style must be a name')
+                try: selected = doc.styles[style]
+                except KeyError: raise ValueError(f'Word table style not found: {style}') from None
+                if selected.type != WD_STYLE_TYPE.TABLE: raise ValueError('The selected style is not a table style')
+            table = doc.add_table(rows=len(rows), cols=width)
+            if style is not None: table.style = style
+            cells = table._cells
+            for row_index, values in enumerate(rows):
+                for column_index, value in enumerate(values):
+                    cell = cells[row_index * width + column_index]; cell.text = value
+                    if header and row_index == 0:
+                        for run in cell.paragraphs[0].runs: run.bold = True
+            if header:
+                properties = table.rows[0]._tr.get_or_add_trPr()
+                marker = OxmlElement('w:tblHeader'); marker.set(qn('w:val'), 'true'); properties.append(marker)
+        elif kind == 'page_break':
+            if set(block) != {'type'}: raise ValueError('A page-break block has no other properties')
+            doc.add_page_break()
+        elif kind in ('paragraph', 'heading', 'bullet', 'numbered'):
+            allowed = {'type', 'text', 'runs'} | ({'level'} if kind == 'heading' else set())
+            if set(block) - allowed or ('text' in block) == ('runs' in block): raise ValueError('Provide text or runs for each Word text block')
+            level = block.get('level', 1)
+            if kind == 'heading' and (isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= 9): raise ValueError('Heading level must be 1 to 9')
+            runs = [{'text': block['text']}] if 'text' in block else block['runs']
+            if not isinstance(runs, list) or not 1 <= len(runs) <= 200: raise ValueError('Word runs must contain 1 to 200 items')
+            for run in runs:
+                if not isinstance(run, dict) or set(run) - {'text', 'bold', 'italic', 'underline'} or not isinstance(run.get('text'), str) or len(run['text']) > 10000 or any(key in run and not isinstance(run[key], bool) for key in ('bold', 'italic', 'underline')):
+                    raise ValueError('Each run requires text and optional boolean bold, italic or underline')
+            if kind == 'heading': paragraph = doc.add_heading(level=level)
+            else: paragraph = doc.add_paragraph(style={'bullet': 'List Bullet', 'numbered': 'List Number'}.get(kind))
+            for run in runs:
+                target = paragraph.add_run(run['text'])
+                for name in ('bold', 'italic', 'underline'):
+                    if name in run: setattr(target, name, run[name])
+        else:
+            raise ValueError('Unsupported Word block type')
+
+
 def author(spec, output, source=None):
+    if not isinstance(spec, dict): raise ValueError('Author specification must be a JSON object')
     suffix = kind(output)
+    if 'blocks' in spec and suffix != '.docx': raise ValueError('Word blocks require DOCX output')
     if source and kind(source) != suffix:
         raise ValueError('Source and output formats must match')
     out = Path(output)
@@ -105,6 +166,7 @@ def author(spec, output, source=None):
                 doc.paragraphs[int(index)].text = text
             for text in spec.get('paragraphs', []):
                 doc.add_paragraph(text)
+            if 'blocks' in spec: append_word_blocks(doc, spec['blocks'])
             obj = doc
         elif suffix == '.xlsx':
             obj = spreadsheet.load_author_workbook(source) if source else Workbook()

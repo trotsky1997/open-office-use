@@ -142,3 +142,7 @@ CLI, MCP and revision-aware inspection report bounded OPC external relationships
 ## Basic authoring over MCP
 
 MCP `author_file` exposes the existing JSON-spec authoring path for DOCX, XLSX and PPTX without requiring OfficeCLI. Source-based authoring takes a checked snapshot before loading. Whole-element replacement and library round-tripping retain their documented fidelity limits.
+
+## Structured basic Word authoring
+
+JSON `blocks` in CLI/MCP authoring create ordered semantic headings, formatted text runs, bullets, numbered paragraphs, styled tables with repeating headers, and page breaks. Verified generated DOCX structure and LibreOffice page previews; advanced formatting and fidelity in existing rich documents still require targeted workflows.

@@ -39,6 +39,10 @@ async def main():
                     assert not inspected.isError and expected in json.dumps(inspected.structuredContent)
                     refused = await session.call_tool('author_file', {'spec':spec, 'output':str(path)})
                     assert refused.isError
+                structured_word = root / 'blocks.docx'
+                blocks = [{'type':'heading','text':'Summary'}, {'type':'paragraph','runs':[{'text':'Growth '},{'text':'18%','bold':True}]}, {'type':'table','header':True,'rows':[['Metric','Value'],['Growth','18%']]}]
+                authored_blocks = await session.call_tool('author_file', {'spec':{'blocks':blocks}, 'output':str(structured_word)})
+                assert not authored_blocks.isError and Document(structured_word).paragraphs[1].runs[1].bold and Document(structured_word).tables[0].cell(1,1).text == '18%', authored_blocks
                 diagnostics = await session.call_tool('office_doctor', {})
                 assert not diagnostics.isError and diagnostics.structuredContent['capabilities']['mcp_server'] is True, diagnostics
                 word_source = root / 'search.docx'; search_doc = Document(); search_doc.add_paragraph('find needle'); search_doc.save(word_source)

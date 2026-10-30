@@ -195,3 +195,7 @@ Added bounded, snapshot-bound external OPC relationship inventory across DOCX, X
 ### Basic MCP authoring
 
 Exposed JSON-spec `author_file` through MCP and snapshot-checked source files before library loading. Verified direct MCP creation and inspection for DOCX, XLSX and PPTX, source preservation, overwrite rejection, and the CLI author/render smoke suite. Rich existing documents still need targeted operations and visual review.
+
+### Basic structured Word authoring
+
+Added ordered Word content blocks for headings, paragraphs with inline formatting, list paragraphs, styled tables with optional repeating header rows, and page breaks through CLI and MCP. Verified structure, invalid-input handling, real MCP creation and rendered output. Existing document library round-tripping and native Word rendering remain unverified.
