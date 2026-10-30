@@ -56,6 +56,10 @@ try {
  assert.equal(await tab.playwright.getByRole('button',{name:/^save$/i}).count(),1);
  assert.equal(await tab.playwright.getByRole('button',{name:'Save',exact:true}).isVisible(),true);
  assert.equal(await tab.playwright.getByRole('button',{name:'Missing',exact:true}).isVisible(),false);
+ await tab.evaluate(`(()=>{for(const tag of ['h1','h2']){const h=document.createElement(tag);h.className='level-fixture';h.textContent='Shared heading';document.body.append(h)}})()`);
+ assert.equal(await tab.playwright.getByRole('heading',{name:'Shared heading',level:1}).count(),1);
+ assert.equal(await tab.playwright.getByRole('heading',{name:'Shared heading',level:2}).count(),1);
+ await tab.evaluate(`document.querySelectorAll('.level-fixture').forEach(h=>h.remove())`);
  await tab.evaluate(`(()=>{window.doubleEvents=[];const b=document.createElement('button');b.textContent='Double fixture';b.onclick=e=>doubleEvents.push({kind:'click',detail:e.detail,trusted:e.isTrusted});b.ondblclick=e=>doubleEvents.push({kind:'dblclick',detail:e.detail,trusted:e.isTrusted});document.body.append(b)})()`);
  await tab.playwright.getByRole('button',{name:'Double fixture',exact:true}).dblclick();
  assert.deepEqual(await tab.evaluate('window.doubleEvents'),[{kind:'click',detail:1,trusted:true},{kind:'click',detail:2,trusted:true},{kind:'dblclick',detail:2,trusted:true}]);
@@ -229,6 +233,8 @@ try {
  await tab.playwright.getByRole('button',{name:'Cross-process action',exact:true}).click({timeoutMs:3000});await new Promise(r=>setTimeout(r,100));
  assert.equal(await tab.evaluate('window.frameMessages.length'),previousMessages+1);
  const crossSession=(await browser.cdp.frameSessions(tab.id)).find(frame=>frame.frameId===cross.frameId)?.sessionId;assert.ok(crossSession);
+ await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`(()=>{const h=document.createElement('h3');h.textContent='Cross heading';document.body.append(h)})()`},{sessionId:crossSession});
+ assert.equal(await tab.playwright.getByRole('heading',{name:'Cross heading',level:3}).count(),1);
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`setTimeout(()=>{const b=document.createElement('button');b.id='wait-cross';b.textContent='Cross wait';document.body.prepend(b)},100)`},{sessionId:crossSession});
  const crossWait=tab.playwright.getByRole('button',{name:'Cross wait',exact:true});await crossWait.waitFor({state:'visible',timeoutMs:5000});
  await browser.cdp.call(tab.id,'Runtime.evaluate',{expression:`setTimeout(()=>document.querySelector('#wait-cross').remove(),100)`},{sessionId:crossSession});

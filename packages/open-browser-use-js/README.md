@@ -143,6 +143,7 @@ For semantic selection, the REPL and SDK also accept:
 ```js
 const save = tab.playwright.getByRole("button", { name: "Save", exact: true });
 const saveOrSubmit = tab.playwright.getByRole("button", { name: /^(save|submit)$/i });
+const sectionTitle = tab.playwright.getByRole("heading", { name: "Details", level: 2 });
 console.log(await save.innerText());
 console.log(await save.getAttribute("type")); // null if the attribute is absent
 console.log(await save.isEnabled());
@@ -169,6 +170,8 @@ await tab.playwright.getByRole("listitem").filter({ hasText: "Apples" })
 
 `innerText()` reads the matched DOM node, including in supported frames. It
 requires one match and rejects text longer than 30,000 characters.
+Heading locators can filter by positive integer `level`; observations expose
+the browser-reported level when available.
 `textContent()` reads the raw DOM text, including hidden descendants, with the
 same match and length checks.
 `isVisible()` checks CSS visibility and nonzero bounds for the matched node and

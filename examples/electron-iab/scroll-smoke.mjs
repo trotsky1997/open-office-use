@@ -28,6 +28,9 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    await evaluate(`(()=>{const h=document.createElement('h2');h.id='level-fixture';h.textContent='Level fixture';document.body.append(h)})()`);
+    assert.equal(await sdkTab.playwright.getByRole('heading',{name:'Level fixture',level:2}).count(),1);
+    await evaluate(`document.querySelector('#level-fixture').remove()`);
     await evaluate(`setTimeout(()=>{const b=document.createElement('button');b.id='wait-fixture';b.textContent='Wait fixture';document.body.append(b)},100)`);
     const waitFixture=sdkTab.playwright.getByRole('button',{name:'Wait fixture',exact:true});await waitFixture.waitFor({state:'visible',timeoutMs:5000});
     await evaluate(`setTimeout(()=>document.querySelector('#wait-fixture').style.display='none',100)`);await waitFixture.waitFor({state:'hidden',timeoutMs:5000});

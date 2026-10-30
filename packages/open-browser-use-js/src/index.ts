@@ -51,11 +51,11 @@ export type OpenBrowserUseWaitForLoadStateOptions = {
 
 export type OpenBrowserUseBrowserOptions = OpenBrowserUseClientOptions | { client: OpenBrowserUseClient };
 
-export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; checked?: boolean | "mixed"; disabled?: boolean; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
+export type InteractiveNode = { index: number; role: string; name: string; frameId?: string; level?: number; checked?: boolean | "mixed"; disabled?: boolean; pressed?: boolean | "mixed"; selected?: boolean; expanded?: boolean; placeholder?: string; placeholderTruncated?: boolean; altText?: string; altTextTruncated?: boolean; value?: string | number; valueRedacted?: boolean; valueUnavailable?: boolean; valueTruncated?: boolean };
 export type SelectOption = string | {value?: string; label?: string};
 export type OpenBrowserUseDialogInfo = { id: string; type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; url: string; defaultPrompt?: string };
 export type TextMatcher = string | RegExp;
-export type RoleLocatorOptions = {name?: TextMatcher; exact?: boolean; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
+export type RoleLocatorOptions = {name?: TextMatcher; exact?: boolean; level?: number; checked?: boolean; disabled?: boolean; pressed?: boolean; selected?: boolean; expanded?: boolean};
 export type InteractiveState = { snapshotId: string; nodes: InteractiveNode[]; text: string; textMode: "full" | "diff"; truncated: boolean; frameCoverage?: "same-process" | "cross-process"; unavailableFrames?: string[]; valuesTruncated?: boolean };
 type FrameInfo = { id: string; parentId?: string; loaderId: string; url: string; sessionId?: string };
 type ObservedNode = InteractiveNode & { backendNodeId: number; stateKey: string; frameChain?: FrameInfo[] };
@@ -621,7 +621,7 @@ export class OpenBrowserUseTab {
     const useDiff = options.diff === true && previous?.documentId === documentId && previous.includeFrames === !!options.includeFrames && previous.includeValues === !!options.includeValues && previous.includeText === !!options.includeText && !previous.truncated && !full.truncated && !valueBudget.truncated && !unavailableFrames.length;
     const output = useDiff ? diffAXState(previous.text, full.text) : full;
     this.#lastText = (output.truncated && useDiff) || unavailableFrames.length || valueBudget.truncated ? undefined : { documentId, includeFrames: !!options.includeFrames, includeValues: !!options.includeValues, includeText: !!options.includeText, ...full };
-    return { snapshotId: id, nodes: nodes.map(({ index, role, name, frameId, checked, disabled, pressed, selected, expanded, placeholder, placeholderTruncated, altText, altTextTruncated, value, valueRedacted, valueUnavailable, valueTruncated }) => ({ index, role, name, ...(frameId ? {frameId} : {}), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated} : {}), ...(value !== undefined ? {value} : {}), ...(valueRedacted ? {valueRedacted} : {}), ...(valueUnavailable ? {valueUnavailable} : {}), ...(valueTruncated ? {valueTruncated} : {}) })), ...output, textMode: useDiff ? "diff" : "full", ...(options.includeFrames ? {frameCoverage: crossProcess ? "cross-process" as const : "same-process" as const, unavailableFrames} : {}), ...(options.includeValues ? {valuesTruncated:valueBudget.truncated} : {}) };
+    return { snapshotId: id, nodes: nodes.map(({ index, role, name, frameId, level, checked, disabled, pressed, selected, expanded, placeholder, placeholderTruncated, altText, altTextTruncated, value, valueRedacted, valueUnavailable, valueTruncated }) => ({ index, role, name, ...(frameId ? {frameId} : {}), ...(level !== undefined ? {level} : {}), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated} : {}), ...(value !== undefined ? {value} : {}), ...(valueRedacted ? {valueRedacted} : {}), ...(valueUnavailable ? {valueUnavailable} : {}), ...(valueTruncated ? {valueTruncated} : {}) })), ...output, textMode: useDiff ? "diff" : "full", ...(options.includeFrames ? {frameCoverage: crossProcess ? "cross-process" as const : "same-process" as const, unavailableFrames} : {}), ...(options.includeValues ? {valuesTruncated:valueBudget.truncated} : {}) };
   }
 
   private async readAXValues(tree: JsonValue, nodes: ObservedNode[], budget: {remaining: number; truncated: boolean}, sessionId?: string): Promise<void> {
@@ -1488,8 +1488,9 @@ export class OpenBrowserUseTabPlaywright {
 
   getByRole(role: string, options: RoleLocatorOptions = {}): OpenBrowserUseRoleLocator {
     if (typeof role !== "string" || !role || !options || typeof options !== "object" || Array.isArray(options) ||
-        Object.keys(options).some(key => !["name","exact","checked","disabled","pressed","selected","expanded"].includes(key)) ||
+        Object.keys(options).some(key => !["name","exact","level","checked","disabled","pressed","selected","expanded"].includes(key)) ||
         (options.name !== undefined && typeof options.name !== "string" && !types.isRegExp(options.name)) ||
+        (options.level !== undefined && (role !== "heading" || !Number.isSafeInteger(options.level) || options.level < 1)) ||
         [options.exact,options.checked,options.disabled,options.pressed,options.selected,options.expanded].some(value => value !== undefined && typeof value !== "boolean")) throw new Error("Invalid role locator");
     return new OpenBrowserUseRoleLocator(this.tab, [role === "img" ? "image" : role], {...options,...(options.name !== undefined ? {name:copyMatcher(options.name)} : {})});
   }
@@ -1561,6 +1562,7 @@ export class OpenBrowserUseRoleLocator {
     const candidates = state.nodes.filter(node => {
       const value = node[this.field];
       return this.roles.includes(node.role) && typeof value === "string" &&
+        (this.options.level === undefined || node.level === this.options.level) &&
         (this.options.checked === undefined || node.checked === this.options.checked) &&
         (this.options.disabled === undefined || !!node.disabled === this.options.disabled) &&
         (this.options.pressed === undefined || node.pressed === this.options.pressed) &&
@@ -2006,6 +2008,9 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     const selectedValue = state("selected"), expandedValue = state("expanded");
     const selected = typeof selectedValue === "boolean" ? selectedValue : undefined;
     const expanded = typeof expandedValue === "boolean" ? expandedValue : undefined;
+    const levelProperty = Array.isArray(node.properties) ? node.properties.find(item => isObject(item) && item.name === "level") : undefined;
+    const rawLevel = isObject(levelProperty) && isObject(levelProperty.value) ? levelProperty.value.value : undefined;
+    const level = typeof rawLevel === "number" && Number.isSafeInteger(rawLevel) && rawLevel > 0 ? rawLevel : undefined;
     const sources = isObject(node.name) && Array.isArray(node.name.sources) ? node.name.sources : [];
     const placeholderSource = ["placeholder", "aria-placeholder"].map(attribute => sources.find(source => isObject(source) && source.attribute === attribute && isObject(source.attributeValue) && typeof source.attributeValue.value === "string")).find(Boolean);
     const rawPlaceholder = isObject(placeholderSource) && isObject(placeholderSource.attributeValue) ? placeholderSource.attributeValue.value : undefined;
@@ -2018,16 +2023,16 @@ function interactiveNodes(tree: JsonValue, offset = 0, includeText = false): Arr
     const states = axProperties(node);
     if (placeholder !== undefined) states.push(`placeholder=${JSON.stringify(placeholder)}${placeholderTruncated ? createHash("sha256").update(rawPlaceholder as string).digest("hex") : ""}`);
     if (altText !== undefined) states.push(`alt=${JSON.stringify(altText)}${altTextTruncated ? createHash("sha256").update(rawAlt as string).digest("hex") : ""}`);
-    nodes.push({ index: offset + nodes.length + 1, role, name, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
+    nodes.push({ index: offset + nodes.length + 1, role, name, backendNodeId: node.backendDOMNodeId, stateKey: JSON.stringify(states), ...(level !== undefined ? {level} : {}), ...(checked !== undefined ? {checked} : {}), ...(disabled ? {disabled:true} : {}), ...(pressed !== undefined ? {pressed} : {}), ...(selected !== undefined ? {selected} : {}), ...(expanded !== undefined ? {expanded} : {}), ...(placeholder !== undefined ? {placeholder} : {}), ...(placeholderTruncated ? {placeholderTruncated:true} : {}), ...(altText !== undefined ? {altText} : {}), ...(altTextTruncated ? {altTextTruncated:true} : {}) });
   }
   return nodes;
 }
 
 function axProperties(node: { [key: string]: JsonValue }): string[] {
   return Array.isArray(node.properties) ? node.properties.flatMap(property => {
-    if (!isObject(property) || typeof property.name !== "string" || !["checked", "selected", "expanded", "disabled", "pressed", "required", "readonly"].includes(property.name) || !isObject(property.value)) return [];
+    if (!isObject(property) || typeof property.name !== "string" || !["checked", "selected", "expanded", "disabled", "pressed", "required", "readonly", "level"].includes(property.name) || !isObject(property.value)) return [];
     const value = property.value.value;
-    return typeof value === "boolean" || typeof value === "string" ? [`${property.name}=${JSON.stringify(value)}`] : [];
+    return typeof value === "boolean" || typeof value === "string" || (property.name === "level" && typeof value === "number" && Number.isSafeInteger(value) && value > 0) ? [`${property.name}=${JSON.stringify(value)}`] : [];
   }).sort() : [];
 }
 

@@ -923,14 +923,14 @@ test('optional field values share one output budget', async () => {
 });
 
 test('text and heading locators observe semantic nodes and match normalized text', async () => {
-  const client=new OpenBrowserUseClient({socketPath:'unused'});let mouse=0;
+  const client=new OpenBrowserUseClient({socketPath:'unused'});let mouse=0,headingLevel=2;
   client.request=async(method,params)=>{
     if(method==='attach')return {};
     const command=params.method;
     if(command==='DOM.getDocument')return {root:{backendNodeId:1}};
     if(command==='Page.getFrameTree')return {frameTree:{frame:{id:'root',loaderId:'v1',url:'https://example.test'}}};
     if(command==='Accessibility.getFullAXTree')return {nodes:[
-      {backendDOMNodeId:2,role:{value:'heading'},name:{value:'Welcome'}},
+      {backendDOMNodeId:2,role:{value:'heading'},name:{value:'Welcome'},properties:[{name:'level',value:{value:headingLevel}}]},
       {backendDOMNodeId:3,role:{value:'StaticText'},name:{value:'  Save   now  '}},
       {backendDOMNodeId:4,role:{value:'image'},name:{value:'Catalog image',sources:[{attribute:'alt',attributeValue:{value:'Product photo'},superseded:true}]}},
       {backendDOMNodeId:5,role:{value:'dialog'},name:{value:'Sign in'}},
@@ -944,6 +944,9 @@ test('text and heading locators observe semantic nodes and match normalized text
   const tab=new OpenBrowserUseBrowser({client}).tab(1);
   assert.equal((await tab.observe()).nodes.length,0);
   assert.equal(await tab.playwright.getByRole('heading',{name:'Welcome',exact:true}).count(),1);
+  assert.equal(await tab.playwright.getByRole('heading',{name:'Welcome',level:2}).count(),1);
+  assert.equal(await tab.playwright.getByRole('heading',{name:'Welcome',level:1}).count(),0);
+  assert.throws(()=>tab.playwright.getByRole('heading',{level:0}),/Invalid role locator/);
   await tab.playwright.getByText('Save now',{exact:true}).click();assert.equal(mouse,2);
   assert.equal(await tab.playwright.getByRole('img',{name:'Catalog image',exact:true}).count(),1);
   await tab.playwright.getByRole('img',{name:'Catalog image',exact:true}).click();assert.equal(mouse,4);
@@ -952,6 +955,8 @@ test('text and heading locators observe semantic nodes and match normalized text
   assert.equal(await tab.playwright.getByRole('dialog',{name:'Sign in',exact:true}).count(),1);
   assert.equal(await tab.playwright.getByRole('alertdialog',{name:'Confirm',exact:true}).count(),1);
   const state=await tab.observe({includeText:true});
+  assert.equal(state.nodes.find(node=>node.role==='heading').level,2);assert.match(state.text,/level=2/);
+  headingLevel=3;await assert.rejects(tab.click(state.nodes.find(node=>node.role==='heading').index,state.snapshotId),/changed/);
   assert.equal(state.nodes.find(node=>node.role==='image').altText,'Product photo');assert.deepEqual(state.nodes.map(node=>node.role),['heading','StaticText','image','dialog','alertdialog']);
   const changed=await tab.observe({diff:true});assert.equal(changed.textMode,'full');
 });

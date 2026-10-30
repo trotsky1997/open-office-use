@@ -32,6 +32,7 @@ export type InteractiveNode = {
     role: string;
     name: string;
     frameId?: string;
+    level?: number;
     checked?: boolean | "mixed";
     disabled?: boolean;
     pressed?: boolean | "mixed";
@@ -61,6 +62,7 @@ export type TextMatcher = string | RegExp;
 export type RoleLocatorOptions = {
     name?: TextMatcher;
     exact?: boolean;
+    level?: number;
     checked?: boolean;
     disabled?: boolean;
     pressed?: boolean;
