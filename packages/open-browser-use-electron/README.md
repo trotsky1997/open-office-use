@@ -459,7 +459,8 @@ enables/disables both effects during manual steps or automatic playback.
   disabled Node integration and enabled web security.
 - Hidden mouse input prepares compositor hit-test data with an internal screenshot
   before the first event, and again after navigation, layout bounds or presentation
-  changes. In a hidden presented window, preparation temporarily disables
+  changes. When the host window is hidden or minimized, or Electron reports the
+  main frame as hidden despite a visible window, preparation temporarily disables
   background throttling. The screenshot is discarded. Text and mouse events are verified as
   trusted on the example fixture; IME, cross-origin frames and minimized windows
   require further validation. A Linux ARM64 virtual-display run encountered a

@@ -313,3 +313,5 @@ Electron scope 新增默认关闭的 webmcp 选项，复用 Chrome 页面桥接�
 Electron WebMCP opt-in scope 为标准 adapter 的标签和 popup 配置 sandbox preload，在页面脚本前通过 contextBridge 初始化桥；未启用的 scope 不配置 preload。Electron 51 项检查通过，Linux ARM64 Electron 44/Xvfb 实测 popup 初始脚本注册工具、发现及调用。使用实验性 executeInMainWorld，自定义 adapter 需接入 preload，子 frame 工具及 macOS/Windows 本轮未测。
 
 Electron WebMCP 增加独立可复跑 smoke；pnpm pack 确认分发包含 preload，macOS ARM64 对解包产物本机重建原生 addon 后验证主页面与 popup 初始化、发现和调用，Linux ARM64 使用既有原生 addon 验证相同解包产物。Electron 51 项检查通过。macOS 完整 upload smoke 两次在首个 CUA move 返回 IAB_INPUT_OUTCOME_UNKNOWN，鼠标输入结果和原因仍待排查；Windows 未测。
+
+Electron 鼠标准备与滚轮现在同时检查宿主窗口状态和 WebFrameMain.visibilityState；macOS 窗口可见但主 frame 隐藏时临时解除后台节流并恢复。Electron 52 项通过；Linux ARM64 Electron 44/Xvfb 完整 smoke 通过；macOS ARM64 Electron 44 完整 smoke 越过原先首次 CUA move 超时，并完成后续多项交互，最终在跨进程 frame 内 DOM 滚动未发生位移处失败。后台快照可返回 visibility_incomplete，测试按标记处理；macOS 跨 frame 滚动仍待排查，Windows 未测。

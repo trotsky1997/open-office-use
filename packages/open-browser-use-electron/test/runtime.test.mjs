@@ -289,6 +289,16 @@ test('background scroll uses wheel input and restores throttling', async t => {
   assert.equal((await a.call('getTabPresentation',{tabId:tab.id})).visible,true);
   await send('Input.synthesizeScrollGesture', params);
   assert.equal(wc.debugger.commands.at(-1).method, 'Input.synthesizeScrollGesture');
+  wc.mainFrame={visibilityState:'hidden'};await send('Input.synthesizeScrollGesture', params);
+  assert.equal(wc.debugger.commands.at(-1).method,'Input.dispatchMouseEvent');assert.equal(wc.backgroundThrottling,true);
+});
+test('visible window with hidden main frame prepares and restores mouse input',async t=>{
+  const {runtime,adapter,a}=setup(t),tab=await a.tabs.create(),wc=adapter.views[0].webContents,states=[];
+  wc.mainFrame={visibilityState:'hidden'};wc.setBackgroundThrottling=value=>{states.push(value);wc.backgroundThrottling=value;};
+  const window=Object.assign(new EventEmitter(),{isVisible:()=>true,isMinimized:()=>false,contentView:{addChildView(){},removeChildView(){}}});
+  runtime.surfaces.register({id:'panel',window,owner:wc}).present(tab.id);
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:10,y:10}});
+  assert.deepEqual(states,[false,true]);assert.deepEqual(wc.debugger.commands.map(command=>command.method),['Page.captureScreenshot','Input.dispatchMouseEvent']);
 });
 test('a stalled background scroll releases the tab queue', async t => {
   const { runtime, adapter, a } = setup(t), tab = await a.tabs.create();

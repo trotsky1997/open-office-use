@@ -290,7 +290,7 @@ export class IabRuntime implements Backend {
     const mouse = method === 'Input.dispatchMouseEvent' || method === 'Input.synthesizeScrollGesture';
     const preparingMouse = mouse && !tab.mouseReady;
     const surface = scroll || preparingMouse ? [...this.surfaceStates.values()].find(item => item.tabId === tab.id) : undefined;
-    const backgroundInput = (scroll || preparingMouse) && !!surface && (!surface.window.isVisible() || surface.window.isMinimized());
+    const backgroundInput = (scroll || preparingMouse) && !!surface && (!surface.window.isVisible() || surface.window.isMinimized() || tab.contents.mainFrame?.visibilityState === 'hidden');
     if (scroll && !surface) throw new Error('IAB_SCROLL_REQUIRES_PRESENTED_SURFACE');
     let command = method, commandParams = params;
     if (backgroundInput && method === 'Input.synthesizeScrollGesture') {
