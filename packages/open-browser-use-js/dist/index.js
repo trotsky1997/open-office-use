@@ -2369,7 +2369,7 @@ export class OpenBrowserUseTab {
         const node = observation?.nodes.find((item) => item.index === index);
         if (!observation || observation.id !== snapshotId || !node)
             throw new RetryablePreflightError("Observation is stale or index is invalid; observe again");
-        if (text !== undefined && !["textbox", "searchbox", "spinbutton", "Date", "DateTime", "InputTime"].includes(node.role))
+        if (text !== undefined && !["textbox", "searchbox", "combobox", "spinbutton", "Date", "DateTime", "InputTime"].includes(node.role))
             throw new Error("Target is not a text field");
         if (text !== undefined && !replace && ["Date", "DateTime", "InputTime"].includes(node.role))
             throw new Error("Use fill for date and time inputs");
@@ -2486,6 +2486,16 @@ export class OpenBrowserUseTab {
                 throw new RetryablePreflightError("Target changed; observe again");
             await this.verifyLocatorScope(observation, node);
             let { point, inputPoint } = second;
+            if (text !== undefined && node.role === "combobox") {
+                const editable = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function(){return this.isConnected && !this.disabled && !this.readOnly && this.getAttribute('aria-readonly')!=='true' && (this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && ['text','search','email','url','tel','password','number'].includes(this.type)))}` }, { sessionId: targetSession });
+                if (!isObject(editable) || !isObject(editable.result) || editable.result.value !== true)
+                    throw new Error("Target is not an editable text field");
+                if (await this.documentId() !== observation.documentId)
+                    throw new RetryablePreflightError("Page changed; observe again");
+                if (node.frameChain)
+                    await this.validateFrames(node.frameChain);
+                await this.verifyLocatorScope(observation, node);
+            }
             if (text !== undefined && replace && ["Date", "DateTime", "InputTime"].includes(node.role)) {
                 const temporal = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
                     objectId, returnByValue: true, arguments: [{ value: text }],
