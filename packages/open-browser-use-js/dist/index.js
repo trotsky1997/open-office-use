@@ -1676,20 +1676,29 @@ export class OpenBrowserUseCdp {
         await this.call(tabId, "Page.enable");
         const controller = new AbortController();
         const wait = this.waitForLoadEvent(tabId, waitUntil, timeoutMs, controller.signal);
-        void wait.catch(() => { });
+        let waitError;
+        void wait.catch(error => { waitError = error; });
         try {
             const result = await this.call(tabId, "Page.navigate", { url }, { timeoutMs });
             if (isObject(result) && typeof result.errorText === "string" && result.errorText) {
                 throw new Error(`Browser failed to navigate tab ${tabId}: ${result.errorText}`);
             }
-            await wait.catch(async (error) => {
-                if (!(error instanceof Error) || !error.message.startsWith("Timed out waiting for "))
-                    throw error;
+            if (isObject(result) && typeof result.loaderId !== "string") {
                 const state = await this.readDocumentState(tabId);
-                if (documentStateMatches(state, waitUntil))
-                    return;
-                throw error;
-            });
+                if (state?.href && documentStateMatches(state, waitUntil)) {
+                    let target;
+                    try {
+                        target = new URL(url, state.href).href;
+                    }
+                    catch { /* Page.navigate validates the URL. */ }
+                    if (target === state.href) {
+                        if (waitError !== undefined)
+                            throw waitError;
+                        return result;
+                    }
+                }
+            }
+            await wait;
             return result;
         }
         finally {

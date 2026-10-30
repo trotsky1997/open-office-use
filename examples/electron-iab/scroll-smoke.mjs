@@ -28,6 +28,10 @@ app.whenReady().then(async () => {
     client.request = (method,params={}) => scope.call(method,params);
     client.onNotification = handler => runtime.subscribe(event => { if(event.scopeId === scope.id) handler({method:event.method,params:event.params}); });
     const sdkTab = new OpenBrowserUseBrowser({client}).tab(tab.id);
+    await sdkTab.goto(`${fixture.url}/#same-document`,{timeoutMs:1500});
+    assert.match(await evaluate('location.href'),/#same-document$/);
+    await sdkTab.goto(`${fixture.url}/`,{timeoutMs:1500});
+
     await evaluate("setTimeout(()=>history.pushState({},'', '/?route=ready'),75)");
     await sdkTab.playwright.waitForURL(`${fixture.url}/?route=ready`,{timeoutMs:5000});
     await evaluate("setTimeout(()=>location.assign('/?navigation=ready'),75)");

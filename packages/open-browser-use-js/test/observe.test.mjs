@@ -77,6 +77,26 @@ test("hover sends one mouse move after target validation", async () => {
   assert.equal(events.length,2);
 });
 
+test('goto does not treat a loaded previous document as a completed navigation', async () => {
+  const client=new OpenBrowserUseClient({socketPath:'unused'});
+  let sameDocument=false, detached=false;const handlers=new Set();
+  client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
+  client.request=async(method,params)=>{
+    if(method==='attach')return {};
+    if(params.method==='Page.navigate'){
+      if(detached)for(const handler of handlers)handler({method:'onDebuggerDetach',params:{tabId:1}});
+      return sameDocument ? {frameId:'main'} : {frameId:'main',loaderId:'next'};
+    }
+    if(params.method==='Runtime.evaluate')return {result:{value:{href:'https://example.test/old#section',readyState:'complete'}}};
+    return {};
+  };
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await assert.rejects(tab.goto('https://example.test/new',{timeoutMs:15}),/Timed out waiting for load/);
+  sameDocument=true;
+  await tab.goto('https://example.test/old#section',{timeoutMs:1000});
+  detached=true;await assert.rejects(tab.goto('https://example.test/old#section',{timeoutMs:1000}),/debugger detached/);
+});
+
 test('navigation waits clean up on failure and observe load events during state reads', async () => {
   const client=new OpenBrowserUseClient({socketPath:'unused'}), handlers=new Set();
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};

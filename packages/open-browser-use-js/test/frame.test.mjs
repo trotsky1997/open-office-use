@@ -137,7 +137,7 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
               }
             })
           );
-          result = { frameId: "frame-1" };
+          result = { frameId: "frame-1", loaderId: "navigation-1" };
         } else if (request.method === "executeCdp" && request.params.method === "Runtime.evaluate") {
           const expression = request.params.commandParams.expression;
           result = expression.includes("readyState")

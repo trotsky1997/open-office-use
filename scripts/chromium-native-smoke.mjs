@@ -35,6 +35,10 @@ try {
  const client=new OpenBrowserUseClient({socketPath,sessionId:'native-e2e',timeoutMs:15000});browser=new OpenBrowserUseBrowser({client});await browser.connect();
  const info=await client.getInfo();assert.equal(info.metadata.extensionId,id);
  const tab=await browser.newTab();await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:15000});
+ await tab.goto(`http://127.0.0.1:${http.address().port}/#same-document`,{timeoutMs:1500});
+ assert.match(await tab.evaluate('location.href'),/#same-document$/);
+ await tab.goto(`http://127.0.0.1:${http.address().port}/`,{timeoutMs:1500});
+
  await tab.watchDialogs();
  let nativeDialogWait=tab.waitForDialog({timeoutMs:5000});
  const promptResult=tab.evaluate(`prompt('Name?','Guest')`); void promptResult.catch(()=>{});

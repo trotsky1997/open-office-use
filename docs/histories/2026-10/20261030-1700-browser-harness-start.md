@@ -133,3 +133,5 @@ getByRole 新增 checked、pressed、selected、expanded 状态筛选，观察�
 对话框和页面加载事件等待监听所属标签关闭、调试器断开及客户端连接关闭，并及时释放监听器；其他标签的事件不会中断等待。导航仅在等待超时后尝试读取当前加载状态，不吞掉连接断开等错误。macOS Electron 与 macOS/Linux Chromium 实页验证关闭标签后等待结束，真实本地 socket 验证远端断开与 IAB 授权撤销。Linux 使用隔离浏览器与 --no-sandbox。
 
 修复加载等待的事件订阅竞态：先订阅主页面事件，再检查文档状态；跨进程 iframe 的事件不会使主页面等待提前结束。导航失败或已满足加载状态后取消等待并释放监听器。回归覆盖状态读取期间完成加载、iframe 事件、导航报错和资源释放；macOS Electron、macOS/Linux Chromium 完成现有真实页面回归。Linux 使用隔离浏览器与 --no-sandbox。
+
+修复 goto 超时后把旧的已加载页面视为成功的问题。CDP 不返回 loaderId 时，只有当前 URL 与目标一致且文档达到加载状态才结束同文档导航；已发生的调试器断开仍会返回错误。测试覆盖旧页面超时、同文档片段跳转和断开竞态；macOS Electron、macOS/Linux Chromium 实页验证片段跳转。Linux 使用隔离浏览器与 --no-sandbox。
