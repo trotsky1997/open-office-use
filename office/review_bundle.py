@@ -90,6 +90,8 @@ def create(source, destination, render, revision=None):
                 if any(item.get('reconciliation', {}).get('status') == 'mismatch' for item in charts['charts']): flags.append('slide_chart_cache_mismatch')
                 if any(not item.get('reconciliation', {}).get('complete', False) for item in charts['charts']): flags.append('slide_chart_cache_unverified')
                 if any(item.get('workbook', {}).get('status') == 'external' for item in charts['charts']): flags.append('slide_chart_external_workbook')
+                if any(item.get('axis_range_candidates', {}).get('count', 0) for item in charts['charts']): flags.append('slide_chart_axis_range_candidates')
+                if any(item.get('axis_range_candidates', {}).get('status') == 'unsupported' for item in charts['charts']): flags.append('slide_chart_axis_range_unverified')
             note_inventory = check('speaker_notes', lambda: notes.inventory(snapshot))
             if note_inventory is not None:
                 if note_inventory['notes_slides']: flags.append('speaker_notes_parts_present')

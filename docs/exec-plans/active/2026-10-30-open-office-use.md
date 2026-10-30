@@ -338,3 +338,5 @@ PowerPoint chart inventory reports saved axis positions, explicit bounds, orient
 Existing PowerPoint value-axis bounds can be set or cleared through snapshot-bound CLI/MCP session revisions. Shared chart parts report affected inspected paths; incomplete inventory is flagged. Native PowerPoint remains unverified.
 
 The preview viewer now inspects and edits value-axis bounds for displayed slide charts with snapshot and revision checks, shared-placement warnings and automatic-bound controls. Browser interaction and route rejection checks passed.
+
+Slide chart inspection and review bundles flag saved cache values outside explicit bounds for simple unstacked bar/column and line plots; unsupported structures are reported separately. Cached values and rendering require independent review.

@@ -1195,7 +1195,9 @@ document.getElementById('slide-chart-axis-select').addEventListener('change', ev
  const ready=slideAxisLoaded.revision===current && slideAxisLoaded.revision===displayed && slideAxisLoaded.hash===displayedHash && pinned===null && !comparing;
  document.getElementById('slide-chart-axis-save').disabled=!ready;
  const shared=slideAxisLoaded.entries.filter(item=>item.chart.chart_part===entry.chart.chart_part && item.axis.id===entry.axis.id).length;
- document.getElementById('slide-chart-axis-status').textContent=`${shared} inspected placement(s) share this axis.${slideAxisLoaded.complete ? '' : ' Inspection incomplete; additional placements may exist.'}${ready ? '' : ' Read-only revision.'}`;
+ const range=entry.chart.axis_range_candidates;
+ const rangeNote=range?.status==='checked' ? ` ${range.count} saved chart cache point(s) outside explicit bounds; review the chart.` : range?.status==='unsupported' ? ` Axis range check unavailable: ${range.reason}.` : '';
+ document.getElementById('slide-chart-axis-status').textContent=`${shared} inspected placement(s) share this axis.${slideAxisLoaded.complete ? '' : ' Inspection incomplete; additional placements may exist.'}${rangeNote}${ready ? '' : ' Read-only revision.'}`;
 });
 document.getElementById('slide-chart-axis-save').addEventListener('click', async () => {
  const target=slideAxisLoaded, selection=slideAxisSelection, status=document.getElementById('slide-chart-axis-status');

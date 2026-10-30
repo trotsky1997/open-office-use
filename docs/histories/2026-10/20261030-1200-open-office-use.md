@@ -441,3 +441,5 @@ Extended slide chart inspection to report standard-axis settings and incomplete 
 Added targeted session edits for PowerPoint value-axis bounds, including automatic bounds, logarithmic validation, shared chart reporting and preservation checks.
 
 Added a revision-bound viewer panel for inspecting and editing slide chart axes, with shared-placement warnings and pending-edit protection.
+
+Added bounded slide-chart axis range candidates and review flags based on saved chart caches, with explicit unsupported coverage.

@@ -154,11 +154,12 @@ async def main():
                 assert axis_inventory['complete'] and axis['minimum'] == 0 and axis['maximum'] == 150, axis_inventory
                 axis_draft = root/'chart-axis-draft'; assert not (await session.call_tool('start_session', {'directory':str(axis_draft),'source':str(positioned)})).isError
                 assert (await session.call_tool('session_set_slide_chart_axis_bounds', {'directory':str(axis_draft),'base_revision':0,'part':chart_inventory.structuredContent['charts'][0]['chart_part'],'axis_id':axis['id'],'minimum':True,'maximum':200})).isError
-                axis_changed = await session.call_tool('session_set_slide_chart_axis_bounds', {'directory':str(axis_draft),'base_revision':0,'part':chart_inventory.structuredContent['charts'][0]['chart_part'],'axis_id':axis['id'],'minimum':None,'maximum':200,'expected_sha256':chart_inventory.structuredContent['snapshot_sha256']})
+                axis_changed = await session.call_tool('session_set_slide_chart_axis_bounds', {'directory':str(axis_draft),'base_revision':0,'part':chart_inventory.structuredContent['charts'][0]['chart_part'],'axis_id':axis['id'],'minimum':None,'maximum':110,'expected_sha256':chart_inventory.structuredContent['snapshot_sha256']})
                 assert not axis_changed.isError, axis_changed
                 axis_after = await session.call_tool('session_inspect_slide_charts', {'directory':str(axis_draft),'revision':1})
                 axis_result = next(item for item in axis_after.structuredContent['charts'][0]['axis_inventory']['axes'] if item['id'] == axis['id'])
-                assert axis_result['minimum'] is None and axis_result['maximum'] == 200, axis_result
+                assert axis_result['minimum'] is None and axis_result['maximum'] == 110, axis_result
+                assert axis_after.structuredContent['charts'][0]['axis_range_candidates']['count'] == 1, axis_after
                 description_draft = root/'description-draft'; assert not (await session.call_tool('start_session', {'directory':str(description_draft),'source':str(positioned)})).isError
                 chart_target = chart_inventory.structuredContent['charts'][0]
                 described_chart = await session.call_tool('session_set_slide_description', {'directory':str(description_draft),'base_revision':0,'path':chart_target['path'],'description':'Updated revenue chart','expected_sha256':chart_inventory.structuredContent['snapshot_sha256']})

@@ -127,6 +127,37 @@ def axis_inventory(chart):
     return {'axes': records, 'complete': not issues, 'issues': sorted(issues)}
 
 
+def axis_range_candidates(chart, record):
+    """Compare saved cache points to explicit bounds for simple, unstacked plots."""
+    result = {'status': 'unsupported', 'reason': None, 'count': 0, 'examples': [], 'source': 'saved_chart_cache'}
+    axes = record['axis_inventory']
+    if not axes['complete']: result['reason'] = 'incomplete_axis_inventory'; return result
+    if not axes['axes']: result.update(status='not_applicable', reason='no_axes'); return result
+    if not any(axis['minimum'] is not None or axis['maximum'] is not None for axis in axes['axes'] if axis['type'] == 'valAx'):
+        result.update(status='not_applicable', reason='automatic_bounds'); return result
+    if len(chart.plots) != 1: result['reason'] = 'multiple_plots'; return result
+    plot = chart.plots[0]._element; group = plot.findall(C + 'grouping')
+    if (plot.tag, group[0].get('val') if len(group) == 1 else None) not in ((C + 'barChart', 'clustered'), (C + 'lineChart', 'standard')):
+        result['reason'] = 'unsupported_plot_or_grouping'; return result
+    refs = [node.get('val') for node in plot.findall(C + 'axId')]
+    matching = [axis for axis in axes['axes'] if axis['type'] == 'valAx' and axis['id'] in refs]
+    if len(matching) != 1: result['reason'] = 'ambiguous_value_axis'; return result
+    axis = matching[0]; result['axis_id'] = axis['id']; result['minimum'] = axis['minimum']; result['maximum'] = axis['maximum']
+    if axis['minimum'] is None and axis['maximum'] is None: result.update(status='not_applicable', reason='automatic_bounds'); return result
+    if len(record['series']) != record['series_total'] or any(item['references']['val']['status'] != 'present' or item['values_truncated'] or item['unverified_values'] or len(item['values']) != item['values_total'] for item in record['series']):
+        result['reason'] = 'incomplete_cached_values'; return result
+    result['status'] = 'checked'; result['blank_points'] = 0
+    for series in record['series']:
+        for index, value in enumerate(series['values'], 1):
+            if value is None: result['blank_points'] += 1; continue
+            side = 'below' if axis['minimum'] is not None and value < axis['minimum'] else 'above' if axis['maximum'] is not None and value > axis['maximum'] else None
+            if side:
+                result['count'] += 1
+                if len(result['examples']) < 20: result['examples'].append({'series': series['index'], 'point': index, 'value': value, 'side': side})
+    result['examples_truncated'] = result['count'] > len(result['examples'])
+    return result
+
+
 def inspect(file):
     source = Path(file).resolve(strict=True)
     if source.suffix.lower() != '.pptx': raise ValueError('Slide chart inspection requires PPTX')
@@ -235,12 +266,12 @@ def inspect(file):
                         else: values = item.values
                         name = item.name
                         if name is not None and len(name) > 500: issue(slide_no, path, 'series_name_truncated')
-                        clipped = []
+                        clipped = []; unverified_values = False
                         for value in values[:200]:
                             if value is None or isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value): clipped.append(value)
-                            else: clipped.append(None); issue(slide_no, path, 'unverified_cached_value')
+                            else: clipped.append(None); unverified_values = True; issue(slide_no, path, 'unverified_cached_value')
                         record['series'].append({'index': index, 'name': name[:500] if name else name, 'values': clipped,
-                                                 'values_total': value_count, 'values_truncated': value_count is not None and value_count > 200, 'references': refs})
+                                                 'values_total': value_count, 'values_truncated': value_count is not None and value_count > 200, 'unverified_values': unverified_values, 'references': refs})
                     if len(plots) == 1 and category_safe:
                         category_view = plots[0].categories; count = len(category_view)
                         if count > 200: issue(slide_no, path, 'category_limit')
@@ -251,6 +282,7 @@ def inspect(file):
                             if label is not None and len(label) > 500: issue(slide_no, path, 'category_truncated'); label = label[:500]
                             labels.append(label)
                         record['categories'] = labels; record['categories_total'] = count
+                    record['axis_range_candidates'] = axis_range_candidates(chart, record)
                     result['charts'].append(record)
                 except (ValueError, TypeError, AttributeError, KeyError, IndexError, OverflowError) as exc:
                     issue(slide_no, path, 'unsupported_chart'); result['charts'].append({'slide': slide_no, 'path': path, 'error': type(exc).__name__})

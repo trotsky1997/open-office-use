@@ -13,6 +13,7 @@ import open_office_use
 import officecli_backend
 import slide_charts
 import session
+import review_bundle
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp); out = root/'charts.pptx'
@@ -56,6 +57,21 @@ with tempfile.TemporaryDirectory() as tmp:
     malformed_report = slide_charts.inspect(malformed)
     assert not malformed_report['complete'] and 'invalid_axis_maximum' in malformed_report['charts'][0]['axis_inventory']['issues']
     assert inventory['charts'][0]['description'] == 'Revenue compared with target' and not inventory['charts'][0]['description_truncated']
+    assert inventory['charts'][0]['axis_range_candidates']['status'] == 'checked' and inventory['charts'][0]['axis_range_candidates']['count'] == 0
+    assert inventory['charts'][3]['axis_range_candidates']['status'] == 'not_applicable'
+    clipped_draft = root/'clipped-axis-draft'; session.start(clipped_draft,source=out)
+    clipped_chart = inventory['charts'][0]; clipped_axis_id = next(axis['id'] for axis in column_axis['axes'] if axis['type'] == 'valAx')
+    clipped_edit = session.set_slide_chart_axis_bounds(clipped_draft,0,clipped_chart['chart_part'],clipped_axis_id,105,110,inventory['snapshot_sha256'])
+    clipped_report = session.inspect_slide_charts(clipped_draft,1)['charts'][0]['axis_range_candidates']
+    assert clipped_report['status'] == 'checked' and clipped_report['count'] == 5 and clipped_report['examples'][0]['side'] == 'below', clipped_report
+    def no_render(_source, _out): raise RuntimeError('Rendering intentionally unavailable')
+    bundle = review_bundle.create(clipped_edit['output'], root/'clipped-review', no_render)
+    assert 'slide_chart_axis_range_candidates' in bundle['flags']
+    stacked_deck = Presentation(out); stacked_chart = stacked_deck.slides[0].shapes[0].chart
+    stacked_chart.plots[0]._element.find(slide_charts.C+'grouping').set('val','stacked')
+    stacked = root/'stacked.pptx'; stacked_deck.save(stacked)
+    stacked_report = slide_charts.inspect(stacked)['charts'][0]['axis_range_candidates']
+    assert stacked_report['status'] == 'unsupported' and stacked_report['reason'] == 'unsupported_plot_or_grouping', stacked_report
     axis_draft = root/'axis-draft'; session.start(axis_draft,source=out)
     chart_info = inventory['charts'][0]; axis_id = next(axis['id'] for axis in column_axis['axes'] if axis['type'] == 'valAx')
     for minimum, maximum in [(True,150), (0,float('inf')), (100,100), (200,100)]:
