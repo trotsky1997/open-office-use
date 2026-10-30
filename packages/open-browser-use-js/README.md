@@ -771,7 +771,9 @@ by this timer.
 
 For `notifications/cancelled` on a `js` request, the server stops waiting and
 suppresses its response. JavaScript already running is not interrupted and may
-still have side effects; the session stays busy until execution settles.
+still have side effects; the session stays busy until execution settles. Once the REPL input closes and
+accepted requests have settled, built-in browser connection helpers reject new
+connections; already running arbitrary code can still have other effects.
 
 Protocol requests can complete independently while asynchronous JavaScript is
 running. `ping` remains responsive; additional `js` and `js_reset` calls report

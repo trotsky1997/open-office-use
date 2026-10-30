@@ -144,3 +144,21 @@ test("MCP REPL retains bindings, uses one browser session and emits images", asy
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('cancelled work cannot open a browser after REPL shutdown',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'obu-repl-shutdown-')),socketPath=join(directory,'browser.sock');
+  let connections=0;const server=createServer(socket=>{connections++;socket.destroy()});server.listen(socketPath);await once(server,'listening');
+  const child=spawn(process.execPath,[fileURLToPath(new URL('../dist/repl-cli.js',import.meta.url))],{stdio:['pipe','pipe','pipe'],env:{...process.env,OBU_SOCKET_DIR:directory}});child.stderr.resume();
+  const exited=once(child,'exit');
+  try {
+    child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'js',arguments:{code:`await new Promise(resolve=>setTimeout(resolve,100)); await Promise.allSettled([connectBrowser({socketPath:${JSON.stringify(socketPath)}}),discoverBrowsers(),agent.browsers.list()])`}}})+'\n');
+    child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId:1}})+'\n');
+    child.stdin.end();
+    const result=await Promise.race([exited,new Promise((_,reject)=>setTimeout(()=>reject(new Error('REPL did not exit')),2000))]);
+    assert.equal(result[0],0);assert.equal(connections,0);
+    const next=spawn(process.execPath,[fileURLToPath(new URL('../dist/repl-cli.js',import.meta.url))],{stdio:['pipe','pipe','pipe'],env:{...process.env,OBU_SOCKET_DIR:directory}});next.stderr.resume();
+    const nextExited=once(next,'exit'),nextLines=createInterface({input:next.stdout})[Symbol.asyncIterator]();
+    next.stdin.end(JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'js',arguments:{code:'await new Promise(resolve=>setTimeout(resolve,40)); nodeRepl.write("finished")'}}})+'\n');
+    const reply=JSON.parse((await nextLines.next()).value);assert.equal(reply.id,2);assert.equal(reply.result.content[0].text,'finished');assert.equal((await nextExited)[0],0);
+  } finally {if(child.exitCode===null){child.kill();await exited;}server.close();await once(server,'close');await rm(directory,{recursive:true,force:true});}
+});

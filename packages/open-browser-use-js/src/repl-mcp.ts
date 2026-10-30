@@ -25,8 +25,10 @@ const defaultSessionId = `obu-repl-${randomUUID()}`;
 let hostBrowser: OpenBrowserUseBrowser | undefined;
 let hostPending: Promise<OpenBrowserUseBrowser> | undefined;
 let activeEvaluation: Promise<unknown> | undefined;
+let shuttingDown = false;
 const extensionDiscovery = !connect || options.allowExtensionDiscovery === true;
 function track(browser: OpenBrowserUseBrowser, browserId: string): OpenBrowserUseBrowser {
+  if (shuttingDown) { browser.close(); throw new Error("Browser session is closed"); }
   if (browsers.has(browser)) return browser;
   const close = browser.close.bind(browser);
   browser.close = () => { browsers.delete(browser); browserIds.delete(browser); if (hostBrowser === browser) hostBrowser = undefined; close(); };
@@ -37,6 +39,7 @@ function track(browser: OpenBrowserUseBrowser, browserId: string): OpenBrowserUs
 }
 
 async function getHostBrowser():Promise<OpenBrowserUseBrowser> {
+  if(shuttingDown)throw new Error("Browser session is closed");
   if(!connect)throw new Error('Embedded browser is unavailable');
   if(hostBrowser)return hostBrowser;
   const pending=hostPending ??= connect().then(browser=>hostBrowser=track(browser,'host'));
@@ -45,6 +48,7 @@ async function getHostBrowser():Promise<OpenBrowserUseBrowser> {
 
 type BrowserCandidate = { socketPath: string; status: "connected"; info: JsonValue } | { socketPath: string; status: "unresponsive" };
 async function discoverBrowsers(): Promise<BrowserCandidate[]> {
+  if(shuttingDown)throw new Error("Browser session is closed");
   const directory = process.env.OBU_SOCKET_DIR ?? "/tmp/open-browser-use";
   let names: string[];
   try { names = await readdir(directory); } catch (error) {
@@ -55,6 +59,7 @@ async function discoverBrowsers(): Promise<BrowserCandidate[]> {
     const socketPath = join(directory, name);
     try {
       if (!(await lstat(socketPath)).isSocket()) return null;
+      if(shuttingDown)throw new Error("Browser session is closed");
       const client = new OpenBrowserUseClient({ socketPath, sessionId: defaultSessionId, timeoutMs: 800 });
       const timer = setTimeout(() => client.close(), 800);
       try { return { socketPath, status: "connected" as const, info: await client.getInfo() }; }
@@ -70,6 +75,7 @@ async function discoverBrowsers(): Promise<BrowserCandidate[]> {
 
 const registryConnections=new Map<string,Promise<OpenBrowserUseBrowser>>();
 async function connectBrowser(options: Partial<OpenBrowserUseClientOptions> & {browserId?: string} = {}) {
+    if(shuttingDown)throw new Error("Browser session is closed");
     const {browserId, ...clientOptions} = options;
     if (connect && (browserId === "host" || (browserId === undefined && !clientOptions.socketPath))) {
       if (Object.keys(clientOptions).length) throw new Error("The host selects the authorized browser scope");
@@ -253,6 +259,7 @@ async function main(): Promise<void> {
     void task.then(()=>pending.delete(task),()=>pending.delete(task));
   }
   await Promise.allSettled([...pending]);
+  shuttingDown=true;
   for (const browser of browsers) browser.close();
   repl.close();
 }
