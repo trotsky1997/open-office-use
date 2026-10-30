@@ -2220,10 +2220,12 @@ export class OpenBrowserUseTab {
         await this.verifyLocatorScope(observation,node);
         inputIssued = true;
         const applied = await this.browser.cdp.call(this.id, "Runtime.callFunctionOn", {
-          objectId, returnByValue:true, arguments:[{value:found.chosen}],
-          functionDeclaration:`function(chosen) {
+          objectId, returnByValue:true, arguments:[{value:found.chosen},{value:selection}],
+          functionDeclaration:`function(chosen,specs) {
             if (!(this instanceof HTMLSelectElement) || !this.isConnected || this.disabled || (!this.multiple && chosen.length > 1)) return null;
+            for(let el=this;el;el=el.parentElement || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode().host : null)) if(el.matches(':disabled') || el.getAttribute('aria-disabled')==='true') return null;
             const options=Array.from(this.options);
+            for(let i=0;i<specs.length;i++) {const spec=specs[i],hits=options.map((option,index)=>({option,index})).filter(({option,index})=>!option.disabled && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) && (spec.index===undefined || index===spec.index) && (spec.either ? option.value===spec.value || option.label===spec.label : (spec.value===undefined || option.value===spec.value) && (spec.label===undefined || option.label===spec.label)));if(hits.length!==1 || hits[0].index!==chosen[i]?.index)return null;}
             if (chosen.some(item=>{const o=options[item.index]; return !o || o.value!==item.value || o.label!==item.label || o.disabled || (o.parentElement instanceof HTMLOptGroupElement && o.parentElement.disabled);})) return null;
             if (!this.multiple && !chosen.length) this.selectedIndex=-1;
             else { const indices=new Set(chosen.map(item=>item.index)); for (let i=0;i<options.length;i++) options[i].selected=indices.has(i); }

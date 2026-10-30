@@ -385,3 +385,5 @@ reload 支持显式超时，统一限制准备、刷新命令和加载等待；�
 selectOption 增加零起始 index 描述符，可与 value、label 同时约束；CSS 与语义定位器沿用选项复核和合成 input/change 事件，非法索引及禁用选项被拒绝。SDK 84 项通过；隔离 Linux ARM64 Chromium 验证普通页面与跨进程 frame，macOS Electron 44.7 socket smoke 验证跨进程 frame 的两类定位器。Windows 未测。
 
 CSS 与语义 locator 的 check/uncheck/setChecked 校验 force 和未知参数；force:false 可用，force:true 在任何浏览器输入前明确拒绝，避免参数被静默忽略。SDK 85 项通过；隔离 Linux ARM64 Chromium 验证两类定位器的可信勾选与拒绝后状态不变。Electron、Windows 与强制勾选功能仍未验证或实现。
+
+语义 selectOption 在修改前重新匹配完整选项条件并检查祖先禁用状态；期间新增同值选项或祖先变为禁用时停止且不派发事件。SDK 85 项通过；隔离 Linux ARM64 Chromium 原生扩展验证两种变化并通过跨进程 frame 完整 smoke，回归场景保留在 smoke 中。Electron 与 Windows 本轮未测。
