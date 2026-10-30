@@ -614,9 +614,11 @@ await tab.playwright.expectNavigation(
 ```
 
 This watches main-frame document and same-document navigation, then waits for
-the requested URL and load state. A timeout or action error can occur after
-the action has taken effect; inspect the page before retrying. The timeout also
-bounds a pending action callback; it cannot cancel a command already issued.
+the requested URL and load state. The timeout includes preparation: if that
+phase times out or the connection changes, the action is not issued. A timeout
+or action error after the action starts can occur after it has taken effect;
+inspect the page before retrying. The timeout bounds a pending action callback;
+it cannot cancel a command already issued.
 
 ## Clipboard
 

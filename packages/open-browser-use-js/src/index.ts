@@ -771,17 +771,29 @@ export class OpenBrowserUseTab {
     const waitUntil = options.waitUntil ?? "load", timeoutMs = options.timeoutMs ?? defaultNavigationTimeoutMs;
     assertSupportedLoadState(waitUntil);
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error("Invalid navigation timeout");
-    await this.browser.cdp.call(this.id,"Page.enable");
-    const tree = await this.browser.cdp.call(this.id,"Page.getFrameTree");
+    const deadline=performance.now()+timeoutMs, generation=this.browser.client.connectionGeneration;
+    let stopped=false,preflightTimer:ReturnType<typeof setTimeout>|undefined;
+    const ensureReady=()=>{
+      if(stopped || performance.now()>=deadline)throw new Error("Navigation preparation timed out before action");
+      if(generation!==this.browser.client.connectionGeneration)throw new Error("Connection changed during navigation preparation before action");
+    };
+    let tree:JsonValue;
+    try {
+      const prepare=(async()=>{await this.browser.cdp.call(this.id,"Page.enable");ensureReady();return this.browser.cdp.call(this.id,"Page.getFrameTree");})();
+      tree=await Promise.race([prepare,new Promise<never>((_,reject)=>{preflightTimer=setTimeout(()=>reject(new Error("Navigation preparation timed out before action")),Math.max(0,deadline-performance.now()));})]);
+      ensureReady();
+    } finally {stopped=true;if(preflightTimer)clearTimeout(preflightTimer);}
     const root = isObject(tree) && isObject(tree.frameTree) && isObject(tree.frameTree.frame) ? tree.frameTree.frame.id : undefined;
     if (typeof root !== "string") throw new Error("Main frame is unavailable");
-    const controller = new AbortController(), deadline = performance.now() + timeoutMs;
+    const remaining=deadline-performance.now();
+    if(remaining<=0)throw new Error("Navigation preparation timed out before action");
+    const controller = new AbortController();
     const navigation = this.browser.cdp.waitForEvent(this.id,notification => {
       const event = cdpEventForTab(notification,this.id);
       if (!event || !isObject(event.params)) return false;
       if (event.method === "Page.navigatedWithinDocument") return event.params.frameId === root;
       return event.method === "Page.frameNavigated" && isObject(event.params.frame) && event.params.frame.id === root && !event.params.frame.parentId;
-    },{timeoutMs,signal:controller.signal,timeoutMessage:`Timed out waiting for navigation after ${timeoutMs} ms`});
+    },{timeoutMs:remaining,signal:controller.signal,timeoutMessage:`Timed out waiting for navigation after ${timeoutMs} ms; action outcome unknown`});
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const work = (async () => {
@@ -792,7 +804,7 @@ export class OpenBrowserUseTab {
         else await this.waitForLoadState({state:waitUntil,timeoutMs:remaining});
         return result;
       })();
-      return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error(`Timed out waiting for navigation after ${timeoutMs} ms`)),timeoutMs);})]);
+      return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error(`Timed out waiting for navigation after ${timeoutMs} ms; action outcome unknown`)),remaining);})]);
     } finally { if (timer) clearTimeout(timer); controller.abort(); }
   }
 

@@ -253,6 +253,16 @@ test('expectNavigation arms before the action and ignores child-frame navigation
   assert.equal(handlers.size,1);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(handlers.size,1);
 });
 
+test('navigation deadline includes preparation and stops before a late action',async()=>{
+  const client=new OpenBrowserUseClient({socketPath:'unused'}),calls=[];let actions=0;
+  client.request=async(method,params)=>{if(method==='attach')return {};calls.push(params.method);if(params.method==='Page.enable')await new Promise(resolve=>setTimeout(resolve,80));return {};};
+  const tab=new OpenBrowserUseBrowser({client}).tab(1);
+  await assert.rejects(tab.expectNavigation(async()=>{actions++},{timeoutMs:10}),/preparation timed out before action/);
+  await new Promise(resolve=>setTimeout(resolve,100));assert.equal(actions,0);assert.ok(!calls.includes('Page.getFrameTree'));
+  let generation=1;Object.defineProperty(client,'connectionGeneration',{get:()=>generation});client.request=async(method)=>{if(method!=='attach')generation++;return {};};
+  await assert.rejects(tab.expectNavigation(async()=>{actions++},{timeoutMs:500}),/Connection changed during navigation preparation before action/);assert.equal(actions,0);
+});
+
 test('developer logs are tab-scoped, bounded and cleared on disconnect',async()=>{
   const client=new OpenBrowserUseClient({socketPath:'unused'}),handlers=new Set(),commands=[];
   client.onNotification=handler=>{handlers.add(handler);return ()=>handlers.delete(handler);};
