@@ -188,7 +188,7 @@ def append_slides(presentation, slides):
             if not isinstance(element, dict): raise ValueError('Slide elements must be objects')
             kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
             allowed = {'textbox': geometry | {'text', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill'},
-                       'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description'}}
+                       'rectangle': geometry | {'fill'}, 'image': geometry | {'path', 'description', 'fit'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
             x = Inches(number(element.get('x'), 'x', -100, 100)); y = Inches(number(element.get('y'), 'y', -100, 100))
             width = Inches(number(element.get('width'), 'width', 0.01, 100)); height = Inches(number(element.get('height'), 'height', 0.01, 100))
@@ -217,7 +217,8 @@ def append_slides(presentation, slides):
                 shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, width, height)
                 shape.fill.solid(); shape.fill.fore_color.rgb = color(element['fill']); shape.line.fill.background()
             else:
-                path = element.get('path'); description = element.get('description', '')
+                path = element.get('path'); description = element.get('description', ''); fit = element.get('fit', 'stretch')
+                if fit not in ('stretch', 'contain', 'cover'): raise ValueError('Image fit must be stretch, contain or cover')
                 if not isinstance(path, str) or not isinstance(description, str) or len(description) > 1000: raise ValueError('Image requires a local path and optional short description')
                 if Path(path).stat().st_size > 20 * 1024 * 1024: raise ValueError('Image exceeds 20 MiB')
                 with tempfile.TemporaryDirectory(prefix='office-slide-image-') as directory:
@@ -226,8 +227,25 @@ def append_slides(presentation, slides):
                 if len(data) > 20 * 1024 * 1024 or image_bytes > 128 * 1024 * 1024: raise ValueError('Image size exceeds per-image or presentation limits')
                 with Image.open(io.BytesIO(data)) as image:
                     if image.format not in ('PNG', 'JPEG') or image.width * image.height > 40000000: raise ValueError('Image must be PNG or JPEG with at most 40 million pixels')
+                    aspect = image.width / image.height
                     image.verify()
-                shape = slide.shapes.add_picture(io.BytesIO(data), x, y, width, height)
+                if fit != 'stretch':
+                    with Image.open(io.BytesIO(data)) as image:
+                        if image.getexif().get(274, 1) != 1: raise ValueError('Normalize image orientation before using contain or cover')
+                box_aspect = width / height
+                if fit == 'contain':
+                    if aspect > box_aspect:
+                        fit_width, fit_height = width, max(1, round(width / aspect))
+                    else:
+                        fit_width, fit_height = max(1, round(height * aspect)), height
+                    shape = slide.shapes.add_picture(io.BytesIO(data), x + (width - fit_width) // 2, y + (height - fit_height) // 2, fit_width, fit_height)
+                else:
+                    shape = slide.shapes.add_picture(io.BytesIO(data), x, y, width, height)
+                    if fit == 'cover':
+                        crop = (1 - min(aspect / box_aspect, box_aspect / aspect)) / 2
+                        if crop >= 0.49999: raise ValueError('Image aspect ratio is too extreme for cover')
+                        if aspect > box_aspect: shape.crop_left = shape.crop_right = crop
+                        else: shape.crop_top = shape.crop_bottom = crop
                 shape._element.nvPicPr.cNvPr.set('descr', description)
 
 

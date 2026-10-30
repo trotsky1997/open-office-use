@@ -20,6 +20,25 @@ with tempfile.TemporaryDirectory() as tmp:
     assert slide.shapes[1].text_frame.paragraphs[0].runs[0].font.size.pt == 32
     assert slide.shapes[3]._element.nvPicPr.cNvPr.get('descr') == 'Teal illustration'
     pdf = open_office_use.render(out, root/'render'); assert Path(pdf).read_bytes().startswith(b'%PDF')
+    fit_spec = {'slides':[{'layout':'blank','elements':[
+        {'type':'image','path':str(image),'x':1,'y':1,'width':2,'height':2,'fit':'contain'},
+        {'type':'image','path':str(image),'x':4,'y':1,'width':2,'height':2,'fit':'cover'}]}]}
+    fitted = root/'fitted.pptx'; open_office_use.author(fit_spec, fitted)
+    contained, covered = Presentation(fitted).slides[0].shapes
+    assert abs(contained.left-Inches(1)) <= 1 and abs(contained.top-Inches(1.375)) <= 1
+    assert abs(contained.width-Inches(2)) <= 1 and abs(contained.height-Inches(1.25)) <= 1
+    assert covered.width == Inches(2) and covered.height == Inches(2) and abs(covered.crop_left - 0.1875) < 0.00001 and abs(covered.crop_right - 0.1875) < 0.00001
+    assert contained.crop_left == contained.crop_right == contained.crop_top == contained.crop_bottom == 0
+    portrait = root/'portrait.png'; Image.new('RGB',(20,40),'blue').save(portrait)
+    portrait_spec = {'slides':[{'layout':'blank','elements':[{'type':'image','path':str(portrait),'x':1,'y':1,'width':2,'height':2,'fit':'cover'}, {'type':'image','path':str(portrait),'x':4,'y':1,'width':2,'height':2,'fit':'contain'}]}]}
+    portrait_deck = root/'portrait.pptx'; open_office_use.author(portrait_spec, portrait_deck)
+    cropped, letterboxed = Presentation(portrait_deck).slides[0].shapes
+    assert abs(cropped.crop_top - 0.25) < 0.00001 and abs(cropped.crop_bottom - 0.25) < 0.00001
+    assert abs(letterboxed.left-Inches(4.5)) <= 1 and abs(letterboxed.width-Inches(1)) <= 1 and letterboxed.height == Inches(2)
+    oriented = root/'rotated.jpg'; photo = Image.new('RGB',(10,20),'red'); exif = Image.Exif(); exif[274] = 6; photo.save(oriented, exif=exif)
+    try: open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'image','path':str(oriented),'x':0,'y':0,'width':1,'height':1,'fit':'contain'}]}]}, root/'rotated.pptx')
+    except ValueError as exc: assert 'orientation' in str(exc)
+    else: raise AssertionError('Image with unresolved orientation accepted')
     original = out.read_bytes(); appended = root/'appended.pptx'
     open_office_use.author({'slides':[{'layout':'blank','elements':[{'type':'textbox','x':1,'y':1,'width':4,'height':1,'text':'Append'}]}]}, appended, out)
     assert out.read_bytes() == original and len(Presentation(appended).slides) == 2

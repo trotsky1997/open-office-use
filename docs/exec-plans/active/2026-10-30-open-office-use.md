@@ -150,3 +150,5 @@ JSON `blocks` in CLI/MCP authoring create ordered semantic headings, formatted t
 ## Positioned basic slide authoring
 
 JSON slide specs support new-deck sizing, blank layouts, backgrounds, positioned textboxes, rectangles and local PNG/JPEG images with alt descriptions. Image sources are snapshotted and bounded; existing templates supply their own Blank layout. Validated PPTX structure, MCP, and LibreOffice rendering. Native PowerPoint fidelity and advanced visual features remain open.
+
+PowerPoint image authoring supports `contain` and centered `cover` alongside `stretch`; contain changes the picture frame and cover stores editable crop values. EXIF orientation must be normalized for aspect-preserving modes.

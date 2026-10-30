@@ -203,3 +203,7 @@ Added ordered Word content blocks for headings, paragraphs with inline formattin
 ### Positioned slide authoring
 
 Extended basic CLI/MCP PPTX authoring with explicit slide dimensions, blank layouts, backgrounds, positioned formatted text, rectangles and embedded PNG/JPEG images with descriptions. Checked real output, rendered preview, invalid input and MCP creation. Images stretch to their target rectangle; native PowerPoint fidelity remains unverified.
+
+### Slide image fitting
+
+Added aspect-preserving contain and centered cover modes to CLI/MCP slide image authoring. Verified horizontal and vertical images, PPTX frame/crop values, EXIF orientation rejection, MCP operation and LibreOffice previews. Native PowerPoint rendering remains unverified.
