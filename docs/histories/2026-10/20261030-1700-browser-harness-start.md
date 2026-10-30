@@ -542,3 +542,5 @@ Chrome 下载等待返回的句柄绑定发起会话；其他会话和未知 ID 
 Chrome 对外下载句柄改为随机 UUID，扩展内保存句柄与原生数字 ID、发起会话的映射；路径查询复核句柄及所属会话。扩展 39 项检查通过；Linux ARM64 Chromium 原生消息双会话实测句柄格式、跨会话拒绝及实际文件内容。Chromium 扩展下载 API 的公开类型没有 GUID，Page 调试事件的 GUID 与原生数字 ID 仍待可靠关联；Windows 未测。
 
 新增 tab.prepareDownloadStart：预先启用主 frame 与已附着跨进程 frame 的 Page 事件，按标签等待下载开始并返回 GUID、frame、URL 和建议文件名；准备超时阻止后续 Page.enable。SDK 107 项检查通过，Linux ARM64 Chromium 原生消息实测主文档及跨进程 frame，macOS Electron 实页验证主文档。GUID 与文件路径句柄独立，新建 frame 存在事件遗漏窗口，CDP 事件为实验性且已弃用；Windows 未测。
+
+下载开始观察在等待期间为新附着的跨进程 iframe 启用 Page 事件，结束或失败时移除监听；SDK 107 项检查通过。Linux ARM64 Chromium 原生消息及 macOS Electron 实页验证动态新 frame 加载后触发下载并取得所属 frame 事件。frame 附着至事件启用之间仍存在遗漏窗口；Windows 未测。

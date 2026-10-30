@@ -1941,6 +1941,21 @@ export class OpenBrowserUseTab {
     const timeoutMs=options.timeoutMs ?? 10_000;
     if(!Number.isFinite(timeoutMs) || timeoutMs<=0 || timeoutMs>120_000)throw new Error("Invalid download timeout");
     const cdp=this.browser.cdp, controller=new AbortController(), deadline=performance.now()+timeoutMs;
+    const enabled=new Map<string,Promise<JsonValue>>();
+    let rejectDynamic!:(error:Error)=>void;
+    const dynamicFailure=new Promise<never>((_,reject)=>{rejectDynamic=reject;});
+    void dynamicFailure.catch(()=>{});
+    const enable=(sessionId?:string):Promise<JsonValue>=>{
+      const key=sessionId ?? "";let pending=enabled.get(key);
+      if(!pending){pending=cdp.call(this.id,"Page.enable",{}, {sessionId,signal:controller.signal});enabled.set(key,pending);}
+      return pending;
+    };
+    const removeDynamic=this.browser.client.onNotification(event=>{
+      if(controller.signal.aborted || event.method!=="onCDPEvent" || !isObject(event.params))return;
+      const {source,method,params}=event.params;
+      if(!isObject(source) || source.tabId!==this.id || method!=="Target.attachedToTarget" || !isObject(params) || typeof params.sessionId!=="string" || !isObject(params.targetInfo) || params.targetInfo.type!=="iframe")return;
+      void enable(params.sessionId).catch(error=>{if(!controller.signal.aborted)rejectDynamic(error instanceof Error ? error : new Error(String(error)));});
+    });
     const waiting=cdp.waitForEvent(this.id,event=>{
       if(event.method!=="onCDPEvent" || !isObject(event.params))return false;
       const {source,method,params}=event.params;
@@ -1950,21 +1965,22 @@ export class OpenBrowserUseTab {
       if(typeof value.guid!=="string" || !value.guid || typeof value.frameId!=="string" || !value.frameId || typeof value.url!=="string" || typeof value.suggestedFilename!=="string")throw new Error("Invalid download start event");
       return {guid:value.guid,frameId:value.frameId,url:value.url,suggestedFilename:value.suggestedFilename,...(typeof source.sessionId==="string" ? {sessionId:source.sessionId} : {})};
     });
-    void waiting.catch(()=>{});
+    const result=Promise.race([waiting,dynamicFailure]).finally(()=>{removeDynamic();controller.abort();});
+    void result.catch(()=>{});
     const prepare=(async()=>{
       await cdp.enableFrameSessions(this.id);
       if(controller.signal.aborted || performance.now()>=deadline)throw new Error("Download start preparation timed out");
       const frames=await cdp.frameSessions(this.id);
       for(const sessionId of [undefined,...frames.map(frame=>frame.sessionId)]) {
         if(controller.signal.aborted || performance.now()>=deadline)throw new Error("Download start preparation timed out");
-        await cdp.call(this.id,"Page.enable",{}, {sessionId,signal:controller.signal});
+        await enable(sessionId);
       }
       if(controller.signal.aborted || performance.now()>=deadline)throw new Error("Download start preparation timed out");
     })();
     try {
-      await Promise.race([prepare,waiting.then(()=>{throw new Error("Download started before preparation completed");})]);
-      return new OpenBrowserUseDownloadStartWait(waiting);
-    } catch(error) {controller.abort();throw error;}
+      await Promise.race([prepare,result.then(()=>{throw new Error("Download started before preparation completed");})]);
+      return new OpenBrowserUseDownloadStartWait(result);
+    } catch(error) {removeDynamic();controller.abort();throw error;}
   }
 
   async prepareDownload(options: {timeoutMs?: number} = {}): Promise<OpenBrowserUseDownloadWait> {

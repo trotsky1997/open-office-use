@@ -1817,6 +1817,11 @@ test('download start observation is tab-scoped and bounds preparation',async()=>
   for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:2},method:'Page.downloadWillBegin',params:{guid:'wrong',frameId:'f',url:'x',suggestedFilename:'x'}}});
   for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1,sessionId:'child'},method:'Page.downloadWillBegin',params:{guid:'guid',frameId:'f',url:'https://example.test/file',suggestedFilename:'file'}}});
   assert.deepEqual(await waiting.wait(),{guid:'guid',frameId:'f',url:'https://example.test/file',suggestedFilename:'file',sessionId:'child'});
+  calls.length=0;const dynamic=await tab.prepareDownloadStart({timeoutMs:1000});
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1},method:'Target.attachedToTarget',params:{sessionId:'new-child',targetInfo:{type:'iframe'}}}});
+  await new Promise(resolve=>setImmediate(resolve));assert.ok(calls.some(([method,session])=>method==='Page.enable' && session==='new-child'));
+  for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1,sessionId:'new-child'},method:'Page.downloadWillBegin',params:{guid:'dynamic',frameId:'new-frame',url:'https://example.test/dynamic',suggestedFilename:'dynamic'}}});
+  assert.equal((await dynamic.wait()).guid,'dynamic');assert.equal(handlers.size,0);
   let release;browser.cdp.enableFrameSessions=async()=>await new Promise(resolve=>{release=resolve;});calls.length=0;
   await assert.rejects(tab.prepareDownloadStart({timeoutMs:20}),/timed out/i);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,0);
 });

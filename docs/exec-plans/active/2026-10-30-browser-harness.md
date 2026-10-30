@@ -139,4 +139,5 @@
 - [ ] 研究 Chrome Page.downloadWillBegin GUID 与 downloads 记录 ID 的可靠关联；实测前者提供来源标签和 frame，扩展记录使用独立 ID。
 - [x] Chrome 对外下载句柄使用随机 UUID，扩展内部映射原生数字 ID 和所属会话；Linux ARM64 原生消息实测。
 - [x] 新增按标签观察下载开始的 CDP 入口，返回 GUID、frame、URL 和建议文件名；Linux Chromium 实测主文档及已附着跨进程 frame，macOS Electron 实测主文档。
-- [ ] 下载开始观察覆盖准备后新建的跨进程 frame；GUID 与 Chrome 文件路径句柄的可靠关联仍待解决。
+- [x] 下载开始观察为后续附着的跨进程 frame 启用 Page 事件；Linux Chromium 与 macOS Electron 实页验证，附着到启用之间仍有短暂遗漏窗口。
+- [ ] 下载事件 GUID 与 Chrome 文件路径句柄的可靠关联仍待解决。
