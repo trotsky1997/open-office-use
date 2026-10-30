@@ -359,3 +359,5 @@ Added revision-bound PowerPoint slide reordering via CLI and MCP; the slide list
 Extended slide reordering to verified PowerPoint 2010 sections, keeping membership intact and updating section and member ordering. Rejects empty or interleaved sections and other presentation extensions.
 
 Added snapshot-bound slide and section inventory via CLI and MCP, including titles, hidden and notes flags, section status and revision-specific positions.
+
+Added viewer slide-order inventory and revision-bound reorder form; validated browser interaction, source hashes, stale revision and origin restrictions.

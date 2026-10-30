@@ -35,3 +35,5 @@ Speaker-note search paths like `/slide[1]/notes/paragraph[2]` work with `session
 Use `session_reorder_slides` with the latest revision and a complete array of one-based slide positions to rearrange an existing deck. Slide IDs, slide parts, speaker notes and custom-show order are retained. Supported nonempty PowerPoint sections keep their members and may be reordered as contiguous groups; interleaving sections, empty sections, other presentation extensions and alternate content are rejected. Slide-number paths change after reordering, so rediscover targets in the new revision.
 
 Use `inspect_slides` or `session_inspect_slides` before reordering to list slide positions, IDs, titles, visibility, notes presence and recognized section membership. `section_status` reports `none`, `supported`, or `unsupported` with an explanation. Results are snapshot-bound, limited to 1,000 slides, and titles and section names are truncated at 500 characters.
+
+In the local viewer, the Slide order panel loads the displayed revision's slide list and recognized sections and saves a complete comma-separated order in the latest revision. Reload after changing revisions.

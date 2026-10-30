@@ -256,3 +256,5 @@ Session slide reordering retains slide IDs and related parts, rejects presentati
 Slide reordering supports contiguous nonempty PowerPoint 2010 sections and updates section/member ordering; other presentation extensions remain unsupported.
 
 Slide inventory exposes revision-bound positions and supported section membership before reordering, with explicit unsupported-section status and bounded output.
+
+The PPTX viewer supports inspecting slide order and saving a complete new order; snapshot and revision checks protect the request, and package/section limits apply.

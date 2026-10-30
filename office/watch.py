@@ -82,6 +82,10 @@ input{width:4.5rem}#picture-file{width:min(22rem,70vw)}button,select,input,texta
 <button type="button" id="comments-load">Load comments</button><p id="comments-status" role="status"></p><ul id="comments-list"></ul>
 <fieldset id="reply-panel" hidden><legend>Reply to comment</legend><p id="reply-target"></p><label>Author <input id="reply-author" maxlength="100"></label>
 <label>Reply <textarea id="reply-text" maxlength="4000"></textarea></label><button type="button" id="reply-send">Save reply as new revision</button></fieldset></details>
+<details id="slide-order-panel" hidden><summary>Slide order</summary>
+<p>Load the displayed revision, then enter every current slide number in the desired order. Slides in the same section must remain together.</p>
+<button type="button" id="slide-order-load">Load slide list</button><ol id="slide-order-list"></ol><p id="slide-order-sections"></p>
+<form id="slide-order-form"><label>New order <input id="slide-order-input" style="width:min(32rem,70vw)" placeholder="3, 1, 2" required></label> <button type="submit" id="slide-order-save" disabled>Save order as new revision</button></form><p id="slide-order-status" role="status"></p></details>
 <details id="notes-panel" hidden><summary>Slide speaker notes</summary><form id="notes-form">
 <p>Choose a slide by presentation order, including hidden slides. Saving replaces all notes text and resets its formatting.</p>
 <label>Slide number <input id="notes-slide" type="number" min="1" step="1" value="1" required></label>
@@ -181,6 +185,7 @@ let current = -1, displayed = -1, displayedHash = null, pinned = null, viewKey =
 let savedSelection = null, selectionEpoch = 0, gridLoaded = null, cellComparisonEpoch = 0, editBaseline = null, editBusy = false, gridBusy = false, scanBusy = false, calcBusy = false, formulaStatusRevision = null, layoutBusy = false, layoutRevision = null, layoutReport = null, layoutHighlight = null, overlayEpoch = 0, displayedPages = 0, pictureTarget = null, visualEpoch = 0, visualUrl = null, commentListRevision = null, commentListEpoch = 0, commentsBusy = false, replyTarget = null;
 let notesLoaded=null, notesBaseline=null, notesEpoch=0, notesBusy=false, notesComparisonEpoch=0, storiesEpoch=0, storiesRevision=null, workbookEpoch=0, workbookRevision=null, chartCacheEpoch=0, chartCacheRevision=null;
 let textSearchEpoch=0, textSearchState=null, textSearchBusy=false;
+let slideOrderLoaded=null, slideOrderBusy=false;
 let trackedEpoch=0, trackedRevision=null, trackedBusy=false, slideTextRevision=null, slideTextEpoch=0;
 function clearTextSearch() {
  textSearchEpoch++; textSearchState=null; document.getElementById('text-search-next').disabled=true;
@@ -1087,6 +1092,38 @@ async function loadNotes(requestedSlide=null) {
  }
  finally { notesBusy=false; button.disabled=false; }
 }
+document.getElementById('slide-order-load').addEventListener('click', async () => {
+ if (slideOrderBusy || displayed<0) return;
+ if (slideOrderLoaded && document.getElementById('slide-order-input').value!==slideOrderLoaded.initial && !window.confirm('Discard the unsaved slide order and reload?')) return;
+ const revision=displayed, hash=displayedHash, status=document.getElementById('slide-order-status'); slideOrderBusy=true;
+ document.getElementById('slide-order-save').disabled=true; status.textContent=`Loading revision ${revision}…`;
+ try {
+  const response=await fetch('slide-order-read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not list slides');
+  if (displayed!==revision || displayedHash!==hash || result.snapshot_sha256!==hash) throw new Error('Preview changed; load again');
+  const list=document.getElementById('slide-order-list'); list.replaceChildren(...result.slides.map(slide=>{const item=document.createElement('li'); item.textContent=`${slide.title || '(untitled)'}${slide.hidden ? ' · hidden' : ''}${slide.has_notes ? ' · notes' : ''}`; return item;}));
+  document.getElementById('slide-order-sections').textContent=result.section_status==='supported' ? result.sections.map(section=>`${section.name || '(unnamed)'}: ${section.slides.join(', ')}`).join(' · ') : result.section_status==='unsupported' ? `Sections unavailable: ${result.section_issue}` : 'No sections.';
+  document.getElementById('slide-order-input').value=result.slides.map(slide=>slide.slide).join(', ');
+  slideOrderLoaded={revision,hash,count:result.slides.length,initial:document.getElementById('slide-order-input').value};
+  const editable=revision===current && pinned===null && !comparing && result.slides.length>0 && result.section_status!=='unsupported';
+  document.getElementById('slide-order-save').disabled=!editable; status.textContent=editable ? `Revision ${revision}: ready to reorder.` : `Revision ${revision}: read-only or unsupported.`;
+ } catch(error) { slideOrderLoaded=null; status.textContent=`Slide list error: ${error.message}`; }
+ finally { slideOrderBusy=false; }
+});
+document.getElementById('slide-order-form').addEventListener('submit', async event => {
+ event.preventDefault(); const target=slideOrderLoaded, status=document.getElementById('slide-order-status');
+ if (slideOrderBusy || !target || target.revision!==current || target.revision!==displayed || target.hash!==displayedHash || pinned!==null || comparing) { document.getElementById('slide-order-save').disabled=true; status.textContent='Revision changed; load the slide list again.'; return; }
+ const raw=document.getElementById('slide-order-input').value.split(',').map(value=>value.trim());
+ if (raw.length!==target.count || raw.some(value=>!/^[0-9]+$/.test(value))) { status.textContent='Enter every slide number once, separated by commas.'; return; }
+ const order=raw.map(Number); if (new Set(order).size!==target.count || order.some(value=>!Number.isSafeInteger(value) || value<1 || value>target.count)) { status.textContent='Enter every slide number once, separated by commas.'; return; }
+ slideOrderBusy=true; document.getElementById('slide-order-save').disabled=true;
+ try {
+  const response=await fetch('slide-order-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:target.revision,snapshot_sha256:target.hash,order})});
+  const result=await response.json(); if (!response.ok) throw new Error(result.error || 'Could not reorder slides');
+  slideOrderLoaded=null; status.textContent=`Saved revision ${result.revision}; load its slide list to continue.`; await refresh();
+ } catch(error) { status.textContent=`Slide order error: ${error.message}`; if (target.revision===current && target.revision===displayed && target.hash===displayedHash && pinned===null && !comparing) document.getElementById('slide-order-save').disabled=false; }
+ finally { slideOrderBusy=false; }
+});
 document.getElementById('notes-load').addEventListener('click',()=>loadNotes());
 document.getElementById('notes-form').addEventListener('submit', async event => {
  event.preventDefault(); const target=notesLoaded, text=document.getElementById('notes-text'), status=document.getElementById('notes-status');
@@ -1123,6 +1160,7 @@ function showRenderAdvisory(items) {
 }
 function display(state, live) {
  displayedHash=state.snapshot_sha256;
+ if (slideOrderLoaded && (slideOrderLoaded.revision!==state.revision || slideOrderLoaded.hash!==state.snapshot_sha256 || !live)) document.getElementById('slide-order-save').disabled=true;
  showRenderAdvisory([[`Revision ${state.revision}`,state.render_advisory]]);
  clearTrackedFor(state.revision);
  document.querySelectorAll('#tracked-results input').forEach(item=>item.disabled=trackedBusy || !live || item.dataset.supported!=='true');
@@ -1297,6 +1335,7 @@ async function refresh() {
   document.getElementById('text-search-scope-label').hidden=state.format === 'xlsx';
   document.getElementById('tracked-panel').hidden=state.format !== 'docx';
   document.getElementById('stories-panel').hidden=state.format !== 'docx';
+  document.getElementById('slide-order-panel').hidden=state.format !== 'pptx';
   document.getElementById('notes-panel').hidden=state.format !== 'pptx';
   document.getElementById('notes-comparison').hidden=state.format !== 'pptx';
   document.getElementById('layout-panel').hidden=state.format !== 'pptx';
@@ -1373,7 +1412,7 @@ def serve(directory, preview, port=0, render=None):
                 if self.headers.get('Host') != host or self.headers.get('Origin') != 'http://' + host:
                     self.send(403, b'Forbidden', 'text/plain; charset=utf-8'); return
                 route = urlsplit(self.path).path
-                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
+                if route not in ('/' + token + '/selection', '/' + token + '/restore', '/' + token + '/element', '/' + token + '/edit', '/' + token + '/candidates', '/' + token + '/sheets', '/' + token + '/grid', '/' + token + '/grid-edit', '/' + token + '/grid-format', '/' + token + '/grid-resize', '/' + token + '/grid-freeze', '/' + token + '/grid-merge', '/' + token + '/cell-comparison', '/' + token + '/visual-comparison', '/' + token + '/replace-text', '/' + token + '/track-replace-text', '/' + token + '/track-insert-text', '/' + token + '/add-comment', '/' + token + '/resolve-comment', '/' + token + '/reply-comment', '/' + token + '/replace-picture', '/' + token + '/formula-scan', '/' + token + '/formula-recalculate', '/' + token + '/layout-scan', '/' + token + '/slide-text-scan', '/' + token + '/comments-read', '/' + token + '/tracked-read', '/' + token + '/tracked-resolve', '/' + token + '/stories-read', '/' + token + '/workbook-inspect', '/' + token + '/text-search', '/' + token + '/chart-cache-scan', '/' + token + '/chart-cache-sync', '/' + token + '/slide-order-read', '/' + token + '/slide-order-save', '/' + token + '/notes-read', '/' + token + '/notes-replace', '/' + token + '/notes-replace-text', '/' + token + '/notes-comparison'):
                     self.send(404, b'Not found', 'text/plain; charset=utf-8'); return
                 length = self.headers.get('Content-Length', '')
                 limit = 14 * 1024 * 1024 if route.endswith('/replace-picture') else 650000 if route.endswith('/notes-replace') else 65000 if route.endswith('/notes-replace-text') else 20000
@@ -1417,6 +1456,17 @@ def serve(directory, preview, port=0, render=None):
                             if payload['after'] != session.info(directory)['latest_revision']:
                                 raise ValueError('Latest revision changed; compare again')
                         self.send(200, json.dumps(result).encode(), 'application/json'); return
+                    if route.endswith('/slide-order-read'):
+                        if not isinstance(payload, dict) or set(payload) != {'revision'}: raise ValueError('Slide inventory requires revision')
+                        saved = session.inventory_slides(directory, payload['revision'])
+                        self.send(200, json.dumps(saved).encode(), 'application/json'); return
+                    if route.endswith('/slide-order-save'):
+                        if not isinstance(payload, dict) or set(payload) != {'base_revision', 'snapshot_sha256', 'order'}: raise ValueError('Slide reorder requires revision, snapshot and order')
+                        with lock:
+                            inventory = session.inventory_slides(directory, payload['base_revision'])
+                            if inventory['snapshot_sha256'] != payload['snapshot_sha256']: raise ValueError('Slide source changed; load again')
+                            saved = session.reorder_slides(directory, payload['base_revision'], payload['order'])
+                        self.send(200, json.dumps(saved).encode(), 'application/json'); return
                     if route.endswith('/notes-read'):
                         if not isinstance(payload, dict) or set(payload) != {'revision', 'slide'}:
                             raise ValueError('Notes reading requires revision and slide')
