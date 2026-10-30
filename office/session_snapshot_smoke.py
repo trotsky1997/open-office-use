@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 from docx import Document
 import officecli_backend
+import ooxml
 import session
 import snapshot
 
@@ -40,4 +41,15 @@ with tempfile.TemporaryDirectory() as tmp:
                    'apply': lambda: session.apply(draft, 0, [])}
         reject(source, actions[kind])
         assert session.info(draft)['latest_revision'] == 0 and not output.exists()
+    source = root/'ooxml-source.docx'; source.write_bytes(original.read_bytes()); output = root/'ooxml-output.docx'
+    other = root/'other.docx'; replacement = Document(); replacement.add_paragraph('different'); replacement.save(other)
+    def select_and_replace_live(snapshot_file):
+        source.write_bytes(other.read_bytes())
+        assert Document(snapshot_file).paragraphs[0].text == 'source'
+        return 'word/document.xml'
+    ooxml.edit_xml(source, output, select_and_replace_live, lambda tree, archive: None)
+    assert Document(output).paragraphs[0].text == 'source' and Document(source).paragraphs[0].text == 'different'
+    output = root/'ooxml-rejected.docx'; source.write_bytes(original.read_bytes())
+    reject(source, lambda: ooxml.edit_xml(source, output, lambda file: 'word/document.xml', lambda tree, archive: None))
+    assert not output.exists()
 print('Session snapshot smoke passed: start, batch, apply, restore and export')

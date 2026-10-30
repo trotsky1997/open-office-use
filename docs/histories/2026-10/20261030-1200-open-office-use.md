@@ -361,3 +361,5 @@ Extended slide reordering to verified PowerPoint 2010 sections, keeping membersh
 Added snapshot-bound slide and section inventory via CLI and MCP, including titles, hidden and notes flags, section status and revision-specific positions.
 
 Added viewer slide-order inventory and revision-bound reorder form; validated browser interaction, source hashes, stale revision and origin restrictions.
+
+Bound shared OOXML part selection and rewriting to a checked source snapshot. Slide reorder uses that same snapshot for relationship inspection, and the viewer validates its hash against the editing snapshot.

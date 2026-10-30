@@ -621,13 +621,13 @@ def inventory_slides(directory, revision):
     if state['format'] != 'pptx': raise ValueError('Slide inventory requires a PPTX session')
     return {'revision': revision, **slides.inventory(source)}
 
-def reorder_slides(directory, base_revision, order):
+def reorder_slides(directory, base_revision, order, expected_sha256=None):
     state = info(directory); source = revision_file(state, base_revision)
     if state['format'] != 'pptx': raise ValueError('Slide reorder requires a PPTX session')
     if base_revision != state['latest_revision']: raise ValueError(f"Revision conflict: latest revision is {state['latest_revision']}")
     if base_revision >= 999999: raise ValueError('Session revision limit reached')
     output = Path(state['directory']) / f'revision-{base_revision + 1:06d}.pptx'
-    try: slides.reorder(source, output, order)
+    try: slides.reorder(source, output, order, expected_sha256=expected_sha256)
     except FileExistsError as exc: raise ValueError('Revision conflict: another edit committed first') from exc
     return {'revision': base_revision + 1, 'file': str(output), 'order': order}
 

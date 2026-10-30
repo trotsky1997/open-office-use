@@ -576,3 +576,5 @@ python3 office/mcp_smoke.py         # requires the MCP extra and OfficeCLI
 `inspect_slides` and `session_inspect_slides` (CLI: `inspect-slides FILE` or `session inspect-slides DIR --revision REV`) return slide positions, IDs, titles, hidden and notes flags, plus recognized section membership. The snapshot-bound inventory supports up to 1,000 slides; unsupported section structures report a reason. Titles and section names are truncated at 500 characters.
 
 The local PPTX viewer's Slide order panel lists the displayed revision and saves a complete comma-separated order as a new revision. Saving requires the latest displayed revision and matching source snapshot; section and package restrictions from `session_reorder_slides` apply.
+
+Targeted single-part OOXML edits select and modify parts from one checked source snapshot. Slide-order viewer requests compare the loaded hash against that exact editing snapshot. The snapshot check detects many concurrent writes but does not lock external applications; workflows that inspect source data before calling the editor may need their own snapshot binding.

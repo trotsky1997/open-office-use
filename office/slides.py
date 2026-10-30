@@ -206,12 +206,14 @@ def inventory(source):
             section_status = 'unsupported'; issue = str(exc)
         return {'snapshot_sha256':digest, 'slides':result, 'sections':sections, 'section_status':section_status, 'section_issue':issue}
 
-def reorder(source, output, order):
+def reorder(source, output, order, expected_sha256=None):
     """Reorder the presentation's existing slide IDs in a new package."""
     if not isinstance(order, list) or not order or len(order) > 1000 or any(isinstance(i, bool) or not isinstance(i, int) for i in order):
         raise ValueError('Slide order must be a nonempty list of at most 1000 slide numbers')
     if Path(source).suffix.lower() != '.pptx' or Path(output).suffix.lower() != '.pptx': raise ValueError('Slide reorder requires PPTX input and output')
+    presentation = None
     def select(file):
+        nonlocal presentation
         presentation = Presentation(file)
         return str(presentation.part.partname).lstrip('/')
     def edit(tree, archive):
@@ -241,7 +243,6 @@ def reorder(source, output, order):
                 for value in reordered_ids:
                     if owner[value] == index: group_list.append(by_id[value])
                 sections.append(section)
-        presentation = Presentation(source)
         targets = []
         for relationship_id in relationships:
             try: relationship = presentation.part.rels[relationship_id]
@@ -251,7 +252,7 @@ def reorder(source, output, order):
         if len(set(targets)) != len(targets): raise ValueError('Slide part is referenced by multiple slides')
         for item in entries: listing.remove(item)
         for number in order: listing.append(entries[number - 1])
-    return ooxml.edit_xml(source, output, select, edit)
+    return ooxml.edit_xml(source, output, select, edit, expected_sha256=expected_sha256)
 
 def find_paragraph(tree, path):
     match = PATH.fullmatch(path) if paragraph_path(path) else None

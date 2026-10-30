@@ -258,3 +258,5 @@ Slide reordering supports contiguous nonempty PowerPoint 2010 sections and updat
 Slide inventory exposes revision-bound positions and supported section membership before reordering, with explicit unsupported-section status and bounded output.
 
 The PPTX viewer supports inspecting slide order and saving a complete new order; snapshot and revision checks protect the request, and package/section limits apply.
+
+Shared OOXML part selection and rewriting use one checked snapshot; slide reorder relationships and viewer hash checks bind to that snapshot. Preprocessing outside this helper and external writers still need independent consistency review.

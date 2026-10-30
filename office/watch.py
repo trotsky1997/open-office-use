@@ -1462,10 +1462,9 @@ def serve(directory, preview, port=0, render=None):
                         self.send(200, json.dumps(saved).encode(), 'application/json'); return
                     if route.endswith('/slide-order-save'):
                         if not isinstance(payload, dict) or set(payload) != {'base_revision', 'snapshot_sha256', 'order'}: raise ValueError('Slide reorder requires revision, snapshot and order')
+                        if not isinstance(payload['snapshot_sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', payload['snapshot_sha256']): raise ValueError('Slide reorder requires a valid snapshot SHA-256')
                         with lock:
-                            inventory = session.inventory_slides(directory, payload['base_revision'])
-                            if inventory['snapshot_sha256'] != payload['snapshot_sha256']: raise ValueError('Slide source changed; load again')
-                            saved = session.reorder_slides(directory, payload['base_revision'], payload['order'])
+                            saved = session.reorder_slides(directory, payload['base_revision'], payload['order'], expected_sha256=payload['snapshot_sha256'])
                         self.send(200, json.dumps(saved).encode(), 'application/json'); return
                     if route.endswith('/notes-read'):
                         if not isinstance(payload, dict) or set(payload) != {'revision', 'slide'}:

@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
         inventory = post('slide-order-read',{'revision':0})
         assert [item['title'] for item in inventory['slides']] == ['One','Two']
         payload = {'base_revision':0,'snapshot_sha256':inventory['snapshot_sha256'],'order':[2,1]}
-        for bad, request_origin, code in [(dict(payload,snapshot_sha256='0'*64),origin,400),(payload,'http://evil.test',403)]:
+        for bad, request_origin, code in [(dict(payload,snapshot_sha256='0'*64),origin,400),(dict(payload,snapshot_sha256=None),origin,400),(payload,'http://evil.test',403)]:
             try: post('slide-order-save',bad,request_origin)
             except urllib.error.HTTPError as exc: assert exc.code == code
             else: raise AssertionError('Invalid slide order request accepted')

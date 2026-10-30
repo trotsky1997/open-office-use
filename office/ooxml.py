@@ -8,6 +8,8 @@ from pathlib import Path
 
 from lxml import etree
 
+import snapshot as snapshots
+
 
 def match_index(text, find, replacement):
     if not isinstance(find, str) or not find or len(find) > 4000:
@@ -59,7 +61,7 @@ def serialize_xml(tree, original):
     return etree.tostring(tree, **options)
 
 
-def edit_xml(source, output, select_part, edit, allow_new=False, allow_remove=False):
+def edit_xml(source, output, select_part, edit, allow_new=False, allow_remove=False, expected_sha256=None):
     source = Path(source).resolve(strict=True); output = Path(output).absolute()
     if source.suffix.lower() not in ('.docx', '.pptx', '.xlsx') or source.suffix.lower() != output.suffix.lower():
         raise ValueError('Input and output must use the same supported Office format')
@@ -67,32 +69,35 @@ def edit_xml(source, output, select_part, edit, allow_new=False, allow_remove=Fa
         raise ValueError('Document exceeds the 128 MiB size limit')
     if output.exists() or output.is_symlink():
         raise FileExistsError(f'Output already exists: {output}')
-    try:
-        with zipfile.ZipFile(source) as archive:
-            entries = archive.infolist(); names = [entry.filename for entry in entries]
-            if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
-                raise ValueError('Document exceeds package limits or contains duplicate parts')
-            if any(name.startswith('_xmlsignatures/') for name in names):
-                raise ValueError('Digitally signed documents are not supported by package edits')
-            part = select_part(source)
-            document = archive.read(part); tree = parse_xml(document)
-            additional = edit(tree, archive) or {}
-            if not isinstance(additional, dict) or any((name not in names and not allow_new) or name == part or not isinstance(name, str) or (not isinstance(data, bytes) and not (data is None and allow_remove and name in names and name not in ('[Content_Types].xml', '_rels/.rels'))) or name.startswith('/') or '..' in name.split('/') for name, data in additional.items()):
-                raise ValueError('Invalid additional package changes')
-            if sum(entry.file_size for entry in entries) + sum(len(data) for name, data in additional.items() if name not in names) > 128 * 1024 * 1024 or len(entries) + sum(name not in names for name in additional) > 5000:
-                raise ValueError('Edited package exceeds limits')
-            changed = {**additional, part: serialize_xml(tree, document)}
-            with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-ooxml-') as tmp:
-                candidate = Path(tmp) / ('document' + output.suffix.lower())
-                with zipfile.ZipFile(candidate, 'w') as result:
-                    result.comment = archive.comment
-                    for entry in entries:
-                        if entry.filename in changed and changed[entry.filename] is None: continue
-                        result.writestr(entry, changed[entry.filename] if entry.filename in changed else archive.read(entry))
-                    for name, data in additional.items():
-                        if name not in names:
-                            result.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
-                os.link(candidate, output)
-    except (zipfile.BadZipFile, etree.XMLSyntaxError, KeyError) as exc:
-        raise ValueError(f'Invalid Office document: {exc}') from exc
+    with tempfile.TemporaryDirectory(prefix="office-ooxml-source-") as snapshot_dir:
+        frozen, digest = snapshots.copy(source, snapshot_dir)
+        if expected_sha256 is not None and (not isinstance(expected_sha256, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_sha256) or digest != expected_sha256): raise ValueError('Document snapshot changed; reload before editing')
+        try:
+            with zipfile.ZipFile(frozen) as archive:
+                entries = archive.infolist(); names = [entry.filename for entry in entries]
+                if len(entries) > 5000 or len(names) != len(set(names)) or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+                    raise ValueError('Document exceeds package limits or contains duplicate parts')
+                if any(name.startswith('_xmlsignatures/') for name in names):
+                    raise ValueError('Digitally signed documents are not supported by package edits')
+                part = select_part(frozen)
+                document = archive.read(part); tree = parse_xml(document)
+                additional = edit(tree, archive) or {}
+                if not isinstance(additional, dict) or any((name not in names and not allow_new) or name == part or not isinstance(name, str) or (not isinstance(data, bytes) and not (data is None and allow_remove and name in names and name not in ('[Content_Types].xml', '_rels/.rels'))) or name.startswith('/') or '..' in name.split('/') for name, data in additional.items()):
+                    raise ValueError('Invalid additional package changes')
+                if sum(entry.file_size for entry in entries) + sum(len(data) for name, data in additional.items() if name not in names) > 128 * 1024 * 1024 or len(entries) + sum(name not in names for name in additional) > 5000:
+                    raise ValueError('Edited package exceeds limits')
+                changed = {**additional, part: serialize_xml(tree, document)}
+                with tempfile.TemporaryDirectory(dir=output.parent, prefix='.office-ooxml-') as tmp:
+                    candidate = Path(tmp) / ('document' + output.suffix.lower())
+                    with zipfile.ZipFile(candidate, 'w') as result:
+                        result.comment = archive.comment
+                        for entry in entries:
+                            if entry.filename in changed and changed[entry.filename] is None: continue
+                            result.writestr(entry, changed[entry.filename] if entry.filename in changed else archive.read(entry))
+                        for name, data in additional.items():
+                            if name not in names:
+                                result.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+                    os.link(candidate, output)
+        except (zipfile.BadZipFile, etree.XMLSyntaxError, KeyError) as exc:
+            raise ValueError(f'Invalid Office document: {exc}') from exc
     return str(output)
