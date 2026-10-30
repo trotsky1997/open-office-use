@@ -412,7 +412,7 @@ def append_slides(presentation, slides):
             if not isinstance(element, dict): raise ValueError('Slide elements must be objects')
             kind = element.get('type'); geometry = {'type', 'x', 'y', 'width', 'height'}
             allowed = {'textbox': geometry | {'text', 'paragraphs', 'font_size', 'font', 'color', 'bold', 'italic', 'align', 'fill', 'margins', 'vertical_align', 'auto_fit', 'wrap'},
-                       'rectangle': geometry | {'fill'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
+                       'rectangle': geometry | {'fill'}, 'shape': geometry | {'shape_kind', 'fill', 'line_color', 'line_width', 'text', 'paragraphs', 'font', 'font_size', 'color', 'bold', 'italic', 'align', 'auto_fit'}, 'line': {'type', 'x', 'y', 'end_x', 'end_y', 'color', 'line_width', 'arrow'}, 'image': geometry | {'path', 'description', 'fit'},
                        'table': geometry | {'rows', 'header', 'font_size', 'font', 'color', 'header_fill', 'header_color', 'column_weights'},
                        'chart': geometry | {'chart_type', 'categories', 'series', 'title', 'legend', 'x_axis_title', 'y_axis_title'}}
             if not isinstance(kind, str) or kind not in allowed or set(element) - allowed[kind]: raise ValueError('Unsupported slide element or property')
@@ -479,6 +479,39 @@ def append_slides(presentation, slides):
                 if 'fill' not in element: raise ValueError('Rectangle requires a fill color')
                 shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, width, height)
                 shape.fill.solid(); shape.fill.fore_color.rgb = color(element['fill']); shape.line.fill.background()
+            elif kind == 'shape':
+                kinds = {'rectangle':MSO_SHAPE.RECTANGLE, 'rounded_rectangle':MSO_SHAPE.ROUNDED_RECTANGLE, 'ellipse':MSO_SHAPE.OVAL, 'diamond':MSO_SHAPE.DIAMOND}
+                shape_kind = element.get('shape_kind')
+                if not isinstance(shape_kind, str) or shape_kind not in kinds: raise ValueError('Unsupported shape kind')
+                if 'fill' not in element: raise ValueError('Shape requires a fill color')
+                fill = color(element['fill'])
+                if 'line_width' in element and 'line_color' not in element: raise ValueError('Shape line_width requires line_color')
+                if 'line_color' in element: color(element['line_color'])
+                if 'line_width' in element: number(element['line_width'], 'line_width', 0.1, 20)
+                if 'text' in element and 'paragraphs' in element: raise ValueError('Shape accepts text or paragraphs')
+                if 'font' in element and (not isinstance(element['font'], str) or not 1 <= len(element['font']) <= 100): raise ValueError('Font must be a name of at most 100 characters')
+                if 'font_size' in element: number(element['font_size'], 'font_size', 1, 400)
+                if 'color' in element: color(element['color'])
+                for key in ('bold', 'italic'):
+                    if key in element and not isinstance(element[key], bool): raise ValueError(f'{key} must be a boolean')
+                if 'align' in element and (not isinstance(element['align'], str) or element['align'] not in alignment): raise ValueError('Invalid shape text alignment')
+                if 'auto_fit' in element and element['auto_fit'] not in ('none', 'shrink'): raise ValueError('Shape auto_fit must be none or shrink')
+                paragraphs = element.get('paragraphs')
+                if 'text' in element:
+                    text = element['text']
+                    if not isinstance(text, str) or len(text) > 10000 or '\r' in text: raise ValueError('Shape text must be at most 10,000 characters')
+                    paragraphs = [{'text':line} for line in text.split('\n')]
+                if paragraphs is not None: validate_slide_paragraphs(paragraphs)
+                elif 'paragraphs' in element: raise ValueError('Shape paragraphs must be a list')
+                shape = slide.shapes.add_shape(kinds[shape_kind], x, y, width, height)
+                shape.fill.solid(); shape.fill.fore_color.rgb = fill
+                if 'line_color' in element:
+                    shape.line.color.rgb = color(element['line_color']); shape.line.width = Pt(element.get('line_width', 1))
+                else: shape.line.fill.background()
+                if paragraphs is not None:
+                    shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE; shape.text_frame.word_wrap = True
+                    if 'auto_fit' in element: shape.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE if element['auto_fit'] == 'shrink' else MSO_AUTO_SIZE.NONE
+                    write_slide_paragraphs(shape.text_frame, paragraphs, {'align':'center', **element})
             elif kind == 'table':
                 rows = element.get('rows'); header = element.get('header', False)
                 if not isinstance(rows, list) or not 1 <= len(rows) <= 50 or any(not isinstance(row, list) for row in rows): raise ValueError('Slide table requires 1 to 50 rows')

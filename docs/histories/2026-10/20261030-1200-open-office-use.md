@@ -383,3 +383,5 @@ Bound PowerPoint picture replacement to inspected presentation hashes, and read 
 Chart-cache scanning uses checked snapshots; XLSX and PPTX syncs accept inspected source hashes, and the workbook viewer binds cache repairs to its preview.
 
 Added native PowerPoint straight line and arrow authoring with endpoint geometry, RGB color and line width; verified reverse and vertical directions in LibreOffice.
+
+Added editable PowerPoint flowchart shapes with text, rich paragraphs, fill, optional outline and shrink-to-fit; verified structure, targeted text editing, schema and LibreOffice rendering.

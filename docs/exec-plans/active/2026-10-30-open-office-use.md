@@ -280,3 +280,5 @@ Picture replacement accepts a source snapshot hash; viewer selections bind the h
 Chart-cache inspection and sync support snapshot-bound repair in XLSX and PPTX; formula-cache freshness remains unknown.
 
 PowerPoint authoring supports editable straight lines and arrows with free-position endpoints; attached connectors and advanced routing remain open.
+
+PowerPoint authoring supports editable text-bearing rectangle, rounded rectangle, ellipse and diamond nodes; inspect rendered text fit and connector placement.

@@ -43,6 +43,23 @@ with tempfile.TemporaryDirectory() as tmp:
         try: open_office_use.author({'slides':[{'layout':'blank','elements':[bad]}]},invalid)
         except ValueError: assert not invalid.exists()
         else: raise AssertionError('Invalid line accepted')
+    flow_file=root/'flow.pptx'
+    flow=[{'type':'shape','shape_kind':'rounded_rectangle','x':1,'y':1,'width':2,'height':1,'fill':'236B8E','text':'Start','font_size':22,'color':'FFFFFF'}, {'type':'shape','shape_kind':'diamond','x':4,'y':1,'width':2,'height':2,'fill':'F2C66D','paragraphs':[{'runs':[{'text':'Go','bold':True},{'text':'?','url':'https://example.com'}]}],'font_size':18,'color':'14283F','auto_fit':'shrink'}, {'type':'shape','shape_kind':'ellipse','x':7,'y':1,'width':2,'height':1,'fill':'65A68D','line_color':'236B8E','line_width':2,'text':'Done'}, {'type':'shape','shape_kind':'rectangle','x':10,'y':1,'width':2,'height':1,'fill':'FFFFFF'}]
+    open_office_use.author({'slides':[{'layout':'blank','elements':flow}]},flow_file)
+    shapes=Presentation(flow_file).slides[0].shapes
+    assert [shape.auto_shape_type for shape in shapes] == [5,4,9,1]
+    assert shapes[0].text == 'Start' and shapes[0].text_frame.vertical_anchor == MSO_ANCHOR.MIDDLE
+    assert shapes[1].text == 'Go?' and shapes[1].text_frame.auto_size == MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE and shapes[1].text_frame.paragraphs[0].runs[0].font.bold
+    assert shapes[1].text_frame.paragraphs[0].runs[1].hyperlink.address == 'https://example.com' and shapes[2].line.width.pt == 2
+    code,validation,_=officecli_backend.invoke('validate',flow_file); assert code==0 and validation['success'],validation
+    flow_draft=root/'flow-draft';session.start(flow_draft,source=flow_file)
+    edited=session.replace_text(flow_draft,0,f'/slide[1]/shape[@id={shapes[0].shape_id}]/paragraph[1]','Start','Begin')
+    assert Presentation(edited['file']).slides[0].shapes[0].text == 'Begin'
+    for bad in [dict(flow[0],shape_kind='star'),dict(flow[0],fill='bad'),dict(flow[0],line_width=2),dict(flow[0],text='bad',paragraphs=[]),dict(flow[0],auto_fit='resize')]:
+        invalid=root/'invalid-shape.pptx'
+        try: open_office_use.author({'slides':[{'layout':'blank','elements':[bad]}]},invalid)
+        except ValueError: assert not invalid.exists()
+        else: raise AssertionError('Invalid shape accepted')
     notes_file=root/'notes-authored.pptx'
     notes_spec={'slides':[{'title':'First','notes':'Opening detail\nSecond paragraph'}, {'layout':'blank','notes':'Blank slide speaker notes'}, {'title':'No notes'}, {'title':'Empty notes','notes':''}]}
     notes_spec_file=root/'notes-spec.json';notes_spec_file.write_text(json.dumps(notes_spec))
