@@ -1881,8 +1881,8 @@ test('download start observation is tab-scoped and bounds preparation',async()=>
   await new Promise(resolve=>setImmediate(resolve));assert.ok(calls.some(([method,session])=>method==='Page.enable' && session==='new-child'));
   for(const h of handlers)h({method:'onCDPEvent',params:{source:{tabId:1,sessionId:'new-child'},method:'Page.downloadWillBegin',params:{guid:'dynamic',frameId:'new-frame',url:'https://example.test/dynamic',suggestedFilename:'dynamic'}}});
   assert.equal((await dynamic.wait()).guid,'dynamic');assert.equal(handlers.size,0);
-  let release;browser.cdp.enableFrameSessions=async()=>await new Promise(resolve=>{release=resolve;});calls.length=0;
-  await assert.rejects(tab.prepareDownloadStart({timeoutMs:20}),/timed out/i);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,0);
+  let release,preparationSignal;browser.cdp.enableFrameSessions=async(_tab,signal)=>{preparationSignal=signal;return await new Promise(resolve=>{release=resolve;});};calls.length=0;
+  await assert.rejects(tab.prepareDownloadStart({timeoutMs:20}),/timed out/i);assert.equal(preparationSignal.aborted,true);release();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,0);
 });
 
 test('dynamic download frame preparation gates subsequent SDK commands',async()=>{

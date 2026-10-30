@@ -2042,9 +2042,9 @@ export class OpenBrowserUseTab {
     const result=Promise.race([waiting,dynamicFailure]).then(value=>{releaseOnSuccess();return value;}).finally(()=>{removeDynamic();controller.abort();});
     void result.catch(()=>{});
     const prepare=(async()=>{
-      await cdp.enableFrameSessions(this.id);
+      await cdp.enableFrameSessions(this.id,controller.signal);
       if(controller.signal.aborted || performance.now()>=deadline)throw new Error("Download start preparation timed out");
-      const frames=await cdp.frameSessions(this.id);
+      const frames=await waitUntilAbortable(cdp.frameSessions(this.id),controller.signal);
       for(const sessionId of [undefined,...frames.map(frame=>frame.sessionId)]) {
         if(controller.signal.aborted || performance.now()>=deadline)throw new Error("Download start preparation timed out");
         await enable(sessionId);

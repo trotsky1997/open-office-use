@@ -160,3 +160,4 @@
 - [x] 对话框事件带有来源 frame 时，frame 脱离后保留 frameDetached 状态并拒绝发送决定；Linux ARM64 Chromium 153 跨进程 frame 实测阻止决定派发，恢复过程仍待研究。
 - [x] 文件选择的 frame 准备与后端注册共享期限，下载注册等待有界；超时取消未完成准备，释放就绪监听。Linux ARM64 Chromium 原生消息实测准备超时后可正常上传。
 - [x] Chrome 文件选择等待将取消信号传给调试器附着；关闭活动标签时清理会话活动状态和鼠标缓存，同时保留关闭事件归属。Linux ARM64 Chromium 原生消息验证。
+- [x] 下载开始观察超时时取消 frame 自动附着及挂起的 frame 准备；Linux ARM64 Chromium 原生消息验证超时后重新观察实际下载。
