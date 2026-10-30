@@ -159,6 +159,41 @@ with tempfile.TemporaryDirectory() as tmp:
     implicit_result=session.rename_table_column(implicit_draft,0,'Sales','SalesTable','Revenue','Amount')
     assert implicit_result['rewritten_references']==1 and load_workbook(implicit_result['file'])['Sales']['C2'].value=='=[@Amount]*2'
     assert session.rewrite_table_formula('=SUM(SalesTable[[Revenue]:[Quarter]])','SalesTable','Revenue','Amount')[0]=='=SUM(SalesTable[[Amount]:[Quarter]])'
+    calculated=root/'calculated-table.xlsx'
+    calculated_book=xlsxwriter.Workbook(calculated); calculated_sheet=calculated_book.add_worksheet('Sales')
+    calculated_sheet.add_table('A1:C4',{'name':'SalesTable','total_row':True,'data':[['Q1',120],['Q2',140]],'columns':[{'header':'Quarter'},{'header':'Revenue','total_function':'sum'},{'header':'Double','formula':'=[@Revenue]*2','total_function':'sum'}]}); calculated_book.close()
+    calculated_totals=root/'calculated-totals.xlsx'
+    with zipfile.ZipFile(calculated) as before,zipfile.ZipFile(calculated_totals,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/tables/table1.xml':
+                table_root=etree.fromstring(data); ns='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+                column=table_root.find(ns+'tableColumns')[1]; column.set('totalsRowFunction','custom')
+                etree.SubElement(column,ns+'totalsRowFormula').text='SUBTOTAL(109,[Revenue])'; data=etree.tostring(table_root)
+            after.writestr(entry,data)
+    calculated=calculated_totals
+    calculated_draft=root/'calculated-draft';session.start(calculated_draft,source=calculated)
+    calculated_result=session.rename_table_column(calculated_draft,0,'Sales','SalesTable','Revenue','Net Revenue')
+    calculated_after=load_workbook(calculated_result['file'])['Sales']
+    assert calculated_result['rewritten_references']==5
+    assert calculated_after.tables['SalesTable'].tableColumns[1].totalsRowFormula.text=='SUBTOTAL(109,[Net Revenue])'
+    assert calculated_after.tables['SalesTable'].tableColumns[2].calculatedColumnFormula.text=='[[#This Row],Net Revenue]*2'
+    assert calculated_after['C2'].value=='=[[#This Row],Net Revenue]*2' and calculated_after['C3'].value=='=[[#This Row],Net Revenue]*2'
+    assert calculated_after['B4'].value=='=SUBTOTAL(109,[Net Revenue])'
+    assert load_workbook(calculated_result['file'],data_only=True)['Sales']['C2'].value is None and load_workbook(calculated_result['file'],data_only=True)['Sales']['B4'].value is None
+    assert load_workbook(calculated)['Sales']['C2'].value=='=[[#This Row],Revenue]*2'
+    array_metadata=root/'array-table.xlsx'
+    with zipfile.ZipFile(calculated) as before,zipfile.ZipFile(array_metadata,'w') as after:
+        for entry in before.infolist():
+            data=before.read(entry)
+            if entry.filename=='xl/tables/table1.xml':
+                table_root=etree.fromstring(data); formula=next(table_root.iter(ns+'calculatedColumnFormula')); formula.set('array','1'); data=etree.tostring(table_root)
+            after.writestr(entry,data)
+    array_draft=root/'array-table-draft';session.start(array_draft,source=array_metadata)
+    try: session.rename_table_column(array_draft,0,'Sales','SalesTable','Revenue','Amount')
+    except ValueError: pass
+    else: raise AssertionError('Array table formula accepted')
+    assert session.info(array_draft)['latest_revision']==0
     shared=root/'shared-table.xlsx'
     with zipfile.ZipFile(table_file) as before, zipfile.ZipFile(shared,'w') as after:
         for entry in before.infolist():

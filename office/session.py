@@ -901,6 +901,7 @@ def table_formula_node(part, node):
     ns = grid_styles.X
     tag = node.tag
     if part.startswith('xl/worksheets/') and part.endswith('.xml') and tag in (ns+'f', ns+'formula', ns+'formula1', ns+'formula2'): return True
+    if part.startswith('xl/tables/') and part.endswith('.xml') and tag in (ns+'calculatedColumnFormula', ns+'totalsRowFormula'): return True
     if part == 'xl/workbook.xml' and tag == ns+'definedName': return True
     return part.startswith('xl/charts/') and tag == '{http://schemas.openxmlformats.org/drawingml/2006/chart}f'
 
@@ -920,8 +921,12 @@ def rewrite_table_formula(formula, table_name, old_name, new_name, allow_implici
             if owner is None and not allow_implicit: raise ValueError('Implicit structured reference has ambiguous table context')
             target = owner is None or owner.casefold() == table_name.casefold()
             # shortcut: escaped structured names need a full Excel grammar before they can be rewritten.
-            nested = selector.startswith('[[') and selector.endswith(']]')
+            nested = selector.startswith('[[') and selector.endswith(']')
             inner = selector[1:-1] if nested else selector
+            # XlsxWriter emits the compact form [[#This Row],Column] for calculated columns.
+            compact = re.fullmatch(r'\[(#This Row)\],([^\[\]#@,\':]+)', inner, re.IGNORECASE) if nested else None
+            if compact:
+                inner = '[' + compact[1] + '],[' + compact[2] + ']'
             pieces = list(re.finditer(r'\[([^\[\]]+)\]', inner))
             if not pieces or (not nested and (len(pieces) != 1 or pieces[0].span() != (0, len(inner)))): raise ValueError('Unsupported structured reference')
             if pieces[0].start() != 0 or pieces[-1].end() != len(inner) or any(inner[a.end():b.start()] not in (',', ':') for a,b in zip(pieces,pieces[1:])): raise ValueError('Unsupported structured reference')
@@ -935,6 +940,7 @@ def rewrite_table_formula(formula, table_name, old_name, new_name, allow_implici
                     if re.search(r"[#@,':]", new_name): raise ValueError('New name requires unsupported structured-reference escaping')
                     replacements.append((piece.start(1), piece.end(1), marker + new_name)); count += 1
             for a,b,replacement in reversed(replacements): inner = inner[:a] + replacement + inner[b:]
+            if compact: inner = inner[:inner.index(',')+1] + inner[inner.index(',')+2:-1]
             selector = '[' + inner + ']' if nested else inner
             value = (owner or '') + selector
         updated.append(value)
@@ -999,15 +1005,16 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
                     if node.tag.rsplit('}',1)[-1].lower() in ('f','formula','formula1','formula2','definedname','calculatedcolumnformula','totalsrowformula') and re.search(r'(?i)\b(?:INDIRECT|EVALUATE)\s*\(', text): raise ValueError('Workbook contains indirect references; rename requires separate review')
                     if '[' in text or ']' in text:
                         if not eligible: raise ValueError('Workbook contains possible structured references outside supported formulas')
-                        allow_implicit = False
+                        allow_implicit = name == table['part'] and node.tag in (grid_styles.X+'calculatedColumnFormula', grid_styles.X+'totalsRowFormula') and node.getparent().tag == grid_styles.X+'tableColumn'
                         if name == sheet_part and node.tag == grid_styles.X+'f' and node.getparent().tag == grid_styles.X+'c':
                             address = node.getparent().get('r', '')
                             if re.fullmatch(r'[A-Z]{1,3}[1-9][0-9]{0,6}', address):
                                 col, row = range_boundaries(address)[:2]
                                 containing = [item for item in constraints['table_parts'] if (lambda bounds: bounds[0] <= col <= bounds[2] and bounds[1] < row <= bounds[3])(range_boundaries(item['ref']))]
-                                allow_implicit = len(containing) == 1 and containing[0]['part'] == table['part'] and not any(a <= col <= c and b <= row <= d for a,b,c,d in constraints['table_totals'])
+                                allow_implicit = len(containing) == 1 and containing[0]['part'] == table['part']
                         updated, count = rewrite_table_formula(text, table_name, old_name, new_name, allow_implicit)
                         if count:
+                            if name.startswith('xl/tables/') and (node.attrib or len(node) or node.getparent().tag != grid_styles.X+'tableColumn'): raise ValueError('Unsupported table formula metadata')
                             if node.tag == grid_styles.X+'f' and (node.getparent().tag != grid_styles.X+'c' or node.get('t') not in (None, 'normal') or any(key != 't' for key in node.attrib)): raise ValueError('Shared or array formulas require separate review')
                             rewrites.setdefault(name, []).append((formula_index, text, updated)); rewrite_count += count
                             if rewrite_count > 500 or len(rewrites) > 100: raise ValueError('Structured-reference rewrite limit exceeded')
@@ -1023,7 +1030,10 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
             ids = [node.get('id') for node in nodes]
             if any(not name for name in names) or len({name.casefold() for name in names}) != len(names) or any(not value or not value.isdecimal() or len(value) > 8 or not 1 <= int(value) <= 2147483647 for value in ids) or len({int(value) for value in ids}) != len(ids): raise ValueError('Table column metadata is ambiguous')
             if sum(name == old_name for name in names) != 1 or any(name.casefold() == new_name.casefold() and name != old_name for name in names): raise ValueError('Column missing or new name conflicts')
-            if any(len(node) or node.get('uniqueName') is not None or node.get('queryTableFieldId') is not None for node in nodes): raise ValueError('Calculated or linked table columns require separate review')
+            for node in nodes:
+                if node.get('uniqueName') is not None or node.get('queryTableFieldId') is not None: raise ValueError('Linked table columns require separate review')
+                children = list(node)
+                if any(child.tag not in (ns+'calculatedColumnFormula', ns+'totalsRowFormula') or child.attrib or len(child) for child in children) or len({child.tag for child in children}) != len(children): raise ValueError('Unsupported table column metadata')
         first = f'{get_column_letter(c1)}{r1}'; last = f'{get_column_letter(c2)}{r1}'
         cells = spreadsheet.read_range(snapshot, sheet, f'{first}:{last}')['rows'][0]
         if len(cells) != len(names) or any(cell.get('value') != name or 'formula' in cell or cell.get('text_complete') is False for cell,name in zip(cells,names)): raise ValueError('Table headers and column metadata do not match')
@@ -1059,7 +1069,7 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
             current[index].set('name', new_name)
             additional = {}
             for part, edits in rewrites.items():
-                raw = archive.read(part); document = ooxml.parse_xml(raw); root = document.getroot()
+                raw = archive.read(part); document = tree if part == table['part'] else ooxml.parse_xml(raw); root = document.getroot()
                 formulas = [node for node in root.iter() if isinstance(node.tag, str) and table_formula_node(part, node)]
                 sheet_changed = False
                 for ordinal, old, replacement in edits:
@@ -1071,7 +1081,7 @@ def rename_table_column(directory, base_revision, sheet, table_name, old_name, n
                         for item in cached: cell.remove(item)
                         sheet_changed = True
                 if sheet_changed: cell_text.request_recalculation(root)
-                additional[part] = ooxml.serialize_xml(document, raw)
+                if part != table['part']: additional[part] = ooxml.serialize_xml(document, raw)
             if rewrites:
                 raw = additional.get('xl/workbook.xml', archive.read('xl/workbook.xml')); document = ooxml.parse_xml(raw); root = document.getroot()
                 if root.tag != ns+'workbook': raise ValueError('Invalid workbook XML')

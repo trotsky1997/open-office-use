@@ -309,3 +309,5 @@ Added revision-bound table column renaming with consistent header/metadata updat
 Extended table column rename to rewrite simple explicit structured references, invalidate changed cell caches, request recalculation and remove a supported calculation chain. Verified cross-sheet and defined-name formulas, LibreOffice recalculation, schema and rollback for complex references. Native Excel and complex reference forms remain unverified/unsupported.
 
 Extended table column rename to handle explicit nested selectors and implicit references in uniquely identified table data cells. Ambiguous implicit contexts and calculated table-column metadata still require review.
+
+Extended table renaming to update calculated-column and totals-row formula metadata and target-table totals cells. Verified with an XlsxWriter workbook containing a calculated column and totals; native Excel validation remains pending.
